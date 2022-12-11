@@ -1,0 +1,10 @@
+pydantic>=1.10.2
+requests>=2.28.1
+fdb>=2.0.2
+aiogram>=3.0.0b6
+cryptocode>=0.1
+stellar-sdk>=8
+python-dateutil>=2.8.2
+jsonschema>=4.17.3
+PyQRCode>=1.2.1
+APScheduler>=3.9.1.post1
