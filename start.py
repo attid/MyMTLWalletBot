@@ -19,6 +19,7 @@ from routers import veche, wallet_setting
 async def main():
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware())
 
+    dp.include_router(veche.router) # first
     dp.include_router(add_wallet.router)
     dp.include_router(admin.router)
     dp.include_router(common.router)
@@ -29,7 +30,6 @@ async def main():
     dp.include_router(send.router)
     dp.include_router(sign.router)
     dp.include_router(swap.router)
-    dp.include_router(veche.router)
     dp.include_router(wallet_setting.router)
 
     if 'test' in sys.argv:

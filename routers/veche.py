@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 
 from routers.common_setting import cmd_language
 from utils.aiogram_utils import my_gettext, send_message
-from keyboards.common_keyboards import get_kb_yesno_send_xdr
+from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_return
 from utils.lang_utils import set_last_message_id, check_user_id
 from utils.stellar_utils import stellar_get_user_account
 
@@ -21,8 +21,9 @@ async def cmd_start(message: types.Message, state: FSMContext, command: Command)
     await send_message(message.from_user.id, 'Loading')
 
     # if user not exist
-    if check_user_id(message.from_user.id):
+    if not check_user_id(message.from_user.id):
         await send_message(message.from_user.id, 'You dont have wallet. Please run /start')
+        return
 
     await cmd_login_to_veche(message.from_user.id, state, message.text.split(' ')[1])
 
@@ -39,6 +40,10 @@ async def cmd_login_to_veche(chat_id: int, state: FSMContext, start_cmd: str):
 
 @router.callback_query(Text(text=["MTLToolsVeche"]))
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
+    await send_message(callback, 'Пока только по <a href="https://veche.montelibero.org/auth/login?mmwb=true">ссылке</a>, приходите завтра',
+                       reply_markup=get_kb_return(callback), parse_mode='HTML')
+    return
+
     page = requests.get("https://veche.montelibero.org/auth/login?mmwb=true").text
     token = None
     for s in page.split('\n'):
