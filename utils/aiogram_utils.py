@@ -76,11 +76,15 @@ async def cmd_info_message(user_id: Union[types.CallbackQuery, types.Message, in
         user_id = user_id
 
     if send_file:
-        photo = types.InputFile(send_file)
+        print(send_file)
+        photo = types.FSInputFile(send_file)
         # await bot.send_photo(chat_id=message.chat.id, photo=photo)
         # file = InputMedia(media=types.InputFile(send_file))
         await bot.send_photo(user_id, photo=photo, caption=msg, parse_mode='MARKDOWN')
-        await bot.delete_message(user_id, get_last_message_id(user_id))
+        try:
+            await bot.delete_message(user_id, get_last_message_id(user_id))
+        except:
+            pass
         await cmd_show_balance(user_id, state, need_new_msg=True)
     elif resend_transaction:
         await send_message(user_id, msg, reply_markup=get_kb_resend(user_id), parse_mode='MARKDOWN')
