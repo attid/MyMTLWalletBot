@@ -30,13 +30,13 @@ async def cmd_exit(message: types.Message, state: FSMContext):
 @router.message(Command(commands=["log"]))
 async def cmd_log(message: types.Message):
     if message.from_user.username == "itolstov":
-        await bot.send_document(message.chat.id, open('MyMTLWallet_bot.log', 'rb'))
+        await bot.send_document(message.chat.id, types.FSInputFile('MyMTLWallet_bot.log'))
 
 
 @router.message(Command(commands=["err"]))
 async def cmd_log(message: types.Message):
     if message.from_user.username == "itolstov":
-        await bot.send_document(message.chat.id, open('MyMTLWallet_bot.err', 'rb'))
+        await bot.send_document(message.chat.id, types.FSInputFile('MyMTLWallet_bot.err'))
 
 
 @router.message(Command(commands=["update"]))

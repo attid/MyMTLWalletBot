@@ -50,7 +50,7 @@ def set_last_message_id(user_id: int, message_id: int):
 
 
 def check_user_id(user_id: int):
-    return fb.execsql(f"select count(*)  from mymtlwalletbot_users user_id = ?", (user_id,)) > 0
+    return fb.execsql1(f"select count(*)  from mymtlwalletbot_users where user_id = ?", (user_id,),0) > 0
 
 
 def get_last_message_id(user_id: int):

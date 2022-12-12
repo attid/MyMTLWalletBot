@@ -137,7 +137,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                         await state.update_data(link=link)
                         await cmd_info_message(user_id,
                                                my_gettext(user_id, 'veche_go').format(link), state)
-                        set_last_message_id(message.from_user.id, 0)
+                        set_last_message_id(user_id, 0)
                         await state.set_state(None)
                     else:
                         xdr = stellar_user_sign(xdr, user_id, str(pin))
