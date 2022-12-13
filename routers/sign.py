@@ -6,10 +6,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 
-from utils.aiogram_utils import my_gettext, send_message, logger, cmd_info_message, set_last_message_id, cmd_show_sign, \
+from routers.start_msg import cmd_show_balance, cmd_info_message
+from utils.aiogram_utils import my_gettext, send_message, logger, set_last_message_id, cmd_show_sign, \
     StateSign
 from keyboards.common_keyboards import get_kb_return, get_return_button
-from routers.common import cmd_show_balance
 from utils.stellar_utils import stellar_get_pin_type, stellar_change_password, stellar_user_sign_message, \
     stellar_user_sign, save_xdr_to_send, stellar_send, stellar_check_xdr
 
@@ -21,6 +21,8 @@ class PinState(StatesGroup):
     set_pin = State()
     set_pin2 = State()
     ask_password = State()
+    ask_password_set = State()
+    ask_password_set2 = State()
 
 
 class PinCallbackData(CallbackData, prefix="pin_"):
@@ -53,13 +55,18 @@ async def cmd_ask_pin(chat_id: int, state: FSMContext, msg='Введите па�
 
     if pin_type == 2:  # password
         msg = my_gettext(chat_id, "send_password")
-
-        await send_message(chat_id, msg, reply_markup=get_kb_return(chat_id))
         await state.set_state(PinState.ask_password)
+        await send_message(chat_id, msg, reply_markup=get_kb_return(chat_id))
 
     if pin_type == 0:  # no password
         await state.update_data(pin=chat_id)
         await send_message(chat_id, my_gettext(chat_id, 'confirm_send2'), reply_markup=get_kb_nopassword(chat_id))
+
+    if pin_type == 10:  # ro
+        await state.update_data(pin='ro')
+        await cmd_show_sign(chat_id, state,
+                            my_gettext(chat_id, "your_xdr").format(data['xdr']),
+                            use_send=False)
 
 
 def get_kb_pin(chat_id: int) -> types.InlineKeyboardMarkup:
@@ -94,11 +101,13 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         pin += answer
         await state.update_data(pin=pin)
         await cmd_ask_pin(user_id, state)
+        await query.answer(''.ljust(len(pin), '*'))
 
     if answer == 'Del':
         pin = pin[:len(pin) - 1]
         await state.update_data(pin=pin)
         await cmd_ask_pin(user_id, state)
+        await query.answer(''.ljust(len(pin), '*'))
 
     if answer == 'Enter':
         current_state = await state.get_state()
@@ -120,53 +129,57 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                 await state.set_state(PinState.set_pin)
                 await query.answer(my_gettext(user_id, "bad_passwords"), show_alert=True)
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
-            await state.update_data(pin='')
-            await state.set_state(None)
-            xdr = data.get('xdr')
-            message = data.get('message')
-            link = data.get('link')
-            try:
-                if user_id > 0:
-                    if message and link:
-                        msg = stellar_user_sign_message(message, user_id, str(pin))
-                        print(msg)
-                        import urllib.parse
-                        print(urllib.parse.quote(msg))
-                        link = link.replace('$$SIGN$$', urllib.parse.quote(msg))
-                        print(link)
-                        await state.update_data(link=link)
-                        await cmd_info_message(user_id,
-                                               my_gettext(user_id, 'veche_go').format(link), state)
-                        set_last_message_id(user_id, 0)
-                        await state.set_state(None)
-                    else:
-                        xdr = stellar_user_sign(xdr, user_id, str(pin))
-                        await state.set_state(None)
-                        await state.update_data(xdr=xdr)
-                        if current_state == PinState.sign_and_send:
-                            await cmd_info_message(user_id,
-                                                   my_gettext(user_id, "try_send"),
-                                                   state)
-                            save_xdr_to_send(user_id, xdr)
-                        if current_state == PinState.sign:
-                            await cmd_show_sign(user_id, state,
-                                                my_gettext(user_id, "your_xdr").format(xdr),
-                                                use_send=True)
-            except BadRequestError as ex:
-                # print(ex.extras.get("result_codes", '=( eror not found'))
-                msg = f"{ex.title}, error {ex.status}, {ex.extras.get('result_codes', 'no extras')}"
-                logger.info(['BadRequestError', msg, current_state])
-                await cmd_info_message(user_id,
-                                       f"{my_gettext(user_id, 'send_error')}\n{msg}", state)
-            except BaseHorizonError as ex:
-                msg = f"{ex.title}, error {ex.status}, {ex.extras.get('result_codes', 'no extras')}"
-                logger.info(['BaseHorizonError', msg, current_state])
-                await cmd_info_message(user_id,
-                                       f"{my_gettext(user_id, 'send_error')}\n{msg}", state)
-            except Exception as ex:
-                logger.info(['ex', ex, current_state])
-                await cmd_info_message(user_id, my_gettext(user_id, "bad_password"), state)
+            await sign_xdr(state, user_id)
         return True
+
+
+async def sign_xdr(state, user_id):
+    data = await state.get_data()
+    current_state = await state.get_state()
+    pin = data.get('pin', '')
+    await state.update_data(pin='')
+    await state.set_state(None)
+    xdr = data.get('xdr')
+    message = data.get('message')
+    link = data.get('link')
+    try:
+        if user_id > 0:
+            if message and link:
+                msg = stellar_user_sign_message(message, user_id, str(pin))
+                import urllib.parse
+                link = link.replace('$$SIGN$$', urllib.parse.quote(msg))
+                await state.update_data(link=link)
+                await cmd_info_message(user_id,
+                                       my_gettext(user_id, 'veche_go').format(link), state)
+                set_last_message_id(user_id, 0)
+                await state.set_state(None)
+            else:
+                xdr = stellar_user_sign(xdr, user_id, str(pin))
+                await state.set_state(None)
+                await state.update_data(xdr=xdr)
+                if current_state == PinState.sign_and_send:
+                    await cmd_info_message(user_id,
+                                           my_gettext(user_id, "try_send"),
+                                           state)
+                    save_xdr_to_send(user_id, xdr)
+                if current_state == PinState.sign:
+                    await cmd_show_sign(user_id, state,
+                                        my_gettext(user_id, "your_xdr").format(xdr),
+                                        use_send=True)
+    except BadRequestError as ex:
+        # print(ex.extras.get("result_codes", '=( eror not found'))
+        msg = f"{ex.title}, error {ex.status}, {ex.extras.get('result_codes', 'no extras')}"
+        logger.info(['BadRequestError', msg, current_state])
+        await cmd_info_message(user_id,
+                               f"{my_gettext(user_id, 'send_error')}\n{msg}", state)
+    except BaseHorizonError as ex:
+        msg = f"{ex.title}, error {ex.status}, {ex.extras.get('result_codes', 'no extras')}"
+        logger.info(['BaseHorizonError', msg, current_state])
+        await cmd_info_message(user_id,
+                               f"{my_gettext(user_id, 'send_error')}\n{msg}", state)
+    except Exception as ex:
+        logger.info(['ex', ex, current_state])
+        await cmd_info_message(user_id, my_gettext(user_id, "bad_password"), state)
 
 
 def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
@@ -180,7 +193,7 @@ def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
 
 @router.callback_query(Text(text=["Sign"]))
 async def cmd_sign(callback: types.CallbackQuery, state: FSMContext):
-    await cmd_show_sign(callback.from_user.id, state)
+    await cmd_show_sign(callback.from_user.id, state, my_gettext(callback, 'send_xdr'))
     await state.set_state(StateSign.sending_xdr)
     await callback.answer()
 
@@ -209,7 +222,6 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     xdr = data.get('xdr')
     tools = data.get('tools')
-    print(callback.data)
     try:
         if callback.data == "SendTools":
             try:
@@ -241,6 +253,43 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
         msg = 'unknown error'
         data[xdr] = xdr
         await cmd_info_message(callback, f"{my_gettext(callback, 'send_error')}\n{msg}", state, resend_transaction=True)
+
+
+@router.message(PinState.ask_password)
+async def cmd_password(message: types.Message, state: FSMContext):
+    await state.update_data(pin=message.text)
+    await message.delete()
+    await state.set_state(PinState.sign_and_send)
+    await sign_xdr(state, message.from_user.id)
+
+
+@router.message(PinState.ask_password_set)
+async def cmd_password_set(message: types.Message, state: FSMContext):
+    await state.update_data(pin=message.text)
+    await state.set_state(PinState.ask_password_set2)
+    await message.delete()
+    await send_message(message, my_gettext(message, 'resend_password'),
+                       reply_markup=get_kb_return(message.from_user.id))
+
+
+@router.message(PinState.ask_password_set2)
+async def cmd_password_set2(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = message.from_user.id
+    pin = data.get('pin', '')
+    public_key = data.get('public_key', '')
+    if data['pin'] == message.text:
+        await state.set_state(None)
+        pin_type = data.get('pin_type', '')
+        stellar_change_password(user_id, public_key, str(user_id), pin, pin_type)
+        await cmd_show_balance(user_id, state)
+        await state.update_data(pin2='', pin='')
+        await message.delete()
+    else:
+        await message.delete()
+        await state.set_state(PinState.ask_password_set)
+        await send_message(message, my_gettext(message, 'bad_passwords'),
+                           reply_markup=get_kb_return(message.from_user.id))
 
 # def resend():
 #     # elif answer == MyButtons.ReSend:

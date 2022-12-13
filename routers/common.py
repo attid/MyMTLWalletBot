@@ -2,7 +2,8 @@ from aiogram import Router, types
 from aiogram.filters import Command, Text
 from aiogram.fsm.context import FSMContext
 from routers.common_setting import cmd_language
-from utils.aiogram_utils import cmd_show_balance, send_message
+from routers.start_msg import cmd_show_balance
+from utils.aiogram_utils import send_message
 from utils.lang_utils import set_last_message_id, my_gettext
 
 router = Router()

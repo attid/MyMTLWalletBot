@@ -3,7 +3,8 @@ from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.fsm.context import FSMContext
 
-from utils.aiogram_utils import my_gettext, cmd_info_message
+from routers.start_msg import cmd_info_message
+from utils.aiogram_utils import my_gettext
 from utils.stellar_utils import stellar_get_user_account
 
 router = Router()

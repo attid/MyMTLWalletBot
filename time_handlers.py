@@ -1,7 +1,7 @@
 from aiogram import Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import fb
-from utils.aiogram_utils import cmd_info_message
+from routers.start_msg import cmd_info_message
 
 
 async def cmd_send_message_1m(dp: Dispatcher):
