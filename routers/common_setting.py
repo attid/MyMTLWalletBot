@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from keyboards.common_keyboards import get_return_button, get_kb_return
+from routers.start_msg import cmd_show_balance
 from utils.aiogram_utils import send_message, my_gettext, logger
 from utils.lang_utils import lang_dict, change_user_lang
 from utils.stellar_utils import stellar_get_wallets_list, stellar_delete_wallets, stellar_set_default_wallets, \
@@ -37,20 +38,26 @@ async def cmd_language(chat_id: int, state: FSMContext):
     await send_message(chat_id, 'Choose language', reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
+@router.callback_query(Text(text=["ChangeLang"]))
+async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext):
+    await cmd_language(callback.from_user.id, state)
+
+
 @router.callback_query(LangCallbackData.filter())
 async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallbackData, state: FSMContext):
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
     change_user_lang(callback.from_user.id, lang)
     await callback.answer(my_gettext(callback, 'was_set').format(lang))
+    await cmd_show_balance(callback.from_user.id, state)
 
 
-@router.callback_query(Text(text=["Setting"]))
+@router.callback_query(Text(text=["ChangeWallet"]))
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext):
-    await cmd_setting(callback.from_user.id, state)
+    await cmd_change_wallet(callback.from_user.id, state)
 
 
-async def cmd_setting(user_id: int, state: FSMContext):
+async def cmd_change_wallet(user_id: int, state: FSMContext):
     msg = my_gettext(user_id, 'setting_msg')
     buttons = []
     wallets = stellar_get_wallets_list(user_id)
@@ -84,13 +91,16 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     if idx < len(wallets):
         if answer == 'DELETE':
             stellar_delete_wallets(user_id, wallets[idx][0])
-            await cmd_setting(callback.message.chat.id, state)
+            await cmd_change_wallet(callback.message.chat.id, state)
         if answer == 'DEFAULT':
             stellar_set_default_wallets(user_id, wallets[idx][0])
-            await cmd_setting(callback.message.chat.id, state)
+            await cmd_change_wallet(callback.message.chat.id, state)
         if answer == 'NAME':
-            msg = f"{wallets[idx][0]}\n" + my_gettext(callback, 'your_balance') + stellar_get_balance_str(
-                user_id, wallets[idx][0])
+            try:
+                msg = f"{wallets[idx][0]}\n" + my_gettext(callback, 'your_balance') + stellar_get_balance_str(
+                    user_id, wallets[idx][0])
+            except:
+                msg = f'Error load. Please delete this'
             await callback.answer(msg[:200], show_alert=True)
     await callback.answer()
 

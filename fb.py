@@ -50,6 +50,3 @@ def manyinsert(sql, param):
 
 # if __name__ == "__main__":
 #    memo = 'test'
-#    print(execsql(f"insert into T_DIV_LIST (MEMO) values ('{memo}') returning ID")[0][0])
-# print(execsql("select first 100 * from cards")) card = '123' print(execsql(f"select count(1) from employee e where e.barcode = '{card}'")[0][0])
-# import app_logger logger = app_logger.get_logger("bod_exchange") logger.info(['eurmtl_sum',eurmtl_sum,'xlm_sum',xlm_sum])

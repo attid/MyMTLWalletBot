@@ -62,12 +62,13 @@ def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete: bool
         source_account = my_server.load_account(user_key)
         transaction = TransactionBuilder(source_account=source_account,
                                          network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+        transaction.set_timeout(60 * 60)
 
     if delete:
         transaction.append_change_trust_op(asset, limit='0', source=user_key)
     else:
         transaction.append_change_trust_op(asset, source=user_key)
-    transaction.set_timeout(60 * 60)
+
     transaction = transaction.build()
 
     xdr = transaction.to_xdr()
@@ -139,6 +140,22 @@ def stellar_save_new(user_id: int, user_name: str, secret_key: str, free_wallet:
     fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
                f"free_wallet) values (?,?,?,?,?,?)",
                (user_id, public_key, encrypt(new_account.secret, str(user_id)), 3, 1, i_free_wallet))
+    return public_key
+
+
+def stellar_save_ro(user_id: int, user_name: str, public_key: str):
+    if user_name:
+        user_name = user_name.lower()
+
+    new_account = Keypair.from_public_key(public_key)
+
+    i_free_wallet = 0
+    if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
+        fb.execsql(f"insert into mymtlwalletbot_users (user_id, user_name) values (?,?)", (user_id, user_name))
+
+    fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
+               f"free_wallet, use_pin) values (?,?,?,?,?,?,?)",
+               (user_id, public_key, public_key, 0, 1, i_free_wallet, 10))
     return public_key
 
 
@@ -276,10 +293,14 @@ def stellar_get_pin_type(user_id: int):
 
 
 def stellar_is_free_wallet(user_id: int):
-    user_account = stellar_get_user_account(user_id)
-    free_wallet = fb.execsql1(f"select m.free_wallet from mymtlwalletbot m where m.user_id = {user_id} "
-                              f"and m.public_key = '{user_account.account.account_id}'")
-    return free_wallet == 1
+    try:
+        user_account = stellar_get_user_account(user_id)
+        free_wallet = fb.execsql1(
+            f"select m.free_wallet from mymtlwalletbot m where m.user_id = ? and m.public_key = ?",
+            (user_id, user_account.account.account_id),1)
+        return free_wallet == 1
+    except:
+        return True
 
 
 def stellar_get_balances(user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:

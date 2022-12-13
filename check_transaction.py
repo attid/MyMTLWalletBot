@@ -26,6 +26,7 @@ def cmd_check_and_send():
                        'where user_transaction_id = ?',
                        (str(resp), transaction_id))
             cmd_add_message(user_id, my_gettext(user_id, "send_good"))
+            logger.info(['was send'])
 
         except Exception as ex:
             logger.info(['error', ex])

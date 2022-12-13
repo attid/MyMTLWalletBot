@@ -106,17 +106,18 @@
   "donate_show": "Now you donate for this address",
   "kb_add_donate": "Add donate",
   "donate_send": "Send address for add donation",
-  "donate_name": "Send name for add donation (please use latin words, for exsaple telegram username)",
+  "donate_name": "Send name for add donation (please use latin words, for example telegram username)",
   "donate_persent": "Send persent what you want to donate",
   "donate_end": "You will donate to {} persent {} address {}",
   "donate_delete": "Do you want delete donate from {} ?",
   "kb_add_bim": "Add new BIM",
-  "show_bim": "Here you can see who in your BIM. You can add new if you are guarden",
+  "show_bim": "Here you can see who in your BIM. You can add new if you are guardian",
   "send_bim_address": "Send address for add BIM",
-  "send_bim_name":  "Send name for add BIM (please use latin words, for exsaple telegram username)",
+  "send_bim_name":  "Send name for add BIM (please use latin words, for example telegram username)",
   "add_bim_end": "You will BIM to {} address {}",
   "delete_bim": "Do you want delete BIM from {} ?",
-  "": "",
+  "kb_read_only": "Add read only address",
+  "add_read_only": "Add read only address. For gen xdr only. Please note if you dont have private key and somebody send token to you. You will lost them. \n Please end your public address",
   "": ""
 
 }
