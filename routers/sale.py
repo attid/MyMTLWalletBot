@@ -1,5 +1,6 @@
 from typing import List
 
+import jsonpickle
 from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
@@ -69,7 +70,7 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext):
                                                   )])
     kb_tmp.append(get_return_button(callback))
     await send_message(callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
-    await state.update_data(assets=asset_list)
+    await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
 
 
@@ -77,7 +78,7 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext):
 async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: SaleAssetCallbackData, state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
     for asset in asset_list:
         if asset.asset_code == answer:
             if float(asset.balance) == 0.0:
@@ -103,7 +104,7 @@ async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: Sal
 async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: BuyAssetCallbackData, state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
     for asset in asset_list:
         if asset.asset_code == answer:
             msg = my_gettext(callback, 'send_sum_swap').format(data.get('send_asset_code'),
@@ -184,7 +185,7 @@ async def cmd_xdr_order(message, state: FSMContext):
 @router.callback_query(Text(text=["ShowOrders"]))
 async def cmd_show_orders(callback: types.CallbackQuery, state: FSMContext):
     offers = stellar_get_offers(callback.from_user.id)
-    await state.update_data(offers=offers)
+    await state.update_data(offers=jsonpickle.encode(offers))
 
     kb_tmp = []
     for offer in offers:
@@ -204,7 +205,7 @@ async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderC
     await state.update_data(edit_offer_id=answer)
 
     data = await state.get_data()
-    offers = data.get('offers')
+    offers = jsonpickle.decode(data['offers'])
     offer_id = int(answer)
 
     offer = list(filter(lambda x: x.id == offer_id, offers))
@@ -235,7 +236,7 @@ def get_kb_edir_order(user_id: int) -> types.InlineKeyboardMarkup:
 @router.callback_query(Text(text=["EditOrderAmount"]))
 async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    offers = data.get('offers')
+    offers = jsonpickle.decode(data['offers'])
     offer_id = int(data.get('edit_offer_id', 0))
 
     tmp = list(filter(lambda x: x.id == offer_id, offers))
@@ -287,7 +288,7 @@ async def cmd_edit_sale_sum(message: types.Message, state: FSMContext):
 @router.callback_query(Text(text=["EditOrderCost"]))
 async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    offers = data.get('offers')
+    offers = jsonpickle.decode(data['offers'])
     offer_id = int(data.get('edit_offer_id', 0))
 
     tmp = list(filter(lambda x: x.id == offer_id, offers))
@@ -337,7 +338,7 @@ async def cmd_edit_sale_cost(message: types.Message, state: FSMContext):
 @router.callback_query(Text(text=["DeleteOrder"]))
 async def cmd_delete_order(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    offers = data.get('offers')
+    offers = jsonpickle.decode(data['offers'])
     offer_id = int('edit_offer_id', 0)
 
     tmp = list(filter(lambda x: x.id == offer_id, offers))

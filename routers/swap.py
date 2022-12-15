@@ -1,5 +1,6 @@
 from typing import List
 
+import jsonpickle
 from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
@@ -42,7 +43,7 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext):
                                                   )])
     kb_tmp.append(get_return_button(callback))
     await send_message(callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
-    await state.update_data(assets=asset_list)
+    await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
 
 
@@ -51,7 +52,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                                     state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
 
     for asset in asset_list:
         if asset.asset_code == answer:
@@ -84,7 +85,7 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
                                    state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
 
     for asset in asset_list:
         if asset.asset_code == answer:

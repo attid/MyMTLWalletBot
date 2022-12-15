@@ -31,6 +31,7 @@ def get_kb_default(chat_id: int) -> types.InlineKeyboardMarkup:
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
+
 async def cmd_show_balance(chat_id: int, state: FSMContext, need_new_msg=None):
     try:
         data = await state.get_data()
@@ -66,14 +67,13 @@ async def cmd_info_message(user_id: Union[types.CallbackQuery, types.Message, in
 
     if send_file:
         photo = types.FSInputFile(send_file)
-        await bot.send_photo(user_id, photo=photo, caption=msg, parse_mode='MARKDOWN')
+        await bot.send_photo(user_id, photo=photo, caption=msg)
         try:
             await bot.delete_message(user_id, get_last_message_id(user_id))
         except:
             pass
         await cmd_show_balance(user_id, state, need_new_msg=True)
     elif resend_transaction:
-        await send_message(user_id, msg, reply_markup=get_kb_resend(user_id), parse_mode='MARKDOWN')
+        await send_message(user_id, msg, reply_markup=get_kb_resend(user_id))
     else:
-        await send_message(user_id, msg, reply_markup=get_kb_return(user_id), parse_mode='MARKDOWN')
-
+        await send_message(user_id, msg, reply_markup=get_kb_return(user_id))

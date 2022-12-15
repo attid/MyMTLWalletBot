@@ -1,5 +1,6 @@
 from typing import List
 
+import jsonpickle
 from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
@@ -9,16 +10,18 @@ from stellar_sdk import Asset
 
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from mytypes import Balance
+from routers.add_wallet import cmd_show_add_wallet_choose_pin
+from routers.sign import cmd_ask_pin, PinState
 from utils.aiogram_utils import send_message, my_gettext, logger
 from utils.stellar_utils import stellar_get_balances, stellar_add_trust, stellar_get_user_account, \
-    stellar_is_free_wallet, public_issuer, get_good_asset_list
+    stellar_is_free_wallet, public_issuer, get_good_asset_list, stellar_get_pin_type, stellar_pay, eurmtl_asset
 
 
 class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
     answer: str
 
 
-class AddAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
+class AddAssetCallbackData(CallbackData, prefix="AddAssetCallbackData"):
     answer: str
 
 
@@ -35,11 +38,12 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext):
     msg = my_gettext(callback, 'wallet_setting_msg')
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_asset'), callback_data="AddAssetMenu")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy'), callback_data="NotImplemented")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key'), callback_data="NotImplemented")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_password'), callback_data="NotImplemented")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_remove_password'), callback_data="NotImplemented")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy'), callback_data="BuyAddress")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key'), callback_data="GetPrivateKey")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_password'), callback_data="SetPassword")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_remove_password'), callback_data="RemovePassword")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'change_lang'), callback_data="ChangeLang")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
         get_return_button(callback)
     ]
 
@@ -78,7 +82,7 @@ async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext):
     kb_tmp.append(get_return_button(callback))
     msg = my_gettext(callback, 'delete_asset2')
     await send_message(callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
-    await state.update_data(assets=asset_list)
+    await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
 
 
@@ -87,7 +91,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                                     state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
 
     asset = list(filter(lambda x: x.asset_code == answer, asset_list))
     if asset:
@@ -140,7 +144,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext):
     await send_message(callback, my_gettext(user_id, 'open_asset'),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
 
-    await state.update_data(assets=good_asset)
+    await state.update_data(assets=jsonpickle.encode(good_asset))
 
 
 @router.callback_query(AddAssetCallbackData.filter())
@@ -148,7 +152,7 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
                        state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
 
     asset = list(filter(lambda x: x.asset_code == answer, asset_list))
     if asset:
@@ -213,3 +217,81 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext):
 
     await state.update_data(xdr=xdr)
     await send_message(chat_id, msg, reply_markup=get_kb_yesno_send_xdr(chat_id))
+
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+
+@router.callback_query(Text(text=["RemovePassword"]))
+async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext):
+    pin_type = stellar_get_pin_type(callback.from_user.id)
+    if pin_type in (1, 2):
+        await state.update_data(remove_password=True)
+        await state.set_state(PinState.sign)
+        await cmd_ask_pin(callback.from_user.id, state)
+        await callback.answer()
+    elif pin_type == 10:
+        await callback.answer('You have read only account', show_alert=True)
+    elif pin_type == 0:
+        await callback.answer('You dont have password or pin', show_alert=True)
+
+
+@router.callback_query(Text(text=["SetPassword"]))
+async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext):
+    pin_type = stellar_get_pin_type(callback.from_user.id)
+    if pin_type in (1, 2):
+        await callback.answer('You have password. Remove it first', show_alert=True)
+    elif pin_type == 10:
+        await callback.answer('You have read only account', show_alert=True)
+    elif pin_type == 0:
+        if stellar_is_free_wallet(callback.from_user.id):
+            await callback.answer('You have free account. Please buy it first.', show_alert=True)
+        else:
+            public_key = stellar_get_user_account(callback.from_user.id).account.account_id
+            await state.update_data(public_key=public_key)
+            await cmd_show_add_wallet_choose_pin(callback.from_user.id, state,
+                                                 my_gettext(callback, 'for_address').format(public_key))
+            await callback.answer()
+
+
+@router.callback_query(Text(text=["GetPrivateKey"]))
+async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext):
+    if stellar_is_free_wallet(callback.from_user.id):
+        await callback.answer('You have free account. Please buy it first.', show_alert=True)
+    else:
+        pin_type = stellar_get_pin_type(callback.from_user.id)
+
+        if pin_type == 10:
+            await callback.answer('You have read only account', show_alert=True)
+        else:
+            await state.update_data(send_private_key=True)
+            await state.set_state(PinState.sign)
+            await cmd_ask_pin(callback.from_user.id, state)
+            await callback.answer()
+
+
+@router.callback_query(Text(text=["BuyAddress"]))
+async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext):
+    if stellar_is_free_wallet(callback.from_user.id):
+        public_key = stellar_get_user_account(callback.from_user.id).account.account_id
+        father_key = stellar_get_user_account(0).account.account_id
+        await state.update_data(buy_address=public_key)
+        balances = stellar_get_balances(callback.from_user.id)
+        eurmtl_balance = 0
+        for balance in balances:
+            if balance.asset_code == 'EURMTL':
+                eurmtl_balance = balance.balance
+                break
+        if eurmtl_balance < 1:
+            await callback.answer("You don't have enough money. Need 1 EURMTL", show_alert=True)
+        else:
+            memo = f"{callback.from_user.id}*{public_key[len(public_key) - 4:]}"
+            xdr = stellar_pay(public_key, father_key, eurmtl_asset, 1, memo=memo)
+            await state.update_data(xdr=xdr)
+            msg = my_gettext(callback, 'confirm_send').format(1, eurmtl_asset.code, father_key, memo)
+            msg = f"For buy {public_key}\n{msg}"
+
+            await send_message(callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
+    else:
+        await callback.answer('You can`t buy. You have you oun account. But you can donate /donate', show_alert=True)

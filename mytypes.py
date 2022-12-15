@@ -10,7 +10,7 @@
 # and then, to convert JSON from a string, do
 #
 #     result = offer_from_dict(json.loads(json_string))
-
+import json
 from dataclasses import dataclass
 from typing import Optional, Any, List, TypeVar, Type, cast, Callable
 from datetime import datetime
@@ -519,11 +519,261 @@ class MyAccount:
         return result
 
 
-if __name__ == "__main__":
-    # print(json.dumps(o))
-    pass
+@dataclass
+class Account:
+    href: Optional[str] = None
 
-    #def offers_from_dict(s: Any) -> MyOffers:
-    #    return MyOffers.from_dict(s)
-    #def offers_to_dict(x: MyOffers) -> Any:
-    #    return to_class(MyOffers, x)
+    @staticmethod
+    def from_dict(obj: Any) -> 'Account':
+        assert isinstance(obj, dict)
+        href = from_union([from_str, from_none], obj.get("href"))
+        return Account(href)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["href"] = from_union([from_str, from_none], self.href)
+        return result
+
+
+@dataclass
+class Effects:
+    href: Optional[str] = None
+    templated: Optional[bool] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'Effects':
+        assert isinstance(obj, dict)
+        href = from_union([from_str, from_none], obj.get("href"))
+        templated = from_union([from_bool, from_none], obj.get("templated"))
+        return Effects(href, templated)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["href"] = from_union([from_str, from_none], self.href)
+        result["templated"] = from_union([from_bool, from_none], self.templated)
+        return result
+
+
+@dataclass
+class Links:
+    links_self: Optional[Account] = None
+    account: Optional[Account] = None
+    ledger: Optional[Account] = None
+    operations: Optional[Effects] = None
+    effects: Optional[Effects] = None
+    precedes: Optional[Account] = None
+    succeeds: Optional[Account] = None
+    transaction: Optional[Account] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'Links':
+        assert isinstance(obj, dict)
+        links_self = from_union([Account.from_dict, from_none], obj.get("self"))
+        account = from_union([Account.from_dict, from_none], obj.get("account"))
+        ledger = from_union([Account.from_dict, from_none], obj.get("ledger"))
+        operations = from_union([Effects.from_dict, from_none], obj.get("operations"))
+        effects = from_union([Effects.from_dict, from_none], obj.get("effects"))
+        precedes = from_union([Account.from_dict, from_none], obj.get("precedes"))
+        succeeds = from_union([Account.from_dict, from_none], obj.get("succeeds"))
+        transaction = from_union([Account.from_dict, from_none], obj.get("transaction"))
+        return Links(links_self, account, ledger, operations, effects, precedes, succeeds, transaction)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["self"] = from_union([lambda x: to_class(Account, x), from_none], self.links_self)
+        result["account"] = from_union([lambda x: to_class(Account, x), from_none], self.account)
+        result["ledger"] = from_union([lambda x: to_class(Account, x), from_none], self.ledger)
+        result["operations"] = from_union([lambda x: to_class(Effects, x), from_none], self.operations)
+        result["effects"] = from_union([lambda x: to_class(Effects, x), from_none], self.effects)
+        result["precedes"] = from_union([lambda x: to_class(Account, x), from_none], self.precedes)
+        result["succeeds"] = from_union([lambda x: to_class(Account, x), from_none], self.succeeds)
+        result["transaction"] = from_union([lambda x: to_class(Account, x), from_none], self.transaction)
+        return result
+
+
+@dataclass
+class Timebounds:
+    min_time: Optional[int] = None
+    max_time: Optional[int] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'Timebounds':
+        assert isinstance(obj, dict)
+        min_time = from_union([from_none, lambda x: int(from_str(x))], obj.get("min_time"))
+        max_time = from_union([from_none, lambda x: int(from_str(x))], obj.get("max_time"))
+        return Timebounds(min_time, max_time)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["min_time"] = from_union([lambda x: from_none((lambda x: is_type(type(None), x))(x)),
+                                         lambda x: from_str((lambda x: str((lambda x: is_type(int, x))(x)))(x))],
+                                        self.min_time)
+        result["max_time"] = from_union([lambda x: from_none((lambda x: is_type(type(None), x))(x)),
+                                         lambda x: from_str((lambda x: str((lambda x: is_type(int, x))(x)))(x))],
+                                        self.max_time)
+        return result
+
+
+@dataclass
+class Preconditions:
+    timebounds: Optional[Timebounds] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'Preconditions':
+        assert isinstance(obj, dict)
+        timebounds = from_union([Timebounds.from_dict, from_none], obj.get("timebounds"))
+        return Preconditions(timebounds)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["timebounds"] = from_union([lambda x: to_class(Timebounds, x), from_none], self.timebounds)
+        return result
+
+
+@dataclass
+class ResultCodes:
+    transaction: Optional[str] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'ResultCodes':
+        assert isinstance(obj, dict)
+        transaction = from_union([from_str, from_none], obj.get("transaction"))
+        return ResultCodes(transaction)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["transaction"] = from_union([from_str, from_none], self.transaction)
+        return result
+
+
+@dataclass
+class Extras:
+    envelope_xdr: Optional[str] = None
+    result_codes: Optional[ResultCodes] = None
+    result_xdr: Optional[str] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'Extras':
+        assert isinstance(obj, dict)
+        envelope_xdr = from_union([from_str, from_none], obj.get("envelope_xdr"))
+        result_codes = from_union([ResultCodes.from_dict, from_none], obj.get("result_codes"))
+        result_xdr = from_union([from_str, from_none], obj.get("result_xdr"))
+        return Extras(envelope_xdr, result_codes, result_xdr)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["envelope_xdr"] = from_union([from_str, from_none], self.envelope_xdr)
+        result["result_codes"] = from_union([lambda x: to_class(ResultCodes, x), from_none], self.result_codes)
+        result["result_xdr"] = from_union([from_str, from_none], self.result_xdr)
+        return result
+
+
+@dataclass
+class MyResponse:
+    fee_charged: Optional[int] = None
+    max_fee: Optional[int] = None
+    memo: Optional[str] = None
+    memo_bytes: Optional[str] = None
+    links: Optional[Links] = None
+    id: Optional[str] = None
+    paging_token: Optional[str] = None
+    successful: Optional[bool] = None
+    hash: Optional[str] = None
+    ledger: Optional[int] = None
+    created_at: Optional[datetime] = None
+    source_account: Optional[str] = None
+    source_account_sequence: Optional[str] = None
+    fee_account: Optional[str] = None
+    type: Optional[str] = None
+    title: Optional[str] = None
+    status: Optional[int] = None
+    detail: Optional[str] = None
+    extras: Optional[Extras] = None
+    operation_count: Optional[int] = None
+    envelope_xdr: Optional[str] = None
+    result_xdr: Optional[str] = None
+    result_meta_xdr: Optional[str] = None
+    fee_meta_xdr: Optional[str] = None
+    memo_type: Optional[str] = None
+    signatures: Optional[List[str]] = None
+    valid_after: Optional[datetime] = None
+    valid_before: Optional[datetime] = None
+    preconditions: Optional[Preconditions] = None
+
+    @staticmethod
+    def from_dict(obj: Any) -> 'MyResponse':
+        assert isinstance(obj, dict)
+        fee_charged = from_union([from_none, lambda x: int(from_str(x))], obj.get("fee_charged"))
+        max_fee = from_union([from_none, lambda x: int(from_str(x))], obj.get("max_fee"))
+        memo = from_union([from_str, from_none], obj.get("memo"))
+        memo_bytes = from_union([from_str, from_none], obj.get("memo_bytes"))
+        links = from_union([Links.from_dict, from_none], obj.get("_links"))
+        id = from_union([from_str, from_none], obj.get("id"))
+        paging_token = from_union([from_str, from_none], obj.get("paging_token"))
+        successful = from_union([from_bool, from_none], obj.get("successful"))
+        hash = from_union([from_str, from_none], obj.get("hash"))
+        ledger = from_union([from_int, from_none], obj.get("ledger"))
+        created_at = from_union([from_datetime, from_none], obj.get("created_at"))
+        source_account = from_union([from_str, from_none], obj.get("source_account"))
+        source_account_sequence = from_union([from_str, from_none], obj.get("source_account_sequence"))
+        fee_account = from_union([from_str, from_none], obj.get("fee_account"))
+        type = from_union([from_str, from_none], obj.get("type"))
+        title = from_union([from_str, from_none], obj.get("title"))
+        status = from_union([from_int, from_none], obj.get("status"))
+        detail = from_union([from_str, from_none], obj.get("detail"))
+        extras = from_union([Extras.from_dict, from_none], obj.get("extras"))
+        operation_count = from_union([from_int, from_none], obj.get("operation_count"))
+        envelope_xdr = from_union([from_str, from_none], obj.get("envelope_xdr"))
+        result_xdr = from_union([from_str, from_none], obj.get("result_xdr"))
+        result_meta_xdr = from_union([from_str, from_none], obj.get("result_meta_xdr"))
+        fee_meta_xdr = from_union([from_str, from_none], obj.get("fee_meta_xdr"))
+        memo_type = from_union([from_str, from_none], obj.get("memo_type"))
+        signatures = from_union([lambda x: from_list(from_str, x), from_none], obj.get("signatures"))
+        valid_after = from_union([from_datetime, from_none], obj.get("valid_after"))
+        valid_before = from_union([from_datetime, from_none], obj.get("valid_before"))
+        preconditions = from_union([Preconditions.from_dict, from_none], obj.get("preconditions"))
+        return MyResponse(fee_charged, max_fee, memo, memo_bytes, links, id, paging_token, successful, hash, ledger,
+                          created_at, source_account, source_account_sequence, fee_account, type, title, status, detail,
+                          extras, operation_count, envelope_xdr, result_xdr, result_meta_xdr, fee_meta_xdr, memo_type,
+                          signatures, valid_after, valid_before, preconditions)
+
+    def to_dict(self) -> dict:
+        result: dict = {}
+        result["fee_charged"] = from_union([lambda x: from_none((lambda x: is_type(type(None), x))(x)),
+                                            lambda x: from_str((lambda x: str((lambda x: is_type(int, x))(x)))(x))],
+                                           self.fee_charged)
+        result["max_fee"] = from_union([lambda x: from_none((lambda x: is_type(type(None), x))(x)),
+                                        lambda x: from_str((lambda x: str((lambda x: is_type(int, x))(x)))(x))],
+                                       self.max_fee)
+        result["memo"] = from_union([from_str, from_none], self.memo)
+        result["memo_bytes"] = from_union([from_str, from_none], self.memo_bytes)
+        result["_links"] = from_union([lambda x: to_class(Links, x), from_none], self.links)
+        result["id"] = from_union([from_str, from_none], self.id)
+        result["paging_token"] = from_union([from_str, from_none], self.paging_token)
+        result["successful"] = from_union([from_bool, from_none], self.successful)
+        result["hash"] = from_union([from_str, from_none], self.hash)
+        result["ledger"] = from_union([from_int, from_none], self.ledger)
+        result["created_at"] = from_union([lambda x: x.isoformat(), from_none], self.created_at)
+        result["source_account"] = from_union([from_str, from_none], self.source_account)
+        result["source_account_sequence"] = from_union([from_str, from_none], self.source_account_sequence)
+        result["fee_account"] = from_union([from_str, from_none], self.fee_account)
+        result["type"] = from_union([from_str, from_none], self.type)
+        result["title"] = from_union([from_str, from_none], self.title)
+        result["status"] = from_union([from_int, from_none], self.status)
+        result["detail"] = from_union([from_str, from_none], self.detail)
+        result["extras"] = from_union([lambda x: to_class(Extras, x), from_none], self.extras)
+        result["operation_count"] = from_union([from_int, from_none], self.operation_count)
+        result["envelope_xdr"] = from_union([from_str, from_none], self.envelope_xdr)
+        result["result_xdr"] = from_union([from_str, from_none], self.result_xdr)
+        result["result_meta_xdr"] = from_union([from_str, from_none], self.result_meta_xdr)
+        result["fee_meta_xdr"] = from_union([from_str, from_none], self.fee_meta_xdr)
+        result["memo_type"] = from_union([from_str, from_none], self.memo_type)
+        result["signatures"] = from_union([lambda x: from_list(from_str, x), from_none], self.signatures)
+        result["valid_after"] = from_union([lambda x: x.isoformat(), from_none], self.valid_after)
+        result["valid_before"] = from_union([lambda x: x.isoformat(), from_none], self.valid_before)
+        result["preconditions"] = from_union([lambda x: to_class(Preconditions, x), from_none], self.preconditions)
+        return result
+
+
+if __name__ == "__main__":
+    pass

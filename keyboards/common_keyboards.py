@@ -35,6 +35,19 @@ def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> ty
     return keyboard
 
 
+def get_kb_del_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
+    if isinstance(user_id, types.CallbackQuery):
+        user_id = user_id.from_user.id
+    elif isinstance(user_id, types.Message):
+        user_id = user_id.from_user.id
+    else:
+        user_id = user_id
+
+    buttons = [get_return_button(user_id,text='Delete and Return', callback='DeleteReturn')]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
+
 def get_kb_yesno_send_xdr(user_id: Union[types.CallbackQuery, types.Message, int],
                           add_button_memo: bool = False) -> types.InlineKeyboardMarkup:
     if isinstance(user_id, types.CallbackQuery):
@@ -72,11 +85,9 @@ def get_kb_send(user_id: int, with_tools: bool = False) -> types.InlineKeyboardM
     return keyboard
 
 
-def get_kb_resend(chat_id: int) -> types.InlineKeyboardMarkup:
-    kb_resend = types.InlineKeyboardMarkup()
-    # kb_resend.add(types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_resend'),
-    #                                         callback_data=cb_default.new(answer=MyButtons.ReSend.value)))
-    # kb_resend.add(
-    #    types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_back'),
-    #                               callback_data=cb_default.new(answer=MyButtons.Return.value)))
-    return kb_resend
+def get_kb_resend(user_id: int) -> types.InlineKeyboardMarkup:
+    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_resend'), callback_data="ReSend")],
+               get_return_button(user_id)]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
