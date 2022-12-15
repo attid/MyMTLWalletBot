@@ -22,7 +22,6 @@ async def main():
     dp.include_router(veche.router) # first
     dp.include_router(add_wallet.router)
     dp.include_router(admin.router)
-    dp.include_router(common.router)
     dp.include_router(common_setting.router)
     dp.include_router(mtltools.router)
     dp.include_router(receive.router)
@@ -31,6 +30,9 @@ async def main():
     dp.include_router(sign.router)
     dp.include_router(swap.router)
     dp.include_router(wallet_setting.router)
+
+    # always the last
+    dp.include_router(common.router)
 
     if 'test' in sys.argv:
         pass

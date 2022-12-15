@@ -7,8 +7,8 @@ from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import send_message, my_gettext, logger
-from utils.stellar_utils import stellar_can_new, stellar_create_new, save_xdr_to_send, stellar_save_new, \
-    stellar_get_balances, stellar_save_ro
+from utils.stellar_utils import stellar_can_new, stellar_create_new, stellar_save_new, \
+    stellar_get_balances, stellar_save_ro, async_stellar_send
 
 
 class StateAddWallet(StatesGroup):
@@ -67,7 +67,9 @@ async def cq_add(callback: types.CallbackQuery, state: FSMContext):
     if stellar_can_new(callback.from_user.id):
         xdr = stellar_create_new(callback.from_user.id, callback.from_user.username)
         await cmd_info_message(callback.message.chat.id, my_gettext(callback, "try_send"), state)
-        save_xdr_to_send(callback.from_user.id, xdr)
+        #save_xdr_to_send(callback.from_user.id, xdr)
+        await async_stellar_send(xdr)
+        await cmd_info_message(callback, my_gettext(callback, 'send_good'), state)
         await callback.answer()
     else:
         await callback.answer(my_gettext(callback.message.chat.id, "max_wallets"), show_alert=True)

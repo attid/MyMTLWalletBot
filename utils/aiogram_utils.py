@@ -4,6 +4,9 @@ from typing import Union
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
+from redis.asyncio.client import Redis
+
 from app_logger import logger
 from aiogram import Bot, Dispatcher
 from config_reader import config
@@ -12,11 +15,12 @@ from keyboards.common_keyboards import get_kb_return, get_kb_send
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from utils.lang_utils import get_last_message_id, set_last_message_id, my_gettext
+from utils.stellar_utils import stellar_get_balances
 
 if 'test' in sys.argv:
     bot = Bot(token=config.test_bot_token.get_secret_value(), parse_mode='HTML')
-    # storage = RedisStorage2('localhost', 6379, db=5, pool_size=10, prefix='my_fsm_key')
-    storage = MemoryStorage()
+    # storage = MemoryStorage()
+    storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
     dp = Dispatcher(storage=storage)
     print('start test')
     logging.basicConfig(
@@ -25,19 +29,20 @@ if 'test' in sys.argv:
     )
 else:
     bot = Bot(token=config.bot_token.get_secret_value(), parse_mode='HTML')
-    # storage = RedisStorage2('localhost', 6379, db=5, pool_size=10, prefix='my_fsm_key')
-    storage = MemoryStorage()
+    #storage = MemoryStorage()
+    storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
     dp = Dispatcher(storage=storage)
 
 scheduler = AsyncIOScheduler()
 
+admin_id = 84131737
 
 class StateSign(StatesGroup):
     sending_xdr = State()
 
 
 async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], msg: str, reply_markup=None,
-                       need_new_msg=None, parse_mode=None):
+                       need_new_msg=None, parse_mode='HTML'):
     if isinstance(user_id, types.CallbackQuery):
         user_id = user_id.from_user.id
     elif isinstance(user_id, types.Message):

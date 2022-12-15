@@ -2,7 +2,6 @@ from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance

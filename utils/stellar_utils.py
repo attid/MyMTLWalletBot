@@ -1,28 +1,20 @@
+import base64
+import fb
+import requests
 from typing import List, Optional
+from cryptocode import encrypt, decrypt
 from stellar_sdk import Network, Server, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.federation import resolve_stellar_address
-from cryptocode import encrypt, decrypt
-
+from app_logger import logger
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
-import fb
-import base64
-import requests
+from stellar_sdk import AiohttpClient, ServerAsync
 
-from utils.aiogram_utils import logger
-
-base_fee = 100
+base_fee = 10101
 
 # https://stellar-sdk.readthedocs.io/en/latest/
 
 public_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
-# public_fond = "GDX23CPGMQ4LN55VGEDVFZPAJMAUEHSHAMJ2GMCU2ZSHN5QF4TMZYPIS"
-# public_pawnshop = "GDASYWP6F44TVNJKZKQ2UEVZOKTENCJFTWVMP6UC7JBZGY4ZNB6YAVD4"
-# public_distributor = "GB7NLVMVC6NWTIFK7ULLEQDF5CBCI2TDCO3OZWWSFXQCT7OPU3P4EOSR"
-
-# public_bod_eur = "GDEK5KGFA3WCG3F2MLSXFGLR4T4M6W6BMGWY6FBDSDQM6HXFMRSTEWBW"
-# public_bod = "GARUNHJH3U5LCO573JSZU4IOBEVQL6OJAAPISN4JKBG2IYUGLLVPX5OH"
-# public_div = "GDNHQWZRZDZZBARNOH6VFFXMN6LBUNZTZHOKBUT7GREOWBTZI4FGS7IQ"
 
 xlm_asset = Asset("XLM")
 mtl_asset = Asset("MTL", public_issuer)
@@ -117,10 +109,19 @@ def stellar_user_sign_message(msg: str, user_id: int, user_password: str) -> str
     return base64.b64encode(user_key_pair.sign(msg.encode())).decode()
 
 
-def stellar_send(xdr: str):
+def stellar_send_old(xdr: str):
     transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     transaction_resp = my_server.submit_transaction(transaction)
     return transaction_resp
+
+
+async def async_stellar_send(xdr: str):
+    async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+    ) as server:
+        transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        transaction_resp = await server.submit_transaction(transaction)
+        return transaction_resp
 
 
 def stellar_save_new(user_id: int, user_name: str, secret_key: str, free_wallet: bool, address: str = None):
@@ -253,7 +254,7 @@ def stellar_can_new(user_id: int):
         return True
 
 
-def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
+async def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
     logger.info(['delete_account', delete_account.public_key])
     source_account = my_server.load_account(master_account)
     transaction = TransactionBuilder(source_account=source_account,
@@ -273,7 +274,7 @@ def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
     transaction.set_timeout(60 * 60)
     full_transaction = transaction.build()
     xdr = full_transaction.to_xdr()
-    stellar_send(stellar_sign(stellar_sign(xdr, master_account.secret), delete_account.secret))
+    await async_stellar_send(stellar_sign(stellar_sign(xdr, master_account.secret), delete_account.secret))
 
 
 def stellar_get_balance_str(user_id: int, public_key=None) -> str:
@@ -297,10 +298,28 @@ def stellar_is_free_wallet(user_id: int):
         user_account = stellar_get_user_account(user_id)
         free_wallet = fb.execsql1(
             f"select m.free_wallet from mymtlwalletbot m where m.user_id = ? and m.public_key = ?",
-            (user_id, user_account.account.account_id),1)
+            (user_id, user_account.account.account_id), 1)
         return free_wallet == 1
     except:
         return True
+
+
+def stellar_unfree_wallet(user_id: int):
+    try:
+        user_account = stellar_get_user_account(user_id)
+        fb.execsql(f"update mymtlwalletbot set free_wallet = ? where user_id = ? and m.public_key = ?",
+                   (0, user_id, user_account.account.account_id))
+    except:
+        return
+
+
+def stellar_add_donate(user_id: int, donate_sum: float):
+    try:
+        user_account = stellar_get_user_account(user_id)
+        fb.execsql(f"update mymtlwalletbot_users set donate_sum = donate_sum + ? where user_id = ?",
+                   (donate_sum, user_id))
+    except:
+        return
 
 
 def stellar_get_balances(user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:
@@ -486,5 +505,5 @@ def cmd_gen_data_xdr(from_account: str, name: str, value):
 
 
 if __name__ == "__main__":
-    print(stellar_get_data(84131737))
+    # print(stellar_get_data(84131737))
     pass

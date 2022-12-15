@@ -6,12 +6,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 
+from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import my_gettext, send_message, logger, set_last_message_id, cmd_show_sign, \
-    StateSign
-from keyboards.common_keyboards import get_kb_return, get_return_button
+    StateSign, bot, admin_id
+from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_del_return
 from utils.stellar_utils import stellar_get_pin_type, stellar_change_password, stellar_user_sign_message, \
-    stellar_user_sign, save_xdr_to_send, stellar_send, stellar_check_xdr
+    stellar_user_sign, stellar_check_xdr, async_stellar_send, stellar_get_user_account, \
+    stellar_get_user_keypair, stellar_unfree_wallet, stellar_add_donate
 
 
 class PinState(StatesGroup):
@@ -142,6 +144,10 @@ async def sign_xdr(state, user_id):
     xdr = data.get('xdr')
     message = data.get('message')
     link = data.get('link')
+    remove_password = data.get('remove_password')
+    send_private_key = data.get('send_private_key')
+    buy_address = data.get('buy_address')
+    donate = data.get('donate')
     try:
         if user_id > 0:
             if message and link:
@@ -153,6 +159,18 @@ async def sign_xdr(state, user_id):
                                        my_gettext(user_id, 'veche_go').format(link), state)
                 set_last_message_id(user_id, 0)
                 await state.set_state(None)
+            elif remove_password:
+                user_account = stellar_get_user_account(user_id)
+                stellar_change_password(user_id, user_account.account.account_id, pin, str(user_id), 0)
+                await state.set_state(None)
+                await cmd_info_message(user_id,
+                                       'Password was unset',
+                                       state)
+            elif send_private_key:
+                keypair = stellar_get_user_keypair(user_id, pin)
+                await state.set_state(None)
+                await send_message(user_id, f'Your private key is <code>{keypair.secret}</code>',
+                                   reply_markup=get_kb_del_return(user_id))
             else:
                 xdr = stellar_user_sign(xdr, user_id, str(pin))
                 await state.set_state(None)
@@ -161,7 +179,24 @@ async def sign_xdr(state, user_id):
                     await cmd_info_message(user_id,
                                            my_gettext(user_id, "try_send"),
                                            state)
-                    save_xdr_to_send(user_id, xdr)
+                    #save_xdr_to_send(user_id, xdr)
+                    resp = await async_stellar_send(xdr)
+                    resp = MyResponse.from_dict(resp)
+                    link_msg = ''
+                    if resp.paging_token:
+                        link_msg = f'\n(<a href="https://stellar.expert/explorer/public/tx/{resp.paging_token}">expert link</a>)'
+
+                    await cmd_info_message(user_id,
+                                           my_gettext(user_id, "send_good") + link_msg,
+                                           state)
+                    if buy_address:
+                        await send_message(user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True)
+                        stellar_unfree_wallet(user_id)
+
+                    if donate:
+                        await send_message(user_id=admin_id, msg=f'{user_id} donate {donate}', need_new_msg=True)
+                        stellar_add_donate(user_id, donate)
+
                 if current_state == PinState.sign:
                     await cmd_show_sign(user_id, state,
                                         my_gettext(user_id, "your_xdr").format(xdr),
@@ -171,12 +206,12 @@ async def sign_xdr(state, user_id):
         msg = f"{ex.title}, error {ex.status}, {ex.extras.get('result_codes', 'no extras')}"
         logger.info(['BadRequestError', msg, current_state])
         await cmd_info_message(user_id,
-                               f"{my_gettext(user_id, 'send_error')}\n{msg}", state)
+                               f"{my_gettext(user_id, 'send_error')}\n{msg}", state, resend_transaction=True)
     except BaseHorizonError as ex:
         msg = f"{ex.title}, error {ex.status}, {ex.extras.get('result_codes', 'no extras')}"
         logger.info(['BaseHorizonError', msg, current_state])
         await cmd_info_message(user_id,
-                               f"{my_gettext(user_id, 'send_error')}\n{msg}", state)
+                               f"{my_gettext(user_id, 'send_error')}\n{msg}", state, resend_transaction=True)
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(user_id, my_gettext(user_id, "bad_password"), state)
@@ -241,9 +276,9 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
             await cmd_info_message(callback,
                                    my_gettext(callback, "try_send"),
                                    state)
-            save_xdr_to_send(callback.from_user.id, xdr)
-            # stellar_send(xdr)
-            # await cmd_info_message(callback, my_gettext(callback, 'send_good'), state)
+            # save_xdr_to_send(callback.from_user.id, xdr)
+            await async_stellar_send(xdr)
+            await cmd_info_message(callback, my_gettext(callback, 'send_good'), state)
     except BaseHorizonError as ex:
         logger.info(['send BaseHorizonError', ex])
         msg = f"{ex.title}, error {ex.status}"
@@ -291,26 +326,23 @@ async def cmd_password_set2(message: types.Message, state: FSMContext):
         await send_message(message, my_gettext(message, 'bad_passwords'),
                            reply_markup=get_kb_return(message.from_user.id))
 
-# def resend():
-#     # elif answer == MyButtons.ReSend:
-#         data = await state.get_data()
-#             xdr = data.get(xdr)
-#         try:
-#             await cmd_info_message(user_id, my_gettext(user_id, "resend"), state)
-#             stellar_send(xdr)
-#             await cmd_info_message(user_id,
-#                                    my_gettext(user_id, "send_good"), state)
-#         except BaseHorizonError as ex:
-#             logger.info(['ReSend BaseHorizonError', ex])
-#             msg = f"{ex.title}, error {ex.status}"
-#             await cmd_info_message(user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}",
-#                                    state,
-#                                    resend_transaction=True)
-#         except Exception as ex:
-#             logger.info(['ReSend unknown error', ex])
-#             msg = 'unknown error'
-#             data = await state.get_data()
-#                 data[xdr] = xdr
-#             await cmd_info_message(user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}",
-#                                    state,
-#                                    resend_transaction=True)
+
+@router.callback_query(Text(text=["ReSend"]))
+async def cmd_resend(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    xdr = data.get('xdr')
+    user_id = callback.from_user.id
+    try:
+        await cmd_info_message(user_id, my_gettext(user_id, "resend"), state)
+        await async_stellar_send(xdr)
+        await cmd_info_message(user_id, my_gettext(user_id, "send_good"), state)
+    except BaseHorizonError as ex:
+        logger.info(['ReSend BaseHorizonError', ex])
+        msg = f"{ex.title}, error {ex.status}"
+        await cmd_info_message(user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}", state, resend_transaction=True)
+    except Exception as ex:
+        logger.info(['ReSend unknown error', ex])
+        msg = 'unknown error'
+        data = await state.get_data()
+        data[xdr] = xdr
+        await cmd_info_message(user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}", state, resend_transaction=True)

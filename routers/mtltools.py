@@ -24,12 +24,12 @@ class SendAssetCallbackData(CallbackData, prefix="sale"):
 
 class DonateCallbackData(CallbackData, prefix="DonateCallbackData"):
     action: str
-    idx: int
+    idx: str
 
 
 class BIMCallbackData(CallbackData, prefix="BIMCallbackData"):
     action: str
-    idx: int
+    idx: str
 
 
 router = Router()
@@ -119,6 +119,7 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext):
     else:
         msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'delegate_send_address')
         await send_message(message, msg)
+        await message.delete()
 
 
 ########################################################################################################################
@@ -132,7 +133,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
     idx = 0
     for name in data:
         if str(name).startswith("mtl_donate"):
-            donates[idx] = [name, name[11:str(name).find('=')], name[str(name).find('=') + 1], data[name]]
+            donates[f'idx{idx}'] = [name, name[11:str(name).find('=')], name[str(name).find('=') + 1], data[name]]
             idx += 1
 
     buttons = []
@@ -154,7 +155,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
                                            )
             ]
         )
-    buttons.append([types.InlineKeyboardButton(text=my_gettext(callback, 'donate_show'),
+    buttons.append([types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_donate'),
                                                callback_data='AddDonate'
                                                )])
     buttons.append(get_return_button(callback))
@@ -181,9 +182,11 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
         await send_message(message, my_gettext(message, 'donate_name'),
                            reply_markup=get_kb_return(message))
         await state.set_state(StateTools.donate_name)
+        await message.delete()
     else:
         msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'donate_send')
         await send_message(message, msg)
+        await message.delete()
 
 
 @router.message(StateTools.donate_name)
@@ -195,9 +198,11 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
         await send_message(message, my_gettext(message, 'donate_persent'),
                            reply_markup=get_kb_return(message))
         await state.set_state(StateTools.donate_persent)
+        await message.delete()
     else:
         msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'donate_send')
         await send_message(message, msg)
+        await message.delete()
 
 
 @router.message(StateTools.donate_persent)
@@ -210,20 +215,22 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
         await state.update_data(xdr=xdr)
         await send_message(message, my_gettext(message, 'donate_end').format(data['name'], persent, data['address']),
                            reply_markup=get_kb_yesno_send_xdr(message))
+        await message.delete()
     else:
         msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'donate_send')
         await send_message(message, msg)
+        await message.delete()
 
 
 @router.callback_query(DonateCallbackData.filter())
 async def cq_setting(callback: types.CallbackQuery, callback_data: DonateCallbackData,
                      state: FSMContext):
     answer = callback_data.action
-    idx = int(callback_data.idx)
+    idx = callback_data.idx
     user_id = callback.from_user.id
     data = await state.get_data()
     donates = data['donates']
-    if idx < len(donates):
+    if idx in donates:
         if answer == 'Show':
             msg = f"name = {donates[idx][1]} \n persent = {donates[idx][2]}\n address = {donates[idx][3]}"
             await callback.answer(msg[:200], show_alert=True)
@@ -247,7 +254,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
     idx = 0
     for name in data:
         if str(name).startswith("bod_"):
-            bod_dict[idx] = [name, name[4:], data[name]]
+            bod_dict[f'idx{idx}'] = [name, name[4:], data[name]]
             idx += 1
 
     buttons = []
@@ -292,9 +299,11 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
         await send_message(message, my_gettext(message, 'send_bim_name'),
                            reply_markup=get_kb_return(message))
         await state.set_state(StateTools.bim_name)
+        await message.delete()
     else:
         msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_bim_address')
         await send_message(message, msg)
+        await message.delete()
 
 
 @router.message(StateTools.bim_name)
@@ -307,20 +316,22 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
         await state.update_data(xdr=xdr)
         await send_message(message, my_gettext(message, 'add_bim_end').format(name, data['address']),
                            reply_markup=get_kb_yesno_send_xdr(message))
+        await message.delete()
     else:
         msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_bim_name')
         await send_message(message, msg)
+        await message.delete()
 
 
 @router.callback_query(BIMCallbackData.filter())
 async def cq_setting(callback: types.CallbackQuery, callback_data: BIMCallbackData,
                      state: FSMContext):
     answer = callback_data.action
-    idx = int(callback_data.idx)
+    idx = callback_data.idx
     user_id = callback.from_user.id
     data = await state.get_data()
     donates = data['donates']
-    if idx < len(donates):
+    if idx in donates:
         if answer == 'Show':
             msg = f"name = {donates[idx][1]} \n address = {donates[idx][2]}"
             await callback.answer(msg[:200], show_alert=True)

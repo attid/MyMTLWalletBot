@@ -1,3 +1,5 @@
+import os
+
 from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -27,16 +29,22 @@ async def cmd_exit(message: types.Message, state: FSMContext):
             await message.reply(":'[")
 
 
+async def cmd_send_file(message: types.Message, filename):
+    if os.path.isfile(filename):
+        await bot.send_document(message.chat.id, types.FSInputFile(filename))
+
+
 @router.message(Command(commands=["log"]))
 async def cmd_log(message: types.Message):
     if message.from_user.username == "itolstov":
-        await bot.send_document(message.chat.id, types.FSInputFile('MyMTLWallet_bot.log'))
+        await cmd_send_file(message, 'MyMTLWallet_bot.log')
+        await cmd_send_file(message, 'MyMTLWalletBot_check_transaction.log')
 
 
 @router.message(Command(commands=["err"]))
 async def cmd_log(message: types.Message):
     if message.from_user.username == "itolstov":
-        await bot.send_document(message.chat.id, types.FSInputFile('MyMTLWallet_bot.err'))
+        await cmd_send_file(message, 'MyMTLWallet_bot.err')
 
 
 @router.message(Command(commands=["update"]))

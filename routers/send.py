@@ -1,5 +1,7 @@
+import json
 from typing import List
 
+import jsonpickle
 from aiogram import Router, types, F
 from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
@@ -91,14 +93,14 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext):
                                                           )])
     kb_tmp.append(get_return_button(message))
     await send_message(message, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp), need_new_msg=True)
-    await state.update_data(assets=asset_list)
+    await state.update_data(assets=jsonpickle.encode(asset_list))
 
 
 @router.callback_query(SendAssetCallbackData.filter())
 async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: SendAssetCallbackData, state: FSMContext):
     answer = callback_data.answer
     data = await state.get_data()
-    asset_list: List[Balance] = data['assets']
+    asset_list: List[Balance] = jsonpickle.decode(data['assets'])
 
     for asset in asset_list:
         if asset.asset_code == answer:
