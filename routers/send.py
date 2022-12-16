@@ -80,7 +80,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext):
     data = await state.get_data()
     address = data.get('send_address')
 
-    msg = my_gettext(message, 'choose_token').format(address)
+    msg = my_gettext(message, 'choose_token',(address,))
     asset_list = stellar_get_balances(message.from_user.id)
     sender_asset_list = stellar_get_balances(message.from_user.id, address)
     kb_tmp = []
@@ -107,8 +107,8 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
             if float(asset.balance) == 0.0:
                 await callback.answer(my_gettext(callback, "zero_sum"), show_alert=True)
             else:
-                msg = my_gettext(callback, 'send_sum').format(asset.asset_code,
-                                                              asset.balance)
+                msg = my_gettext(callback, 'send_sum',(asset.asset_code,
+                                                              asset.balance))
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
                                         send_asset_max_sum=asset.balance, msg=msg)
                 await state.set_state(StateSendToken.sending_sum)
@@ -144,7 +144,7 @@ async def cmd_send_04(message: types.Message, state: FSMContext):
     send_memo = data.get("memo")
     federal_memo = data.get("federal_memo")
 
-    msg = my_gettext(message, 'confirm_send').format(send_sum, send_asset, send_address, send_memo)
+    msg = my_gettext(message, 'confirm_send',(send_sum, send_asset, send_address, send_memo))
 
     send_asset_name = data["send_asset_code"]
     send_asset_code = data["send_asset_issuer"]
@@ -183,7 +183,7 @@ async def cmd_create_account(message: types.Message, state: FSMContext):
     send_asset_code = asset_list[0].asset_code
     send_asset_issuer = asset_list[0].asset_issuer
     send_address = data.get('send_address', 'None 0_0')
-    msg = my_gettext(message, 'confirm_activate').format(send_address, send_sum)
+    msg = my_gettext(message, 'confirm_activate',(send_address, send_sum))
 
     xdr = stellar_pay(stellar_get_user_account(message.from_user.id).account.account_id,
                       send_address,

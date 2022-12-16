@@ -102,7 +102,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                                 Asset(asset[0].asset_code, asset[0].asset_issuer),
                                 delete=True)
 
-        msg = my_gettext(callback, 'confirm_close_asset').format(asset[0].asset_code, asset[0].asset_issuer)
+        msg = my_gettext(callback, 'confirm_close_asset',(asset[0].asset_code, asset[0].asset_issuer))
         await state.update_data(xdr=xdr)
 
         await send_message(callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
@@ -191,7 +191,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext):
 
     await state.set_state(StateAddAsset.sending_issuer)
 
-    msg = my_gettext(user_id, 'send_issuer').format(public_issuer)
+    msg = my_gettext(user_id, 'send_issuer',(public_issuer,))
     await send_message(user_id, msg, reply_markup=get_kb_return(user_id))
 
 
@@ -213,7 +213,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext):
 
     xdr = stellar_add_trust(stellar_get_user_account(chat_id).account.account_id, Asset(asset_code, asset_issuer))
 
-    msg = my_gettext(chat_id, 'confirm_asset').format(asset_code, asset_issuer)
+    msg = my_gettext(chat_id, 'confirm_asset',(asset_code, asset_issuer))
 
     await state.update_data(xdr=xdr)
     await send_message(chat_id, msg, reply_markup=get_kb_yesno_send_xdr(chat_id))
@@ -251,7 +251,7 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext):
             public_key = stellar_get_user_account(callback.from_user.id).account.account_id
             await state.update_data(public_key=public_key)
             await cmd_show_add_wallet_choose_pin(callback.from_user.id, state,
-                                                 my_gettext(callback, 'for_address').format(public_key))
+                                                 my_gettext(callback, 'for_address',(public_key,)))
             await callback.answer()
 
 
@@ -289,7 +289,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext):
             memo = f"{callback.from_user.id}*{public_key[len(public_key) - 4:]}"
             xdr = stellar_pay(public_key, father_key, eurmtl_asset, 1, memo=memo)
             await state.update_data(xdr=xdr)
-            msg = my_gettext(callback, 'confirm_send').format(1, eurmtl_asset.code, father_key, memo)
+            msg = my_gettext(callback, 'confirm_send',(1, eurmtl_asset.code, father_key, memo))
             msg = f"For buy {public_key}\n{msg}"
 
             await send_message(callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))

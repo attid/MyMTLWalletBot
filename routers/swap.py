@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from stellar_sdk import Asset
 
-from utils.aiogram_utils import my_gettext, send_message, logger
+from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
@@ -62,7 +62,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
                                         send_asset_max_sum=asset.balance)
 
-                msg = my_gettext(callback, 'choose_token_swap2').format(asset.asset_code)
+                msg = my_gettext(callback, 'choose_token_swap2',(asset.asset_code,))
 
                 kb_tmp = []
                 asset_list2 = []
@@ -93,9 +93,9 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
                                     receive_asset_issuer=asset.asset_issuer,
                                     receive_asset_min_sum=asset.balance)
             data = await state.get_data()
-            msg = my_gettext(callback, 'send_sum_swap').format(data.get('send_asset_code'),
+            msg = my_gettext(callback, 'send_sum_swap',(data.get('send_asset_code'),
                                                                data.get('send_asset_max_sum', 0.0),
-                                                               data.get('receive_asset_code'))
+                                                               data.get('receive_asset_code')))
             await state.set_state(StateSwapToken.swap_sum)
             await state.update_data(msg=msg)
             await send_message(callback, msg, reply_markup=get_kb_return(callback))
@@ -123,7 +123,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext):
                            Asset(send_asset, send_asset_code),
                            str(send_sum), Asset(receive_asset, receive_asset_code), str(receive_sum))
 
-        msg = my_gettext(message, 'confirm_swap').format(send_sum, send_asset, receive_sum, receive_asset)
+        msg = my_gettext(message, 'confirm_swap',(send_sum, send_asset, receive_sum, receive_asset))
 
         await state.update_data(xdr=xdr)
         await send_message(message, msg, reply_markup=get_kb_yesno_send_xdr(message))

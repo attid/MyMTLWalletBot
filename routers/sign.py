@@ -67,7 +67,7 @@ async def cmd_ask_pin(chat_id: int, state: FSMContext, msg='Введите па�
     if pin_type == 10:  # ro
         await state.update_data(pin='ro')
         await cmd_show_sign(chat_id, state,
-                            my_gettext(chat_id, "your_xdr").format(data['xdr']),
+                            my_gettext(chat_id, "your_xdr",(data['xdr'],)),
                             use_send=False)
 
 
@@ -156,7 +156,7 @@ async def sign_xdr(state, user_id):
                 link = link.replace('$$SIGN$$', urllib.parse.quote(msg))
                 await state.update_data(link=link)
                 await cmd_info_message(user_id,
-                                       my_gettext(user_id, 'veche_go').format(link), state)
+                                       my_gettext(user_id, 'veche_go',(link,)), state)
                 set_last_message_id(user_id, 0)
                 await state.set_state(None)
             elif remove_password:
@@ -199,7 +199,7 @@ async def sign_xdr(state, user_id):
 
                 if current_state == PinState.sign:
                     await cmd_show_sign(user_id, state,
-                                        my_gettext(user_id, "your_xdr").format(xdr),
+                                        my_gettext(user_id, "your_xdr",(xdr,)),
                                         use_send=True)
     except BadRequestError as ex:
         # print(ex.extras.get("result_codes", '=( eror not found'))
@@ -247,7 +247,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext):
             raise Exception('Bad xdr')
     except Exception as ex:
         logger.info(['my_state == MyState.StateSign', ex])
-        await cmd_show_sign(message.chat.id, state, my_gettext(message, 'bad_xdr').format(message.text))
+        await cmd_show_sign(message.chat.id, state, my_gettext(message, 'bad_xdr',(message.text,)))
     await message.delete()
 
 
@@ -264,7 +264,7 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
                 rq = requests.post("https://mtl.ergvein.net/update", data={"tx_body": xdr})
                 parse_text = rq.text
                 if parse_text.find('Transaction history') > 0:
-                    await cmd_info_message(callback, my_gettext(callback, 'check_here').format(tools), state)
+                    await cmd_info_message(callback, my_gettext(callback, 'check_here',(tools,)), state)
                 else:
                     parse_text = parse_text[parse_text.find('<section id="main">'):parse_text.find("</section>")]
                     await cmd_info_message(callback, parse_text[:4000], state)

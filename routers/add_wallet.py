@@ -53,7 +53,7 @@ async def cmd_sending_private(message: types.Message, state: FSMContext):
         await state.update_data(public_key=public_key)
         await state.set_state(None)
         await cmd_show_add_wallet_choose_pin(message.chat.id, state,
-                                             my_gettext(message, 'for_address').format(public_key))
+                                             my_gettext(message, 'for_address', (public_key,)))
         await message.delete()
     except Exception as ex:
         logger.info(ex)
