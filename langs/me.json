@@ -45,7 +45,7 @@
   "kb_send": "Pošaljite ",
   "kb_send_tools": "Pošaljite na NC tools",
   "kb_set_password": "postavite lozinku",
-  "Kb_setting": "Postavke",
+  "kb_setting": "Postavke",
   "kb_sign": "Potpisati",
   "kb_support": "podrška",
   "kb_swap": "razmjena žetona",
@@ -118,6 +118,6 @@
   "delete_bim": "Želite li da uklonite {} iz OPM-a?",
   "kb_read_only": "Dodati adresu samo za čitanje",
   "add_read_only": "Dodati adresu samo za čitanje.  Samo za xdr generaciju.  Obratite pažnju: ako nemate privatni ključ i ako vam neko pošalje token, ćete ga izgubiti.  \n Molimo, pošaljite svoju javnu adresu u stelar",
-  "kb_donate": "Donirati $ programerima"
+  "kb_donate": "Donirati programerima"
 
 }
