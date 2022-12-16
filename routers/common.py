@@ -112,7 +112,7 @@ async def get_donate_sum(user_id, donate_sum, state: FSMContext):
             memo = "donate"
             xdr = stellar_pay(public_key, father_key, eurmtl_asset, donate_sum, memo=memo)
             await state.update_data(xdr=xdr,donate=donate_sum)
-            msg = my_gettext(user_id, 'confirm_send').format(donate_sum, eurmtl_asset.code, father_key, memo)
+            msg = my_gettext(user_id, 'confirm_send',(donate_sum, eurmtl_asset.code, father_key, memo))
             msg = f"For donate\n{msg}"
 
             await send_message(user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id))

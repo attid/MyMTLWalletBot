@@ -28,7 +28,7 @@ def change_user_lang(user_id: int, lang: str):
     user_lang_dic[user_id] = lang
 
 
-def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int], text: str) -> str:
+def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int], text: str, param: tuple = ()) -> str:
     if isinstance(user_id, types.CallbackQuery):
         user_id = user_id.from_user.id
     elif isinstance(user_id, types.Message):
@@ -41,7 +41,11 @@ def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int], text: st
     else:
         lang = get_user_lang(user_id)
         user_lang_dic[user_id] = lang
-    return lang_dict[lang].get(text, lang_dict['en'].get(text, f'{text} 0_0'))
+    text: str = lang_dict[lang].get(text, lang_dict['en'].get(text, f'{text} 0_0'))
+    # won't use format if will be error in lang file
+    for par in param:
+        text = text.replace('{}', str(par), 1)
+    return text
 
 
 def set_last_message_id(user_id: int, message_id: int):
@@ -50,7 +54,7 @@ def set_last_message_id(user_id: int, message_id: int):
 
 
 def check_user_id(user_id: int):
-    return fb.execsql1(f"select count(*)  from mymtlwalletbot_users where user_id = ?", (user_id,),0) > 0
+    return fb.execsql1(f"select count(*)  from mymtlwalletbot_users where user_id = ?", (user_id,), 0) > 0
 
 
 def get_last_message_id(user_id: int):
