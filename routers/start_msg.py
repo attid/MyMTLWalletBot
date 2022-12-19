@@ -13,24 +13,23 @@ from utils.stellar_utils import stellar_get_user_account, stellar_get_balance_st
 def get_kb_default(chat_id: int) -> types.InlineKeyboardMarkup:
     buttons = [
         [
-            types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_receive'), callback_data="Receive"),
-            types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_send'), callback_data="Send")
+            types.InlineKeyboardButton(text='⤵️ ' + my_gettext(chat_id, 'kb_receive'), callback_data="Receive"),
+            types.InlineKeyboardButton(text='⤴️ ' + my_gettext(chat_id, 'kb_send'), callback_data="Send")
         ],
         [
-            types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_swap'), callback_data="Swap"),
-            types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_market'), callback_data="Market")
+            types.InlineKeyboardButton(text='🔄 ' + my_gettext(chat_id, 'kb_swap'), callback_data="Swap"),
+            types.InlineKeyboardButton(text='🚼 ' + my_gettext(chat_id, 'kb_market'), callback_data="Market")
         ],
-        [types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_mtl_tools'), callback_data="MTLTools")],
-        [types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_setting'), callback_data="WalletSetting")],
-        [types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_change_wallet'), callback_data="ChangeWallet")],
-        [types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_support'), callback_data="Support")]
+        [types.InlineKeyboardButton(text='🏛 ' + my_gettext(chat_id, 'kb_mtl_tools'), callback_data="MTLTools")],
+        [types.InlineKeyboardButton(text='⚙️ ' + my_gettext(chat_id, 'kb_setting'), callback_data="WalletSetting")],
+        [types.InlineKeyboardButton(text='🔄 ' + my_gettext(chat_id, 'kb_change_wallet'), callback_data="ChangeWallet")],
+        [types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'), callback_data="Support")]
     ]
     if not stellar_is_free_wallet(chat_id):
-        buttons.append([types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_sign'), callback_data="Sign")])
+        buttons.append([types.InlineKeyboardButton(text='🖌 ' + my_gettext(chat_id, 'kb_sign'), callback_data="Sign")])
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
-
 
 async def cmd_show_balance(chat_id: int, state: FSMContext, need_new_msg=None):
     try:
