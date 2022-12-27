@@ -136,7 +136,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
     idx = 0
     for name in data:
         if str(name).startswith("mtl_donate"):
-            donates[f'idx{idx}'] = [name, name[11:str(name).find('=')], name[str(name).find('=') + 1], data[name]]
+            donates[f'idx{idx}'] = [name, name[11:str(name).find('=')], name[str(name).find('=') + 1:], data[name]]
             idx += 1
 
     buttons = []

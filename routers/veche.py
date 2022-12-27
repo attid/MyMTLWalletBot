@@ -3,6 +3,7 @@ from aiogram import Router, types
 from aiogram.filters import Text, Command
 from aiogram.fsm.context import FSMContext
 
+from app_logger import logger
 from routers.common_setting import cmd_language
 from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_return
@@ -25,34 +26,35 @@ async def cmd_start(message: types.Message, state: FSMContext, command: Command)
         await send_message(message.from_user.id, 'You dont have wallet. Please run /start')
         return
 
-    await cmd_login_to_veche(message.from_user.id, state, message.text.split(' ')[1])
+    await cmd_login_to_veche(message.from_user.id, state, token=message.text.split(' ')[1][6:])
 
 
-async def cmd_login_to_veche(chat_id: int, state: FSMContext, start_cmd: str):
+async def cmd_login_to_veche(chat_id: int, state: FSMContext, token = None, verifier = None):
     # start_cmd  veche_fb2XcCgY69ZuiBCzILwfnPum
-    message = stellar_get_user_account(chat_id).account.account_id + start_cmd[6:]
-    link = f"https://veche.montelibero.org/auth/page/mymtlwalletbot?" \
-           f"account={stellar_get_user_account(chat_id).account.account_id}&signature=$$SIGN$$"
+    user_key = stellar_get_user_account(chat_id).account.account_id
+    if verifier:
+        message = user_key + verifier
+        link = f"https://veche.montelibero.org/auth/page/mymtlwalletbot?" \
+               f"account={user_key}" \
+               f"&verifier={verifier}&signature=$$SIGN$$"
+    else: #token
+        message = user_key + token
+        link = f"https://veche.montelibero.org/auth/page/mymtlwalletbot?" \
+               f"account={user_key}" \
+               f"&signature=$$SIGN$$"
 
+    logger.info(['veche', message, link])
     await state.update_data(message=message, link=link)
     await send_message(chat_id, my_gettext(chat_id, 'veche_ask'), reply_markup=get_kb_yesno_send_xdr(chat_id))
 
 
 @router.callback_query(Text(text=["MTLToolsVeche"]))
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
-    await send_message(callback, 'Пока только по <a href="https://veche.montelibero.org/auth/login?mmwb=true">ссылке</a>, приходите завтра',
-                       reply_markup=get_kb_return(callback), parse_mode='HTML')
-    return
-
-    page = requests.get("https://veche.montelibero.org/auth/login?mmwb=true").text
-    token = None
-    for s in page.split('\n'):
-        if s.find('MyMtlWalletBot') > 0:
-            # print(s)
-            token = s[s.find('start=veche_') + 6:]
-            token = token[:token.find('"')]
-            # print(token)
-    if token:
-        await cmd_login_to_veche(callback.from_user.id, state, token)
+    user_key = stellar_get_user_account(callback.from_user.id).account.account_id
+    verifier = requests.post(f"https://veche.montelibero.org/auth/page/mymtlwalletbot/verifier",
+                             params={'account': user_key}).text
+    # print(token)
+    if verifier:
+        await cmd_login_to_veche(callback.from_user.id, state, verifier=verifier)
     else:
         await callback.answer('Error with load Veche')
