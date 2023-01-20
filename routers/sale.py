@@ -11,7 +11,8 @@ from stellar_sdk import Asset
 from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance, MyOffer
-from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers
+from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers, \
+    stellar_get_market_link
 
 
 class StateSaleToken(StatesGroup):
@@ -107,15 +108,11 @@ async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: Buy
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
     for asset in asset_list:
         if asset.asset_code == answer:
-            sale_asset = 'XLM' if data.get(
-                'send_asset_code') == 'XLM' else f'{data.get("send_asset_code")}-{data.get("send_asset_issuer")}'
-            buy_asset = asset.asset_code if asset.asset_code == 'XLM' else f'{asset.asset_code}-{asset.asset_issuer}'
-            market_link = f'https://stellar.expert/explorer/public/market/{sale_asset}/{buy_asset}'
-            market_link = html_decoration.link(value='expert', link=market_link)
+            market_link = stellar_get_market_link(Asset(data.get("send_asset_code"), data.get("send_asset_issuer")),
+                                                  Asset(asset.asset_code, asset.asset_issuer))
             msg = my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
                                                          data.get('send_asset_max_sum', 0.0),
                                                          asset.asset_code,
-                                                         market_link
                                                          )
                              )
             await state.update_data(receive_asset_code=asset.asset_code,
@@ -271,7 +268,13 @@ async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext
         data = await state.get_data()
         msg = msg + my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
                                                            data.get('send_asset_max_sum', 0.0),
-                                                           data.get('receive_asset_code')))
+                                                           data.get('receive_asset_code'),
+                                                           stellar_get_market_link(Asset(data.get("send_asset_code"),
+                                                                                         data.get("send_asset_issuer")),
+                                                                                   Asset(data.get('receive_asset_code'),
+                                                                                         data.get(
+                                                                                             'receive_asset_issuer')))
+                                                           ))
 
         await state.update_data(msg=msg)
         await send_message(callback, msg, reply_markup=get_kb_return(callback))
@@ -325,7 +328,15 @@ async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext)
         data = await state.get_data()
         msg = msg + my_gettext(callback, 'send_cost_sale', (data.get('receive_asset_code'),
                                                             data.get('send_sum', 0.0),
-                                                            data.get('send_asset_code')))
+                                                            data.get('send_asset_code'),
+                                                            stellar_get_market_link(Asset(data.get("send_asset_code"),
+                                                                                          data.get(
+                                                                                              "send_asset_issuer")),
+                                                                                    Asset(
+                                                                                        data.get('receive_asset_code'),
+                                                                                        data.get(
+                                                                                            'receive_asset_issuer')))
+                                                            ))
 
         await state.update_data(msg=msg)
         await send_message(callback, msg, reply_markup=get_kb_return(callback))

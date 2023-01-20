@@ -2,11 +2,12 @@ from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from loguru import logger
 
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import send_message, my_gettext, logger
+from utils.aiogram_utils import send_message, my_gettext
 from utils.stellar_utils import stellar_can_new, stellar_create_new, stellar_save_new, \
     stellar_get_balances, stellar_save_ro, async_stellar_send
 

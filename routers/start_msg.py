@@ -3,7 +3,7 @@ from typing import Union
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-from app_logger import logger
+from loguru import logger
 from keyboards.common_keyboards import get_kb_resend, get_kb_return
 from utils.aiogram_utils import send_message, bot
 from utils.lang_utils import my_gettext, set_last_message_id, get_last_message_id

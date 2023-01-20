@@ -18,7 +18,7 @@
   "confirm_close_asset": " \n Do želite li zatvoriti liniju povjerenja na {} {}?",
   "confirm_send": " \n Ti želite li poslati {} {} \n na adresu \n {} \n memo : {}",
   "confirm_send2": "Potvrdite slanje",
-  "confirm_swap": " \n Do želite li razmijeniti svoje {}{} \n za {} {}?",
+  "confirm_swap": " \n Do želite li razmijeniti svoje {} {} \n za {} {}?",
   "create_msg": "Ako imate novčanik, možete unijeti privatni ključ i koristiti novčanik u ovom botu. Takođe možete odrediti pincode i ključ će biti sačuvan u šifrovanom obliku. Ako izgubite pincode, nećete moći koristiti novčanik. \n \n takođe možete kreirati besplatan novčanik, ali u njemu će biti dostupni samo MTL i EURMTL tokeni. Ako ne koristite besplatan novčanik duže od šest mjeseci, administracija zadržava pravo da izbriše vaš račun.",
   "delete_asset": "Odaberite način za dodavanje / uklanjanje tokena",
   "delete_asset2": "Odaberite liniju povjerenja koju želite ukloniti. Cijeli balans ovog tokena će biti uništen!",

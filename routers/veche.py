@@ -3,7 +3,7 @@ from aiogram import Router, types
 from aiogram.filters import Text, Command
 from aiogram.fsm.context import FSMContext
 
-from app_logger import logger
+from loguru import logger
 from routers.common_setting import cmd_language
 from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_return
@@ -43,7 +43,6 @@ async def cmd_login_to_veche(chat_id: int, state: FSMContext, token = None, veri
                f"account={user_key}" \
                f"&signature=$$SIGN$$"
 
-    logger.info(['veche', message, link])
     await state.update_data(message=message, link=link)
     await send_message(chat_id, my_gettext(chat_id, 'veche_ask'), reply_markup=get_kb_yesno_send_xdr(chat_id))
 

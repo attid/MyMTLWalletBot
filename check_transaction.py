@@ -1,14 +1,12 @@
-import app_logger
 import fb
-
-if 'logger' not in globals():
-    logger = app_logger.get_logger("MyMTLWalletBot_check_transaction")
+from loguru import logger
 
 
 def cmd_add_message(user_id, user_message):
     fb.execsql('insert into mymtlwalletbot_messages (user_id, user_message) values (?,?)', (user_id, user_message))
 
 
+@logger.catch
 def cmd_check_and_send():
     record = fb.execsql('select first 1 user_transaction_id, user_id, user_transaction ' +
                         'from mymtlwalletbot_transactions where transaction_state = 0')
@@ -29,7 +27,7 @@ def cmd_check_and_send():
             logger.info(['was send'])
 
         except Exception as ex:
-            logger.info(['error', ex])
+            logger.exception(['error', ex])
             fb.execsql('update mymtlwalletbot_transactions set transaction_state = 3, transaction_response = ? ' +
                        'where user_transaction_id = ?',
                        (str(ex), transaction_id))
@@ -37,4 +35,5 @@ def cmd_check_and_send():
 
 
 if __name__ == "__main__":
+    logger.add("MMWB_check_transaction.log", rotation="1 MB")
     cmd_check_and_send()

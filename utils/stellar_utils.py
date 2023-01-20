@@ -1,4 +1,7 @@
 import base64
+
+from aiogram.utils.text_decorations import html_decoration
+
 import fb
 import requests
 from typing import List, Optional
@@ -6,7 +9,7 @@ from cryptocode import encrypt, decrypt
 from stellar_sdk import Network, Server, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.federation import resolve_stellar_address
-from app_logger import logger
+from loguru import logger
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
 from stellar_sdk import AiohttpClient, ServerAsync
 
@@ -19,7 +22,9 @@ public_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
 xlm_asset = Asset("XLM")
 mtl_asset = Asset("MTL", public_issuer)
 eurmtl_asset = Asset("EURMTL", public_issuer)
-eurdebt_asset = Asset("EURDEBT", public_issuer)
+btcmtl_asset = Asset("BTCMTL", public_issuer)
+satsmtl_asset = Asset("SATSMTL", public_issuer)
+# eurdebt_asset = Asset("EURDEBT", public_issuer)
 
 my_server = Server(horizon_url="https://horizon.stellar.org")
 
@@ -33,6 +38,8 @@ def get_good_asset_list() -> List[Balance]:
         Balance.from_dict(
             {"asset_code": 'BTCMTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
         Balance.from_dict(
+            {"asset_code": 'SATSMTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
+        Balance.from_dict(
             {"asset_code": 'EURDEBT', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
         Balance.from_dict(
             {"asset_code": 'MTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
@@ -43,7 +50,9 @@ def get_good_asset_list() -> List[Balance]:
         Balance.from_dict(
             {"asset_code": 'MTLDVL', "asset_issuer": 'GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA'}),
         Balance.from_dict(
-            {"asset_code": 'FCM', "asset_issuer": 'GDIE253MSIYMFUS3VHRGEQPIBG7VAIPSMATWLTBF73UPOLBUH5RV2FCM'})
+            {"asset_code": 'FCM', "asset_issuer": 'GDIE253MSIYMFUS3VHRGEQPIBG7VAIPSMATWLTBF73UPOLBUH5RV2FCM'}),
+        Balance.from_dict(
+            {"asset_code": 'USDC', "asset_issuer": 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'}),
     ]
 
 
@@ -88,7 +97,7 @@ def stellar_check_xdr(xdr: str):
     result = None
     # "https://mtl.ergvein.net/view?tid=7ec5e397140fadf0d384860a35d19cf9f60e00a49b3b2cc250b832076fab7e7f"
     try:
-        if xdr.find('mtl.ergvein.net/view') > -1:
+        if xdr.find('mtl.ergvein.net/view') > -1 or xdr.find('eurmtl.me/sign_tools') > -1:
             xdr = get_url_xdr(xdr)
             result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()
         else:
@@ -170,6 +179,7 @@ def stellar_create_new(user_id: int, username: str):
 
     xdr = stellar_add_trust(new_account.public_key, mtl_asset, xdr=xdr)
     xdr = stellar_add_trust(new_account.public_key, eurmtl_asset, xdr=xdr)
+    xdr = stellar_add_trust(new_account.public_key, satsmtl_asset, xdr=xdr)
     xdr = stellar_sign(xdr, new_account.secret)
     return stellar_sign(xdr, master.secret)
 
@@ -307,7 +317,7 @@ def stellar_is_free_wallet(user_id: int):
 def stellar_unfree_wallet(user_id: int):
     try:
         user_account = stellar_get_user_account(user_id)
-        fb.execsql(f"update mymtlwalletbot set free_wallet = ? where user_id = ? and m.public_key = ?",
+        fb.execsql(f"update mymtlwalletbot set free_wallet = ? where user_id = ? and public_key = ?",
                    (0, user_id, user_account.account.account_id))
     except:
         return
@@ -430,15 +440,20 @@ def stellar_get_receive_path(send_asset: Asset, send_sum: str, receive_asset: As
         call_result = my_server.strict_send_paths(send_asset, send_sum, [receive_asset]).call()
         if len(call_result['_embedded']['records']) > 0:
             # [{'asset_type': 'credit_alphanum12', 'asset_code': 'EURMTL',
+            #  'asset_issuer': 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'},
+            # {'asset_type': 'credit_alphanum12', 'asset_code': 'BTCMTL',
             #  'asset_issuer': 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}]
             if len(call_result['_embedded']['records'][0]['path']) == 0:
                 return []
             else:
-                if call_result['_embedded']['records'][0]['path'][0]['asset_type'] == 'native':
-                    return [xlm_asset]
-                else:
-                    return [Asset(call_result['_embedded']['records'][0]['path'][0]['asset_code'],
-                                  call_result['_embedded']['records'][0]['path'][0]['asset_issuer'])]
+                result = []
+                for record in call_result['_embedded']['records'][0]['path']:
+                    if record['asset_type'] == 'native':
+                        result.append(xlm_asset)
+                    else:
+                        result.append(Asset(record['asset_code'],
+                                            record['asset_issuer']))
+                return result
         else:
             return []
     except Exception as ex:
@@ -504,6 +519,62 @@ def cmd_gen_data_xdr(from_account: str, name: str, value):
     return full_transaction.to_xdr()
 
 
+def stellar_claim_claimable(source_address, balance_id):
+    root_account = my_server.load_account(source_address)
+    transaction = TransactionBuilder(source_account=root_account,
+                                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                                     base_fee=base_fee)
+    transaction.set_timeout(60 * 60)
+    transaction.append_claim_claimable_balance_op(balance_id=balance_id)
+    transaction = transaction.build()
+    xdr = transaction.to_xdr()
+    return xdr
+
+
+async def stellar_find_claim(address_id: str, user_id: int):
+    server = Server(horizon_url="https://horizon.stellar.org")
+    claimable_balances = server.claimable_balances().for_claimant(address_id).limit(200).for_asset(satsmtl_asset).call()
+    for record in claimable_balances['_embedded']['records']:
+        logger.info([record['id'], record['asset']])
+        if stellar_get_balances(user_id, address_id, 'SATSMTL'):
+            xdr = stellar_claim_claimable(address_id, record['id'])
+            resp = await async_stellar_send(stellar_user_sign(xdr, user_id, str(user_id)))
+            logger.info(resp)
+        else:
+            logger.info('addline')
+            xdr = stellar_add_trust(address_id, satsmtl_asset)
+            resp = await async_stellar_send(stellar_user_sign(xdr, user_id, str(user_id)))
+            logger.info(resp)
+            xdr = stellar_claim_claimable(address_id, record['id'])
+            resp = await async_stellar_send(stellar_user_sign(xdr, user_id, str(user_id)))
+            logger.info(resp)
+
+
+def gen_new(last_name):
+    new_account = Keypair.random()
+    i = 0
+    while new_account.public_key[-len(last_name):] != last_name:
+        new_account = Keypair.random()
+        i += 1
+    print(i, new_account.public_key, new_account.secret)
+    return [i, new_account.public_key, new_account.secret]
+
+
+def run_async():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    forecast = loop.run_until_complete(stellar_delete_account(stellar_get_master(), Keypair.from_secret('')))
+    loop.close()
+    print(forecast)
+
+
+def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset):
+    sale_asset = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
+    buy_asset = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
+    market_link = f'https://stellar.expert/explorer/public/market/{sale_asset}/{buy_asset}'
+    market_link = html_decoration.link(value='expert', link=market_link)
+    return market_link
+
+
 if __name__ == "__main__":
-    # print(stellar_get_data(84131737))
     pass

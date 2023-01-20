@@ -1,13 +1,14 @@
-import logging
 import sys
 from typing import Union
+
+import tzlocal
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio.client import Redis
 
-from app_logger import logger
+from loguru import logger
 from aiogram import Bot, Dispatcher
 from config_reader import config
 from aiogram import types
@@ -23,19 +24,16 @@ if 'test' in sys.argv:
     storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
     dp = Dispatcher(storage=storage)
     print('start test')
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    )
 else:
     bot = Bot(token=config.bot_token.get_secret_value(), parse_mode='HTML')
-    #storage = MemoryStorage()
+    # storage = MemoryStorage()
     storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
     dp = Dispatcher(storage=storage)
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
 
 admin_id = 84131737
+
 
 class StateSign(StatesGroup):
     sending_xdr = State()

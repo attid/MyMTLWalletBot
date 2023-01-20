@@ -2,10 +2,11 @@ from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
+from loguru import logger
 
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance
-from utils.aiogram_utils import send_message, my_gettext, logger
+from utils.aiogram_utils import send_message, my_gettext
 from utils.lang_utils import lang_dict, change_user_lang
 from utils.stellar_utils import stellar_get_wallets_list, stellar_delete_wallets, stellar_set_default_wallets, \
     stellar_get_balance_str
