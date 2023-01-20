@@ -1,16 +1,18 @@
 import requests
 from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram.filters import Text, Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from loguru import logger
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message, logger, set_last_message_id, cmd_show_sign, \
+from utils.aiogram_utils import my_gettext, send_message, set_last_message_id, cmd_show_sign, \
     StateSign, bot, admin_id
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_del_return
+from utils.lang_utils import check_user_id
 from utils.stellar_utils import stellar_get_pin_type, stellar_change_password, stellar_user_sign_message, \
     stellar_user_sign, stellar_check_xdr, async_stellar_send, stellar_get_user_account, \
     stellar_get_user_keypair, stellar_unfree_wallet, stellar_add_donate
@@ -67,7 +69,7 @@ async def cmd_ask_pin(chat_id: int, state: FSMContext, msg='Введите па�
     if pin_type == 10:  # ro
         await state.update_data(pin='ro')
         await cmd_show_sign(chat_id, state,
-                            my_gettext(chat_id, "your_xdr",(data['xdr'],)),
+                            my_gettext(chat_id, "your_xdr", (data['xdr'],)),
                             use_send=False)
 
 
@@ -156,7 +158,7 @@ async def sign_xdr(state, user_id):
                 link = link.replace('$$SIGN$$', urllib.parse.quote(msg))
                 await state.update_data(link=link)
                 await cmd_info_message(user_id,
-                                       my_gettext(user_id, 'veche_go',(link,)), state)
+                                       my_gettext(user_id, 'veche_go', (link,)), state)
                 set_last_message_id(user_id, 0)
                 await state.set_state(None)
             elif remove_password:
@@ -179,7 +181,7 @@ async def sign_xdr(state, user_id):
                     await cmd_info_message(user_id,
                                            my_gettext(user_id, "try_send"),
                                            state)
-                    #save_xdr_to_send(user_id, xdr)
+                    # save_xdr_to_send(user_id, xdr)
                     resp = await async_stellar_send(xdr)
                     resp = MyResponse.from_dict(resp)
                     link_msg = ''
@@ -190,16 +192,18 @@ async def sign_xdr(state, user_id):
                                            my_gettext(user_id, "send_good") + link_msg,
                                            state)
                     if buy_address:
-                        await send_message(user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True)
+                        await send_message(user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
+                                           reply_markup=get_kb_return(user_id))
                         stellar_unfree_wallet(user_id)
 
                     if donate:
-                        await send_message(user_id=admin_id, msg=f'{user_id} donate {donate}', need_new_msg=True)
+                        await send_message(user_id=admin_id, msg=f'{user_id} donate {donate}', need_new_msg=True,
+                                           reply_markup=get_kb_return(user_id))
                         stellar_add_donate(user_id, donate)
 
                 if current_state == PinState.sign:
                     await cmd_show_sign(user_id, state,
-                                        my_gettext(user_id, "your_xdr",(xdr,)),
+                                        my_gettext(user_id, "your_xdr", (xdr,)),
                                         use_send=True)
     except BadRequestError as ex:
         # print(ex.extras.get("result_codes", '=( eror not found'))
@@ -234,21 +238,25 @@ async def cmd_sign(callback: types.CallbackQuery, state: FSMContext):
 
 
 @router.message(StateSign.sending_xdr)
-async def cmd_swap_sum(message: types.Message, state: FSMContext):
+async def cmd_send_xdr(message: types.Message, state: FSMContext):
+    await cmd_check_xdr(message.text, message.from_user.id, state)
+    await message.delete()
+
+
+async def cmd_check_xdr(check_xdr: str, user_id, state: FSMContext):
     try:
-        xdr = stellar_check_xdr(message.text)
+        xdr = stellar_check_xdr(check_xdr)
         if xdr:
             await state.update_data(xdr=xdr)
-            if message.text.find('mtl.ergvein.net/view') > -1:
-                await state.update_data(tools=message.text)
+            if check_xdr.find('mtl.ergvein.net/view') > -1 or check_xdr.find('eurmtl.me/sign_tools') > -1:
+                await state.update_data(tools=check_xdr)
             await state.set_state(PinState.sign)
-            await cmd_ask_pin(message.chat.id, state)
+            await cmd_ask_pin(user_id, state)
         else:
             raise Exception('Bad xdr')
     except Exception as ex:
         logger.info(['my_state == MyState.StateSign', ex])
-        await cmd_show_sign(message.chat.id, state, my_gettext(message, 'bad_xdr',(message.text,)))
-    await message.delete()
+        await cmd_show_sign(user_id, state, my_gettext(user_id, 'bad_xdr', (check_xdr,)))
 
 
 @router.callback_query(Text(text=["SendTr"]))
@@ -261,13 +269,24 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
         if callback.data == "SendTools":
             try:
                 # logger.info({"tx_body": xdr})
-                rq = requests.post("https://mtl.ergvein.net/update", data={"tx_body": xdr})
-                parse_text = rq.text
-                if parse_text.find('Transaction history') > 0:
-                    await cmd_info_message(callback, my_gettext(callback, 'check_here',(tools,)), state)
-                else:
-                    parse_text = parse_text[parse_text.find('<section id="main">'):parse_text.find("</section>")]
-                    await cmd_info_message(callback, parse_text[:4000], state)
+                if data.get('tools').find('mtl.ergvein.net/view') > -1:
+                    rq = requests.post("https://mtl.ergvein.net/update", data={"tx_body": xdr})
+                    parse_text = rq.text
+                    if parse_text.find('Transaction history') > 0:
+                        await cmd_info_message(callback, my_gettext(callback, 'check_here', (tools,)), state)
+                    else:
+                        parse_text = parse_text[parse_text.find('<section id="main">'):parse_text.find("</section>")]
+                        await cmd_info_message(callback, parse_text[:4000], state)
+                else:  # "https://eurmtl.me/sign_tools"
+                    rq = requests.post(data.get('tools'), data={"tx_body": xdr})
+                    parse_text = rq.text
+                    #logger.info(parse_text)
+                    if parse_text.find('Transaction signatures') > 0:
+                        await cmd_info_message(callback, my_gettext(callback, 'check_here', (tools,)), state)
+                    else:
+                        parse_text = parse_text[parse_text.find('<section id="main">'):parse_text.find("</section>")]
+                        await cmd_info_message(callback, parse_text[:4000], state)
+
             except Exception as ex:
                 logger.info(['cmd_show_send_tr', callback, ex])
                 await cmd_info_message(callback, my_gettext(callback, 'send_error'), state)
@@ -284,7 +303,7 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
         msg = f"{ex.title}, error {ex.status}"
         await cmd_info_message(callback, f"{my_gettext(callback, 'send_error')}\n{msg}", state, resend_transaction=True)
     except Exception as ex:
-        logger.info(['send unknown error', ex])
+        logger.exception(['send unknown error', ex])
         msg = 'unknown error'
         data[xdr] = xdr
         await cmd_info_message(callback, f"{my_gettext(callback, 'send_error')}\n{msg}", state, resend_transaction=True)
@@ -341,7 +360,7 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext):
         msg = f"{ex.title}, error {ex.status}"
         await cmd_info_message(user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}", state, resend_transaction=True)
     except Exception as ex:
-        logger.info(['ReSend unknown error', ex])
+        logger.exception(['ReSend unknown error', ex])
         msg = 'unknown error'
         data = await state.get_data()
         data[xdr] = xdr

@@ -1,13 +1,13 @@
 import asyncio
-import logging
 import sys
 
 import time_handlers
 from config_reader import config
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from utils.aiogram_utils import bot, dp, scheduler
-from routers import add_wallet, admin, common, common_setting, mtltools, receive, sale, send, sign, swap
-from routers import veche, wallet_setting
+from routers import add_wallet, admin, common_start, common_setting, mtltools, receive, sale, send, sign, swap
+from routers import veche, wallet_setting, common_end
+from loguru import logger
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -16,10 +16,15 @@ from routers import veche, wallet_setting
 # https://mastergroosha.github.io/aiogram-3-guide/buttons/
 
 # Запуск бота
+@logger.catch
 async def main():
+    logger.add("MMWB.log", rotation="1 MB", level='INFO')
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware())
 
     dp.include_router(veche.router) # first
+    dp.include_router(common_start.router)
+
+    dp.include_router(sign.router)
     dp.include_router(add_wallet.router)
     dp.include_router(admin.router)
     dp.include_router(common_setting.router)
@@ -27,12 +32,11 @@ async def main():
     dp.include_router(receive.router)
     dp.include_router(sale.router)
     dp.include_router(send.router)
-    dp.include_router(sign.router)
     dp.include_router(swap.router)
     dp.include_router(wallet_setting.router)
 
     # always the last
-    dp.include_router(common.router)
+    dp.include_router(common_end.router)
 
     if 'test' in sys.argv:
         pass

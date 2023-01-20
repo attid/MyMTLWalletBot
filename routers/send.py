@@ -8,11 +8,12 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
+from loguru import logger
 from stellar_sdk import Asset
 from stellar_sdk.sep.federation import resolve_stellar_address
 
 import fb
-from utils.aiogram_utils import my_gettext, send_message, logger, bot
+from utils.aiogram_utils import my_gettext, send_message, bot
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from mytypes import Balance
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
@@ -73,7 +74,7 @@ async def cmd_send_for(message: Message, state: FSMContext):
             await cmd_create_account(message, state)
         else:
             msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_address')
-            await send_message(message, msg)
+            await send_message(message, msg, reply_markup=get_kb_return(message))
 
 
 async def cmd_send_choose_token(message: types.Message, state: FSMContext):

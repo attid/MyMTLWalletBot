@@ -5,9 +5,10 @@ from aiogram.fsm.state import StatesGroup, State
 
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
+from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance
 from utils.aiogram_utils import send_message
-from utils.lang_utils import set_last_message_id, my_gettext
+from utils.lang_utils import set_last_message_id, my_gettext, check_user_id
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset
 
 router = Router()
@@ -16,6 +17,21 @@ router = Router()
 class DonateState(StatesGroup):
     send_sum = State()
 
+@router.message(Command(commands=["start"]), Text(contains="sign_"))
+async def cmd_start(message: types.Message, state: FSMContext, command: Command):
+    await state.clear()
+
+    # check address
+    set_last_message_id(message.from_user.id, 0)
+    await send_message(message.from_user.id, 'Loading')
+
+    # if user not exist
+    if not check_user_id(message.from_user.id):
+        await send_message(message.from_user.id, 'You dont have wallet. Please run /start')
+        return
+
+    # await cmd_login_to_veche(message.from_user.id, state, token=message.text.split(' ')[1][6:])
+    await cmd_check_xdr('https://eurmtl.me/sign_tools/'+message.text.split(' ')[1][5:],message.from_user.id,state)
 
 @router.message(Command(commands=["start"]))
 async def cmd_start(message: types.Message, state: FSMContext, command: Command):
@@ -130,9 +146,4 @@ async def cb_donate_sum(callback: types.CallbackQuery, state: FSMContext):
 @router.message(DonateState.send_sum)
 async def cmd_donate_sum(message: types.Message, state: FSMContext):
     await get_donate_sum(message.from_user.id, message.text, state)
-    await message.delete()
-
-
-@router.message()
-async def cmd_delete(message: types.Message):
     await message.delete()

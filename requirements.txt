@@ -88,3 +88,4 @@ zipp==3.11.0
 redis>=4.4.0
 jsonpickle>=3.0.0
 asyncio>=3.4.3
+loguru>=0.6.0

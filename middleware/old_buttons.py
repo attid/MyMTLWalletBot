@@ -4,7 +4,7 @@ from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 
-from app_logger import logger
+from loguru import logger
 from utils.lang_utils import get_last_message_id
 
 
