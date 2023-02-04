@@ -18,12 +18,14 @@ base_fee = 10101
 # https://stellar-sdk.readthedocs.io/en/latest/
 
 public_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+public_mmwb = "GBSNN2SPYZB2A5RPDTO3BLX4TP5KNYI7UMUABUS3TYWWEWAAM2D7CMMW"
 
 xlm_asset = Asset("XLM")
 mtl_asset = Asset("MTL", public_issuer)
 eurmtl_asset = Asset("EURMTL", public_issuer)
 btcmtl_asset = Asset("BTCMTL", public_issuer)
 satsmtl_asset = Asset("SATSMTL", public_issuer)
+usdc_asset = Asset("USDC", 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN')
 # eurdebt_asset = Asset("EURDEBT", public_issuer)
 
 my_server = Server(horizon_url="https://horizon.stellar.org")
@@ -149,7 +151,7 @@ def stellar_save_new(user_id: int, user_name: str, secret_key: str, free_wallet:
 
     fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
                f"free_wallet) values (?,?,?,?,?,?)",
-               (user_id, public_key, encrypt(new_account.secret, str(user_id)), 3, 1, i_free_wallet))
+               (user_id, public_key, encrypt(new_account.secret, str(user_id)), 5, 1, i_free_wallet))
     return public_key
 
 
@@ -174,21 +176,27 @@ def stellar_create_new(user_id: int, username: str):
     stellar_save_new(user_id, username, new_account.secret, True)
 
     master = stellar_get_master()
-    xdr = stellar_pay(master.public_key, new_account.public_key, xlm_asset, 3, create=True)
+    xdr = stellar_pay(master.public_key, new_account.public_key, xlm_asset, 5, create=True)
     # stellar_send(stellar_sign(xdr, master.secret))
 
     xdr = stellar_add_trust(new_account.public_key, mtl_asset, xdr=xdr)
     xdr = stellar_add_trust(new_account.public_key, eurmtl_asset, xdr=xdr)
     xdr = stellar_add_trust(new_account.public_key, satsmtl_asset, xdr=xdr)
+    xdr = stellar_add_trust(new_account.public_key, usdc_asset, xdr=xdr)
     xdr = stellar_sign(xdr, new_account.secret)
     return stellar_sign(xdr, master.secret)
 
 
 def stellar_pay(from_account: str, for_account: str, asset: Asset, amount: float, create: bool = False,
-                memo: str = None):
-    source_account = my_server.load_account(from_account)
-    transaction = TransactionBuilder(source_account=source_account,
-                                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+                memo: str = None, xdr: str = None):
+    if xdr:
+        transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    else:
+        source_account = my_server.load_account(from_account)
+        transaction = TransactionBuilder(source_account=source_account,
+                                         network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+        transaction.set_timeout(60 * 60)
+
     if create:
         transaction.append_create_account_op(destination=for_account, starting_balance=str(round(amount, 7)))
         transaction.add_text_memo('New account MyMTLWalletbot')
@@ -196,7 +204,6 @@ def stellar_pay(from_account: str, for_account: str, asset: Asset, amount: float
         transaction.append_payment_op(destination=for_account, amount=str(round(amount, 7)), asset=asset)
         if memo:
             transaction.add_text_memo(memo)
-    transaction.set_timeout(60 * 60)
     full_transaction = transaction.build()
     logger.info(full_transaction.to_xdr())
     return full_transaction.to_xdr()
@@ -221,7 +228,7 @@ def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, receive
     source_account = my_server.load_account(from_account)
     transaction = TransactionBuilder(source_account=source_account,
                                      network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
-    if (float(receive_amount) == 0.0) or (float(send_amount) == 0.0):
+    if (my_float(receive_amount) == 0.0) or (float(send_amount) == 0.0):
         price = '99999999'
     else:
         price = str(round(float(receive_amount) / float(send_amount), 7))
@@ -576,5 +583,44 @@ def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset):
     return market_link
 
 
+def my_float(s: str) -> float:
+    return float(s.replace(',', '.'))
+
+
+def is_new_user(user_id: int):
+    if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
+        return True
+    if fb.execsql1('select count(*) from mymtlwalletbot where user_id = ?', (user_id,)) == 0:
+        return True
+    return False
+
+
+async def stellar_update_credit(credit_list):
+    server = Server(horizon_url="https://horizon.stellar.org")
+    # m.user_id, m.public_key, m.credit
+    i = 0
+    xdr = None
+    master = stellar_get_master()
+    for record in credit_list:
+        i = i + 1
+        if stellar_check_account(record[1]):
+            fb.execsql(f"update mymtlwalletbot set credit = 5 where user_id = ? and public_key = ?", (record[0], record[1]))
+            xdr = stellar_pay(master.public_key, record[1], xlm_asset, 2, xdr=xdr)
+            if i > 90:
+                xdr = stellar_sign(xdr, master.secret)
+                logger.info(xdr)
+                resp = await async_stellar_send(xdr)
+                logger.info(resp)
+                return
+        else:
+            fb.execsql(f"update mymtlwalletbot set user_id = -1 * user_id where user_id = ? and public_key = ?",
+                       (record[0], record[1]))
+    xdr = stellar_sign(xdr, master.secret)
+    logger.info(xdr)
+    resp = await async_stellar_send(xdr)
+    logger.info(resp)
+
+
 if __name__ == "__main__":
     pass
+    print()

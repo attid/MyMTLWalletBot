@@ -12,7 +12,7 @@ from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
-    stellar_check_receive_sum, stellar_swap, stellar_get_market_link
+    stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float
 
 
 class StateSwapToken(StatesGroup):
@@ -111,7 +111,7 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
 @router.message(StateSwapToken.swap_sum)
 async def cmd_swap_sum(message: types.Message, state: FSMContext):
     try:
-        send_sum = float(message.text)
+        send_sum = my_float(message.text)
     except:
         send_sum = 0.0
 

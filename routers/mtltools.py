@@ -6,7 +6,8 @@ from aiogram.fsm.state import StatesGroup, State
 
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from utils.aiogram_utils import my_gettext, send_message
-from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account
+from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
+    my_float
 
 
 class StateTools(StatesGroup):
@@ -210,8 +211,8 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
 
 @router.message(StateTools.donate_persent)
 async def cmd_send_add_donate_address(message: types.Message, state: FSMContext):
-    if float(message.text):
-        persent = float(message.text)
+    if my_float(message.text):
+        persent = my_float(message.text)
         data = await state.get_data()
         xdr = cmd_gen_data_xdr(stellar_get_user_account(message.from_user.id).account.account_id,
                                f"mtl_donate_{data['name']}={persent}", data['address'])

@@ -12,7 +12,7 @@ from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance, MyOffer
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers, \
-    stellar_get_market_link
+    stellar_get_market_link, my_float
 
 
 class StateSaleToken(StatesGroup):
@@ -113,7 +113,7 @@ async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: Buy
             msg = my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
                                                          data.get('send_asset_max_sum', 0.0),
                                                          asset.asset_code,
-                                                         )
+                                                         market_link)
                              )
             await state.update_data(receive_asset_code=asset.asset_code,
                                     receive_asset_issuer=asset.asset_issuer,
@@ -127,7 +127,7 @@ async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: Buy
 @router.message(StateSaleToken.selling_sum)
 async def cmd_send_sale_sum(message: types.Message, state: FSMContext):
     try:
-        send_sum = float(message.text)
+        send_sum = my_float(message.text)
     except:
         send_sum = 0.0
 
@@ -155,7 +155,7 @@ async def cmd_send_sale_sum(message: types.Message, state: FSMContext):
 @router.message(StateSaleToken.selling_receive_sum)
 async def cmd_send_sale_cost(message: types.Message, state: FSMContext):
     try:
-        receive_sum = float(message.text)
+        receive_sum = my_float(message.text)
     except:
         receive_sum = 0.0
 
@@ -286,7 +286,7 @@ async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext
 @router.message(StateSaleToken.editing_amount)
 async def cmd_edit_sale_sum(message: types.Message, state: FSMContext):
     try:
-        send_sum = float(message.text)
+        send_sum = my_float(message.text)
     except:
         send_sum = 0.0
 
@@ -348,7 +348,7 @@ async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext)
 @router.message(StateSaleToken.editing_amount)
 async def cmd_edit_sale_cost(message: types.Message, state: FSMContext):
     try:
-        receive_sum = float(message.text)
+        receive_sum = my_float(message.text)
     except:
         receive_sum = 0.0
 

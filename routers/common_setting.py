@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from loguru import logger
 
 from keyboards.common_keyboards import get_return_button, get_kb_return
-from routers.start_msg import cmd_show_balance
+from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
 from utils.aiogram_utils import send_message, my_gettext
 from utils.lang_utils import lang_dict, change_user_lang
 from utils.stellar_utils import stellar_get_wallets_list, stellar_delete_wallets, stellar_set_default_wallets, \
@@ -14,11 +14,6 @@ from utils.stellar_utils import stellar_get_wallets_list, stellar_delete_wallets
 
 class LangCallbackData(CallbackData, prefix="lang_"):
     action: str
-
-
-class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"):
-    action: str
-    idx: int
 
 
 router = Router()
@@ -48,36 +43,13 @@ async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallb
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
     change_user_lang(callback.from_user.id, lang)
-    await callback.answer(my_gettext(callback, 'was_set',(lang,)))
+    await callback.answer(my_gettext(callback, 'was_set', (lang,)))
     await cmd_show_balance(callback.from_user.id, state)
 
 
 @router.callback_query(Text(text=["ChangeWallet"]))
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext):
     await cmd_change_wallet(callback.from_user.id, state)
-
-
-async def cmd_change_wallet(user_id: int, state: FSMContext):
-    msg = my_gettext(user_id, 'setting_msg')
-    buttons = []
-    wallets = stellar_get_wallets_list(user_id)
-    for idx, wallet in enumerate(wallets):
-        default_name = 'default' if wallet[1] == 1 else 'Set default'
-        buttons.append([types.InlineKeyboardButton(text=f"{wallet[0][:4]}..{wallet[0][-4:]}",
-                                                   callback_data=WalletSettingCallbackData(action='NAME',
-                                                                                           idx=idx).pack()),
-                        types.InlineKeyboardButton(text=f"{default_name}",
-                                                   callback_data=WalletSettingCallbackData(action='DEFAULT',
-                                                                                           idx=idx).pack()),
-                        types.InlineKeyboardButton(text=f"Delete",
-                                                   callback_data=WalletSettingCallbackData(action='DELETE',
-                                                                                           idx=idx).pack())
-                        ])
-    buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_new'), callback_data="AddNew")])
-    buttons.append(get_return_button(user_id))
-
-    await send_message(user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.update_data(wallets=wallets)
 
 
 @router.callback_query(WalletSettingCallbackData.filter())

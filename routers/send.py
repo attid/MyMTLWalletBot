@@ -17,7 +17,7 @@ from utils.aiogram_utils import my_gettext, send_message, bot
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from mytypes import Balance
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
-    stellar_get_user_account
+    stellar_get_user_account, my_float
 
 
 class StateSendToken(StatesGroup):
@@ -71,7 +71,7 @@ async def cmd_send_for(message: Message, state: FSMContext):
         if (not free_wallet) and (len(address) == 56) and (address[0] == 'G'):  # need activate
             await state.update_data(send_address=address)
             await state.set_state(state=None)
-            await cmd_create_account(message, state)
+            await cmd_create_account(message.from_user.id, state)
         else:
             msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_address')
             await send_message(message, msg, reply_markup=get_kb_return(message))
@@ -81,7 +81,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext):
     data = await state.get_data()
     address = data.get('send_address')
 
-    msg = my_gettext(message, 'choose_token',(address,))
+    msg = my_gettext(message, 'choose_token', (address,))
     asset_list = stellar_get_balances(message.from_user.id)
     sender_asset_list = stellar_get_balances(message.from_user.id, address)
     kb_tmp = []
@@ -108,8 +108,8 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
             if float(asset.balance) == 0.0:
                 await callback.answer(my_gettext(callback, "zero_sum"), show_alert=True)
             else:
-                msg = my_gettext(callback, 'send_sum',(asset.asset_code,
-                                                              asset.balance))
+                msg = my_gettext(callback, 'send_sum', (asset.asset_code,
+                                                        asset.balance))
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
                                         send_asset_max_sum=asset.balance, msg=msg)
                 await state.set_state(StateSendToken.sending_sum)
@@ -120,7 +120,7 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
 @router.message(StateSendToken.sending_sum)
 async def cmd_send_get_sum(message: Message, state: FSMContext):
     try:
-        send_sum = float(message.text)
+        send_sum = my_float(message.text)
     except:
         send_sum = 0.0
 
@@ -145,7 +145,7 @@ async def cmd_send_04(message: types.Message, state: FSMContext):
     send_memo = data.get("memo")
     federal_memo = data.get("federal_memo")
 
-    msg = my_gettext(message, 'confirm_send',(send_sum, send_asset, send_address, send_memo))
+    msg = my_gettext(message, 'confirm_send', (send_sum, send_asset, send_address, send_memo))
 
     send_asset_name = data["send_asset_code"]
     send_asset_code = data["send_asset_issuer"]
@@ -173,27 +173,38 @@ async def cmd_send_to(message: Message, state: FSMContext):
 
     if len(send_memo) > 0:
         await state.update_data(memo=send_memo)
+    await message.delete()
     await cmd_send_04(message, state)
 
 
-async def cmd_create_account(message: types.Message, state: FSMContext):
+async def cmd_create_account(user_id: int, state: FSMContext):
     data = await state.get_data()
 
-    send_sum = 3
-    asset_list = stellar_get_balances(message.from_user.id, asset_filter='XLM')
+    send_sum = data.get('activate_sum', 5)
+    asset_list = stellar_get_balances(user_id, asset_filter='XLM')
     send_asset_code = asset_list[0].asset_code
     send_asset_issuer = asset_list[0].asset_issuer
     send_address = data.get('send_address', 'None 0_0')
-    msg = my_gettext(message, 'confirm_activate',(send_address, send_sum))
+    msg = my_gettext(user_id, 'confirm_activate', (send_address, send_sum))
 
-    xdr = stellar_pay(stellar_get_user_account(message.from_user.id).account.account_id,
+    xdr = stellar_pay(stellar_get_user_account(user_id).account.account_id,
                       send_address,
                       Asset(send_asset_code, send_asset_issuer), send_sum, create=True)
 
     await state.update_data(xdr=xdr, send_asset_code=send_asset_code, send_asset_issuer=send_asset_issuer,
                             send_sum=send_sum)
 
-    await send_message(message, msg, reply_markup=get_kb_yesno_send_xdr(message))
+    kb = get_kb_yesno_send_xdr(user_id)
+    kb.inline_keyboard.insert(1,[types.InlineKeyboardButton(text='Send 15 xlm',
+                                                          callback_data="Send15xlm")])
+    await send_message(user_id, msg, reply_markup=kb, need_new_msg=True)
+
+
+@router.callback_query(Text(text=["Send15xlm"]))
+async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext):
+    await state.update_data(activate_sum=15)
+    await cmd_create_account(callback.from_user.id, state)
+
 
 
 @router.message(StateSendToken.sending_for, F.photo)

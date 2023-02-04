@@ -44,7 +44,9 @@ async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-async def cmd_ask_pin(chat_id: int, state: FSMContext, msg='Введите пароль\n'):
+async def cmd_ask_pin(chat_id: int, state: FSMContext, msg=None):
+    if msg is None:
+        msg = my_gettext(chat_id, "enter_password")
     data = await state.get_data()
     pin_type = data.get("pin_type")
     pin = data.get("pin", '')

@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import fb
 from utils.aiogram_utils import bot
-from utils.stellar_utils import stellar_find_claim
+from utils.stellar_utils import stellar_find_claim, stellar_update_credit
 
 
 class ExitState(StatesGroup):
@@ -90,3 +90,12 @@ async def cmd_update2(message: types.Message):
             await stellar_find_claim(rec[1], rec[0])
 
         await message.answer('done')
+
+@router.message(Command(commands=["update3"]))
+async def cmd_update3(message: types.Message):
+    if message.from_user.username == "itolstov":
+        select = fb.execsql('select distinct m.user_id, m.public_key, m.credit from mymtlwalletbot m '
+                            'where m.user_id > 0 and m.default_wallet = 1 and m.free_wallet = 1 and m.credit = 3')
+        await message.answer(str(len(select)))
+        await stellar_update_credit(select)
+        await message.answer(f'done 90')
