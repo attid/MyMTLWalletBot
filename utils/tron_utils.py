@@ -1,23 +1,29 @@
-from tronpy import Tron, Contract
+import asyncio
+from contextlib import suppress
+
+import aiohttp
+import base58
+import requests
+from tronpy import Tron, AsyncTron, exceptions
 from tronpy.keys import PrivateKey
-import json
-from loguru import logger
-from tronpy.providers import HTTPProvider
+from tronpy.providers import HTTPProvider, AsyncHTTPProvider
+from config_reader import config
 
-api_key = '74c4d751-c9f1-4024-9382-5c73fa28c57f'
-my_tt = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
-usdt_key = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
-#Private Key is  3c6d2743d9c9a9e6884456eafe1b8457d94014c92899156e97b6082e3de0204a
-#Accuont Address is  TXxK7UpcdG1jFHSTgnnJXeoWsYWtn99Hjd
+# api_key from https://www.trongrid.io
+api_key = config.tron_api_key.get_secret_value()
+tron_master_address = config.tron_master_address
+tron_master_key = config.tron_master_key.get_secret_value()
+usdt_contract = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+usdt_hex_contract = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c'
 
 
+def create_trc_private_key():
+    private_key = PrivateKey.random()
+    # print("Private Key is ", private_key)
+    # account = private_key.public_key.to_base58check_address()
+    # print("Account Address is ", account)
+    return private_key.hex()
 
-def create_address():
-    priv_key = PrivateKey.random()
-    print("Private Key is ", priv_key)
-
-    account = priv_key.public_key.to_base58check_address()
-    print("Accuont Address is ", account)
 
 def show_balance(public_key):
     from tronpy import Tron
@@ -26,46 +32,237 @@ def show_balance(public_key):
     client = Tron(HTTPProvider(api_key=api_key))  # Use mainnet(trongrid) with a single api_key
 
     s = client.get_account_balance(public_key)
-    print('TRX=',s)
+    print('TRX=', s)
 
-    cntr = client.get_contract(usdt_key)
-    print('USDT=',cntr.functions.balanceOf(public_key)/1000000)
+    cntr = client.get_contract(usdt_contract)
+    print('USDT=', cntr.functions.balanceOf(public_key) / 1000000)
 
 
-def send_usdt(public_key_to, amount):
+def send_usdt(public_key_to, amount, private_key_from):
     client = Tron(HTTPProvider(api_key=api_key))
 
-    contract = client.get_contract(usdt_key)
-    priv_key = PrivateKey(bytes.fromhex("3c6d2743d9c9a9e6884456eafe1b8457d94014c92899156e97b6082e3de0204a"))
+    contract = client.get_contract(usdt_contract)
+    private_key = PrivateKey(bytes.fromhex(private_key_from))
+    public_key_from = private_key.public_key.to_base58check_address()
 
     txn = (
-        contract.functions.transfer('TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', 1000000)
-        .with_owner('TXxK7UpcdG1jFHSTgnnJXeoWsYWtn99Hjd')
+        contract.functions.transfer(public_key_to, amount * 10 ** 6)
+        .with_owner(public_key_from)
         .fee_limit(20_000_000)
-        .memo("test memo")
+        # .memo("test memo")
         .build()
-        .sign(priv_key)
+        .sign(private_key)
     )
 
     print(txn.txid)
     print(txn.broadcast().wait())
 
 
-def send_trx():
+def send_trx(public_key_to, amount, private_key_from):
     client = Tron(HTTPProvider(api_key=api_key))
-    priv_key = PrivateKey(bytes.fromhex("3c6d2743d9c9a9e6884456eafe1b8457d94014c92899156e97b6082e3de0204a"))
+    private_key = PrivateKey(bytes.fromhex(private_key_from))
+    public_key_from = private_key.public_key.to_base58check_address()
 
     txn = (
-        client.trx.transfer("TXxK7UpcdG1jFHSTgnnJXeoWsYWtn99Hjd", "TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ", 1_000)
-        .memo("test memo")
+        client.trx.transfer(public_key_from, public_key_to, amount * 10 ** 6)
+        # .memo("test memo")
         .build()
-        .sign(priv_key)
+        .sign(private_key)
     )
     print(txn.txid)
     print(txn.broadcast().wait())
+
+
+def get_transactions(address, limit=10):
+    api_url = f"https://api.trongrid.io/v1/accounts/{address}/transactions?limit={limit}&only_confirmed=true"
+    response = requests.get(api_url)
+
+    if response.status_code == 200:
+        data = response.json()
+        transactions = data["data"]
+
+        # Получение текущего номера блока
+        client = Tron(HTTPProvider(api_key=api_key))
+        current_block = client.get_latest_block_number()
+
+        print(transactions)
+
+        for txn in transactions:
+            # Получение номера блока, в котором была включена транзакция
+            block_number = txn.get("blockNumber")
+
+            # Если поле blockNumber отсутствует, пропустить эту транзакцию
+            if block_number is None:
+                continue
+
+            # Вычисление количества подтверждений
+            confirmations = current_block - block_number
+
+            print(f"Transaction ID: {txn['txID']}")
+            print(f"From: {txn['raw_data']['contract'][0]['parameter']['value']['owner_address']}")
+            print(f"To: {txn['raw_data']['contract'][0]['parameter']['value']['to_address']}")
+            print(f"Amount: {txn['raw_data']['contract'][0]['parameter']['value']['amount'] / 1000000} TRX")
+            print(f"Confirmations: {confirmations}")
+            print("-----")
+    else:
+        print("Error: Unable to fetch transactions.")
+
+
+def get_last_usdt_transaction(address):
+    url = f"https://api.trongrid.io/v1/accounts/{address}/transactions/trc20?only_confirmed=true&limit=10&contract_address={usdt_contract}"
+    headers = {
+        "accept": "application/json",
+        "TRON-PRO-API-KEY": api_key
+    }
+
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+        transactions = data["data"]
+
+        last_usdt_txn = None
+
+        for txn in transactions:
+            if "token_info" in txn and txn["token_info"]["address"] == usdt_contract:
+                if txn["to"] == address:
+                    last_usdt_txn = txn
+                    break
+
+        if last_usdt_txn:
+            # Получение номера блока, в котором была включена транзакция
+            print(last_usdt_txn)
+            # block_number = last_usdt_txn.get("blockNumber")
+
+            # Получение текущего номера блока
+            client = Tron(HTTPProvider(api_key=api_key))
+            current_block = client.get_latest_block_number()
+            transaction = client.get_transaction_info(last_usdt_txn["transaction_id"])
+            block_number = transaction['blockNumber']
+            # transaction = client.get_transaction(last_usdt_txn["transaction_id"])
+            # print(transaction)
+
+            # Вычисление количества подтверждений
+            confirmations = current_block - block_number
+
+            amount = int(last_usdt_txn['value'])
+
+            print(f"Last USDT Transaction ID: {last_usdt_txn['transaction_id']}")
+            print(f"Amount: {amount / 10 ** 6} USDT")
+            print(f"Confirmations: {confirmations}")
+        else:
+            print("No USDT transactions found.")
+    else:
+        print("Error: Unable to fetch transactions.")
+
+
+def tron_hex_decode(hex_address):
+    # hex_address = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c'
+    decoded = bytes.fromhex(hex_address)
+    encoded = base58.b58encode_check(decoded)
+    print(encoded.decode('utf-8'))
+    return encoded.decode('utf-8')
+
+
+async def send_trx_async(public_key_to=None, amount=0, private_key_from=tron_master_key, private_key_to=None):
+    if private_key_to:
+        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        private_key = PrivateKey(bytes.fromhex(private_key_from))
+        public_key_from = private_key.public_key.to_base58check_address()
+
+        txb = (
+            client.trx.transfer(public_key_from, public_key_to, amount * 10 ** 6)
+            # .memo("test memo")
+            .fee_limit(20_000_000)
+        )
+        txn = await txb.build()
+        txn_ret = await txn.sign(private_key).broadcast()
+        print(txn_ret)
+        print(await txn_ret.wait())
+
+
+async def send_usdt_async(public_key_to=None, amount=0, private_key_from=tron_master_key, private_key_to=None):
+    if private_key_to:
+        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+    print(public_key_to, amount, private_key_from, private_key_to)
+
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        contract = await client.get_contract(usdt_contract)
+        private_key = PrivateKey(bytes.fromhex(private_key_from))
+        public_key_from = private_key.public_key.to_base58check_address()
+
+        txb = await contract.functions.transfer(public_key_to, int(amount * 10 ** 6))
+        # print(txb, type(txb))
+        # print(public_key_from, type(public_key_from))
+        txb = txb.with_owner(public_key_from).fee_limit(20_000_000)
+        # txn = txn.sign(priv_key).inspect()
+        txn = await txb.build()
+        txn_ret = await txn.sign(private_key).broadcast()
+        await txn_ret.wait()
+
+
+async def get_usdt_balance(public_key=None, private_key=None):
+    if private_key:
+        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        contract = await client.get_contract(usdt_contract)
+        balance = await contract.functions.balanceOf(public_key) / 10 ** 6
+
+    return balance
+
+async def get_trx_balance(public_key=None, private_key=None):
+    if private_key:
+        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    balance = 0
+    with suppress(exceptions.AddressNotFound):
+        async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+            balance = await client.get_account_balance(public_key)
+    return balance
+
+async def get_last_usdt_transaction_sum(public_key=None, private_key=None):
+    if private_key:
+        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    async with aiohttp.ClientSession() as session:
+        url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
+              f"only_confirmed=true&limit=10&contract_address={usdt_contract}"
+        headers = {
+            "accept": "application/json",
+            "TRON-PRO-API-KEY": api_key
+        }
+        async with session.get(url, headers=headers) as response:
+            data = await response.json()
+            transactions = data["data"]
+
+    last_usdt_txn = None
+
+    for txn in transactions:
+        if "token_info" in txn and txn["token_info"]["address"] == usdt_contract:
+            if txn["to"] == public_key:
+                last_usdt_txn = txn
+                break
+            if txn["from"] == public_key:
+                break
+
+    if last_usdt_txn:
+        amount = int(last_usdt_txn['value'])
+        return amount / 10 ** 6
+    else:
+        return
+
+def tron_get_public(private_key):
+    public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+    return public_key
+
 
 if __name__ == "__main__":
-    send_usdt(1,1)
-    #show_balance(my_tt)
-    #show_balance('TXxK7UpcdG1jFHSTgnnJXeoWsYWtn99Hjd')
-    #asyncio.run(main())
+    my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
+    print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
+    print(asyncio.run(get_trx_balance(my_tron)))
+    # print(create_trc_private_key())
+    # print(PrivateKey(bytes.fromhex('e5ef91a0392d38deed5f1c1797490a29474f83e7e48293b42aea9082d01e332a')).public_key.to_base58check_address())
+    # print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))

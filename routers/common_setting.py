@@ -64,12 +64,12 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
         if answer == 'DELETE':
             stellar_delete_wallets(user_id, wallets[idx][0])
             await cmd_change_wallet(callback.message.chat.id, state)
-        if answer == 'DEFAULT':
+        if answer == 'SET_ACTIVE':
             stellar_set_default_wallets(user_id, wallets[idx][0])
             await cmd_change_wallet(callback.message.chat.id, state)
         if answer == 'NAME':
             try:
-                msg = f"{wallets[idx][0]}\n" + my_gettext(callback, 'your_balance') + stellar_get_balance_str(
+                msg = f"{wallets[idx][0]}\n" + my_gettext(callback, 'your_balance') + await stellar_get_balance_str(
                     user_id, wallets[idx][0])
             except:
                 msg = f'Error load. Please delete this'

@@ -15,7 +15,8 @@ from routers.sign import cmd_ask_pin, PinState
 from utils.aiogram_utils import send_message, my_gettext
 from loguru import logger
 from utils.stellar_utils import stellar_get_balances, stellar_add_trust, stellar_get_user_account, \
-    stellar_is_free_wallet, public_issuer, get_good_asset_list, stellar_get_pin_type, stellar_pay, eurmtl_asset
+    stellar_is_free_wallet, public_issuer, get_good_asset_list, stellar_get_pin_type, stellar_pay, eurmtl_asset, \
+    float2str
 
 
 class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
@@ -45,6 +46,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext):
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_remove_password'), callback_data="RemovePassword")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'change_lang'), callback_data="ChangeLang")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_default'), callback_data="SetDefault")],
         get_return_button(callback)
     ]
 
@@ -72,11 +74,11 @@ async def cmd_add_asset(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(Text(text=["DeleteAsset"]))
 async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext):
-    asset_list = stellar_get_balances(callback.from_user.id)
+    asset_list = await stellar_get_balances(callback.from_user.id)
 
     kb_tmp = []
     for token in asset_list:
-        kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({token.balance})",
+        kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                   callback_data=DelAssetCallbackData(
                                                       answer=token.asset_code).pack()
                                                   )])
@@ -99,7 +101,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
         await state.update_data(send_asset_code=asset[0].asset_code,
                                 send_asset_issuer=asset[0].asset_issuer)
         # todo send last coins
-        xdr = stellar_add_trust(stellar_get_user_account(callback.from_user.id).account.account_id,
+        xdr = await stellar_add_trust((await stellar_get_user_account(callback.from_user.id)).account.account_id,
                                 Asset(asset[0].asset_code, asset[0].asset_issuer),
                                 delete=True)
 
@@ -121,12 +123,12 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 @router.callback_query(Text(text=["AddAsset"]))
 async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    if stellar_is_free_wallet(user_id) and (len(stellar_get_balances(user_id)) > 2):
+    if await stellar_is_free_wallet(user_id) and (len(await stellar_get_balances(user_id)) > 5):
         await send_message(user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
         return False
 
     good_asset = get_good_asset_list()
-    for item in stellar_get_balances(user_id):
+    for item in await stellar_get_balances(user_id):
         found = list(filter(lambda x: x.asset_code == item.asset_code, good_asset))
         if len(found) > 0:
             good_asset.remove(found[0])
@@ -174,7 +176,7 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 @router.callback_query(Text(text=["AddAssetExpert"]))
 async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    if stellar_is_free_wallet(user_id) and (len(stellar_get_balances(user_id)) > 2):
+    if await stellar_is_free_wallet(user_id) and (len(await stellar_get_balances(user_id)) > 5):
         await send_message(user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
         return False
 
@@ -212,7 +214,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext):
     asset_code = data.get('send_asset_code', 'XLM')
     asset_issuer = data.get('send_asset_issuer', '')
 
-    xdr = stellar_add_trust(stellar_get_user_account(chat_id).account.account_id, Asset(asset_code, asset_issuer))
+    xdr = await stellar_add_trust((await stellar_get_user_account(chat_id)).account.account_id, Asset(asset_code, asset_issuer))
 
     msg = my_gettext(chat_id, 'confirm_asset', (asset_code, asset_issuer))
 
@@ -246,10 +248,10 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext):
     elif pin_type == 10:
         await callback.answer('You have read only account', show_alert=True)
     elif pin_type == 0:
-        if stellar_is_free_wallet(callback.from_user.id):
+        if await stellar_is_free_wallet(callback.from_user.id):
             await callback.answer('You have free account. Please buy it first.', show_alert=True)
         else:
-            public_key = stellar_get_user_account(callback.from_user.id).account.account_id
+            public_key = (await stellar_get_user_account(callback.from_user.id)).account.account_id
             await state.update_data(public_key=public_key)
             await cmd_show_add_wallet_choose_pin(callback.from_user.id, state,
                                                  my_gettext(callback, 'for_address', (public_key,)))
@@ -258,9 +260,9 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(Text(text=["GetPrivateKey"]))
 async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext):
-    if stellar_is_free_wallet(callback.from_user.id):
-        await callback.answer('You have free account. Please buy it first.', show_alert=True)
-        await cmd_get_private_key(callback, state)
+    if await stellar_is_free_wallet(callback.from_user.id):
+        await cmd_buy_private_key(callback, state)
+        # await callback.answer('You have free account. Please buy it first.')
     else:
         pin_type = stellar_get_pin_type(callback.from_user.id)
 
@@ -274,22 +276,23 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(Text(text=["BuyAddress"]))
-async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext):
-    if stellar_is_free_wallet(callback.from_user.id):
-        public_key = stellar_get_user_account(callback.from_user.id).account.account_id
-        father_key = stellar_get_user_account(0).account.account_id
+async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext):
+    if await stellar_is_free_wallet(callback.from_user.id):
+        public_key = (await stellar_get_user_account(callback.from_user.id)).account.account_id
+        father_key = (await stellar_get_user_account(0)).account.account_id
         await state.update_data(buy_address=public_key)
-        balances = stellar_get_balances(callback.from_user.id)
+        balances = await stellar_get_balances(callback.from_user.id)
         eurmtl_balance = 0
         for balance in balances:
             if balance.asset_code == 'EURMTL':
                 eurmtl_balance = float(balance.balance)
                 break
         if eurmtl_balance < 1:
-            await callback.answer("You don't have enough money. Need 1 EURMTL", show_alert=True)
+            await callback.answer("You have free account. Please buy it first. You don't have enough money. Need 1 EURMTL", show_alert=True)
         else:
+            await callback.answer("You have free account. Please buy it first", show_alert=True)
             memo = f"{callback.from_user.id}*{public_key[len(public_key) - 4:]}"
-            xdr = stellar_pay(public_key, father_key, eurmtl_asset, 1, memo=memo)
+            xdr = await stellar_pay(public_key, father_key, eurmtl_asset, 1, memo=memo)
             await state.update_data(xdr=xdr)
             msg = my_gettext(callback, 'confirm_send', (1, eurmtl_asset.code, father_key, memo))
             msg = f"For buy {public_key}\n{msg}"

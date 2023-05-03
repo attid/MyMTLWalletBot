@@ -73,7 +73,7 @@
   "support_bot": "Podrška bot @MyMTLWalletSupportBot",
   "try_send": "Uspješno potpisan, pokušavajući poslati Blockchainu, čekajući do 5 minuta",
   "wallet_setting_msg": "Podešavanje novčanika, ovdje možete dodati liniju povjerenja (sredstvo), dobiti svoj privatni ključ za backup, izbrisati pin ili instalirati novu. Da biste promijenili iglu, izbrišite staru. ",
-  "your_balance": "Vaš bilans je \n ",
+  "your_balance": "bilans je",
   "your_xdr": "Vaša transakcija sa potpisom: <code>{}</code>",
   "zero_sum": "Iznos 0 =( \n neće biti dovoljan",
   "kb_market": "Razmjena",

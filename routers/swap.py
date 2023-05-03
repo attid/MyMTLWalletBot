@@ -12,7 +12,7 @@ from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
-    stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float
+    stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float, float2str
 
 
 class StateSwapToken(StatesGroup):
@@ -33,11 +33,11 @@ router = Router()
 @router.callback_query(Text(text=["Swap"]))
 async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext):
     msg = my_gettext(callback, 'choose_token_swap')
-    asset_list = stellar_get_balances(callback.from_user.id)
+    asset_list = await stellar_get_balances(callback.from_user.id)
 
     kb_tmp = []
     for token in asset_list:
-        kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({token.balance})",
+        kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                   callback_data=SwapAssetFromCallbackData(
                                                       answer=token.asset_code).pack()
                                                   )])
@@ -56,7 +56,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
     for asset in asset_list:
         if asset.asset_code == answer:
-            if float(asset.balance) == 0.0:
+            if my_float(asset.balance) == 0.0:
                 await callback.answer(my_gettext(callback, "zero_sum"), show_alert=True)
             else:
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
@@ -66,9 +66,9 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
                 kb_tmp = []
                 asset_list2 = []
-                for token in stellar_get_balances(callback.from_user.id):
+                for token in await stellar_get_balances(callback.from_user.id):
                     asset_list2.append(Asset(token.asset_code, token.asset_issuer))
-                receive_assets = stellar_check_receive_asset(Asset(asset.asset_code, asset.asset_issuer), '0.1',
+                receive_assets = await stellar_check_receive_asset(Asset(asset.asset_code, asset.asset_issuer), '10',
                                                              asset_list2)
 
                 for receive_asset in receive_assets:
@@ -123,13 +123,13 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext):
         receive_asset = data.get('receive_asset_code')
         receive_asset_code = data.get('receive_asset_issuer')
 
-        receive_sum = stellar_check_receive_sum(Asset(send_asset, send_asset_code), str(send_sum),
+        receive_sum = await stellar_check_receive_sum(Asset(send_asset, send_asset_code), float2str(send_sum),
                                                 Asset(receive_asset, receive_asset_code))
-        xdr = stellar_swap(stellar_get_user_account(message.from_user.id).account.account_id,
+        xdr = await stellar_swap((await stellar_get_user_account(message.from_user.id)).account.account_id,
                            Asset(send_asset, send_asset_code),
-                           str(send_sum), Asset(receive_asset, receive_asset_code), str(receive_sum))
+                           float2str(send_sum), Asset(receive_asset, receive_asset_code), receive_sum)
 
-        msg = my_gettext(message, 'confirm_swap', (send_sum, send_asset, receive_sum, receive_asset))
+        msg = my_gettext(message, 'confirm_swap', (float2str(send_sum), send_asset, receive_sum, receive_asset))
 
         await state.update_data(xdr=xdr)
         await send_message(message, msg, reply_markup=get_kb_yesno_send_xdr(message))
