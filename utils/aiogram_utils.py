@@ -1,7 +1,9 @@
 import sys
+from contextlib import suppress
 from typing import Union
 
 import tzlocal
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -14,9 +16,8 @@ from config_reader import config
 from aiogram import types
 from keyboards.common_keyboards import get_kb_return, get_kb_send
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 from utils.lang_utils import get_last_message_id, set_last_message_id, my_gettext
-from utils.stellar_utils import stellar_get_balances
+
 
 if 'test' in sys.argv:
     bot = Bot(token=config.test_bot_token.get_secret_value(), parse_mode='HTML')
@@ -59,13 +60,16 @@ async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], 
                 logger.info(['await send_message, del', user_id, ex])
         set_last_message_id(user_id, new_msg.message_id)
     else:
-        try:
-            await bot.edit_message_text(msg, user_id, msg_id, reply_markup=reply_markup, parse_mode=parse_mode,
-                                        disable_web_page_preview=True)
-        except Exception as ex:
-            new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
-                                             disable_web_page_preview=True)
-            set_last_message_id(user_id, new_msg.message_id)
+        if msg_id > 0:
+            try:
+                await bot.edit_message_text(msg, user_id, msg_id, reply_markup=reply_markup, parse_mode=parse_mode,
+                                            disable_web_page_preview=True)
+                return
+            except:
+                pass
+        new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
+                                         disable_web_page_preview=True)
+        set_last_message_id(user_id, new_msg.message_id)
 
 
 async def cmd_show_sign(chat_id: int, state: FSMContext, msg='', use_send=False):
@@ -82,6 +86,12 @@ async def cmd_show_sign(chat_id: int, state: FSMContext, msg='', use_send=False)
 
     if len(msg) > 4000:
         await send_message(chat_id, my_gettext(chat_id, 'big_xdr'), reply_markup=kb,
-                           parse_mode='MARKDOWN')
+                           parse_mode='HTML')
     else:
-        await send_message(chat_id, msg, reply_markup=kb, parse_mode='MARKDOWN')
+        await send_message(chat_id, msg, reply_markup=kb, parse_mode='HTML')
+
+
+async def check_username(user_id: int) -> str:
+    with suppress(TelegramBadRequest):
+        chat = await bot.get_chat(user_id)
+        return chat.username

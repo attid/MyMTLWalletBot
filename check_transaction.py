@@ -34,6 +34,10 @@ def cmd_check_and_send():
             cmd_add_message(user_id, my_gettext(user_id, "send_error"))
 
 
+@logger.catch
+def cmd_check_new_events():
+    pass
+
 if __name__ == "__main__":
     logger.add("MMWB_check_transaction.log", rotation="1 MB")
-    cmd_check_and_send()
+    cmd_check_new_events()

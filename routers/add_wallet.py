@@ -66,7 +66,7 @@ async def cmd_sending_private(message: types.Message, state: FSMContext):
 @router.callback_query(Text(text=["AddWalletNewKey"]))
 async def cq_add(callback: types.CallbackQuery, state: FSMContext):
     if stellar_can_new(callback.from_user.id):
-        xdr = stellar_create_new(callback.from_user.id, callback.from_user.username)
+        xdr = await stellar_create_new(callback.from_user.id, callback.from_user.username)
         await cmd_info_message(callback.message.chat.id, my_gettext(callback, "try_send"), state)
         #save_xdr_to_send(callback.from_user.id, xdr)
         await async_stellar_send(xdr)
@@ -89,7 +89,7 @@ async def cmd_show_add_wallet_choose_pin(user_id: int, state: FSMContext, msg=''
 
     msg = msg + my_gettext(user_id, 'choose_protect')
     await send_message(user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
-                       parse_mode='MARKDOWN')
+                       parse_mode='HTML')
 
 
 @router.callback_query(Text(text=["AddWalletReadOnly"]))
@@ -103,7 +103,7 @@ async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext):
 @router.message(StateAddWallet.sending_public)
 async def cmd_sending_private(message: types.Message, state: FSMContext):
     try:
-        stellar_get_balances(message.from_user.id, public_key=message.text)
+        await stellar_get_balances(message.from_user.id, public_key=message.text)
         await state.update_data(public_key=message.text)
         await state.set_state(None)
 

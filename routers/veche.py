@@ -31,7 +31,7 @@ async def cmd_start(message: types.Message, state: FSMContext, command: Command)
 
 async def cmd_login_to_veche(chat_id: int, state: FSMContext, token = None, verifier = None):
     # start_cmd  veche_fb2XcCgY69ZuiBCzILwfnPum
-    user_key = stellar_get_user_account(chat_id).account.account_id
+    user_key = (await stellar_get_user_account(chat_id)).account.account_id
     if verifier:
         message = user_key + verifier
         link = f"https://veche.montelibero.org/auth/page/mymtlwalletbot?" \
@@ -49,7 +49,7 @@ async def cmd_login_to_veche(chat_id: int, state: FSMContext, token = None, veri
 
 @router.callback_query(Text(text=["MTLToolsVeche"]))
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
-    user_key = stellar_get_user_account(callback.from_user.id).account.account_id
+    user_key = (await stellar_get_user_account(callback.from_user.id)).account.account_id
     verifier = requests.post(f"https://veche.montelibero.org/auth/page/mymtlwalletbot/verifier",
                              params={'account': user_key}).text
     # print(token)

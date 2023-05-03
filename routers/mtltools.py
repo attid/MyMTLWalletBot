@@ -3,6 +3,7 @@ from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import WebAppInfo
 
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from utils.aiogram_utils import my_gettext, send_message
@@ -49,6 +50,8 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext):
                                     callback_data="MTLToolsDelegate")],
         [types.InlineKeyboardButton(text='💸 ' + my_gettext(user_id, 'kb_tools_add_bim'),
                                     callback_data="MTLToolsAddBIM")],
+        [types.InlineKeyboardButton(text='Test Local Storage',
+                                    web_app=WebAppInfo(url='https://eurmtl.me/mmwb'))],
         get_return_button(user_id)
     ]
     await send_message(user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -61,7 +64,7 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(Text(text=["MTLToolsDelegate"]))
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
-    data = stellar_get_data(callback.from_user.id)
+    data = await stellar_get_data(callback.from_user.id)
     delegate = None
     for name in data:
         if name == "mtl_delegate":
@@ -83,14 +86,14 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(Text(text=["MTLToolsDelDelegate"]))
 async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext):
-    data = stellar_get_data(callback.from_user.id)
+    data = await stellar_get_data(callback.from_user.id)
     delegate = None
     for name in data:
         if name in ("mtl_delegate", "delegate"):
             delegate = name
             break
     if delegate:
-        xdr = cmd_gen_data_xdr(stellar_get_user_account(callback.from_user.id).account.account_id,
+        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(callback.from_user.id)).account.account_id,
                                delegate, None)
         await state.update_data(xdr=xdr)
         await send_message(callback, my_gettext(callback, 'delegate_delete', (delegate,)),
@@ -111,10 +114,10 @@ async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContex
 @router.message(StateTools.delegate_for)
 async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext):
     public_key = message.text
-    my_account = stellar_check_account(public_key)
+    my_account = await stellar_check_account(public_key)
     if my_account:
         delegate = my_account.account.account.account_id
-        xdr = cmd_gen_data_xdr(stellar_get_user_account(message.from_user.id).account.account_id,
+        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(message.from_user.id)).account.account_id,
                                "mtl_delegate", delegate)
         await state.update_data(xdr=xdr)
         await send_message(message, my_gettext(message, 'delegate_add', (delegate,)),
@@ -132,7 +135,7 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext):
 
 @router.callback_query(Text(text=["MTLToolsDonate"]))
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
-    data = stellar_get_data(callback.from_user.id)
+    data = await stellar_get_data(callback.from_user.id)
     donates = {}
     idx = 0
     for name in data:
@@ -180,7 +183,7 @@ async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContex
 @router.message(StateTools.donate_address)
 async def cmd_send_add_donate_address(message: types.Message, state: FSMContext):
     public_key = message.text
-    my_account = stellar_check_account(public_key)
+    my_account = await stellar_check_account(public_key)
     if my_account:
         await state.update_data(address=my_account.account.account.account_id)
         await send_message(message, my_gettext(message, 'donate_name'),
@@ -214,7 +217,7 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
     if my_float(message.text):
         persent = my_float(message.text)
         data = await state.get_data()
-        xdr = cmd_gen_data_xdr(stellar_get_user_account(message.from_user.id).account.account_id,
+        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(message.from_user.id)).account.account_id,
                                f"mtl_donate_{data['name']}={persent}", data['address'])
         await state.update_data(xdr=xdr)
         await send_message(message, my_gettext(message, 'donate_end', (data['name'], persent, data['address'])),
@@ -239,7 +242,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: DonateCallbac
             msg = f"name = {donates[idx][1]} \n persent = {donates[idx][2]}\n address = {donates[idx][3]}"
             await callback.answer(msg[:200], show_alert=True)
         if answer == 'Delete':
-            xdr = cmd_gen_data_xdr(stellar_get_user_account(user_id).account.account_id,
+            xdr = await cmd_gen_data_xdr((await stellar_get_user_account(user_id)).account.account_id,
                                    donates[idx][0], None)
             await state.update_data(xdr=xdr)
             await send_message(callback, my_gettext(callback, 'donate_delete', (donates[idx][1],)),
@@ -253,7 +256,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: DonateCallbac
 
 @router.callback_query(Text(text=["MTLToolsAddBIM"]))
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext):
-    data = stellar_get_data(callback.from_user.id)
+    data = await stellar_get_data(callback.from_user.id)
     bod_dict = {}
     idx = 0
     for name in data:
@@ -297,7 +300,7 @@ async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContex
 @router.message(StateTools.bim_address)
 async def cmd_send_add_donate_address(message: types.Message, state: FSMContext):
     public_key = message.text
-    my_account = stellar_check_account(public_key)
+    my_account = await stellar_check_account(public_key)
     if my_account:
         await state.update_data(address=my_account.account.account.account_id)
         await send_message(message, my_gettext(message, 'send_bim_name'),
@@ -315,7 +318,7 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext)
     if message.text:
         name = message.text
         data = await state.get_data()
-        xdr = cmd_gen_data_xdr(stellar_get_user_account(message.from_user.id).account.account_id,
+        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(message.from_user.id)).account.account_id,
                                f"bod_{name}", data['address'])
         await state.update_data(xdr=xdr)
         await send_message(message, my_gettext(message, 'add_bim_end', (name, data['address'],)),
@@ -340,7 +343,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: BIMCallbackDa
             msg = f"name = {donates[idx][1]} \n address = {donates[idx][2]}"
             await callback.answer(msg[:200], show_alert=True)
         if answer == 'Delete':
-            xdr = cmd_gen_data_xdr(stellar_get_user_account(user_id).account.account_id,
+            xdr = await cmd_gen_data_xdr((await stellar_get_user_account(user_id)).account.account_id,
                                    donates[idx][0], None)
             await state.update_data(xdr=xdr)
             await send_message(callback, my_gettext(callback, 'delete_bim', (donates[idx][1],)),

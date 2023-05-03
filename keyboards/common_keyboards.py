@@ -1,18 +1,11 @@
 from typing import Union
-
 from aiogram import types
 
+from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 
 
 def get_return_button(user_id: Union[types.CallbackQuery, types.Message, int], text=None, callback=None) -> list:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
-
     if text is None:
         text = my_gettext(user_id, 'kb_back')
 
@@ -43,7 +36,7 @@ def get_kb_del_return(user_id: Union[types.CallbackQuery, types.Message, int]) -
     else:
         user_id = user_id
 
-    buttons = [get_return_button(user_id,text='Delete and Return', callback='DeleteReturn')]
+    buttons = [get_return_button(user_id, text='Delete and Return', callback='DeleteReturn')]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
@@ -90,4 +83,3 @@ def get_kb_resend(user_id: int) -> types.InlineKeyboardMarkup:
                get_return_button(user_id)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
-

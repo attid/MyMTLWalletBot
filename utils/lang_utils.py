@@ -4,6 +4,8 @@ from typing import Union
 import fb
 from aiogram import types
 
+from utils.common_utils import get_user_id
+
 user_lang_dic = {}
 lang_dict = {}
 
@@ -28,13 +30,12 @@ def change_user_lang(user_id: int, lang: str):
     user_lang_dic[user_id] = lang
 
 
+def check_user_lang(user_id: int):
+    return fb.execsql1("select m.lang from mymtlwalletbot_users m where m.user_id = ?", (user_id,), None)
+
+
 def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int], text: str, param: tuple = ()) -> str:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
+    user_id = get_user_id(user_id)
 
     if user_id in user_lang_dic:
         lang = user_lang_dic[user_id]

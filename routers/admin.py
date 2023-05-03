@@ -1,12 +1,14 @@
 import os
+from contextlib import suppress
 
 from aiogram import Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import fb
 from utils.aiogram_utils import bot
-from utils.stellar_utils import stellar_find_claim, stellar_update_credit
+from utils.stellar_utils import stellar_update_credit, async_stellar_check_fee
 
 
 class ExitState(StatesGroup):
@@ -60,6 +62,11 @@ async def cmd_log(message: types.Message):
         await cmd_delete_file('MMWB.log')
 
 
+@router.message(Command(commands=["fee"]))
+async def cmd_fee(message: types.Message):
+    await message.answer("Комиссия (мин и мах) " + await async_stellar_check_fee())
+
+
 @router.message(Command(commands=["update"]))
 async def cmd_update(message: types.Message):
     if message.from_user.username == "itolstov":
@@ -91,6 +98,7 @@ async def cmd_update2(message: types.Message):
 
         await message.answer('done')
 
+
 @router.message(Command(commands=["update3"]))
 async def cmd_update3(message: types.Message):
     if message.from_user.username == "itolstov":
@@ -99,3 +107,14 @@ async def cmd_update3(message: types.Message):
         await message.answer(str(len(select)))
         await stellar_update_credit(select)
         await message.answer(f'done 90')
+
+
+@router.message(Command(commands=["test"]))
+async def cmd_test(message: types.Message):
+    if message.from_user.username == "itolstov":
+        with suppress(TelegramBadRequest):
+            chat = await bot.get_chat(215155653)
+            await message.answer(chat.json())
+        with suppress(TelegramBadRequest):
+            chat = await bot.get_chat(5687567734)
+            await message.answer(chat.json())
