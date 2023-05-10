@@ -11,10 +11,12 @@ from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Pr
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.federation import resolve_stellar_address
 from loguru import logger
+
+from config_reader import config
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
 from stellar_sdk import AiohttpClient, ServerAsync
 
-base_fee = 10101
+base_fee = config.base_fee
 
 # https://stellar-sdk.readthedocs.io/en/latest/
 
