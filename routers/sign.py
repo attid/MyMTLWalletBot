@@ -59,7 +59,7 @@ async def cmd_ask_pin(chat_id: int, state: FSMContext, msg=None):
         await state.update_data(pin_type=pin_type)
 
     if pin_type == 1:  # pin
-        msg = msg + "\n" + ''.ljust(len(pin), '*') + '\n\n' + ''.ljust(53, '=')
+        msg = msg + "\n" + ''.ljust(len(pin), '*') + '\n\n' + ''.ljust(53, '⠀')
         await send_message(chat_id, msg, reply_markup=get_kb_pin(chat_id))
 
     if pin_type == 2:  # password

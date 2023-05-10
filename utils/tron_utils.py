@@ -179,14 +179,12 @@ async def send_trx_async(public_key_to=None, amount=0, private_key_from=tron_mas
         )
         txn = await txb.build()
         txn_ret = await txn.sign(private_key).broadcast()
-        print(txn_ret)
-        print(await txn_ret.wait())
+        await txn_ret.wait()
 
 
 async def send_usdt_async(public_key_to=None, amount=0, private_key_from=tron_master_key, private_key_to=None):
     if private_key_to:
         public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
-    print(public_key_to, amount, private_key_from, private_key_to)
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         contract = await client.get_contract(usdt_contract)
@@ -258,11 +256,15 @@ def tron_get_public(private_key):
     public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
     return public_key
 
+def tron_help():
+    pass
+    #asyncio.run(send_trx_async(public_key_to='TKvcdvh628662g142UNQe2dpXxASRp7fv2', amount=50))
+    #asyncio.run(send_usdt_async(public_key_to='TNsfWkRay3SczwkB4wqyB8sCPTzCNQo4Cb', amount=520, private_key_from='*'))
 
 if __name__ == "__main__":
-    my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
-    print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
-    print(asyncio.run(get_trx_balance(my_tron)))
+    tron_help()
+    #my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
+    #print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
+    #print(asyncio.run(get_trx_balance(my_tron)))
     # print(create_trc_private_key())
-    # print(PrivateKey(bytes.fromhex('e5ef91a0392d38deed5f1c1797490a29474f83e7e48293b42aea9082d01e332a')).public_key.to_base58check_address())
     # print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))

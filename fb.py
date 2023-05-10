@@ -1,7 +1,11 @@
 #!/usr/bin/python3
+from datetime import datetime, timedelta
+from typing import Union
+
 import fdb
 from loguru import logger
 from config_reader import config
+
 
 # logger.add("check_stellar", rotation="1 MB")
 
@@ -41,7 +45,7 @@ def execsql(sql, param=None):
 
 
 @logger.catch
-def execsql1(sql, param=None, default=''):
+def execsql1(sql, param=None, default: Union[str, None] = ''):
     result = execsql(sql, param)
     if len(result) > 0:
         return result[0][0]
@@ -94,8 +98,22 @@ def get_usdt_private_key(user_id: int, create_trc_private_key=None):
         return addr
     else:
         addr = create_trc_private_key()
-        execsql('update mymtlwalletbot_users u set u.usdt = ? where u.user_id = ?', (addr,user_id,))
+        execsql('update mymtlwalletbot_users u set u.usdt = ? where u.user_id = ?', (addr, user_id,))
         return addr
+
+
+def get_btc_uuid(user_id: int):
+    btc_uuid = execsql1('select u.btc from mymtlwalletbot_users u where u.user_id = ?', (user_id,), default=None)
+    btc_date = execsql1('select u.btc_date from mymtlwalletbot_users u where u.user_id = ?', (user_id,), default=None)
+    if btc_uuid and btc_date and len(btc_uuid) > 10:
+        return btc_uuid, btc_date
+    else:
+        return None, None
+
+
+def set_btc_uuid(user_id: int, btc_uuid: Union[str, None]):
+    execsql('update mymtlwalletbot_users u set u.btc = ?, u.btc_date = ? where u.user_id = ?',
+            (btc_uuid, datetime.now() + timedelta(minutes=30), user_id,))
 
 
 logger.add(send_admin_message, level='WARNING')

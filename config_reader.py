@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     tron_api_key: SecretStr
     tron_master_address: str
     tron_master_key: SecretStr
+    thothpay_api: SecretStr
 
     class Config:
         env_file = dotenv_path
