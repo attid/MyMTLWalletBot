@@ -115,6 +115,9 @@ def set_btc_uuid(user_id: int, btc_uuid: Union[str, None]):
     execsql('update mymtlwalletbot_users u set u.btc = ?, u.btc_date = ? where u.user_id = ?',
             (btc_uuid, datetime.now() + timedelta(minutes=30), user_id,))
 
+def reset_balance(user_id: int):
+    execsql(f"update mymtlwalletbot set balances_event_id = ? where user_id = ? and default_wallet = 1",
+               ('0', user_id))
 
 logger.add(send_admin_message, level='WARNING')
 

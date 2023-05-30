@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Union
 
 from aiogram import types
@@ -49,14 +50,16 @@ async def cmd_show_balance(user_id: int, state: FSMContext, need_new_msg=None,
         await cmd_change_wallet(user_id, state)
     else:
         try:
+            #start_time = datetime.now()
+            #print(datetime.now(), f'time {datetime.now() - start_time}', 4)
             data = await state.get_data()
-            start_cmd = data.get('start_cmd')
             await state.clear()
 
             user_account = (await stellar_get_user_account(user_id)).account.account_id
             simple_account = user_account[:4] + '..' + user_account[-4:]
 
             link = 'https://stellar.expert/explorer/public/account/' + user_account
+            #a = await stellar_get_balance_str(user_id)
             msg = f'<a href="{link}">{simple_account}</a> {my_gettext(user_id, "your_balance")}\n\n' \
                   f'{await stellar_get_balance_str(user_id)}'
 
@@ -64,13 +67,15 @@ async def cmd_show_balance(user_id: int, state: FSMContext, need_new_msg=None,
             #    pass
             #    # await cmd_login_to_veche(chat_id, state, start_cmd)
             # else:
+
             if refresh_callback and msg == data.get('start_msg'):
                 await refresh_callback.answer('Nothing to update, the data is up to date.', show_alert=True)
                 await state.update_data(start_msg=msg)
             else:
                 await send_message(user_id, msg, reply_markup=await get_kb_default(user_id), need_new_msg=need_new_msg,
-                               parse_mode='HTML')
+                                   parse_mode='HTML')
                 await state.update_data(start_msg=msg)
+
         except Exception as ex:
             logger.info(['cmd_show_balance ', user_id, ex])
             kb = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_wallet'),

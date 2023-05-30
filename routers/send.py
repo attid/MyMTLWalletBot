@@ -36,6 +36,9 @@ router = Router()
 async def cmd_send_start(callback: types.CallbackQuery, state: FSMContext):
     msg = my_gettext(callback, 'send_address')
 
+    #buttons = [types.InlineKeyboardButton(text='Choose', ),get_return_button(callback)]
+    #keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
     await send_message(callback, msg, reply_markup=get_kb_return(callback))
     await state.set_state(StateSendToken.sending_for)
     await callback.answer()

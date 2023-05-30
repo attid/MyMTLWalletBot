@@ -9,6 +9,7 @@ from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 
+from fb import reset_balance
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import my_gettext, send_message, set_last_message_id, cmd_show_sign, \
@@ -105,12 +106,20 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
     user_id = query.from_user.id
     data = await state.get_data()
     pin = data.get('pin', '')
+    current_state = await state.get_state()
 
     if answer in '1234567890ABCDEF':
         pin += answer
         await state.update_data(pin=pin)
         await cmd_ask_pin(user_id, state)
         await query.answer(''.ljust(len(pin), '*'))
+        if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
+            try:
+                stellar_get_user_keypair(user_id,pin) #test pin
+                await sign_xdr(state, user_id)
+            except:
+                pass
+
 
     if answer == 'Del':
         pin = pin[:len(pin) - 1]
@@ -119,7 +128,6 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         await query.answer(''.ljust(len(pin), '*'))
 
     if answer == 'Enter':
-        current_state = await state.get_state()
         if current_state == PinState.set_pin:  # ask for save need pin2
             await state.update_data(pin2=pin, pin='')
             await state.set_state(PinState.set_pin2)
@@ -138,7 +146,12 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                 await state.set_state(PinState.set_pin)
                 await query.answer(my_gettext(user_id, "bad_passwords"), show_alert=True)
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
-            await sign_xdr(state, user_id)
+            try:
+                stellar_get_user_keypair(user_id,pin) #test pin
+                await sign_xdr(state, user_id)
+            except:
+                await query.answer(my_gettext(user_id, "bad_password"), show_alert=True)
+                return True
         return True
 
 
@@ -234,6 +247,7 @@ async def sign_xdr(state, user_id):
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(user_id, my_gettext(user_id, "bad_password"), state)
+    reset_balance(user_id)
 
 
 def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
