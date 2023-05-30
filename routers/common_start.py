@@ -5,7 +5,7 @@ from aiogram.filters import Command, Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from fb import get_default_address, set_default_address
+from fb import get_default_address, set_default_address, reset_balance
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
@@ -199,5 +199,6 @@ async def cmd_set_default(message: types.Message, state: FSMContext):
 
 @router.callback_query(Text(text=["Refresh"]))
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext):
+    reset_balance(callback.from_user.id)
     await cmd_show_balance(callback.from_user.id, state, refresh_callback=callback)
     await callback.answer()

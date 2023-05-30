@@ -106,14 +106,14 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer(text=f"USDT account balance unchanged", show_alert=True)
         return
     usdc_sum = float((await stellar_get_balances(0, asset_filter='USDC'))[0].balance)
-    if usdt_balance > max_usdt_sum or usdt_balance > usdc_sum:
+    if usdt_balance > max_usdt_sum + 10 or usdt_balance > usdc_sum:
         await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
                               show_alert=True)
         return
     last_usdt_transaction_sum = await get_last_usdt_transaction_sum(private_key=user_tron_private_key)
-    if last_usdt_transaction_sum is None or usdt_balance != last_usdt_transaction_sum:
+    if last_usdt_transaction_sum is None or round(usdt_balance) != round(last_usdt_transaction_sum):
         await callback.answer(
-            text=f"Congratulations, it seems like your account has been credited with {usdt_balance}. We are waiting for confirmations. 30 seconds",
+            text=f"Congratulations, it seems like your account has been credited with {round(usdt_balance)}. We are waiting for confirmations. 30 seconds",
             show_alert=True)
         return
     # all is good ?
@@ -237,12 +237,12 @@ async def cmd_receive_btc(callback: types.CallbackQuery, state: FSMContext):
 ############################################################################
 
 @router.callback_query(Text(text=["BTC_IN"]))
-async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext):
-    await cmd_show_usdt_in(callback.from_user.id, state)
+async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext):
+    await cmd_show_btc_in(callback.from_user.id, state)
     await callback.answer()
 
 
-async def cmd_show_usdt_in(user_id: int, state: FSMContext):
+async def cmd_show_btc_in(user_id: int, state: FSMContext):
     btc_uuid, btc_date = get_btc_uuid(user_id=user_id)
     if btc_uuid and btc_date and btc_date > datetime.now():
         buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check'),
@@ -282,7 +282,7 @@ async def cmd_send_get_sum(message: types.Message, state: FSMContext):
             await state.update_data(send_sum=send_sum)
             await state.set_state(None)
             set_btc_uuid(user_id=message.from_user.id, btc_uuid=order_uuid)
-            await cmd_show_usdt_in(message.from_user.id, state)
+            await cmd_show_btc_in(message.from_user.id, state)
     await message.delete()
 
 

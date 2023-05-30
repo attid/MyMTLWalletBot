@@ -2,6 +2,7 @@ import asyncio
 import base64
 from datetime import datetime
 
+import jsonpickle
 from aiogram.utils.text_decorations import html_decoration
 import fb
 import requests
@@ -159,9 +160,11 @@ def stellar_save_new(user_id: int, user_name: str, secret_key: str, free_wallet:
     if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
         fb.execsql(f"insert into mymtlwalletbot_users (user_id, user_name) values (?,?)", (user_id, user_name))
 
+    last_event_id = fb.execsql1('select max(last_event_id) from mymtlwalletbot')
+
     fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
-               f"free_wallet) values (?,?,?,?,?,?)",
-               (user_id, public_key, encrypt(new_account.secret, str(user_id)), 5, 1, i_free_wallet))
+               f"free_wallet, last_event_id) values (?,?,?,?,?,?,?)",
+               (user_id, public_key, encrypt(new_account.secret, str(user_id)), 5, 1, i_free_wallet, last_event_id))
     return public_key
 
 
@@ -175,9 +178,10 @@ def stellar_save_ro(user_id: int, user_name: str, public_key: str):
     if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
         fb.execsql(f"insert into mymtlwalletbot_users (user_id, user_name) values (?,?)", (user_id, user_name))
 
+    last_event_id = fb.execsql1('select max(last_event_id) from mymtlwalletbot')
     fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
-               f"free_wallet, use_pin) values (?,?,?,?,?,?,?)",
-               (user_id, public_key, public_key, 0, 1, i_free_wallet, 10))
+               f"free_wallet, use_pin, last_event_id) values (?,?,?,?,?,?,?,?)",
+               (user_id, public_key, public_key, 0, 1, i_free_wallet, 10, last_event_id))
     return public_key
 
 
@@ -318,15 +322,18 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
         transaction.set_timeout(60 * 60)
         full_transaction = transaction.build()
         xdr = full_transaction.to_xdr()
-        await async_stellar_send(stellar_sign(stellar_sign(xdr, master_account.secret), delete_account.secret))
+        if delete_account.signing_key:
+            await async_stellar_send(stellar_sign(stellar_sign(xdr, master_account.secret), delete_account.secret))
+        else:
+            return xdr
 
 
 async def stellar_get_balance_str(user_id: int, public_key=None) -> str:
+    start_time = datetime.now()
     balances = await stellar_get_balances(user_id, public_key)
     result = ''
     for balance in balances:
         result += f"{balance.asset_code} : {float2str(balance.balance)}\n"
-
     return result
 
 
@@ -369,31 +376,42 @@ async def stellar_add_donate(user_id: int, donate_sum: float):
 async def stellar_get_balances(user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:
     user_account = await stellar_get_user_account(user_id, public_key)
     free_wallet = await stellar_is_free_wallet(user_id)
-    async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
-    ) as server:
-        balances = MyAccount.from_dict(await server.accounts().account_id(
-            user_account.account.account_id).call()).balances
     result = []
-    for balance in balances:
-        if (balance.asset_type == "native") and (free_wallet == 0):
-            result.append(balance)
-        elif balance.asset_type[:15] == "credit_alphanum":
-            if asset_filter and (balance.asset_code.find(asset_filter) == -1):
-                pass
-            else:
-                result.append(balance)
+    balances = None
+    if public_key is None and user_id > 0:
+        balances = fb.execsql1('select balances from get_balances(?)', (user_id,), None)
+    if balances is None:
+        # получаем балансы
+        async with ServerAsync(
+                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+        ) as server:
+            balances = MyAccount.from_dict(await server.accounts().account_id(
+                user_account.account.account_id).call()).balances
 
-    async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
-    ) as server:
-        issuer = await server.assets().for_issuer(user_account.account.account_id).call()
-    for record in issuer['_embedded']['records']:
-        if asset_filter and (record['asset_code'].find(asset_filter) == -1):
-            pass
-        else:
+        for balance in balances:
+            if (balance.asset_type == "native") and (free_wallet == 0):
+                result.append(balance)
+            elif balance.asset_type[:15] == "credit_alphanum":
+                result.append(balance)
+        # получаем токены эмитента
+        async with ServerAsync(
+                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+        ) as server:
+            issuer = await server.assets().for_issuer(user_account.account.account_id).call()
+        for record in issuer['_embedded']['records']:
             result.append(Balance(balance='unlimited', asset_code=record['asset_code'], asset_type=record['asset_type'],
                                   asset_issuer=user_account.account.account_id))
+        # сохраняем полный список
+        if public_key is None:
+            fb.execsql(f"update mymtlwalletbot set balances = ?, "
+                       f"balances_event_id = last_event_id where user_id = ? and default_wallet = 1",
+                       (jsonpickle.encode(result), user_id))
+
+    else:
+        result = jsonpickle.decode(balances)
+
+    if asset_filter:
+        result = [balance for balance in result if balance.asset_code == asset_filter]
 
     return result
 
@@ -682,4 +700,6 @@ def update_username(user_id: int, username):
 
 if __name__ == "__main__":
     pass
-    print(asyncio.run(stellar_get_balance_str(0)))
+    print(asyncio.run(
+        stellar_delete_account(Keypair.from_public_key('GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'),
+                               Keypair.from_public_key('GDX23CPGMQ4LN55VGEDVFZPAJMAUEHSHAMJ2GMCU2ZSHN5QF4TMZYPIS'))))
