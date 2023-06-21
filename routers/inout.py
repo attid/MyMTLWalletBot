@@ -1,16 +1,13 @@
 from asyncio import sleep
-from datetime import datetime, timedelta
-from typing import Union
-
+from datetime import timedelta
 from aiogram import Router, types
-from aiogram.filters import Command, Text
+from aiogram.filters import Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-
 from fb import get_usdt_private_key, get_btc_uuid, set_btc_uuid
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message
+from utils.aiogram_utils import send_message, admin_id
 from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import *
@@ -148,6 +145,15 @@ async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(StateInOut.sending_usdt_address)
 
 
+async def cmd_after_send_usdt(user_id: int, state: FSMContext):
+    data = await state.get_data()
+    usdt_address = data.get('usdt_address')
+    usdt_sum = data.get('usdt_sum')
+    await send_message(user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address}', need_new_msg=True,
+                       reply_markup=get_kb_return(user_id))
+    await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address)
+
+
 @router.message(StateInOut.sending_usdt_address)
 async def cmd_send_get_address(message: types.Message, state: FSMContext):
     try:
@@ -156,7 +162,7 @@ async def cmd_send_get_address(message: types.Message, state: FSMContext):
         trx_sum = await get_trx_balance(public_key=message.text)
         if trx_sum == 0:
             raise ValueError
-        await state.update_data(usdt_address=message.text)
+        await state.update_data(usdt_address=message.text, fsm_after_send=jsonpickle.dumps(cmd_after_send_usdt))
         await state.set_state(None)
         usdc_balance = await stellar_get_balances(message.from_user.id, asset_filter='USDC')
         if len(usdc_balance) == 0:
@@ -307,7 +313,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext):
                                       show_alert=True)
                 return
             btc_balance = float((await stellar_get_balances(0, asset_filter='SATSMTL'))[0].balance)
-            if btc_balance > max_btc_sum or sats_sum > btc_balance :
+            if btc_balance > max_btc_sum or sats_sum > btc_balance:
                 await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
                                       show_alert=True)
                 return
@@ -318,13 +324,15 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext):
 
             master = stellar_get_master()
             xdr = stellar_sign(await stellar_pay((await stellar_get_user_account(0)).account.account_id,
-                                                  (await stellar_get_user_account(callback.from_user.id)).account.account_id,
-                                                  satsmtl_asset, amount=round(sats_sum)), master.secret)
+                                                 (await stellar_get_user_account(
+                                                     callback.from_user.id)).account.account_id,
+                                                 satsmtl_asset, amount=round(sats_sum)), master.secret)
             logger.info(xdr)
             set_btc_uuid(user_id=callback.from_user.id, btc_uuid=None)
             await async_stellar_send(xdr)
             await cmd_info_message(callback, 'All works done!', state)
     await callback.answer()
+
 
 ############################################################################
 ############################################################################

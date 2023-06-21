@@ -131,7 +131,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext):
 
         msg = my_gettext(message, 'confirm_swap', (float2str(send_sum), send_asset, receive_sum, receive_asset))
 
-        await state.update_data(xdr=xdr)
+        await state.update_data(xdr=xdr, operation='swap')
         await send_message(message, msg, reply_markup=get_kb_yesno_send_xdr(message))
         await message.delete()
     else:

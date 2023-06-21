@@ -1,25 +1,20 @@
 from datetime import datetime, timedelta
-
+import jsonpickle
 import requests
 from aiogram import Router, types
-from aiogram.filters import Text, Command
+from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
-
 from fb import reset_balance
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message, set_last_message_id, cmd_show_sign, \
-    StateSign, bot, admin_id
-from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_del_return
-from utils.lang_utils import check_user_id
-from utils.stellar_utils import stellar_get_pin_type, stellar_change_password, stellar_user_sign_message, \
-    stellar_user_sign, stellar_check_xdr, async_stellar_send, stellar_get_user_account, \
-    stellar_get_user_keypair, stellar_unfree_wallet, stellar_add_donate
-from utils.tron_utils import send_usdt_async
+from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery
+from keyboards.common_keyboards import get_kb_return, get_return_button
+from utils.stellar_utils import (stellar_get_pin_type, stellar_change_password, stellar_user_sign, stellar_check_xdr,
+                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair)
 
 
 class PinState(StatesGroup):
@@ -50,7 +45,9 @@ async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext):
 
 async def cmd_ask_pin(chat_id: int, state: FSMContext, msg=None):
     if msg is None:
-        msg = my_gettext(chat_id, "enter_password")
+        user_account = (await stellar_get_user_account(chat_id)).account.account_id
+        simple_account = user_account[:4] + '..' + user_account[-4:]
+        msg = my_gettext(chat_id, "enter_password", (simple_account,))
     data = await state.get_data()
     pin_type = data.get("pin_type")
     pin = data.get("pin", '')
@@ -115,11 +112,10 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         await query.answer(''.ljust(len(pin), '*'))
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
-                stellar_get_user_keypair(user_id,pin) #test pin
+                stellar_get_user_keypair(user_id, pin)  # test pin
                 await sign_xdr(state, user_id)
             except:
                 pass
-
 
     if answer == 'Del':
         pin = pin[:len(pin) - 1]
@@ -147,7 +143,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                 await query.answer(my_gettext(user_id, "bad_passwords"), show_alert=True)
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
-                stellar_get_user_keypair(user_id,pin) #test pin
+                stellar_get_user_keypair(user_id, pin)  # test pin
                 await sign_xdr(state, user_id)
             except:
                 await query.answer(my_gettext(user_id, "bad_password"), show_alert=True)
@@ -159,45 +155,25 @@ async def sign_xdr(state, user_id):
     data = await state.get_data()
     current_state = await state.get_state()
     pin = data.get('pin', '')
-    await state.update_data(pin='')
     await state.set_state(None)
     xdr = data.get('xdr')
-    message = data.get('message')
-    link = data.get('link')
-    remove_password = data.get('remove_password')
-    send_private_key = data.get('send_private_key')
-    buy_address = data.get('buy_address')
-    usdt_address = data.get('usdt_address')
-    donate = data.get('donate')
+    fsm_func = data.get('fsm_func')
+    fsm_after_send = data.get('fsm_after_send')
+    # buy_address = data.get('buy_address')
+    # usdt_address = data.get('usdt_address')
+    # donate = data.get('donate')
     try:
         if user_id > 0:
-            if message and link:
-                msg = stellar_user_sign_message(message, user_id, str(pin))
-                import urllib.parse
-                link = link.replace('$$SIGN$$', urllib.parse.quote(msg))
-                await state.update_data(link=link)
-                await cmd_info_message(user_id,
-                                       my_gettext(user_id, 'veche_go', (link,)), state)
-                set_last_message_id(user_id, 0)
-                await state.set_state(None)
-            elif remove_password:
-                user_account = await stellar_get_user_account(user_id)
-                stellar_change_password(user_id, user_account.account.account_id, pin, str(user_id), 0)
-                await state.set_state(None)
-                await cmd_info_message(user_id,
-                                       'Password was unset',
-                                       state)
-            elif send_private_key:
-                keypair = stellar_get_user_keypair(user_id, pin)
-                await state.set_state(None)
-                await send_message(user_id, f'Your private key is <code>{keypair.secret}</code>',
-                                   reply_markup=get_kb_del_return(user_id))
+            if fsm_func:
+                fsm_func = jsonpickle.loads(fsm_func)
+                await fsm_func(user_id, state)
             else:
                 xdr = stellar_user_sign(xdr, user_id, str(pin))
                 await state.set_state(None)
                 await state.update_data(xdr=xdr)
                 if current_state == PinState.sign_and_send:
-                    await state.update_data(try_sent_xdr=(datetime.now() + timedelta(minutes=5)).strftime('%d.%m.%Y %H:%M:%S'))
+                    await state.update_data(
+                        try_sent_xdr=(datetime.now() + timedelta(minutes=5)).strftime('%d.%m.%Y %H:%M:%S'))
                     await cmd_info_message(user_id,
                                            my_gettext(user_id, "try_send"),
                                            state)
@@ -212,24 +188,19 @@ async def sign_xdr(state, user_id):
                     await cmd_info_message(user_id,
                                            my_gettext(user_id, "send_good") + link_msg,
                                            state)
-                    if buy_address:
-                        await send_message(user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
-                                           reply_markup=get_kb_return(user_id))
-                        await stellar_unfree_wallet(user_id)
-
-                    if donate:
-                        await send_message(user_id=admin_id, msg=f'{user_id} donate {donate}', need_new_msg=True,
-                                           reply_markup=get_kb_return(user_id))
-                        await stellar_add_donate(user_id, donate)
-                    if usdt_address:
-                        usdt_sum = data.get('usdt_sum')
-                        await send_message(user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address}', need_new_msg=True,
-                                           reply_markup=get_kb_return(user_id))
-                        await send_usdt_async(amount=usdt_sum,  public_key_to=usdt_address)
+                    if fsm_after_send:
+                        fsm_after_send = jsonpickle.loads(fsm_after_send)
+                        await fsm_after_send(user_id, state)
                 if current_state == PinState.sign:
                     await cmd_show_sign(user_id, state,
                                         my_gettext(user_id, "your_xdr", (xdr,)),
                                         use_send=True)
+                log_queue.put_nowait(LogQuery(
+                    user_id=user_id,
+                    log_operation='sign',
+                    log_operation_info=data.get('operation')
+                ))
+
     except BadRequestError as ex:
         extras = ex.extras.get('result_codes', 'no extras') if ex.extras else ex.detail
         msg = f"{ex.title}, error {ex.status}, {extras}"
@@ -248,6 +219,7 @@ async def sign_xdr(state, user_id):
         logger.info(['ex', ex, current_state])
         await cmd_info_message(user_id, my_gettext(user_id, "bad_password"), state)
     reset_balance(user_id)
+    await state.update_data(pin='')
 
 
 def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
@@ -278,7 +250,7 @@ async def cmd_check_xdr(check_xdr: str, user_id, state: FSMContext):
         if xdr:
             await state.update_data(xdr=xdr)
             if check_xdr.find('mtl.ergvein.net/view') > -1 or check_xdr.find('eurmtl.me/sign_tools') > -1:
-                await state.update_data(tools=check_xdr)
+                await state.update_data(tools=check_xdr, operation='sign_tools')
             await state.set_state(PinState.sign)
             await cmd_ask_pin(user_id, state)
         else:
@@ -309,7 +281,7 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext):
                 else:  # "https://eurmtl.me/sign_tools"
                     rq = requests.post(data.get('tools'), data={"tx_body": xdr})
                     parse_text = rq.text
-                    #logger.info(parse_text)
+                    # logger.info(parse_text)
                     if parse_text.find('Transaction signatures') > 0:
                         await cmd_info_message(callback, my_gettext(callback, 'check_here', (tools,)), state)
                     else:

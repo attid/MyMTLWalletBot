@@ -37,6 +37,8 @@ class CheckOldButtonCallbackMiddleware(BaseMiddleware):
             return await handler(event, data)
         elif last_message_id == 0:
             return await handler(event, data)
+        elif event.message.reply_markup.__str__().find('cheque_callback_') > 0:
+            return await handler(event, data)
         else:
             await event.answer(
                 "Old button =(",

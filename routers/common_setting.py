@@ -1,5 +1,5 @@
 from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram.filters import Text, Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
@@ -50,6 +50,12 @@ async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallb
 @router.callback_query(Text(text=["ChangeWallet"]))
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext):
     await cmd_change_wallet(callback.from_user.id, state)
+
+
+@router.message(Command(commands=["change_wallet"]))
+async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext):
+    await message.delete()
+    await cmd_change_wallet(message.from_user.id, state)
 
 
 @router.callback_query(WalletSettingCallbackData.filter())
