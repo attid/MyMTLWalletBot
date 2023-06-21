@@ -1,19 +1,18 @@
 from datetime import datetime, timedelta
-
+import jsonpickle
 from aiogram import Router, types, F
 from aiogram.filters import Command, Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-
 from fb import get_default_address, set_default_address, reset_balance
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance
-from utils.aiogram_utils import send_message
+from utils.aiogram_utils import send_message, admin_id
 from utils.lang_utils import set_last_message_id, my_gettext, check_user_id, check_user_lang
-from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset, \
-    stellar_delete_all
+from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
+                                 stellar_delete_all, stellar_add_donate)
 
 router = Router()
 
@@ -132,6 +131,14 @@ async def cmd_donate_message(message: types.Message, state: FSMContext):
     await cmd_donate(message.from_user.id, state)
 
 
+async def cmd_after_donate(user_id: int, state: FSMContext):
+    data = await state.get_data()
+    donate_sum = data.get('donate_sum')
+    await send_message(user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
+                       reply_markup=get_kb_return(user_id))
+    await stellar_add_donate(user_id, donate_sum)
+
+
 async def get_donate_sum(user_id, donate_sum, state: FSMContext):
     data = await state.get_data()
     max_sum = float(data['max_sum'])
@@ -145,7 +152,7 @@ async def get_donate_sum(user_id, donate_sum, state: FSMContext):
             father_key = (await stellar_get_user_account(0)).account.account_id
             memo = "donate"
             xdr = await stellar_pay(public_key, father_key, eurmtl_asset, donate_sum, memo=memo)
-            await state.update_data(xdr=xdr, donate=donate_sum)
+            await state.update_data(xdr=xdr, donate_sum=donate_sum, fsm_after_send=jsonpickle.dumps(cmd_after_donate))
             msg = my_gettext(user_id, 'confirm_send', (donate_sum, eurmtl_asset.code, father_key, memo))
             msg = f"For donate\n{msg}"
 

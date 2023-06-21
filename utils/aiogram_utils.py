@@ -1,5 +1,8 @@
+import asyncio
 import sys
 from contextlib import suppress
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Union
 
 import tzlocal
@@ -17,7 +20,6 @@ from keyboards.common_keyboards import get_kb_return, get_kb_send
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from utils.lang_utils import get_last_message_id, set_last_message_id, my_gettext
 
-
 if 'test' in sys.argv:
     bot = Bot(token=config.test_bot_token.get_secret_value(), parse_mode='HTML')
     # storage = MemoryStorage()
@@ -31,12 +33,22 @@ else:
     dp = Dispatcher(storage=storage)
 
 scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
+cheque_queue = asyncio.Queue()
+log_queue = asyncio.Queue()
 
 admin_id = 84131737
 
 
 class StateSign(StatesGroup):
     sending_xdr = State()
+
+
+class LogQuery:
+    def __init__(self, user_id: int, log_operation: str, log_operation_info: str):
+        self.user_id = user_id
+        self.log_operation = log_operation
+        self.log_operation_info = log_operation_info
+        self.log_dt = datetime.now()
 
 
 async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], msg: str, reply_markup=None,

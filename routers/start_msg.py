@@ -112,7 +112,7 @@ async def cmd_change_wallet(user_id: int, state: FSMContext):
     buttons = []
     wallets = stellar_get_wallets_list(user_id)
     for idx, wallet in enumerate(wallets):
-        active_name = 'Active' if wallet[1] == 1 else 'Set active'
+        active_name = '📌 Active' if wallet[1] == 1 else 'Set active'
         buttons.append([types.InlineKeyboardButton(text=f"{wallet[0][:4]}..{wallet[0][-4:]}",
                                                    callback_data=WalletSettingCallbackData(action='NAME',
                                                                                            idx=idx).pack()),

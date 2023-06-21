@@ -1,7 +1,6 @@
 import asyncio
 import base64
 from datetime import datetime
-
 import jsonpickle
 from aiogram.utils.text_decorations import html_decoration
 import fb
@@ -12,7 +11,6 @@ from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Pr
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.federation import resolve_stellar_address
 from loguru import logger
-
 from config_reader import config
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
 from stellar_sdk import AiohttpClient, ServerAsync
@@ -218,7 +216,10 @@ async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount:
         transaction.append_create_account_op(destination=for_account, starting_balance=float2str(round(amount, 7)))
         transaction.add_text_memo('New account MyMTLWalletbot')
     else:
-        transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset)
+        if xdr:
+            transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset, source=from_account)
+        else:
+            transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset)
         if memo:
             transaction.add_text_memo(memo)
     full_transaction = transaction.build()
@@ -268,9 +269,14 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
 
 def stellar_get_user_keypair(user_id: int, user_password: str) -> Keypair:
     result = fb.execsql(
-        f"select m.public_key, m.secret_key from mymtlwalletbot m where m.user_id = {user_id} "
-        f"and m.default_wallet = 1")[0]
+        f"select m.public_key, m.secret_key from mymtlwalletbot m where m.user_id = ? "
+        f"and m.default_wallet = 1",(user_id,))[0]
     return Keypair.from_secret(decrypt(result[1], user_password))
+
+
+def stellar_get_user_public(user_id: int) -> str:
+    return fb.execsql1(f"select m.public_key, m.secret_key from mymtlwalletbot m where m.user_id = ? "
+                       f"and m.default_wallet = 1", (user_id,))
 
 
 async def stellar_get_user_account(user_id: int, public_key=None) -> Account:
