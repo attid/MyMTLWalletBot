@@ -1,7 +1,12 @@
 import asyncio
 import sys
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 import time_handlers
+from config_reader import config
+from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
@@ -12,7 +17,6 @@ from routers import veche, wallet_setting, common_end
 from loguru import logger
 
 
-
 # https://docs.aiogram.dev/en/latest/quick_start.html
 # https://docs.aiogram.dev/en/dev-3.x/dispatcher/filters/index.html
 # https://surik00.gitbooks.io/aiogram-lessons/content/chapter3.html
@@ -20,10 +24,12 @@ from loguru import logger
 
 # Запуск бота
 @logger.catch
-async def main_bot():
+async def main_bot(db_pool: sessionmaker):
     logger.add("MMWB.log", rotation="1 MB", level='INFO')
     dp.callback_query.middleware(LogButtonClickCallbackMiddleware())
-    dp.callback_query.middleware(CheckOldButtonCallbackMiddleware())
+    dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool()))
+    dp.message.middleware(DbSessionMiddleware(db_pool))
+    dp.callback_query.middleware(DbSessionMiddleware(db_pool))
 
     dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
@@ -95,9 +101,13 @@ async def set_commands():
 
 
 async def main():
-    await asyncio.gather(asyncio.create_task(main_bot()),
-                         asyncio.create_task(cheque_worker()),
-                         asyncio.create_task(log_worker()),
+    # Запуск бота
+    engine = create_engine(config.db_dns, pool_pre_ping=True)
+    # Creating DB connections pool
+    db_pool = sessionmaker(bind=engine)
+    await asyncio.gather(asyncio.create_task(main_bot(db_pool)),
+                         asyncio.create_task(cheque_worker(db_pool())),
+                         asyncio.create_task(log_worker(db_pool())),
                          return_exceptions=True)
 
 

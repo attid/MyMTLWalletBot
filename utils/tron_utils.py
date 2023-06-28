@@ -1,6 +1,4 @@
-import asyncio
 from contextlib import suppress
-
 import aiohttp
 import base58
 import requests

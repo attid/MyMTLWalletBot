@@ -1,38 +1,22 @@
-from datetime import datetime
 from typing import Callable, Dict, Any, Awaitable
-
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery
-
-from loguru import logger
+from aiogram.types import CallbackQuery
 from utils.lang_utils import get_last_message_id
 
 
-# # Это будет inner-мидлварь на сообщения
-# class TestMessageMiddleware(BaseMiddleware):
-#     async def __call__(
-#             self,
-#             handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
-#             event: Message,
-#             data: Dict[str, Any]
-#     ) -> Any:
-#         # Если сегодня не суббота и не воскресенье,
-#         # то продолжаем обработку.
-#         if data.get('re'):
-#             return await handler(event, data)
-#         # В противном случае просто вернётся None
-#         # и обработка прекратится
-
-
 class CheckOldButtonCallbackMiddleware(BaseMiddleware):
+    def __init__(self, session):
+        super().__init__()
+        self.session = session
+
     async def __call__(
             self,
             handler: Callable[[CallbackQuery, Dict[str, Any]], Awaitable[Any]],
             event: CallbackQuery,
             data: Dict[str, Any]
     ) -> Any:
-        last_message_id = get_last_message_id(event.from_user.id)
-        #logger.info(['good_id', last_message_id])
+        last_message_id = get_last_message_id(self.session, event.from_user.id)
+        # logger.info(['good_id', last_message_id])
         if event.message.message_id == last_message_id:
             return await handler(event, data)
         elif last_message_id == 0:

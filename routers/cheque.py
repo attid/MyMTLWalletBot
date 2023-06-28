@@ -1,14 +1,17 @@
-import asyncio, uuid, fb, jsonpickle
+import asyncio, uuid, jsonpickle
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Union
 from aiogram import types, Router, F
-from aiogram.filters import Text, Command, callback_data
+from aiogram.filters import Text, Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from loguru import logger
+from sqlalchemy.orm import Session
+
+from db.requests import insert_into_mtlwalletbot_cheque, get_cheque, get_user_wallet, reset_balance, \
+    get_available_cheques, get_cheque_receive_count, insert_into_cheque_history
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
@@ -16,7 +19,7 @@ from utils.aiogram_utils import send_message, bot, cheque_queue
 from utils.lang_utils import my_gettext, set_last_message_id
 from utils.stellar_utils import (my_float, float2str, stellar_pay, stellar_get_user_account, eurmtl_asset, is_new_user,
                                  stellar_create_new, async_stellar_send, stellar_sign, stellar_get_master,
-                                 stellar_user_sign, stellar_get_user_public)
+                                 stellar_user_sign)
 
 router = Router()
 cheque_public = 'GCYTGJ4VFRWYULX746TAOF4V6RYCEWG3TJ42JMG3GMJF7BJ44VVX6OUT'
@@ -43,15 +46,15 @@ class ChequeQuery:
 
 
 @router.callback_query(Text(text=["CreateCheque"]))
-async def cmd_create_cheque(callback: CallbackQuery, state: FSMContext):
+async def cmd_create_cheque(callback: CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'send_cheque_sum')
-    await send_message(callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
     await state.set_state(StateCheque.sending_sum)
     await callback.answer()
 
 
 @router.message(StateCheque.sending_sum)
-async def cmd_cheque_get_sum(message: Message, state: FSMContext):
+async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: Session):
     try:
         send_sum = my_float(message.text)
     except:
@@ -63,13 +66,13 @@ async def cmd_cheque_get_sum(message: Message, state: FSMContext):
         await state.update_data(send_sum=send_sum)
         await state.set_state(None)
 
-        await cmd_cheque_show(message, state)
+        await cmd_cheque_show(session, message, state)
         await message.delete()
     else:
         await message.delete()
 
 
-async def cmd_cheque_show(message: Message, state: FSMContext):
+async def cmd_cheque_show(session: Session, message: Message, state: FSMContext):
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
@@ -81,13 +84,13 @@ async def cmd_cheque_show(message: Message, state: FSMContext):
     msg = my_gettext(message, 'send_cheque',
                      (float2str(send_sum), send_count, float(send_sum) * send_count, send_comment))
 
-    xdr = await stellar_pay((await stellar_get_user_account(message.from_user.id)).account.account_id,
+    xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
                             cheque_public,
                             eurmtl_asset, send_sum * send_count, memo=send_uuid[:16])
 
     await state.update_data(xdr=xdr, operation='cheque')
 
-    await send_message(message, msg, reply_markup=get_kb_send_cheque(message.from_user.id))
+    await send_message(session, message, msg, reply_markup=get_kb_send_cheque(message.from_user.id))
 
 
 def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
@@ -109,15 +112,15 @@ def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int]) 
 
 
 @router.callback_query(Text(text=["ChequeCount"]))
-async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext):
+async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'kb_change_count')
-    await send_message(callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
     await state.set_state(StateCheque.sending_count)
     await callback.answer()
 
 
 @router.message(StateCheque.sending_count)
-async def cmd_cheque_get_count(message: Message, state: FSMContext):
+async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Session):
     try:
         send_count = int(message.text)
         if send_count < 1:
@@ -129,57 +132,56 @@ async def cmd_cheque_get_count(message: Message, state: FSMContext):
         await state.update_data(send_count=send_count)
         await state.set_state(None)
 
-        await cmd_cheque_show(message, state)
+        await cmd_cheque_show(session, message, state)
         await message.delete()
     else:
         await message.delete()
 
 
 @router.callback_query(Text(text=["ChequeComment"]))
-async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext):
+async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'kb_change_comment')
-    await send_message(callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
     await state.set_state(StateCheque.sending_comment)
     await callback.answer()
 
 
 @router.message(StateCheque.sending_comment)
-async def cmd_cheque_get_comment(message: Message, state: FSMContext):
+async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: Session):
     send_comment = message.text[:255]
 
     if send_comment:
         await state.update_data(send_comment=send_comment)
         await state.set_state(None)
 
-        await cmd_cheque_show(message, state)
+        await cmd_cheque_show(session, message, state)
         await message.delete()
     else:
         await message.delete()
 
 
 @router.callback_query(Text(text=["ChequeExecute"]))
-async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext):
+async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)
-    send_comment = data.get("send_comment", '')
+    # send_comment = data.get("send_comment", '')
     send_uuid = data.get("send_uuid", str(uuid.uuid4().hex))
     msg = my_gettext(callback, 'confirm_send',
                      (float2str(send_sum * send_count), eurmtl_asset.code, cheque_public, send_uuid[:16]))
     await state.update_data(fsm_after_send=jsonpickle.dumps(cheque_after_send))
-    await send_message(callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
     await callback.answer()
 
 
-async def cheque_after_send(user_id: int, state: FSMContext):
+async def cheque_after_send(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)
     send_comment = data.get("send_comment", '')
     send_uuid = data.get("send_uuid", '')
-    fb.execsql("insert into mymtlwalletbot_cheque (cheque_uuid, cheque_amount, cheque_count, user_id, cheque_comment) "
-               "VALUES (?, ?, ?, ?, ?)", (send_uuid, send_sum, send_count, user_id, send_comment))
-    set_last_message_id(user_id, 0)
+    insert_into_mtlwalletbot_cheque(session, send_uuid, send_sum, send_count, user_id, send_comment)
+    set_last_message_id(session, user_id, 0)
     #  "send_cheque_resend": "You have cheque {} with sum {} EURMTL for {} users, total sum {} with comment \"{}\" you can send link {} or press button to send"
     link = f'https://t.me/{(await bot.me()).username}?start=cheque_{send_uuid}'
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -190,27 +192,24 @@ async def cheque_after_send(user_id: int, state: FSMContext):
                                     callback_data=ChequeCallbackData(uuid=send_uuid, cmd='cancel').pack())],
         get_return_button(user_id)
     ])
-    await send_message(user_id, my_gettext(user_id, 'send_cheque_resend',
-                                           (send_uuid, float2str(send_sum), send_count,
-                                            float(send_sum) * send_count, send_comment, link)), reply_markup=kb)
-    set_last_message_id(user_id, 0)
+    await send_message(session, user_id, my_gettext(user_id, 'send_cheque_resend',
+                                                    (send_uuid, float2str(send_sum), send_count,
+                                                     float(send_sum) * send_count, send_comment, link)),
+                       reply_markup=kb)
+    set_last_message_id(session, user_id, 0)
 
 
 @router.callback_query(ChequeCallbackData.filter())
-async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: ChequeCallbackData, state: FSMContext):
+async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: ChequeCallbackData, state: FSMContext,
+                               session: Session):
     cmd = callback_data.cmd
     cheque_uuid = callback_data.uuid
-    if fb.execsql1('select cheque_status from mymtlwalletbot_cheque where cheque_uuid = ? and user_id = ?',
-                   (cheque_uuid, callback.from_user.id), '1') > 0:
+    cheque = get_cheque(session, cheque_uuid, callback.from_user.id)
+    if cheque.cheque_status > 0:
         await callback.answer('Cheque was already cancelled', show_alert=True)
         return
-    total_count = fb.execsql1(
-        'select cheque_count from mymtlwalletbot_cheque where cheque_uuid = ? and user_id = ?',
-        (cheque_uuid, callback.from_user.id), '0')
-    receive_count = fb.execsql1('select count(*) from mymtlwalletbot_cheque ch '
-                                'join mymtlwalletbot_cheque_history h on ch.cheque_id = h.cheque_id '
-                                'where ch.cheque_uuid = ? and ch.user_id = ?', (cheque_uuid, callback.from_user.id),
-                                '0')
+    total_count = cheque.cheque_count
+    receive_count = get_cheque_receive_count(session, cheque_uuid)
     if cmd == 'info':
         await callback.answer(f'Cheque was received {receive_count} from {total_count}', show_alert=True)
     elif cmd == 'cancel':
@@ -222,42 +221,36 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Che
             await callback.answer('Nothing to cancel', show_alert=True)
 
 
-async def cmd_cancel_cheque(user_id: int, cheque_uuid: str, state: FSMContext):
-    fb.execsql("update mymtlwalletbot_cheque set cheque_status = 1 where cheque_uuid = ? and user_id = ?",
-               (cheque_uuid, user_id))
-    total_count = fb.execsql1('select cheque_count from mymtlwalletbot_cheque where cheque_uuid = ? and user_id = ?',
-                              (cheque_uuid, user_id), '0')
-    receive_count = fb.execsql1('select count(*) from mymtlwalletbot_cheque ch '
-                                'join mymtlwalletbot_cheque_history h on ch.cheque_id = h.cheque_id '
-                                'where ch.cheque_uuid = ? and ch.user_id = ?', (cheque_uuid, user_id), '0')
-    cheque_pay = fb.execsql1('select cheque_amount from mymtlwalletbot_cheque where cheque_uuid = ? and user_id = ?',
-                             (cheque_uuid, user_id), '0')
+async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, state: FSMContext):
+    cheque = get_cheque(session, cheque_uuid, user_id)
+    cheque.cheque_status = 1
+    total_count = cheque.cheque_count
+    receive_count = get_cheque_receive_count(session, cheque_uuid)
+    cheque_pay = cheque.cheque_amount
     xdr = await stellar_pay(cheque_public,
-                            stellar_get_user_public(user_id),
+                            get_user_wallet(session, user_id),
                             eurmtl_asset, (total_count - receive_count) * float(cheque_pay), memo=cheque_uuid[:16])
-    xdr = stellar_sign(xdr, stellar_get_master().secret)
+    xdr = stellar_sign(xdr, stellar_get_master(session).secret)
 
-    await cmd_info_message(user_id, my_gettext(user_id, "try_send2"), state)
+    await cmd_info_message(session, user_id, my_gettext(user_id, "try_send2"))
     await state.update_data(xdr=xdr, operation='cancel_cheque')
     await async_stellar_send(xdr)
-    await cmd_info_message(user_id, my_gettext(user_id, 'send_good_cheque'), state)
-    fb.reset_balance(user_id)
+    await cmd_info_message(session, user_id, my_gettext(user_id, 'send_good_cheque'))
+    reset_balance(session, user_id)
 
 
 @router.inline_query(F.chat_type != "sender")
-async def cmd_inline_query(inline_query: types.InlineQuery):
+async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
     results = []
     # all exist cheques
-    data = fb.execsql('select cheque_id, cheque_uuid, cheque_amount, cheque_count, user_id, cheque_comment  '
-                      ' from mymtlwalletbot_cheque ch where cheque_count > (select count(*) '
-                      ' from mymtlwalletbot_cheque_history h where h.cheque_id = ch.cheque_id) '
-                      ' and ch.user_id = ?  and ch.cheque_status = 0',
-                      (inline_query.from_user.id,))
+    data = get_available_cheques(session, inline_query.from_user.id)
+
     bot_name = (await bot.me()).username
     for record in data:
-        link = f'https://t.me/{bot_name}?start=cheque_{record[1]}'
-        msg = my_gettext(inline_query.from_user.id, 'inline_cheque', (record[2], record[3], record[5]))
-        results.append(types.InlineQueryResultArticle(id=record[1],
+        link = f'https://t.me/{bot_name}?start=cheque_{record.cheque_uuid}'
+        msg = my_gettext(inline_query.from_user.id, 'inline_cheque',
+                         (record.cheque_amount, record.cheque_count, record.cheque_comment))
+        results.append(types.InlineQueryResultArticle(id=record.cheque_uuid,
                                                       title=msg,
                                                       input_message_content=types.InputTextMessageContent(
                                                           message_text=msg),
@@ -279,25 +272,21 @@ async def cmd_inline_query(inline_query: types.InlineQuery):
 
 
 @router.message(Command(commands=["start"]), Text(contains="cheque_"))
-async def cmd_start_cheque(message: types.Message, state: FSMContext, command: Command):
+async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session):
     await state.clear()
 
     # check address
-    set_last_message_id(message.from_user.id, 0)
-    await send_message(message.from_user.id, 'Loading')
+    set_last_message_id(session, message.from_user.id, 0)
+    await send_message(session, message.from_user.id, 'Loading')
 
     cheque_uuid = message.text.split(' ')[1][7:]
     await state.update_data(cheque_uuid=cheque_uuid)
     user_id = message.from_user.id
 
-    cheque = fb.execsql("select cheque_id, cheque_uuid, cheque_amount, cheque_count, user_id, cheque_comment "
-                        "from mymtlwalletbot_cheque where cheque_uuid = ? and cheque_status = 0", (cheque_uuid,))
-    if not cheque or len(cheque) == 0 or (
-            fb.execsql1('select count(*) from mymtlwalletbot_cheque_history h '
-                        'where h.user_id = ? and h.cheque_id = ?', (user_id, cheque[0][0])) > 0) or (
-            fb.execsql1('select count(*) from mymtlwalletbot_cheque_history h '
-                        'where h.cheque_id = ?', (cheque[0][0],), '0') >= cheque[0][3]):
-        await send_message(user_id, my_gettext(user_id, 'bad_cheque'), reply_markup=get_kb_return(user_id))
+    cheque = get_cheque(session, cheque_uuid)
+    if not cheque or get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
+            or get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
+        await send_message(session, user_id, my_gettext(user_id, 'bad_cheque'), reply_markup=get_kb_return(user_id))
         return
 
     # "inline_cheque": "Чек на {} EURMTL, для {} получателя/получателей, \n\n \"{}\"",
@@ -307,11 +296,11 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, command: C
         get_return_button(user_id)
     ])
 
-    await send_message(message, msg, reply_markup=kb)
+    await send_message(session, message, msg, reply_markup=kb)
 
 
 @router.callback_query(Text(text=["ChequeYes"]))
-async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext):
+async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     # await cmd_send_money_from_cheque(callback.from_user.id, state, cheque_uuid=data['cheque_uuid'],
     #                                 message=callback)
@@ -320,54 +309,51 @@ async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-async def cmd_send_money_from_cheque(user_id: int, state: FSMContext, cheque_uuid: str, username: str):
-    cheque = fb.execsql("select cheque_id, cheque_uuid, cheque_amount, cheque_count, user_id, cheque_comment "
-                        "from mymtlwalletbot_cheque where cheque_uuid = ? and cheque_status = 0", (cheque_uuid,))
-    if not cheque or len(cheque) == 0 or (
-            fb.execsql1('select count(*) from mymtlwalletbot_cheque_history h '
-                        'where h.user_id = ? and h.cheque_id = ?', (user_id, cheque[0][0])) > 0) or (
-            fb.execsql1('select count(*) from mymtlwalletbot_cheque_history h '
-                        'where h.cheque_id = ?', (cheque[0][0],), '0') >= cheque[0][3]):
-        await send_message(user_id, my_gettext(user_id, 'bad_cheque'), reply_markup=get_kb_return(user_id))
+async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMContext, cheque_uuid: str,
+                                     username: str):
+    cheque = get_cheque(session, cheque_uuid)
+    if not cheque or get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
+            or get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
+        await send_message(session, user_id, my_gettext(user_id, 'bad_cheque'), reply_markup=get_kb_return(user_id))
         return
 
-    fb.execsql('insert into mymtlwalletbot_cheque_history (user_id, dt_block, cheque_id) VALUES (?, ?, ?)',
-               (user_id, datetime.now(), cheque[0][0]))
+    insert_into_cheque_history(session, user_id, cheque.cheque_id)
 
     xdr = None
-    was_new = is_new_user(user_id)
+    was_new = is_new_user(session, user_id)
     if was_new:
-        xdr = await stellar_create_new(user_id, username)
+        xdr = await stellar_create_new(session, user_id, username)
 
     xdr = await stellar_pay(cheque_public,
-                            stellar_get_user_public(user_id),
+                            get_user_wallet(session, user_id),
                             eurmtl_asset, float(cheque[0][2]), memo=cheque[0][1][:16], xdr=xdr)
     if was_new:
-        xdr = stellar_user_sign(xdr, user_id, str(user_id))
+        xdr = stellar_user_sign(session, xdr, user_id, str(user_id))
 
-    xdr = stellar_sign(xdr, stellar_get_master().secret)
+    xdr = stellar_sign(xdr, stellar_get_master(session).secret)
 
-    await cmd_info_message(user_id, my_gettext(user_id, "try_send2"), state)
+    await cmd_info_message(session, user_id, my_gettext(user_id, "try_send2"))
     await state.update_data(xdr=xdr, operation='receive_cheque')
     await async_stellar_send(xdr)
-    await cmd_info_message(user_id, my_gettext(user_id, 'send_good_cheque'), state)
-    fb.reset_balance(user_id)
+    await cmd_info_message(session, user_id, my_gettext(user_id, 'send_good_cheque'))
+    reset_balance(session, user_id)
 
     if was_new:
         await asyncio.sleep(2)
-        await cmd_language(user_id, state)
+        await cmd_language(session,user_id)
 
 
-async def cheque_worker():
+async def cheque_worker(session: Session):
     while True:  # not queue.empty():
         cheque_item: ChequeQuery = await cheque_queue.get()
         # logger.info(f'{cheque_item} start')
 
         try:
             if cheque_item.for_cancel:
-                await cmd_cancel_cheque(cheque_item.user_id, cheque_item.cheque_uuid, cheque_item.state)
+                await cmd_cancel_cheque(session, cheque_item.user_id, cheque_item.cheque_uuid, cheque_item.state)
             else:
-                await cmd_send_money_from_cheque(cheque_item.user_id, cheque_item.state, cheque_item.cheque_uuid,
+                await cmd_send_money_from_cheque(session, cheque_item.user_id, cheque_item.state,
+                                                 cheque_item.cheque_uuid,
                                                  cheque_item.username)
 
         except Exception as e:

@@ -1,17 +1,15 @@
 import asyncio
 import base64
-from datetime import datetime
 import jsonpickle
 from aiogram.utils.text_decorations import html_decoration
-import fb
 import requests
-from typing import List, Optional
 from cryptocode import encrypt, decrypt
 from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.federation import resolve_stellar_address
 from loguru import logger
 from config_reader import config
+from db.requests import *
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
 from stellar_sdk import AiohttpClient, ServerAsync
 
@@ -59,6 +57,8 @@ def get_good_asset_list() -> List[Balance]:
             {"asset_code": 'USDC', "asset_issuer": 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'}),
         Balance.from_dict(
             {"asset_code": 'MMWB', "asset_issuer": 'GBSNN2SPYZB2A5RPDTO3BLX4TP5KNYI7UMUABUS3TYWWEWAAM2D7CMMW'}),
+        Balance.from_dict(
+            {"asset_code": 'USDM', "asset_issuer": 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM'}),
     ]
 
 
@@ -117,13 +117,13 @@ def stellar_check_xdr(xdr: str):
     return result
 
 
-def stellar_user_sign(xdr: str, user_id: int, user_password: str):
-    user_key_pair = stellar_get_user_keypair(user_id, user_password)
+def stellar_user_sign(session: Session, xdr: str, user_id: int, user_password: str):
+    user_key_pair = stellar_get_user_keypair(session, user_id, user_password)
     return stellar_sign(xdr, user_key_pair.secret)
 
 
-def stellar_user_sign_message(msg: str, user_id: int, user_password: str) -> str:
-    user_key_pair = stellar_get_user_keypair(user_id, user_password)
+def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_password: str) -> str:
+    user_key_pair = stellar_get_user_keypair(session, user_id, user_password)
     return base64.b64encode(user_key_pair.sign(msg.encode())).decode()
 
 
@@ -144,7 +144,8 @@ async def async_stellar_check_fee() -> str:
         return fee['min'] + '-' + fee['max']
 
 
-def stellar_save_new(user_id: int, user_name: str, secret_key: str, free_wallet: bool, address: str = None):
+def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key: str, free_wallet: bool,
+                     address: str = None):
     if user_name:
         user_name = user_name.lower()
 
@@ -155,39 +156,32 @@ def stellar_save_new(user_id: int, user_name: str, secret_key: str, free_wallet:
         new_account = Keypair.from_secret(secret_key)
         public_key = new_account.public_key
     i_free_wallet = 1 if free_wallet else 0
-    if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
-        fb.execsql(f"insert into mymtlwalletbot_users (user_id, user_name) values (?,?)", (user_id, user_name))
+    add_user_if_not_exists(session, user_id, user_name)
 
-    last_event_id = fb.execsql1('select max(last_event_id) from mymtlwalletbot')
+    add_user(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
 
-    fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
-               f"free_wallet, last_event_id) values (?,?,?,?,?,?,?)",
-               (user_id, public_key, encrypt(new_account.secret, str(user_id)), 5, 1, i_free_wallet, last_event_id))
     return public_key
 
 
-def stellar_save_ro(user_id: int, user_name: str, public_key: str):
+def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: str):
     if user_name:
         user_name = user_name.lower()
 
     Keypair.from_public_key(public_key)
 
     i_free_wallet = 0
-    if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
-        fb.execsql(f"insert into mymtlwalletbot_users (user_id, user_name) values (?,?)", (user_id, user_name))
+    add_user_if_not_exists(session, user_id, user_name)
 
-    last_event_id = fb.execsql1('select max(last_event_id) from mymtlwalletbot')
-    fb.execsql(f"insert into mymtlwalletbot (user_id, public_key, secret_key, credit, default_wallet, " +
-               f"free_wallet, use_pin, last_event_id) values (?,?,?,?,?,?,?,?)",
-               (user_id, public_key, public_key, 0, 1, i_free_wallet, 10, last_event_id))
+    add_user(session, user_id, public_key, public_key, i_free_wallet)
+
     return public_key
 
 
-async def stellar_create_new(user_id: int, username: str):
+async def stellar_create_new(session: Session, user_id: int, username: str):
     new_account = Keypair.random()
-    stellar_save_new(user_id, username, new_account.secret, True)
+    stellar_save_new(session, user_id, username, new_account.secret, True)
 
-    master = stellar_get_master()
+    master = stellar_get_master(session)
     xdr = await stellar_pay(master.public_key, new_account.public_key, xlm_asset, 5, create=True, fee=1001001)
     # stellar_send(stellar_sign(xdr, master.secret))
 
@@ -217,7 +211,8 @@ async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount:
         transaction.add_text_memo('New account MyMTLWalletbot')
     else:
         if xdr:
-            transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset, source=from_account)
+            transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset,
+                                          source=from_account)
         else:
             transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset)
         if memo:
@@ -267,41 +262,24 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
     return full_transaction.to_xdr()
 
 
-def stellar_get_user_keypair(user_id: int, user_password: str) -> Keypair:
-    result = fb.execsql(
-        f"select m.public_key, m.secret_key from mymtlwalletbot m where m.user_id = ? "
-        f"and m.default_wallet = 1",(user_id,))[0]
-    return Keypair.from_secret(decrypt(result[1], user_password))
+def stellar_get_user_keypair(session: Session, user_id: int, user_password: str) -> Keypair:
+    result = get_default_wallet(session, user_id)
+    return Keypair.from_secret(decrypt(result.secret_key, user_password))
 
 
-def stellar_get_user_public(user_id: int) -> str:
-    return fb.execsql1(f"select m.public_key, m.secret_key from mymtlwalletbot m where m.user_id = ? "
-                       f"and m.default_wallet = 1", (user_id,))
-
-
-async def stellar_get_user_account(user_id: int, public_key=None) -> Account:
+async def stellar_get_user_account(session: Session, user_id: int, public_key=None) -> Account:
     if public_key:
         result = public_key
     else:
-        result = fb.execsql1(
-            f"select m.public_key from mymtlwalletbot m where m.user_id = {user_id} "
-            f"and m.default_wallet = 1")
+        result = get_user_wallet(session, user_id)
     async with ServerAsync(
             horizon_url="https://horizon.stellar.org", client=AiohttpClient()
     ) as server:
         return await server.load_account(result)
 
 
-def stellar_get_master() -> Keypair:
-    return stellar_get_user_keypair(0, '0')
-
-
-def stellar_can_new(user_id: int):
-    result = fb.execsql1(f"select count(*) from mymtlwalletbot m where m.user_id = {user_id} and m.free_wallet = 1")
-    if int(result) > 2:
-        return False
-    else:
-        return True
+def stellar_get_master(session: Session) -> Keypair:
+    return stellar_get_user_keypair(session, 0, '0')
 
 
 async def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
@@ -334,58 +312,34 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
             return xdr
 
 
-async def stellar_get_balance_str(user_id: int, public_key=None) -> str:
+async def stellar_get_balance_str(session: Session, user_id: int, public_key=None) -> str:
     start_time = datetime.now()
-    balances = await stellar_get_balances(user_id, public_key)
+    balances = await stellar_get_balances(session, user_id, public_key)
     result = ''
     for balance in balances:
         result += f"{balance.asset_code} : {float2str(balance.balance)}\n"
     return result
 
 
-def stellar_get_pin_type(user_id: int):
-    result = fb.execsql1(
-        f"select m.use_pin from mymtlwalletbot m where m.user_id = {user_id} "
-        f"and m.default_wallet = 1")
-    return result
+async def stellar_is_free_wallet(session: Session, user_id: int):
+    return get_user_wallet(session, user_id).free_wallet == 1
 
 
-async def stellar_is_free_wallet(user_id: int):
+async def stellar_unfree_wallet(session: Session, user_id: int):
     try:
-        user_account = await stellar_get_user_account(user_id)
-        free_wallet = fb.execsql1(
-            f"select m.free_wallet from mymtlwalletbot m where m.user_id = ? and m.public_key = ?",
-            (user_id, user_account.account.account_id), 1)
-        return free_wallet == 1
-    except:
-        return True
-
-
-async def stellar_unfree_wallet(user_id: int):
-    try:
-        user_account = await stellar_get_user_account(user_id)
-        fb.execsql(f"update mymtlwalletbot set free_wallet = ? where user_id = ? and public_key = ?",
-                   (0, user_id, user_account.account.account_id))
+        user_account = await stellar_get_user_account(session, user_id)
+        unfree_wallet(session, user_id, user_account.account.account_id)
     except:
         return
 
 
-async def stellar_add_donate(user_id: int, donate_sum: float):
-    try:
-        await stellar_get_user_account(user_id)
-        fb.execsql(f"update mymtlwalletbot_users set donate_sum = donate_sum + ? where user_id = ?",
-                   (donate_sum, user_id))
-    except:
-        return
-
-
-async def stellar_get_balances(user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:
-    user_account = await stellar_get_user_account(user_id, public_key)
-    free_wallet = await stellar_is_free_wallet(user_id)
+async def stellar_get_balances(session, user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:
+    user_account = await stellar_get_user_account(session, user_id, public_key)
+    free_wallet = await stellar_is_free_wallet(session, user_id)
     result = []
     balances = None
     if public_key is None and user_id > 0:
-        balances = fb.execsql1('select balances from get_balances(?)', (user_id,), None)
+        balances = get_user_wallet(session, user_id).balances
     if balances is None:
         # получаем балансы
         async with ServerAsync(
@@ -409,9 +363,7 @@ async def stellar_get_balances(user_id: int, public_key=None, asset_filter: str 
                                   asset_issuer=user_account.account.account_id))
         # сохраняем полный список
         if public_key is None:
-            fb.execsql(f"update mymtlwalletbot set balances = ?, "
-                       f"balances_event_id = last_event_id where user_id = ? and default_wallet = 1",
-                       (jsonpickle.encode(result), user_id))
+            update_mymtlwalletbot_balances(session, jsonpickle.encode(result), user_id)
 
     else:
         result = jsonpickle.decode(balances)
@@ -422,8 +374,8 @@ async def stellar_get_balances(user_id: int, public_key=None, asset_filter: str 
     return result
 
 
-async def stellar_get_data(user_id: int, public_key=None) -> dict:
-    user_account = await stellar_get_user_account(user_id, public_key)
+async def stellar_get_data(session: Session, user_id: int, public_key=None) -> dict:
+    user_account = await stellar_get_user_account(session, user_id, public_key)
     async with ServerAsync(
             horizon_url="https://horizon.stellar.org", client=AiohttpClient()
     ) as server:
@@ -436,8 +388,8 @@ async def stellar_get_data(user_id: int, public_key=None) -> dict:
     return data
 
 
-async def stellar_get_offers(user_id: int, public_key=None) -> List[MyOffer]:
-    user_account = await stellar_get_user_account(user_id, public_key)
+async def stellar_get_offers(session: Session, user_id: int, public_key=None) -> List[MyOffer]:
+    user_account = await stellar_get_user_account(session, user_id, public_key)
     async with ServerAsync(
             horizon_url="https://horizon.stellar.org", client=AiohttpClient()
     ) as server:
@@ -447,39 +399,10 @@ async def stellar_get_offers(user_id: int, public_key=None) -> List[MyOffer]:
         return offers.embedded.records
 
 
-def stellar_get_wallets_list(user_id: int):
-    wallets = fb.execsql(
-        f"select public_key, default_wallet, free_wallet from mymtlwalletbot where user_id = {user_id}")
-    return wallets
-
-
-def stellar_set_default_wallets(user_id: int, public_key: str):
-    fb.execsql(
-        f"update mymtlwalletbot set default_wallet = 1 where user_id = {user_id} and public_key = '{public_key}'")
-    return True
-
-
-def stellar_delete_wallets(user_id: int, public_key: str):
-    wallets = fb.execsql(
-        f"update mymtlwalletbot set user_id = -1 * user_id where user_id = {user_id} and public_key = '{public_key}'")
-    return wallets
-
-
-def stellar_delete_all(user_id: int):
-    fb.execsql(f"update mymtlwalletbot set user_id = -1 * user_id where user_id = {user_id}")
-    fb.execsql(f"delete from mymtlwalletbot_messages where (user_id = {user_id})")
-    fb.execsql(f"delete from mymtlwalletbot_users where (user_id = {user_id})")
-    return
-
-
-def stellar_change_password(user_id: int, public_key: str, old_password: str, new_password: str, password_type: int):
-    account = Keypair.from_secret(decrypt(fb.execsql1(
-        f"select m.secret_key from mymtlwalletbot m where m.user_id = {user_id} "
-        f"and m.public_key = '{public_key}'"), old_password))
-    fb.execsql(
-        f"update mymtlwalletbot set secret_key = '{encrypt(account.secret, new_password)}', "
-        f"use_pin = {password_type} where user_id = {user_id} "
-        f"and public_key = '{public_key}'")
+def stellar_change_password(session: Session, user_id: int, old_password: str, new_password: str,
+                            password_type: int):
+    account = Keypair.from_secret(decrypt(get_user_wallet(session, user_id).secret_key, old_password))
+    update_secret_key(session, user_id, encrypt(account.secret, new_password), password_type)
     return account.public_key
 
 
@@ -594,9 +517,9 @@ async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_
         return []
 
 
-def save_xdr_to_send(user_id, xdr):
-    fb.execsql('insert into mymtlwalletbot_transactions (user_id, user_transaction) values (?,?)',
-               (user_id, xdr))
+# def save_xdr_to_send(user_id, xdr):
+#    fb.execsql('insert into mymtlwalletbot_transactions (user_id, user_transaction) values (?,?)',
+#               (user_id, xdr))
 
 
 def decode_data_value(data_value: str):
@@ -631,8 +554,8 @@ def gen_new(last_name):
     return [i, new_account.public_key, new_account.secret]
 
 
-def run_async():
-    print(asyncio.run(stellar_delete_account(stellar_get_master(), Keypair.from_secret(''))))
+# def run_async():
+#    print(asyncio.run(stellar_delete_account(stellar_get_master(session), Keypair.from_secret(''))))
 
 
 def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset):
@@ -649,38 +572,30 @@ def my_float(s: str) -> float:
     return float(s.replace(',', '.'))
 
 
-def is_new_user(user_id: int):
-    if fb.execsql1('select count(*) from mymtlwalletbot_users where user_id = ?', (user_id,)) == 0:
-        return True
-    if fb.execsql1('select count(*) from mymtlwalletbot where user_id = ?', (user_id,)) == 0:
-        return True
-    return False
-
-
-async def stellar_update_credit(credit_list):
-    # m.user_id, m.public_key, m.credit
-    i = 0
-    xdr = None
-    master = stellar_get_master()
-    for record in credit_list:
-        i = i + 1
-        if await stellar_check_account(record[1]):
-            fb.execsql(f"update mymtlwalletbot set credit = 5 where user_id = ? and public_key = ?",
-                       (record[0], record[1]))
-            xdr = await stellar_pay(master.public_key, record[1], xlm_asset, 2, xdr=xdr)
-            if i > 90:
-                xdr = stellar_sign(xdr, master.secret)
-                logger.info(xdr)
-                resp = await async_stellar_send(xdr)
-                logger.info(resp)
-                return
-        else:
-            fb.execsql(f"update mymtlwalletbot set user_id = -1 * user_id where user_id = ? and public_key = ?",
-                       (record[0], record[1]))
-    xdr = stellar_sign(xdr, master.secret)
-    logger.info(xdr)
-    resp = await async_stellar_send(xdr)
-    logger.info(resp)
+# async def stellar_update_credit(credit_list):
+#     # m.user_id, m.public_key, m.credit
+#     i = 0
+#     xdr = None
+#     master = stellar_get_master(session)
+#     for record in credit_list:
+#         i = i + 1
+#         if await stellar_check_account(record[1]):
+#             fb.execsql(f"update mymtlwalletbot set credit = 5 where user_id = ? and public_key = ?",
+#                        (record[0], record[1]))
+#             xdr = await stellar_pay(master.public_key, record[1], xlm_asset, 2, xdr=xdr)
+#             if i > 90:
+#                 xdr = stellar_sign(xdr, master.secret)
+#                 logger.info(xdr)
+#                 resp = await async_stellar_send(xdr)
+#                 logger.info(resp)
+#                 return
+#         else:
+#             fb.execsql(f"update mymtlwalletbot set user_id = -1 * user_id where user_id = ? and public_key = ?",
+#                        (record[0], record[1]))
+#     xdr = stellar_sign(xdr, master.secret)
+#     logger.info(xdr)
+#     resp = await async_stellar_send(xdr)
+#     logger.info(resp)
 
 
 def float2str(f) -> str:
@@ -695,13 +610,6 @@ def float2str(f) -> str:
         if l == '.':
             break
     return s
-
-
-def update_username(user_id: int, username):
-    if username is None:
-        fb.execsql(f"update mymtlwalletbot_users set user_name = ? where user_id = ?", (username, user_id))
-    else:
-        fb.execsql(f"update mymtlwalletbot_users set user_name = ? where user_id = ?", (username.lower(), user_id))
 
 
 if __name__ == "__main__":

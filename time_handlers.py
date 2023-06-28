@@ -1,25 +1,32 @@
-from aiogram import Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
 
-import fb
+from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages
 from routers.start_msg import cmd_info_message
 from utils.lang_utils import set_last_message_id, my_gettext
 from utils.stellar_utils import float2str
 
 
-async def cmd_send_message_1m(dp: Dispatcher):
-    for record in fb.execsql('select first 10 message_id, user_message, keyboard, user_id, was_send ' +
-                             'from mymtlwalletbot_messages where was_send = 0'):
+async def cmd_send_message_1m(session: Session):
+    messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
+    for message in messages:
         try:
-            await cmd_info_message(record[3], record[1], None)
+            await cmd_info_message(session, message.user_id, message.user_message, None)
         except Exception as ex:
-            fb.execsql('update mymtlwalletbot_messages set was_send = 2 where message_id = ?', (record[0],))
+            session.query(MyMtlWalletBotMessages).filter(
+                MyMtlWalletBotMessages.message_id == message.message_id).update(
+                {MyMtlWalletBotMessages.was_send: 2})
+            session.commit()
             logger.info(['cmd_send_message_1m', ex])
-        set_last_message_id(record[3], 0)
+        set_last_message_id(session, message.user_id, 0)
         # await dp.bot.send_message(record[3], record[1], disable_web_page_preview=True)
 
-        fb.execsql('update mymtlwalletbot_messages set was_send = 1 where message_id = ?', (record[0],))
+        session.query(MyMtlWalletBotMessages).filter(
+            and_(MyMtlWalletBotMessages.message_id == message.message_id)).update(
+            {MyMtlWalletBotMessages.was_send: 1})
+        session.commit()
 
 
 def decode_db_effect(row):
@@ -40,20 +47,29 @@ def decode_db_effect(row):
         return f'new operation for {account_link} \n\n{op_link}'
 
 
-async def cmd_send_message_events(dp: Dispatcher):
-    for record in fb.execsql(
-            'select first 10 o.id, o.dt, o.operation, o.amount1, o.code1, o.amount2, o.code2, o.from_account, o.for_account, m.user_id '
-            'from t_operations o join mymtlwalletbot m on m.public_key = o.for_account '
-            'and o.id > m.last_event_id order by o.id'):
-        try:
-            set_last_message_id(record[9], 0)
-            await cmd_info_message(record[9], decode_db_effect(record), None)
-            set_last_message_id(record[9], 0)
-        except Exception as ex:
-            logger.info(['cmd_send_message_events', record[0], ex])
+async def cmd_send_message_events(session: Session):
+    records = session.query(TOperations.id, TOperations.dt, TOperations.operation, TOperations.amount1,
+                            TOperations.code1, TOperations.amount2, TOperations.code2, TOperations.from_account,
+                            TOperations.for_account, MyMtlWalletBot.user_id) \
+        .filter(MyMtlWalletBot.public_key == TOperations.for_account,
+                TOperations.id > MyMtlWalletBot.last_event_id) \
+        .order_by(TOperations.id) \
+        .limit(10) \
+        .all()
 
-        fb.execsql('update mymtlwalletbot set last_event_id = ? where public_key = ? and last_event_id < ?',
-                   (record[0], record[8], record[0],))
+    for record in records:
+        try:
+            await set_last_message_id(session,record.user_id, 0)
+            await cmd_info_message(session, record.user_id, decode_db_effect(record), None)
+            await set_last_message_id(session,record.user_id, 0)
+        except Exception as ex:
+            logger.info(['cmd_send_message_events', record.id, ex])
+
+        # Update last_event_id for all users whose public_key matches record.for_account and last_event_id is smaller than record.id
+        session.query(MyMtlWalletBot) \
+            .filter(MyMtlWalletBot.public_key == record.for_account, MyMtlWalletBot.last_event_id < record.id) \
+            .update({MyMtlWalletBot.last_event_id: record.id})
+        session.commit()
 
 
 def scheduler_jobs(scheduler: AsyncIOScheduler, dp):
