@@ -1,7 +1,6 @@
 import asyncio
 import sys
 from contextlib import suppress
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Union
 
@@ -14,6 +13,8 @@ from redis.asyncio.client import Redis
 
 from loguru import logger
 from aiogram import Bot, Dispatcher
+from sqlalchemy.orm import Session
+
 from config_reader import config
 from aiogram import types
 from keyboards.common_keyboards import get_kb_return, get_kb_send
@@ -51,8 +52,8 @@ class LogQuery:
         self.log_dt = datetime.now()
 
 
-async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], msg: str, reply_markup=None,
-                       need_new_msg=None, parse_mode='HTML'):
+async def send_message(session: Session, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
+                       reply_markup=None, need_new_msg=None, parse_mode='HTML'):
     if isinstance(user_id, types.CallbackQuery):
         user_id = user_id.from_user.id
     elif isinstance(user_id, types.Message):
@@ -60,7 +61,7 @@ async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], 
     else:
         user_id = user_id
 
-    msg_id = get_last_message_id(user_id)
+    msg_id = get_last_message_id(session, user_id)
     if need_new_msg:
         new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
                                          disable_web_page_preview=True)
@@ -69,7 +70,7 @@ async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], 
                 await bot.delete_message(user_id, msg_id)
             except Exception as ex:
                 logger.info(['await send_message, del', user_id, ex])
-        set_last_message_id(user_id, new_msg.message_id)
+        set_last_message_id(session, user_id, new_msg.message_id)
     else:
         if msg_id > 0:
             try:
@@ -80,10 +81,10 @@ async def send_message(user_id: Union[types.CallbackQuery, types.Message, int], 
                 pass
         new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
                                          disable_web_page_preview=True)
-        set_last_message_id(user_id, new_msg.message_id)
+        set_last_message_id(session, user_id, new_msg.message_id)
 
 
-async def cmd_show_sign(chat_id: int, state: FSMContext, msg='', use_send=False):
+async def cmd_show_sign(session:Session, chat_id: int, state: FSMContext, msg='', use_send=False):
     # msg = msg + my_gettext(chat_id, 'send_xdr')
     data = await state.get_data()
     tools = data.get('tools')
@@ -96,10 +97,10 @@ async def cmd_show_sign(chat_id: int, state: FSMContext, msg='', use_send=False)
         kb = get_kb_return(chat_id)
 
     if len(msg) > 4000:
-        await send_message(chat_id, my_gettext(chat_id, 'big_xdr'), reply_markup=kb,
+        await send_message(session, chat_id, my_gettext(chat_id, 'big_xdr'), reply_markup=kb,
                            parse_mode='HTML')
     else:
-        await send_message(chat_id, msg, reply_markup=kb, parse_mode='HTML')
+        await send_message(session,chat_id, msg, reply_markup=kb, parse_mode='HTML')
 
 
 async def check_username(user_id: int) -> str:

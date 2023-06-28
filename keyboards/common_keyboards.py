@@ -1,7 +1,5 @@
 from typing import Union
 from aiogram import types
-
-from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 
 

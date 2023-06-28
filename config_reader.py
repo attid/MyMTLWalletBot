@@ -10,8 +10,6 @@ class Settings(BaseSettings):
     test_bot_token: SecretStr
     base_fee: int
     db_dns: str
-    db_user: str
-    db_password: SecretStr
     tron_api_key: SecretStr
     tron_master_address: str
     tron_master_key: SecretStr

@@ -1,8 +1,9 @@
-from aiogram import Router, types, F
+from aiogram import Router, types
 import re
 import json
 
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.orm import Session
 
 from routers.send import cmd_send_04
 from utils.gpt import gpt_check_message
@@ -11,7 +12,7 @@ router = Router()
 
 
 @router.message()
-async def cmd_delete(message: types.Message, state: FSMContext):
+async def cmd_delete(message: types.Message, state: FSMContext, session:Session):
     if message.from_user.username == "itolstov":
         if len(message.text.split()) > 3:
             gpt_answer = await gpt_check_message(message.text)
@@ -30,7 +31,7 @@ async def cmd_delete(message: types.Message, state: FSMContext):
                         #if memo exist add memo
                         if json_cmd.get('memo'):
                             await state.update_data(memo=json_cmd.get('memo'))
-                        await cmd_send_04(message, state)
+                        await cmd_send_04(session,message, state)
                     except:
                         pass
 

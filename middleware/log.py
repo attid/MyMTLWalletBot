@@ -1,15 +1,12 @@
 import asyncio
-from datetime import datetime
 from typing import Callable, Dict, Any, Awaitable
-
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery
-
+from aiogram.types import CallbackQuery
 from loguru import logger
+from sqlalchemy.orm import Session
 
-import fb
+from db.models import MyMtlWalletBotLog
 from utils.aiogram_utils import log_queue, LogQuery
-from utils.lang_utils import get_last_message_id
 
 
 class LogButtonClickCallbackMiddleware(BaseMiddleware):
@@ -29,15 +26,22 @@ class LogButtonClickCallbackMiddleware(BaseMiddleware):
 
 #
 
-async def log_worker():
+from sqlalchemy.exc import SQLAlchemyError
+
+async def log_worker(session: Session):
     while True:  # not queue.empty():
         log_item: LogQuery = await log_queue.get()
         try:
-            fb.execsql('insert into mymtlwalletbot_log (user_id, log_dt, log_operation, log_operation_info) '
-                       'values (?, ?, ?, ?)',
-                       (log_item.user_id, log_item.log_dt, log_item.log_operation[:32], log_item.log_operation_info[:32]))
-
-        except Exception as e:
-            logger.warning(f' {log_item.user_id}-{log_item.log_operation} failed {type(e)}')
+            new_log = MyMtlWalletBotLog(
+                user_id=log_item.user_id,
+                log_dt=log_item.log_dt,
+                log_operation=log_item.log_operation[:32],
+                log_operation_info=log_item.log_operation_info[:32]
+            )
+            session.add(new_log)
+            session.commit()
+        except SQLAlchemyError as e:
+            logger.warning(f'{log_item.user_id}-{log_item.log_operation} failed {type(e)}')
+            session.rollback()
         log_queue.task_done()
         await asyncio.sleep(1)
