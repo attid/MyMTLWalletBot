@@ -10,7 +10,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 
-from db.requests import reset_balance, get_default_wallet
+from db.requests import db_reset_balance, db_get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery
@@ -55,7 +55,7 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
     pin = data.get("pin", '')
 
     if pin_type is None:
-        pin_type = get_default_wallet(session, chat_id).use_pin
+        pin_type = db_get_default_wallet(session, chat_id).use_pin
         await state.update_data(pin_type=pin_type)
 
     if pin_type == 1:  # pin
@@ -221,7 +221,7 @@ async def sign_xdr(session: Session, state, user_id):
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password"))
-    reset_balance(session, user_id)
+    db_reset_balance(session, user_id)
     await state.update_data(pin='')
 
 

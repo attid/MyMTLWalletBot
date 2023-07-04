@@ -160,9 +160,9 @@ def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key:
         new_account = Keypair.from_secret(secret_key)
         public_key = new_account.public_key
     i_free_wallet = 1 if free_wallet else 0
-    add_user_if_not_exists(session, user_id, user_name)
+    db_add_user_if_not_exists(session, user_id, user_name)
 
-    add_user(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
+    db_add_user(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
 
     return public_key
 
@@ -174,9 +174,9 @@ def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: 
     Keypair.from_public_key(public_key)
 
     i_free_wallet = 0
-    add_user_if_not_exists(session, user_id, user_name)
+    db_add_user_if_not_exists(session, user_id, user_name)
 
-    add_user(session, user_id, public_key, public_key, i_free_wallet)
+    db_add_user(session, user_id, public_key, public_key, i_free_wallet)
 
     return public_key
 
@@ -267,7 +267,7 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
 
 
 def stellar_get_user_keypair(session: Session, user_id: int, user_password: str) -> Keypair:
-    result = get_default_wallet(session, user_id).secret_key
+    result = db_get_default_wallet(session, user_id).secret_key
     return Keypair.from_secret(decrypt(result, user_password))
 
 
@@ -275,7 +275,7 @@ async def stellar_get_user_account(session: Session, user_id: int, public_key=No
     if public_key:
         result = public_key
     else:
-        result = get_default_wallet(session, user_id).public_key
+        result = db_get_default_wallet(session, user_id).public_key
     async with ServerAsync(
             horizon_url="https://horizon.stellar.org", client=AiohttpClient()
     ) as server:
@@ -318,13 +318,13 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
 
 async def stellar_delete_all_deleted(session: Session):
     master = stellar_get_master(session)
-    for wallet in stellar_get_delete_wallets_list(session):
+    for wallet in db_get_deleted_wallets_list(session):
         print(vars(wallet))
         if wallet.free_wallet == 1:
             with suppress(NotFoundError):
                 await stellar_delete_account(master,
                                              Keypair.from_secret(decrypt(wallet.secret_key, str(wallet.user_id))))
-        delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
+        db_delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
 
 
 async def stellar_get_balance_str(session: Session, user_id: int, public_key=None) -> str:
@@ -337,13 +337,13 @@ async def stellar_get_balance_str(session: Session, user_id: int, public_key=Non
 
 
 async def stellar_is_free_wallet(session: Session, user_id: int):
-    return get_default_wallet(session, user_id).free_wallet == 1
+    return db_get_default_wallet(session, user_id).free_wallet == 1
 
 
 async def stellar_unfree_wallet(session: Session, user_id: int):
     try:
         user_account = await stellar_get_user_account(session, user_id)
-        unfree_wallet(session, user_id, user_account.account.account_id)
+        db_unfree_wallet(session, user_id, user_account.account.account_id)
     except:
         return
 
@@ -351,7 +351,7 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
 async def stellar_get_balances(session, user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     free_wallet = await stellar_is_free_wallet(session, user_id)
-    wallet = get_default_wallet(session, user_id)
+    wallet = db_get_default_wallet(session, user_id)
     result = []
     balances = None
     if public_key is None and user_id > 0 and wallet.balances_event_id == wallet.last_event_id:
@@ -379,7 +379,7 @@ async def stellar_get_balances(session, user_id: int, public_key=None, asset_fil
                                   asset_issuer=user_account.account.account_id))
         # сохраняем полный список
         if public_key is None:
-            update_mymtlwalletbot_balances(session, jsonpickle.encode(result), user_id)
+            db_update_mymtlwalletbot_balances(session, jsonpickle.encode(result), user_id)
 
     else:
         result = jsonpickle.decode(balances)
@@ -417,8 +417,8 @@ async def stellar_get_offers(session: Session, user_id: int, public_key=None) ->
 
 def stellar_change_password(session: Session, user_id: int, old_password: str, new_password: str,
                             password_type: int):
-    account = Keypair.from_secret(decrypt(get_default_wallet(session, user_id).secret_key, old_password))
-    update_secret_key(session, user_id, encrypt(account.secret, new_password), password_type)
+    account = Keypair.from_secret(decrypt(db_get_default_wallet(session, user_id).secret_key, old_password))
+    db_update_secret_key(session, user_id, encrypt(account.secret, new_password), password_type)
     return account.public_key
 
 

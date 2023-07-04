@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
 from utils.aiogram_utils import send_message, bot
 from utils.lang_utils import my_gettext, set_last_message_id, get_last_message_id
-from utils.stellar_utils import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, is_new_user, \
-    stellar_get_wallets_list
+from utils.stellar_utils import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, db_is_new_user, \
+    db_get_wallets_list
 
 
 class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"):
@@ -44,7 +44,7 @@ async def get_kb_default(session: Session, chat_id: int) -> types.InlineKeyboard
 async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
                            refresh_callback: types.CallbackQuery = None):
     # new user ?
-    if is_new_user(session, user_id):
+    if db_is_new_user(session, user_id):
         await cmd_change_wallet(user_id, state, session)
     else:
         try:
@@ -109,7 +109,7 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'setting_msg')
     buttons = []
-    wallets = stellar_get_wallets_list(session, user_id)
+    wallets = db_get_wallets_list(session, user_id)
     for idx, wallet in enumerate(wallets):
         active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
         buttons.append([types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]}",

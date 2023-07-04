@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from db.requests import get_default_address, set_default_address, reset_balance, add_donate, delete_all_by_user
+from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, db_delete_all_by_user
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
@@ -139,7 +139,7 @@ async def cmd_after_donate(session: Session, user_id: int, state: FSMContext):
     donate_sum = data.get('donate_sum')
     await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
-    await add_donate(session, user_id, donate_sum)
+    await db_add_donate(session, user_id, donate_sum)
 
 
 async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContext):
@@ -179,7 +179,7 @@ async def cmd_donate_sum(message: types.Message, state: FSMContext, session: Ses
 
 @router.message(Command(commands=["delete_all"]))
 async def cmd_start(message: types.Message, state: FSMContext, session: Session):
-    delete_all_by_user(session, message.from_user.id)
+    db_delete_all_by_user(session, message.from_user.id)
     await send_message(session, message.from_user.id, 'All was delete, restart please')
     await state.clear()
 
@@ -187,7 +187,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session)
 @router.callback_query(Text(text=["SetDefault"]))
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(SettingState.send_default_address)
-    msg = my_gettext(callback, 'set_default', (get_default_address(session, callback.from_user.id),))
+    msg = my_gettext(callback, 'set_default', (db_get_default_address(session, callback.from_user.id),))
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
     await callback.answer()
 
@@ -197,11 +197,11 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
     address = message.text
     try:
         await stellar_get_balances(session, message.from_user.id, public_key=address)
-        set_default_address(session, message.from_user.id, address)
+        db_set_default_address(session, message.from_user.id, address)
     except:
-        set_default_address(session, message.from_user.id, '')
+        db_set_default_address(session, message.from_user.id, '')
         # await state.set_state(None)
-    msg = my_gettext(message, 'set_default', (get_default_address(session, message.from_user.id),))
+    msg = my_gettext(message, 'set_default', (db_get_default_address(session, message.from_user.id),))
     await send_message(session, message, msg, reply_markup=get_kb_return(message))
 
     await message.delete()
@@ -209,6 +209,6 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
 
 @router.callback_query(Text(text=["Refresh"]))
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    reset_balance(session, callback.from_user.id)
+    db_reset_balance(session, callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
     await callback.answer()

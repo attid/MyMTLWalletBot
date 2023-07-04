@@ -5,7 +5,7 @@ from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import user_can_new_free
+from db.requests import db_user_can_new_free
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
@@ -68,7 +68,7 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
 
 @router.callback_query(Text(text=["AddWalletNewKey"]))
 async def cq_add(callback: types.CallbackQuery, session: Session):
-    if user_can_new_free(session, callback.from_user.id):
+    if db_user_can_new_free(session, callback.from_user.id):
         xdr = await stellar_create_new(session,callback.from_user.id, callback.from_user.username)
         await cmd_info_message(session, callback.message.chat.id, my_gettext(callback, "try_send"))
         await async_stellar_send(xdr)

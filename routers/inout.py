@@ -65,7 +65,7 @@ async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session):
 
 @router.callback_query(Text(text=["USDT_IN"]))
 async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    user_tron_private_key = get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
+    user_tron_private_key = db_get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
     usdc_sum = float((await stellar_get_balances(session, 0, asset_filter='USDC'))[0].balance)
 
     show_max_sum = max_usdt_sum if usdc_sum > max_usdt_sum else usdc_sum
@@ -95,7 +95,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         await callback.answer(text=f"You don't have a trust line to USDC, continuation is not possible",
                               show_alert=True)
         return
-    user_tron_private_key = get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
+    user_tron_private_key = db_get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
     usdt_balance = await get_usdt_balance(private_key=user_tron_private_key)
     if usdt_balance < 10:
         await callback.answer(text=f"USDT account balance unchanged", show_alert=True)
@@ -249,7 +249,7 @@ async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: 
 
 
 async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext):
-    btc_uuid, btc_date = get_btc_uuid(session, user_id=user_id)
+    btc_uuid, btc_date = db_get_btc_uuid(session, user_id=user_id)
     if btc_uuid and btc_date and btc_date > datetime.now():
         buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check'),
                                                callback_data="BTC_CHECK"),
@@ -288,7 +288,7 @@ async def cmd_send_get_sum(message: types.Message, state: FSMContext, session: S
         if order_uuid:
             await state.update_data(send_sum=send_sum)
             await state.set_state(None)
-            set_btc_uuid(session, user_id=message.from_user.id, btc_uuid=order_uuid)
+            db_set_btc_uuid(session, user_id=message.from_user.id, btc_uuid=order_uuid)
             await cmd_show_btc_in(session, message.from_user.id, state)
     await message.delete()
 
@@ -305,7 +305,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
         return
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     # rest of the function logic
-    btc_uuid, btc_date = get_btc_uuid(session, user_id=callback.from_user.id)
+    btc_uuid, btc_date = db_get_btc_uuid(session, user_id=callback.from_user.id)
     if btc_uuid and btc_date and btc_date > datetime.now():
         result, sats_sum = await thoth_check_order(btc_uuid)
         if result:
@@ -329,7 +329,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                                                                                  callback.from_user.id)).account.account_id,
                                                  satsmtl_asset, amount=round(sats_sum)), master.secret)
             logger.info(xdr)
-            set_btc_uuid(session, user_id=callback.from_user.id, btc_uuid=None)
+            db_set_btc_uuid(session, user_id=callback.from_user.id, btc_uuid=None)
             await async_stellar_send(xdr)
             await cmd_info_message(session, callback, 'All works done!')
     await callback.answer()

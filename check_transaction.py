@@ -1,7 +1,7 @@
 # from loguru import logger
 #
 #
-# def cmd_add_message(user_id, user_message):
+# def db_add_message(user_id, user_message):
 #     fb.execsql('insert into mymtlwalletbot_messages (user_id, user_message) values (?,?)', (user_id, user_message))
 #
 #
@@ -22,7 +22,7 @@
 #             fb.execsql('update mymtlwalletbot_transactions set transaction_state = 2, transaction_response = ? ' +
 #                        'where user_transaction_id = ?',
 #                        (str(resp), transaction_id))
-#             cmd_add_message(user_id, my_gettext(user_id, "send_good"))
+#             db_add_message(user_id, my_gettext(user_id, "send_good"))
 #             logger.info(['was send'])
 #
 #         except Exception as ex:
@@ -30,7 +30,7 @@
 #             fb.execsql('update mymtlwalletbot_transactions set transaction_state = 3, transaction_response = ? ' +
 #                        'where user_transaction_id = ?',
 #                        (str(ex), transaction_id))
-#             cmd_add_message(user_id, my_gettext(user_id, "send_error"))
+#             db_add_message(user_id, my_gettext(user_id, "send_error"))
 #
 #
 # @logger.catch

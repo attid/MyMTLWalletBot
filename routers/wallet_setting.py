@@ -8,8 +8,8 @@ from aiogram.fsm.state import StatesGroup, State
 from requests import Session
 from stellar_sdk import Asset
 
-from db.requests import get_book_data, get_address_book_by_id, delete_address_book_by_id, insert_into_address_book, \
-    get_default_wallet
+from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, db_insert_into_address_book, \
+    db_get_default_wallet
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
@@ -252,7 +252,7 @@ async def remove_password(session: Session, user_id: int, state: FSMContext):
 
 @router.callback_query(Text(text=["RemovePassword"]))
 async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    pin_type = get_default_wallet(session, callback.from_user.id).use_pin
+    pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
     if pin_type in (1, 2):
         await state.update_data(fsm_func=jsonpickle.dumps(remove_password))
         await state.set_state(PinState.sign)
@@ -266,7 +266,7 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(Text(text=["SetPassword"]))
 async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    pin_type = get_default_wallet(session, callback.from_user.id).use_pin
+    pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
     if pin_type in (1, 2):
         await callback.answer('You have password. Remove it first', show_alert=True)
     elif pin_type == 10:
@@ -297,7 +297,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
         await cmd_buy_private_key(callback, state)
         # await callback.answer('You have free account. Please buy it first.')
     else:
-        pin_type = get_default_wallet(session, callback.from_user.id).use_pin
+        pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
 
         if pin_type == 10:
             await callback.answer('You have read only account', show_alert=True)
@@ -346,7 +346,7 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
 
 
 async def cmd_edit_address_book(session: Session, user_id: int):
-    data = get_book_data(session, user_id)
+    data = db_get_book_data(session, user_id)
 
     buttons = []
     for row in data:
@@ -384,7 +384,7 @@ async def cmd_send_for(message: types.Message, state: FSMContext, session: Sessi
     await message.delete()
     if len(message.text) > 5 and message.text.find(' ') != -1:
         arr = message.text.split(' ')
-        insert_into_address_book(session, arr[0], ' '.join(arr[1:]), message.from_user.id)
+        db_insert_into_address_book(session, arr[0], ' '.join(arr[1:]), message.from_user.id)
     await cmd_edit_address_book(session, message.from_user.id)
 
 
@@ -396,12 +396,12 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCa
     user_id = callback.from_user.id
 
     if answer == 'Show':
-        book = get_address_book_by_id(session, idx, user_id)
+        book = db_get_address_book_by_id(session, idx, user_id)
         if book is not None:
             await callback.answer(f"{book.address}\n{book.name}"[:200], show_alert=True)
 
     if answer == 'Delete':
-        delete_address_book_by_id(session, idx, user_id)
+        db_delete_address_book_by_id(session, idx, user_id)
         await cmd_edit_address_book(session, user_id)
 
     await callback.answer()

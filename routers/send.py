@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from db.requests import (get_user_account_by_username, get_book_data, get_user_data, stellar_get_wallets_list)
+from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list)
 from utils.aiogram_utils import my_gettext, send_message, bot, check_username
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from mytypes import Balance
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
-    stellar_get_user_account, my_float, float2str, update_username
+    stellar_get_user_account, my_float, float2str, db_update_username
 
 
 class StateSendToken(StatesGroup):
@@ -74,10 +74,10 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
     data = await state.get_data()
     if '@' == data.get('qr', message.text)[0]:
         try:
-            public_key, user_id = get_user_account_by_username(session, message.text)
+            public_key, user_id = db_get_user_account_by_username(session, message.text)
             tmp_name = await check_username(user_id)
             if tmp_name is None or tmp_name.lower() != message.text.lower()[1:]:
-                update_username(session, user_id, tmp_name)
+                db_update_username(session, user_id, tmp_name)
                 raise Exception("Имя пользователя не совпадает")
             logger.info(f"{message.from_user.id}, {message.text}, {message.text[1:]}, {public_key}")
         except Exception as ex:
@@ -269,11 +269,11 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ):
     results = []
 
     # Query from the address book
-    book_data = get_book_data(session, inline_query.from_user.id)
+    book_data = db_get_book_data(session, inline_query.from_user.id)
     data = [(record.address, record.name) for record in book_data]
 
     # Query from the wallets
-    wallet_data = stellar_get_wallets_list(session, inline_query.from_user.id)
+    wallet_data = db_get_wallets_list(session, inline_query.from_user.id)
     for record in wallet_data:
         simple_account = record.public_key[:4] + '..' + record.public_key[-4:]
         data.append((record.public_key, simple_account))
@@ -287,7 +287,7 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ):
                                                                   message_text=record[0])))
 
         # Query from users
-        user_data = get_user_data(session, inline_query.query)
+        user_data = db_get_user_data(session, inline_query.query)
         for record in user_data:
             user = f'@{record.user_name}'
             results.append(types.InlineQueryResultArticle(id=user, title=user,
