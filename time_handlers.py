@@ -59,9 +59,9 @@ async def cmd_send_message_events(session: Session):
 
     for record in records:
         try:
-            await set_last_message_id(session,record.user_id, 0)
-            await cmd_info_message(session, record.user_id, decode_db_effect(record), None)
-            await set_last_message_id(session,record.user_id, 0)
+            set_last_message_id(session, record.user_id, 0)
+            await cmd_info_message(session, record.user_id, decode_db_effect(record))
+            set_last_message_id(session, record.user_id, 0)
         except Exception as ex:
             logger.info(['cmd_send_message_events', record.id, ex])
 
