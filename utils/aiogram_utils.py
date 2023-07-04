@@ -67,10 +67,8 @@ async def send_message(session: Session, user_id: Union[types.CallbackQuery, typ
         new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
                                          disable_web_page_preview=True)
         if msg_id > 0:
-            try:
+            with suppress(TelegramBadRequest):
                 await bot.delete_message(user_id, msg_id)
-            except Exception as ex:
-                logger.info(['await send_message, del', user_id, ex])
         set_last_message_id(session, user_id, new_msg.message_id)
     else:
         if msg_id > 0:
