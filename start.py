@@ -1,5 +1,9 @@
 import asyncio
 import sys
+from contextlib import suppress
+
+from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,7 +14,7 @@ from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
-from utils.aiogram_utils import bot, dp, scheduler
+from utils.aiogram_utils import bot, dp, scheduler, admin_id, helper_chat_id
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
                      cheque)
 from routers import veche, wallet_setting, common_end
@@ -30,6 +34,7 @@ async def main_bot(db_pool: sessionmaker):
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool()))
     dp.message.middleware(DbSessionMiddleware(db_pool))
     dp.callback_query.middleware(DbSessionMiddleware(db_pool))
+    dp.inline_query.middleware(DbSessionMiddleware(db_pool))
 
     dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
@@ -54,16 +59,17 @@ async def main_bot(db_pool: sessionmaker):
     #    pass
     # else:
     scheduler.start()
-    time_handlers.scheduler_jobs(scheduler, dp)
+    time_handlers.scheduler_jobs(scheduler, db_pool)
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
 
     # Запускаем бота и пропускаем все накопленные входящие
     # Да, этот метод можно вызвать даже если у вас поллинг
     await bot.delete_webhook(drop_pending_updates=True)
-    await set_commands()
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
-async def set_commands():
+async def set_commands(bot: Bot):
     commands_clear = []
     commands_private = [
         BotCommand(
@@ -97,7 +103,19 @@ async def set_commands():
 
     await bot.set_my_commands(commands=commands_clear, scope=BotCommandScopeDefault())
     await bot.set_my_commands(commands=commands_private, scope=BotCommandScopeAllPrivateChats())
-    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=84131737))
+    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=admin_id))
+
+async def on_startup(bot: Bot):
+    await set_commands(bot)
+    with suppress(TelegramBadRequest):
+        await bot.send_message(chat_id=admin_id, text='Bot started')
+    with suppress(TelegramBadRequest):
+        await bot.send_message(chat_id=helper_chat_id, text='Bot started')
+
+
+async def on_shutdown(bot: Bot):
+    with suppress(TelegramBadRequest):
+        await bot.send_message(chat_id=admin_id, text='Bot stopped')
 
 
 async def main():
@@ -105,6 +123,8 @@ async def main():
     engine = create_engine(config.db_dns, pool_pre_ping=True)
     # Creating DB connections pool
     db_pool = sessionmaker(bind=engine)
+    import utils.lang_utils
+    utils.lang_utils.lang_session = db_pool()
     await asyncio.gather(asyncio.create_task(main_bot(db_pool)),
                          asyncio.create_task(cheque_worker(db_pool())),
                          asyncio.create_task(log_worker(db_pool())),

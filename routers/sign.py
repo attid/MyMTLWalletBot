@@ -10,7 +10,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 
-from db.requests import reset_balance, get_user_wallet
+from db.requests import reset_balance, get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery
@@ -55,7 +55,7 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
     pin = data.get("pin", '')
 
     if pin_type is None:
-        pin_type = get_user_wallet(session, chat_id).use_pin
+        pin_type = get_default_wallet(session, chat_id).use_pin
         await state.update_data(pin_type=pin_type)
 
     if pin_type == 1:  # pin
@@ -169,7 +169,7 @@ async def sign_xdr(session: Session, state, user_id):
         if user_id > 0:
             if fsm_func:
                 fsm_func = jsonpickle.loads(fsm_func)
-                await fsm_func(user_id, state)
+                await fsm_func(session, user_id, state)
             else:
                 xdr = stellar_user_sign(session, xdr, user_id, str(pin))
                 await state.set_state(None)
@@ -193,7 +193,7 @@ async def sign_xdr(session: Session, state, user_id):
                                            )
                     if fsm_after_send:
                         fsm_after_send = jsonpickle.loads(fsm_after_send)
-                        await fsm_after_send(user_id, state)
+                        await fsm_after_send(session, user_id, state)
                 if current_state == PinState.sign:
                     await cmd_show_sign(session, user_id, state,
                                         my_gettext(user_id, "your_xdr", (xdr,)),

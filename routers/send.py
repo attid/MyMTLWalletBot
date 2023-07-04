@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from db.requests import get_user_account_by_username, get_book_data, get_user_data, get_wallet_data
+from db.requests import (get_user_account_by_username, get_book_data, get_user_data, stellar_get_wallets_list)
 from utils.aiogram_utils import my_gettext, send_message, bot, check_username
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from mytypes import Balance
@@ -119,8 +119,8 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
     link = f'<a href="{link}">{address}</a>'
 
     msg = my_gettext(message, 'choose_token', (link,))
-    asset_list = await stellar_get_balances(session,message.from_user.id)
-    sender_asset_list = await stellar_get_balances(session,message.from_user.id, address)
+    asset_list = await stellar_get_balances(session, message.from_user.id)
+    sender_asset_list = await stellar_get_balances(session, message.from_user.id, address)
     kb_tmp = []
     for token in asset_list:
         for sender_token in sender_asset_list:
@@ -219,7 +219,7 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session):
     data = await state.get_data()
 
     send_sum = data.get('activate_sum', 5)
-    asset_list = await stellar_get_balances(session,user_id, asset_filter='XLM')
+    asset_list = await stellar_get_balances(session, user_id, asset_filter='XLM')
     send_asset_code = asset_list[0].asset_code
     send_asset_issuer = asset_list[0].asset_issuer
     send_address = data.get('send_address', 'None 0_0')
@@ -273,7 +273,7 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ):
     data = [(record.address, record.name) for record in book_data]
 
     # Query from the wallets
-    wallet_data = get_wallet_data(session, inline_query.from_user.id)
+    wallet_data = stellar_get_wallets_list(session, inline_query.from_user.id)
     for record in wallet_data:
         simple_account = record.public_key[:4] + '..' + record.public_key[-4:]
         data.append((record.public_key, simple_account))

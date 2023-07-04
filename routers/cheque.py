@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import insert_into_mtlwalletbot_cheque, get_cheque, get_user_wallet, reset_balance, \
+from db.requests import insert_into_mtlwalletbot_cheque, get_cheque, get_default_wallet, reset_balance, \
     get_available_cheques, get_cheque_receive_count, insert_into_cheque_history
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
@@ -228,7 +228,7 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
     receive_count = get_cheque_receive_count(session, cheque_uuid)
     cheque_pay = cheque.cheque_amount
     xdr = await stellar_pay(cheque_public,
-                            get_user_wallet(session, user_id),
+                            get_default_wallet(session, user_id).public_key,
                             eurmtl_asset, (total_count - receive_count) * float(cheque_pay), memo=cheque_uuid[:16])
     xdr = stellar_sign(xdr, stellar_get_master(session).secret)
 
@@ -290,7 +290,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
         return
 
     # "inline_cheque": "Чек на {} EURMTL, для {} получателя/получателей, \n\n \"{}\"",
-    msg = my_gettext(user_id, 'inline_cheque', (cheque[0][2], cheque[0][3], cheque[0][5]))
+    msg = my_gettext(user_id, 'inline_cheque', (cheque.cheque_amount, cheque.cheque_count, cheque.cheque_comment))
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_get_cheque'), callback_data='ChequeYes')],
         get_return_button(user_id)
@@ -325,8 +325,8 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
         xdr = await stellar_create_new(session, user_id, username)
 
     xdr = await stellar_pay(cheque_public,
-                            get_user_wallet(session, user_id),
-                            eurmtl_asset, float(cheque[0][2]), memo=cheque[0][1][:16], xdr=xdr)
+                            get_default_wallet(session, user_id).public_key,
+                            eurmtl_asset, float(cheque.cheque_amount), memo=cheque.cheque_uuid[:16], xdr=xdr)
     if was_new:
         xdr = stellar_user_sign(session, xdr, user_id, str(user_id))
 

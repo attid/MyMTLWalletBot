@@ -53,19 +53,24 @@ def set_default_address(session: Session, user_id: int, address: str):
 
 
 def get_user_account_by_username(session: Session, username: str):
-    result = session.query(MyMtlWalletBot.public_key, MyMtlWalletBot.user_id, MyMtlWalletBotUsers.default_address). \
-        join(MyMtlWalletBotUsers, MyMtlWalletBotUsers.user_id == MyMtlWalletBot.user_id). \
-        filter(MyMtlWalletBotUsers.user_name == username.lower()[1:], MyMtlWalletBot.default_wallet == 1). \
-        one_or_none()
+    # First query to check the default_address
+    user = session.query(MyMtlWalletBotUsers.user_id, MyMtlWalletBotUsers.default_address) \
+        .filter(MyMtlWalletBotUsers.user_name == username.lower()[1:]) \
+        .one_or_none()
 
-    if result is not None:
-        public_key, user_id, default_address = result
+    if user is not None:
+        user_id, default_address = user
         if len(default_address) == 56:
             return default_address, user_id
         else:
-            return public_key, user_id
-    else:
-        return None
+            # Second query if default_address is not available or invalid
+            wallet = session.query(MyMtlWalletBot.public_key) \
+                .filter(MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1) \
+                .one_or_none()
+            if wallet is not None:
+                return wallet.public_key, user_id
+
+    return None, None
 
 
 def get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=None):
@@ -125,12 +130,6 @@ def insert_into_address_book(session: Session, address: str, name: str, user_id:
     session.commit()
 
 
-def get_wallet_data(session: Session, user_id: int) -> list[MyMtlWalletBot]:
-    wallet_data = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
-                                                       MyMtlWalletBot.need_delete == 0).all()
-    return wallet_data
-
-
 def get_user_data(session: Session, inline_query: str) -> list[MyMtlWalletBotUsers]:
     user_data = session.query(MyMtlWalletBotUsers.user_name) \
         .filter(MyMtlWalletBotUsers.user_name.isnot(None),
@@ -167,7 +166,8 @@ def add_user(session: Session, user_id: int, public_key, secret_key: str, i_free
 
 def get_default_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
     wallet = session.query(MyMtlWalletBot).filter(
-        MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1).first()
+        MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1,
+        MyMtlWalletBot.need_delete == 0).one_or_none()
     return wallet
 
 
@@ -177,12 +177,6 @@ def update_username(session: Session, user_id: int, username):
     if user is not None:
         user.user_name = username
         session.commit()
-
-
-def get_user_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
-    user = session.query(MyMtlWalletBot).filter(
-        MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1).one_or_none()
-    return user
 
 
 def is_new_user(session: Session, user_id: int):
@@ -230,21 +224,22 @@ def update_mymtlwalletbot_balances(session: Session, balances: str, user_id: int
 
 def delete_all_by_user(session: Session, user_id: int):
     session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id).update(
-        {MyMtlWalletBot.user_id: -1 * user_id})
+        {MyMtlWalletBot.need_delete: 1})
     session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.user_id == user_id).delete()
     session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).delete()
     session.commit()
 
 
-def delete_wallet(session: Session, user_id: int, public_key: str):
-    session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
-                                         MyMtlWalletBot.public_key == public_key
-                                         ).update({MyMtlWalletBot.user_id: -1 * user_id,
-                                                   MyMtlWalletBot.need_delete: 1
-                                                   },
-                                                  synchronize_session=False)  # Added this for better performance during updates.
+def delete_wallet(session: Session, user_id: int, public_key: str, erase: bool = False):
+    wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
+                                                  MyMtlWalletBot.public_key == public_key).first()
 
-    session.commit()
+    if wallet is not None:
+        if erase:
+            session.delete(wallet)
+        else:
+            wallet.need_delete = 1
+        session.commit()
 
 
 def update_secret_key(session: Session, user_id: int, new_secret_key: str, password_type: int):
@@ -264,9 +259,14 @@ def add_donate(session: Session, user_id: int, donate_sum: float):
         session.commit()
 
 
-def stellar_get_wallets_list(session: Session, user_id: int):
-    wallets = session.query(MyMtlWalletBot.public_key, MyMtlWalletBot.default_wallet,
-                            MyMtlWalletBot.free_wallet).filter(MyMtlWalletBot.user_id == user_id).all()
+def stellar_get_wallets_list(session: Session, user_id: int) -> List[MyMtlWalletBot]:
+    wallets = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
+                                                   MyMtlWalletBot.need_delete == 0).all()
+    return wallets
+
+
+def stellar_get_delete_wallets_list(session: Session) -> List[MyMtlWalletBot]:
+    wallets = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.need_delete == 1).all()
     return wallets
 
 
@@ -325,16 +325,16 @@ def get_cheque_receive_count(session: Session, cheque_uuid: str, user_id: int = 
 
 
 def get_available_cheques(session: Session, user_id: int) -> List[MyMtlWalletBotCheque]:
-    cheque_subquery = session.query(
-        func.count(MyMtlWalletBotChequeHistory.cheque_id).label("cheque_history_count")
-    ).filter(
-        MyMtlWalletBotChequeHistory.cheque_id == MyMtlWalletBotCheque.cheque_id
-    ).subquery()
-
     cheques = session.query(
         MyMtlWalletBotCheque
+    ).outerjoin(
+        MyMtlWalletBotChequeHistory,
+        MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id
+    ).group_by(
+        MyMtlWalletBotCheque
+    ).having(
+        func.count(MyMtlWalletBotChequeHistory.cheque_id) < MyMtlWalletBotCheque.cheque_count
     ).filter(
-        MyMtlWalletBotCheque.cheque_count > select([cheque_subquery]),
         MyMtlWalletBotCheque.user_id == user_id,
         MyMtlWalletBotCheque.cheque_status == 0
     ).all()

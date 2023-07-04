@@ -9,7 +9,7 @@ from requests import Session
 from stellar_sdk import Asset
 
 from db.requests import get_book_data, get_address_book_by_id, delete_address_book_by_id, insert_into_address_book, \
-    get_user_wallet
+    get_default_wallet
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
@@ -252,7 +252,7 @@ async def remove_password(session: Session, user_id: int, state: FSMContext):
 
 @router.callback_query(Text(text=["RemovePassword"]))
 async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    pin_type = get_user_wallet(session, callback.from_user.id).use_pin
+    pin_type = get_default_wallet(session, callback.from_user.id).use_pin
     if pin_type in (1, 2):
         await state.update_data(fsm_func=jsonpickle.dumps(remove_password))
         await state.set_state(PinState.sign)
@@ -266,7 +266,7 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(Text(text=["SetPassword"]))
 async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    pin_type = get_user_wallet(session, callback.from_user.id).use_pin
+    pin_type = get_default_wallet(session, callback.from_user.id).use_pin
     if pin_type in (1, 2):
         await callback.answer('You have password. Remove it first', show_alert=True)
     elif pin_type == 10:
@@ -282,7 +282,7 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
             await callback.answer()
 
 
-async def send_private_key(user_id: int, state: FSMContext, session: Session):
+async def send_private_key(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     pin = data.get('pin', '')
     keypair = stellar_get_user_keypair(session, user_id, pin)
@@ -297,7 +297,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
         await cmd_buy_private_key(callback, state)
         # await callback.answer('You have free account. Please buy it first.')
     else:
-        pin_type = get_user_wallet(session, callback.from_user.id).use_pin
+        pin_type = get_default_wallet(session, callback.from_user.id).use_pin
 
         if pin_type == 10:
             await callback.answer('You have read only account', show_alert=True)
@@ -308,7 +308,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
             await callback.answer()
 
 
-async def cmd_after_buy(user_id: int, state: FSMContext, session: Session):
+async def cmd_after_buy(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     buy_address = data.get('buy_address')
     await send_message(session, user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
