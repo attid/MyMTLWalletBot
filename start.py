@@ -20,6 +20,8 @@ from routers import (add_wallet, admin, common_start, common_setting, mtltools, 
 from routers import veche, wallet_setting, common_end
 from loguru import logger
 
+task_list = []
+
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
 # https://docs.aiogram.dev/en/dev-3.x/dispatcher/filters/index.html
@@ -60,6 +62,11 @@ async def main_bot(db_pool: sessionmaker):
     # else:
     scheduler.start()
     time_handlers.scheduler_jobs(scheduler, db_pool)
+    global task_list
+    task_list = [asyncio.create_task(cheque_worker(db_pool())),
+                 asyncio.create_task(log_worker(db_pool())),
+                 ]
+
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
@@ -105,6 +112,7 @@ async def set_commands(bot: Bot):
     await bot.set_my_commands(commands=commands_private, scope=BotCommandScopeAllPrivateChats())
     await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=admin_id))
 
+
 async def on_startup(bot: Bot):
     await set_commands(bot)
     with suppress(TelegramBadRequest):
@@ -116,6 +124,8 @@ async def on_startup(bot: Bot):
 async def on_shutdown(bot: Bot):
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=admin_id, text='Bot stopped')
+    for task in task_list:
+        task.cancel()
 
 
 async def main():
@@ -126,8 +136,6 @@ async def main():
     import utils.lang_utils
     utils.lang_utils.lang_session = db_pool()
     await asyncio.gather(asyncio.create_task(main_bot(db_pool)),
-                         asyncio.create_task(cheque_worker(db_pool())),
-                         asyncio.create_task(log_worker(db_pool())),
                          return_exceptions=True)
 
 
