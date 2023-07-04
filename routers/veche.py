@@ -48,7 +48,7 @@ async def cmd_login_to_veche(session: Session, chat_id: int, state: FSMContext, 
     await send_message(session, chat_id, my_gettext(chat_id, 'veche_ask'), reply_markup=get_kb_yesno_send_xdr(chat_id))
 
 
-async def send_veche_link(user_id: int, state: FSMContext, session: Session):
+async def send_veche_link(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     pin = data.get('pin', '')
     message = data.get('message')

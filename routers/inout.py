@@ -314,7 +314,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                                       show_alert=True)
                 return
             btc_balance = float((await stellar_get_balances(session, 0, asset_filter='SATSMTL'))[0].balance)
-            if btc_balance > max_btc_sum or sats_sum > btc_balance:
+            if sats_sum > max_btc_sum or sats_sum > btc_balance:
                 await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
                                       show_alert=True)
                 return

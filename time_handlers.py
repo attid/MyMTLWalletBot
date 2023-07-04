@@ -1,7 +1,7 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 from sqlalchemy import and_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages
 from routers.start_msg import cmd_info_message
@@ -72,6 +72,6 @@ async def cmd_send_message_events(session: Session):
         session.commit()
 
 
-def scheduler_jobs(scheduler: AsyncIOScheduler, dp):
-    scheduler.add_job(cmd_send_message_1m, "interval", seconds=10, args=(dp,))
-    scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(dp,))
+def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker):
+    scheduler.add_job(cmd_send_message_1m, "interval", seconds=10, args=(db_pool(),))
+    scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool(),))

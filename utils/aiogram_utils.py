@@ -38,6 +38,7 @@ cheque_queue = asyncio.Queue()
 log_queue = asyncio.Queue()
 
 admin_id = 84131737
+helper_chat_id = -1001466779498
 
 
 class StateSign(StatesGroup):

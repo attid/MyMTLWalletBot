@@ -4,7 +4,6 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 from sqlalchemy.orm import Session
-
 from db.requests import delete_wallet
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
@@ -72,15 +71,15 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     wallets = data['wallets']
     if idx < len(wallets):
         if answer == 'DELETE':
-            delete_wallet(session, user_id, wallets[idx][0])
+            delete_wallet(session, user_id, wallets[idx])
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'SET_ACTIVE':
-            stellar_set_default_wallets(session, user_id, wallets[idx][0])
+            stellar_set_default_wallets(session, user_id, wallets[idx])
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'NAME':
             try:
-                msg = f"{wallets[idx][0]}\n" + my_gettext(callback, 'your_balance') + await stellar_get_balance_str(
-                    session, user_id, wallets[idx][0])
+                msg = f"{wallets[idx]}\n" + my_gettext(callback, 'your_balance') + await stellar_get_balance_str(
+                    session, user_id, wallets[idx])
             except:
                 msg = f'Error load. Please delete this'
             await callback.answer(msg[:200], show_alert=True)

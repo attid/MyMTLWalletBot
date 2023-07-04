@@ -1,5 +1,6 @@
 from contextlib import suppress
 import aiohttp
+import asyncio
 import base58
 import requests
 from tronpy import Tron, AsyncTron, exceptions
@@ -205,7 +206,7 @@ async def get_usdt_balance(public_key=None, private_key=None):
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         contract = await client.get_contract(usdt_contract)
-        balance = await contract.functions.balanceOf(public_key) / 10 ** 6
+        balance = (await contract.functions.balanceOf(public_key)) / 10 ** 6
 
     return balance
 
@@ -264,5 +265,5 @@ if __name__ == "__main__":
     #my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
     #print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
     #print(asyncio.run(get_trx_balance(my_tron)))
-    # print(create_trc_private_key())
-    # print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))
+    #print(show_balance(my_tron))
+    #print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))

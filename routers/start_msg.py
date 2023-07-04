@@ -1,12 +1,9 @@
 from typing import Union
-
 from aiogram import types
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
-
 from loguru import logger
 from sqlalchemy.orm import Session
-
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
 from utils.aiogram_utils import send_message, bot
 from utils.lang_utils import my_gettext, set_last_message_id, get_last_message_id
@@ -62,7 +59,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             link = 'https://stellar.expert/explorer/public/account/' + user_account
             # a = await stellar_get_balance_str(user_id)
             msg = f'<a href="{link}">{simple_account}</a> {my_gettext(user_id, "your_balance")}\n\n' \
-                  f'{await stellar_get_balance_str(session,user_id)}'
+                  f'{await stellar_get_balance_str(session, user_id)}'
 
             # if str(start_cmd).find('veche_') == 0:
             #    pass
@@ -114,8 +111,8 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     buttons = []
     wallets = stellar_get_wallets_list(session, user_id)
     for idx, wallet in enumerate(wallets):
-        active_name = '📌 Active' if wallet[1] == 1 else 'Set active'
-        buttons.append([types.InlineKeyboardButton(text=f"{wallet[0][:4]}..{wallet[0][-4:]}",
+        active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
+        buttons.append([types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]}",
                                                    callback_data=WalletSettingCallbackData(action='NAME',
                                                                                            idx=idx).pack()),
                         types.InlineKeyboardButton(text=f"{active_name}",
@@ -129,4 +126,4 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     buttons.append(get_return_button(user_id))
 
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.update_data(wallets=wallets)
+    await state.update_data(wallets=tuple(wallet.public_key for wallet in wallets))
