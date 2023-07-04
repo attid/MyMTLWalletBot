@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from db.models import *
 
 
-def cmd_add_message(session: Session, user_id: int, text: str, use_alarm: int = 0, update_id: int = None,
-                    button_json: str = None) -> None:
+def db_add_message(session: Session, user_id: int, text: str, use_alarm: int = 0, update_id: int = None,
+                   button_json: str = None) -> None:
     """
     Insert a new message into the t_message table.
 
@@ -25,8 +25,8 @@ def cmd_add_message(session: Session, user_id: int, text: str, use_alarm: int = 
     session.commit()
 
 
-def send_admin_message(session: Session, msg: str):
-    cmd_add_message(session, 84131737, msg)
+def db_send_admin_message(session: Session, msg: str):
+    db_add_message(session, 84131737, msg)
     # add text to file error.txt
     with open('error.txt', 'a') as f:
         f.write(f"{argv} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -35,7 +35,7 @@ def send_admin_message(session: Session, msg: str):
         f.write('******************************************************************************\n')
 
 
-def get_default_address(session: Session, user_id: int):
+def db_get_default_address(session: Session, user_id: int):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user is not None:
         return user.default_address
@@ -43,7 +43,7 @@ def get_default_address(session: Session, user_id: int):
         return None
 
 
-def set_default_address(session: Session, user_id: int, address: str):
+def db_set_default_address(session: Session, user_id: int, address: str):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one()
     if user is not None:
         user.default_address = address
@@ -52,7 +52,7 @@ def set_default_address(session: Session, user_id: int, address: str):
         raise ValueError(f"No user found with id {user_id}")
 
 
-def get_user_account_by_username(session: Session, username: str):
+def db_get_user_account_by_username(session: Session, username: str):
     # First query to check the default_address
     user = session.query(MyMtlWalletBotUsers.user_id, MyMtlWalletBotUsers.default_address) \
         .filter(MyMtlWalletBotUsers.user_name == username.lower()[1:]) \
@@ -73,7 +73,7 @@ def get_user_account_by_username(session: Session, username: str):
     return None, None
 
 
-def get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=None):
+def db_get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=None):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user and user.usdt and len(user.usdt) == 64:
         return user.usdt
@@ -84,7 +84,7 @@ def get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=
         return addr
 
 
-def get_btc_uuid(session: Session, user_id: int):
+def db_get_btc_uuid(session: Session, user_id: int):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user and user.btc and user.btc_date and len(user.btc) > 10:
         return user.btc, user.btc_date
@@ -92,7 +92,7 @@ def get_btc_uuid(session: Session, user_id: int):
         return None, None
 
 
-def set_btc_uuid(session: Session, user_id: int, btc_uuid: Union[str, None]):
+def db_set_btc_uuid(session: Session, user_id: int, btc_uuid: Union[str, None]):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user is not None:
         user.btc = btc_uuid
@@ -100,7 +100,7 @@ def set_btc_uuid(session: Session, user_id: int, btc_uuid: Union[str, None]):
         session.commit()
 
 
-def reset_balance(session: Session, user_id: int):
+def db_reset_balance(session: Session, user_id: int):
     user = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
                                                 MyMtlWalletBot.default_wallet == 1).one_or_none()
     if user is not None:
@@ -108,36 +108,36 @@ def reset_balance(session: Session, user_id: int):
         session.commit()
 
 
-def get_book_data(session: Session, user_id: int) -> List[MyMtlWalletBotBook]:
+def db_get_book_data(session: Session, user_id: int) -> List[MyMtlWalletBotBook]:
     data = session.query(MyMtlWalletBotBook).filter(MyMtlWalletBotBook.user_id == user_id).all()
     return data
 
 
-def get_address_book_by_id(session: Session, idx: int, user_id: int) -> Optional[MyMtlWalletBotBook]:
+def db_get_address_book_by_id(session: Session, idx: int, user_id: int) -> Optional[MyMtlWalletBotBook]:
     book = session.query(MyMtlWalletBotBook).filter_by(id=idx, user_id=user_id).one_or_none()
     return book
 
 
-def delete_address_book_by_id(session: Session, idx: int, user_id: int) -> None:
+def db_delete_address_book_by_id(session: Session, idx: int, user_id: int) -> None:
     book = session.query(MyMtlWalletBotBook).filter_by(id=idx, user_id=user_id).one()
     session.delete(book)
     session.commit()
 
 
-def insert_into_address_book(session: Session, address: str, name: str, user_id: int) -> None:
+def db_insert_into_address_book(session: Session, address: str, name: str, user_id: int) -> None:
     new_book = MyMtlWalletBotBook(address=address[:64], name=name[:64], user_id=user_id)
     session.add(new_book)
     session.commit()
 
 
-def get_user_data(session: Session, inline_query: str) -> list[MyMtlWalletBotUsers]:
+def db_get_user_data(session: Session, inline_query: str) -> list[MyMtlWalletBotUsers]:
     user_data = session.query(MyMtlWalletBotUsers.user_name) \
         .filter(MyMtlWalletBotUsers.user_name.isnot(None),
                 MyMtlWalletBotUsers.user_name.ilike(f"%{inline_query}%")).all()
     return user_data
 
 
-def add_user_if_not_exists(session: Session, user_id: int, user_name: str):
+def db_add_user_if_not_exists(session: Session, user_id: int, user_name: str):
     user_count = session.query(func.count(MyMtlWalletBotUsers.user_id)).filter(
         MyMtlWalletBotUsers.user_id == user_id).scalar()
     if user_count == 0:
@@ -146,7 +146,7 @@ def add_user_if_not_exists(session: Session, user_id: int, user_name: str):
         session.commit()
 
 
-def add_user(session: Session, user_id: int, public_key, secret_key: str, i_free_wallet: int):
+def db_add_user(session: Session, user_id: int, public_key, secret_key: str, i_free_wallet: int):
     # Get the maximum `last_event_id`
     last_event_id = session.query(func.max(MyMtlWalletBot.last_event_id)).scalar()
 
@@ -164,14 +164,14 @@ def add_user(session: Session, user_id: int, public_key, secret_key: str, i_free
     session.commit()
 
 
-def get_default_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
+def db_get_default_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
     wallet = session.query(MyMtlWalletBot).filter(
         MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1,
         MyMtlWalletBot.need_delete == 0).one_or_none()
     return wallet
 
 
-def update_username(session: Session, user_id: int, username):
+def db_update_username(session: Session, user_id: int, username):
     username = username.lower() if username else username
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user is not None:
@@ -179,7 +179,7 @@ def update_username(session: Session, user_id: int, username):
         session.commit()
 
 
-def is_new_user(session: Session, user_id: int):
+def db_is_new_user(session: Session, user_id: int):
     user_exists_in_users = session.query(MyMtlWalletBotUsers).filter(
         MyMtlWalletBotUsers.user_id == user_id).count() != 0
     if not user_exists_in_users:
@@ -188,7 +188,7 @@ def is_new_user(session: Session, user_id: int):
     return not user_exists_in_wallet
 
 
-def user_can_new_free(session: Session, user_id: int):
+def db_user_can_new_free(session: Session, user_id: int):
     result = session.query(func.count(MyMtlWalletBot.user_id)).filter(
         MyMtlWalletBot.user_id == user_id,
         MyMtlWalletBot.free_wallet == 1
@@ -200,7 +200,7 @@ def user_can_new_free(session: Session, user_id: int):
         return True
 
 
-def unfree_wallet(session: Session, user_id: int, account_id: str):
+def db_unfree_wallet(session: Session, user_id: int, account_id: str):
     stmt = update(MyMtlWalletBot).where(
         (MyMtlWalletBot.user_id == user_id) &
         (MyMtlWalletBot.public_key == account_id)
@@ -209,7 +209,7 @@ def unfree_wallet(session: Session, user_id: int, account_id: str):
     session.commit()
 
 
-def update_mymtlwalletbot_balances(session: Session, balances: str, user_id: int):
+def db_update_mymtlwalletbot_balances(session: Session, balances: str, user_id: int):
     user_wallet = session.query(MyMtlWalletBot).filter(
         MyMtlWalletBot.user_id == user_id,
         MyMtlWalletBot.default_wallet == 1).one_or_none()
@@ -222,7 +222,7 @@ def update_mymtlwalletbot_balances(session: Session, balances: str, user_id: int
         print(f"No wallet found for user_id {user_id} with default_wallet set to 1")
 
 
-def delete_all_by_user(session: Session, user_id: int):
+def db_delete_all_by_user(session: Session, user_id: int):
     session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id).update(
         {MyMtlWalletBot.need_delete: 1})
     session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.user_id == user_id).delete()
@@ -230,7 +230,7 @@ def delete_all_by_user(session: Session, user_id: int):
     session.commit()
 
 
-def delete_wallet(session: Session, user_id: int, public_key: str, erase: bool = False):
+def db_delete_wallet(session: Session, user_id: int, public_key: str, erase: bool = False):
     wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
                                                   MyMtlWalletBot.public_key == public_key).first()
 
@@ -242,7 +242,7 @@ def delete_wallet(session: Session, user_id: int, public_key: str, erase: bool =
         session.commit()
 
 
-def update_secret_key(session: Session, user_id: int, new_secret_key: str, password_type: int):
+def db_update_secret_key(session: Session, user_id: int, new_secret_key: str, password_type: int):
     session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
                                          MyMtlWalletBot.default_wallet == 1
                                          ).update({MyMtlWalletBot.secret_key: new_secret_key,
@@ -252,25 +252,25 @@ def update_secret_key(session: Session, user_id: int, new_secret_key: str, passw
     session.commit()
 
 
-def add_donate(session: Session, user_id: int, donate_sum: float):
+def db_add_donate(session: Session, user_id: int, donate_sum: float):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one()
     if user is not None:
         user.donate_sum += donate_sum
         session.commit()
 
 
-def stellar_get_wallets_list(session: Session, user_id: int) -> List[MyMtlWalletBot]:
+def db_get_wallets_list(session: Session, user_id: int) -> List[MyMtlWalletBot]:
     wallets = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
                                                    MyMtlWalletBot.need_delete == 0).all()
     return wallets
 
 
-def stellar_get_delete_wallets_list(session: Session) -> List[MyMtlWalletBot]:
+def db_get_deleted_wallets_list(session: Session) -> List[MyMtlWalletBot]:
     wallets = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.need_delete == 1).all()
     return wallets
 
 
-def stellar_set_default_wallets(session: Session, user_id: int, public_key: str):
+def db_set_default_wallets(session: Session, user_id: int, public_key: str):
     # Set all other wallets of this user to not default
     session.query(MyMtlWalletBot).filter(
         MyMtlWalletBot.user_id == user_id,
@@ -287,8 +287,8 @@ def stellar_set_default_wallets(session: Session, user_id: int, public_key: str)
         return False
 
 
-def insert_into_mtlwalletbot_cheque(session: Session, send_uuid: str, send_sum: str, send_count: int, user_id: int,
-                                    send_comment: str):
+def db_add_cheque(session: Session, send_uuid: str, send_sum: str, send_count: int, user_id: int,
+                  send_comment: str):
     new_cheque = MyMtlWalletBotCheque(
         cheque_uuid=send_uuid,
         cheque_amount=send_sum,
@@ -300,7 +300,7 @@ def insert_into_mtlwalletbot_cheque(session: Session, send_uuid: str, send_sum: 
     session.commit()
 
 
-def get_cheque(session: Session, cheque_uuid: str, user_id: int = None) -> MyMtlWalletBotCheque:
+def db_get_cheque(session: Session, cheque_uuid: str, user_id: int = None) -> MyMtlWalletBotCheque:
     query = session.query(MyMtlWalletBotCheque).filter(MyMtlWalletBotCheque.cheque_uuid == cheque_uuid)
 
     if user_id is not None:
@@ -310,7 +310,7 @@ def get_cheque(session: Session, cheque_uuid: str, user_id: int = None) -> MyMtl
     return cheque
 
 
-def get_cheque_receive_count(session: Session, cheque_uuid: str, user_id: int = None):
+def db_get_cheque_receive_count(session: Session, cheque_uuid: str, user_id: int = None):
     query = session.query(func.count('*')). \
         select_from(MyMtlWalletBotCheque). \
         join(MyMtlWalletBotChequeHistory, MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id). \
@@ -324,7 +324,7 @@ def get_cheque_receive_count(session: Session, cheque_uuid: str, user_id: int = 
     return receive_count
 
 
-def get_available_cheques(session: Session, user_id: int) -> List[MyMtlWalletBotCheque]:
+def db_get_available_cheques(session: Session, user_id: int) -> List[MyMtlWalletBotCheque]:
     cheques = session.query(
         MyMtlWalletBotCheque
     ).outerjoin(
@@ -342,7 +342,7 @@ def get_available_cheques(session: Session, user_id: int) -> List[MyMtlWalletBot
     return cheques
 
 
-def insert_into_cheque_history(session: Session, user_id: int, cheque_id: int):
+def db_add_cheque_history(session: Session, user_id: int, cheque_id: int):
     new_cheque_history = MyMtlWalletBotChequeHistory(
         user_id=user_id,
         dt_block=datetime.now(),
