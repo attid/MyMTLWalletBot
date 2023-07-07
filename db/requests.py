@@ -288,7 +288,7 @@ def db_set_default_wallets(session: Session, user_id: int, public_key: str):
 
 
 def db_add_cheque(session: Session, send_uuid: str, send_sum: str, send_count: int, user_id: int,
-                  send_comment: str):
+                  send_comment: str) -> MyMtlWalletBotCheque:
     new_cheque = MyMtlWalletBotCheque(
         cheque_uuid=send_uuid,
         cheque_amount=send_sum,
@@ -298,6 +298,7 @@ def db_add_cheque(session: Session, send_uuid: str, send_sum: str, send_count: i
     )
     session.add(new_cheque)
     session.commit()
+    return new_cheque
 
 
 def db_get_cheque(session: Session, cheque_uuid: str, user_id: int = None) -> MyMtlWalletBotCheque:
@@ -336,7 +337,7 @@ def db_get_available_cheques(session: Session, user_id: int) -> List[MyMtlWallet
         func.count(MyMtlWalletBotChequeHistory.cheque_id) < MyMtlWalletBotCheque.cheque_count
     ).filter(
         MyMtlWalletBotCheque.user_id == user_id,
-        MyMtlWalletBotCheque.cheque_status == 0
+        MyMtlWalletBotCheque.cheque_status != ChequeStatus.CANCELED.value
     ).all()
 
     return cheques

@@ -124,12 +124,13 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         send_asset_code = data.get('send_asset_issuer')
         receive_asset = data.get('receive_asset_code')
         receive_asset_code = data.get('receive_asset_issuer')
+        xdr = data.get('xdr')
 
         receive_sum = await stellar_check_receive_sum(Asset(send_asset, send_asset_code), float2str(send_sum),
                                                       Asset(receive_asset, receive_asset_code))
         xdr = await stellar_swap((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
                                  Asset(send_asset, send_asset_code),
-                                 float2str(send_sum), Asset(receive_asset, receive_asset_code), receive_sum)
+                                 float2str(send_sum), Asset(receive_asset, receive_asset_code), receive_sum, xdr=xdr)
 
         msg = my_gettext(message, 'confirm_swap', (float2str(send_sum), send_asset, receive_sum, receive_asset))
 
