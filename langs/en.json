@@ -155,5 +155,10 @@
   "send_good_cheque": "Transaction has been successfully sent to the blockchain, the cheque has been paid out.",
   "info_trade": "A trade has been executed from the account {}: \n{} {} was exchanged for {} {}.\n\n {}.",
   "info_credit": "The account {} has been credited with {} {}. \n\n {}.",
-  "info_debit": "From account {}, a withdrawal of {} {} was made. \n\n {}."
+  "info_debit": "From account {}, a withdrawal of {} {} was made. \n\n {}.",
+  "kb_cheque_info": "Cheque Information",
+  "kb_cancel_cheque": "Cancel the Cheque",
+  "send_invoice_buy_resend": "Your invoice {} for an amount of {} EURMTL (0 means you can choose) for {} recipient(s), for purchasing tokens {} \n\n with a comment \"{}\" \n\n you can send the link to this cheque {} \n\n or press the \"Send\" button to send in a convenient format",
+  "inline_invoice_buy": "Invoice for purchase {}, \n\n {}",
+  "kb_get_invoice_buy": "Buy"
 }
