@@ -103,9 +103,9 @@ async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, ses
 
 
 @router.message(StateAddWallet.sending_public)
-async def cmd_sending_private(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_public(message: types.Message, state: FSMContext, session: Session):
     try:
-        await stellar_get_balances(session, message.from_user.id, public_key=message.text)
+        #await stellar_get_balances(session, message.from_user.id, public_key=message.text)
         await state.update_data(public_key=message.text)
         await state.set_state(None)
 
