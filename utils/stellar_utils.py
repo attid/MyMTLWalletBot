@@ -675,6 +675,6 @@ def float2str(f) -> str:
 
 if __name__ == "__main__":
     pass
-    from db.quik_pool import quik_pool
+#    from db.quik_pool import quik_pool
 
-    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
+#    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
