@@ -226,14 +226,58 @@ async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount:
     return full_transaction.to_xdr()
 
 
+async def stellar_get_selling_offers_sum(session: Session, user_id: int, sell_asset_filter: Asset):
+    """
+        Returns sum, blocked by Sell offers, filtered by selling asset
+    """
+    blocked_token_sum = 0.0
+    offers = await stellar_get_offers(session, user_id)
+    for offer in offers:
+        if offer.selling.asset_code == sell_asset_filter.asset_code:
+            blocked_token_sum += offer.amount
+    return blocked_token_sum
+
+
+async def stellar_del_selling_offers(transaction: TransactionBuilder, account: str, sell_asset_filter: Asset):
+    """
+        Gets list of all offers of 'account' filtered by selling asset
+        and add the delete operation to transaction for each or them.
+    """
+
+    # Get list of offers to delete
+    async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
+        user_account = await server.load_account(account)
+        acc_id = user_account.account.account_id
+        offers = MyOffers.from_dict(
+                await server.offers().for_seller(acc_id).for_selling(sell_asset_filter).limit(90).call()
+        )
+        
+    # Add 'delete offer' operations to transaction
+    for offer in offers.embedded.records:
+        transaction.append_manage_sell_offer_op(
+                                        selling=offer.selling,
+                                        buying=offer.buying,
+                                        amount='0',
+                                        price='99999999',
+                                        offer_id=offer.id
+        )
+
+
 async def stellar_swap(from_account: str, send_asset: Asset, send_amount: str, receive_asset: Asset,
-                       receive_amount: str):
+                       receive_amount: str, cancel_offers: bool = False):
+    
     async with ServerAsync(
             horizon_url="https://horizon.stellar.org", client=AiohttpClient()
     ) as server:
         source_account = await server.load_account(from_account)
+    
     transaction = TransactionBuilder(source_account=source_account,
                                      network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+    
+    # If 'cancel offers' option is checked, add to transaction operations of deleting all related offers 
+    if cancel_offers:
+        await stellar_del_selling_offers(transaction, from_account, send_asset)
+
     transaction.append_path_payment_strict_send_op(from_account, send_asset, send_amount, receive_asset,
                                                    receive_amount,
                                                    await stellar_get_receive_path(send_asset, send_amount,
@@ -250,6 +294,7 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
             horizon_url="https://horizon.stellar.org", client=AiohttpClient()
     ) as server:
         source_account = await server.load_account(from_account)
+
     transaction = TransactionBuilder(source_account=source_account,
                                      network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
     if (my_float(receive_amount) == 0.0) or (float(send_amount) == 0.0):
