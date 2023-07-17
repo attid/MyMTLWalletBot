@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
 from utils.aiogram_utils import my_gettext, send_message
-from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button, get_button
+from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
-    stellar_check_receive_sum, stellar_swap, stellar_get_market_link, stellar_get_offers, my_float, float2str, \
+    stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float, float2str, \
     stellar_get_selling_offers_sum
 
 
