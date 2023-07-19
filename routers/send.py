@@ -257,7 +257,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
             # message.text = data[0].data.decode()
             await state.update_data(qr=data[0].data.decode())
             await message.reply(data[0].data.decode())
-            await cmd_send_for(message, state)
+            await cmd_send_for(message, state, session)
             await message.delete()
 
 

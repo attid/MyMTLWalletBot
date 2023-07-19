@@ -2,6 +2,7 @@ from datetime import timedelta
 from sys import argv
 from typing import Union, List, Optional
 
+from loguru import logger
 from sqlalchemy import update, select
 from sqlalchemy.orm import Session
 from db.models import *
@@ -140,28 +141,31 @@ def db_get_user_data(session: Session, inline_query: str) -> list[MyMtlWalletBot
 def db_add_user_if_not_exists(session: Session, user_id: int, user_name: str):
     user_count = session.query(func.count(MyMtlWalletBotUsers.user_id)).filter(
         MyMtlWalletBotUsers.user_id == user_id).scalar()
+    user_name = user_name.lower() if user_name else None
     if user_count == 0:
         new_user = MyMtlWalletBotUsers(user_id=user_id, user_name=user_name)
         session.add(new_user)
         session.commit()
 
 
-def db_add_user(session: Session, user_id: int, public_key, secret_key: str, i_free_wallet: int):
+def db_add_wallet(session: Session, user_id: int, public_key, secret_key: str, i_free_wallet: int):
     # Get the maximum `last_event_id`
     last_event_id = session.query(func.max(MyMtlWalletBot.last_event_id)).scalar()
 
     # Create a new user
-    new_user = MyMtlWalletBot(
+    new_wallet = MyMtlWalletBot(
         user_id=user_id,
         public_key=public_key,
         secret_key=secret_key,
         credit=5,
-        default_wallet=1,
+        default_wallet=0,
         free_wallet=i_free_wallet,
         last_event_id=last_event_id
     )
-    session.add(new_user)
+    session.add(new_wallet)
     session.commit()
+    db_set_default_wallets(session, user_id, public_key)
+
 
 
 def db_get_default_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
@@ -184,14 +188,16 @@ def db_is_new_user(session: Session, user_id: int):
         MyMtlWalletBotUsers.user_id == user_id).count() != 0
     if not user_exists_in_users:
         return True
-    user_exists_in_wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id).count() != 0
+    user_exists_in_wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
+                                                                 MyMtlWalletBot.need_delete == 0).count() != 0
     return not user_exists_in_wallet
 
 
 def db_user_can_new_free(session: Session, user_id: int):
     result = session.query(func.count(MyMtlWalletBot.user_id)).filter(
         MyMtlWalletBot.user_id == user_id,
-        MyMtlWalletBot.free_wallet == 1
+        MyMtlWalletBot.free_wallet == 1,
+        MyMtlWalletBot.need_delete == 0
     ).scalar()
 
     if result > 2:
@@ -219,7 +225,7 @@ def db_update_mymtlwalletbot_balances(session: Session, balances: str, user_id: 
         user_wallet.balances_event_id = user_wallet.last_event_id
         session.commit()
     else:
-        print(f"No wallet found for user_id {user_id} with default_wallet set to 1")
+        logger.error(f"No wallet found for user_id {user_id} with default_wallet set to 1")
 
 
 def db_delete_all_by_user(session: Session, user_id: int):

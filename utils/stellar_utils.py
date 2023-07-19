@@ -162,7 +162,7 @@ def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key:
     i_free_wallet = 1 if free_wallet else 0
     db_add_user_if_not_exists(session, user_id, user_name)
 
-    db_add_user(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
+    db_add_wallet(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
 
     return public_key
 
@@ -176,7 +176,7 @@ def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: 
     i_free_wallet = 0
     db_add_user_if_not_exists(session, user_id, user_name)
 
-    db_add_user(session, user_id, public_key, public_key, i_free_wallet)
+    db_add_wallet(session, user_id, public_key, public_key, i_free_wallet)
 
     return public_key
 

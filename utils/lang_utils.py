@@ -30,7 +30,7 @@ def get_user_lang(session: Session, user_id: int):
 
 
 def change_user_lang(session: Session, user_id: int, lang: str):
-    user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one()
+    user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user is not None:
         user.lang = lang
         session.commit()
