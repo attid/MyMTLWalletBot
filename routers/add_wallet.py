@@ -1,3 +1,4 @@
+import jsonpickle
 from aiogram import Router, types
 from aiogram.filters import Text
 from aiogram.fsm.context import FSMContext
@@ -67,13 +68,19 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
 
 
 @router.callback_query(Text(text=["AddWalletNewKey"]))
-async def cq_add(callback: types.CallbackQuery, session: Session):
+async def cq_add(callback: types.CallbackQuery, session: Session, state: FSMContext):
     if db_user_can_new_free(session, callback.from_user.id):
         xdr = await stellar_create_new(session,callback.from_user.id, callback.from_user.username)
         await cmd_info_message(session, callback.message.chat.id, my_gettext(callback, "try_send"))
         await async_stellar_send(xdr)
         await cmd_info_message(session, callback, my_gettext(callback, 'send_good'))
         await callback.answer()
+        data = await state.get_data()
+        fsm_after_send = data.get('fsm_after_send')
+        if fsm_after_send:
+            fsm_after_send = jsonpickle.loads(fsm_after_send)
+            await fsm_after_send(session, callback.from_user.id, state)
+
     else:
         await callback.answer(my_gettext(callback.message.chat.id, "max_wallets"), show_alert=True)
 
@@ -103,9 +110,9 @@ async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, ses
 
 
 @router.message(StateAddWallet.sending_public)
-async def cmd_sending_private(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_public(message: types.Message, state: FSMContext, session: Session):
     try:
-        await stellar_get_balances(session, message.from_user.id, public_key=message.text)
+        #await stellar_get_balances(session, message.from_user.id, public_key=message.text)
         await state.update_data(public_key=message.text)
         await state.set_state(None)
 

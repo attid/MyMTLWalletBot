@@ -162,7 +162,7 @@ def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key:
     i_free_wallet = 1 if free_wallet else 0
     db_add_user_if_not_exists(session, user_id, user_name)
 
-    db_add_user(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
+    db_add_wallet(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
 
     return public_key
 
@@ -176,7 +176,7 @@ def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: 
     i_free_wallet = 0
     db_add_user_if_not_exists(session, user_id, user_name)
 
-    db_add_user(session, user_id, public_key, public_key, i_free_wallet)
+    db_add_wallet(session, user_id, public_key, public_key, i_free_wallet)
 
     return public_key
 
@@ -262,25 +262,28 @@ async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id
 
 
 async def stellar_swap(from_account: str, send_asset: Asset, send_amount: str, receive_asset: Asset,
-                       receive_amount: str, cancel_offers: bool = False):
+                       receive_amount: str, xdr: str = None, cancel_offers: bool = False):
+    if xdr:
+        transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    else:
+        async with ServerAsync(
+                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+        ) as server:
+            source_account = await server.load_account(from_account)
     
-    async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
-    ) as server:
-        source_account = await server.load_account(from_account)
-    
-    transaction = TransactionBuilder(source_account=source_account,
-                                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
-    
+        transaction = TransactionBuilder(source_account=source_account,
+                                        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+        transaction.set_timeout(60 * 60)
+
     # If 'cancel offers' option is checked, add to transaction operations of deleting all related offers 
     if cancel_offers:
         await stellar_del_selling_offers(transaction, source_account.account.account_id, send_asset)
+
 
     transaction.append_path_payment_strict_send_op(from_account, send_asset, send_amount, receive_asset,
                                                    receive_amount,
                                                    await stellar_get_receive_path(send_asset, send_amount,
                                                                                   receive_asset))
-    transaction.set_timeout(60 * 60)
     full_transaction = transaction.build()
     logger.info(full_transaction.to_xdr())
     return full_transaction.to_xdr()

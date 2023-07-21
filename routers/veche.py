@@ -14,7 +14,7 @@ router = Router()
 
 
 @router.message(Command(commands=["start"]), Text(contains="veche_"))
-async def cmd_start(message: types.Message, state: FSMContext, session: Session):
+async def cmd_start_veche(message: types.Message, state: FSMContext, session: Session):
     await state.clear()
 
     # check address

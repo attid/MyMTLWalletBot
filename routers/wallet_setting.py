@@ -294,7 +294,7 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext):
 @router.callback_query(Text(text=["GetPrivateKey"]))
 async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
     if await stellar_is_free_wallet(session, callback.from_user.id):
-        await cmd_buy_private_key(callback, state)
+        await cmd_buy_private_key(callback, state, session)
         # await callback.answer('You have free account. Please buy it first.')
     else:
         pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
