@@ -18,7 +18,7 @@
   "confirm_close_asset": " \n Do you want to close the trust line to {} {} ?",
   "confirm_send": " \n You want to send {} <b>{}</b> \n to the address \n {} \n with memo : {}",
   "confirm_send2": "Confirm sending",
-  "confirm_swap": " \n Do you want to {}exchange your {}{} \n for {}{} ?",
+  "confirm_swap": " \n Do you want to {}exchange your {} {} \n for {} {} ?",
   "confirm_cancel_offers": "cancel all {} Sell offers and ",
   "create_msg": "If you have a wallet, you can enter a private key and use your wallet in this bot. You can also specify a pincode and the key will be stored in encrypted form. If you lose the pincode, you will not be able to use your wallet. \n \n You can also create a free wallet, but only MTL and EURMTL tokens will be available in it. If you do not use the free wallet for more than six months, the administration reserves the right to delete your account.",
   "delete_asset": "Select the mode to add/remove the token",
@@ -158,5 +158,10 @@
   "send_good_cheque": "Transaction has been successfully sent to the blockchain, the cheque has been paid out.",
   "info_trade": "A trade has been executed from the account {}: \n{} {} was exchanged for {} {}.\n\n {}.",
   "info_credit": "The account {} has been credited with {} {}. \n\n {}.",
-  "info_debit": "From account {}, a withdrawal of {} {} was made. \n\n {}."
+  "info_debit": "From account {}, a withdrawal of {} {} was made. \n\n {}.",
+  "kb_cheque_info": "Cheque Information",
+  "kb_cancel_cheque": "Cancel the Cheque",
+  "send_invoice_buy_resend": "Your invoice {} for an amount of {} EURMTL (0 means you can choose) for {} recipient(s), for purchasing tokens {} \n\n with a comment \"{}\" \n\n you can send the link to this cheque {} \n\n or press the \"Send\" button to send in a convenient format",
+  "inline_invoice_buy": "Invoice for purchase {}, \n\n {}",
+  "kb_get_invoice_buy": "Buy"
 }

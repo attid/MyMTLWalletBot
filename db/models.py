@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, func, SmallInteger, Float, ForeignKey, Text, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, BigInteger, DateTime
+from sqlalchemy.sql.ddl import CreateTable
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -75,6 +76,12 @@ class MyMtlWalletBotBook(Base):
     user_id = Column(BigInteger)
 
 
+class ChequeStatus(enum.Enum):
+    CHEQUE = 0
+    CANCELED = 1
+    INVOICE = 2
+
+
 class MyMtlWalletBotCheque(Base):
     __tablename__ = 'MYMTLWALLETBOT_CHEQUE'
 
@@ -83,8 +90,10 @@ class MyMtlWalletBotCheque(Base):
     cheque_amount = Column(String(32))
     cheque_count = Column(Integer)
     user_id = Column(BigInteger)
-    cheque_status = Column(Integer, default=0)
+    #cheque_status = Column(Enum(ChequeStatus), default=ChequeStatus.CHEQUE.value)
+    cheque_status = Column(Integer, default=ChequeStatus.CHEQUE.value)
     cheque_comment = Column(String(255))
+    cheque_asset = Column(String(255))
 
 
 class MyMtlWalletBotChequeHistory(Base):
@@ -152,11 +161,12 @@ class TMessage(Base):
     button_json = Column(String(4000))
 
 
-# def update_db():
-#    Base.metadata.create_all(bind=engine)
-#    employee = session.query(Employee).filter(Employee.first_name == first_name, Employee.last_name == last_name).one()
-#    #metadata.create_all(engine)
+def update_db():
+    Base.metadata.create_all()
+    #metadata.create_all(engine)
 
 
 if __name__ == "__main__":
     pass
+    #from quik_pool import engine
+    #print(CreateTable(MyMtlWalletBotCheque.__table__).compile(engine))

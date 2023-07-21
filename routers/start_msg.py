@@ -1,4 +1,6 @@
 from typing import Union
+
+import jsonpickle
 from aiogram import types
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -45,6 +47,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
                            refresh_callback: types.CallbackQuery = None):
     # new user ?
     if db_is_new_user(session, user_id):
+        await state.update_data(fsm_after_send=jsonpickle.dumps(cmd_show_balance))
         await cmd_change_wallet(user_id, state, session)
     else:
         try:

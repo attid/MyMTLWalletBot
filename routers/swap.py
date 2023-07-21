@@ -179,16 +179,19 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         send_asset_code = data.get('send_asset_issuer')
         receive_asset = data.get('receive_asset_code')
         receive_asset_code = data.get('receive_asset_issuer')
+        xdr = data.get('xdr')
 
         receive_sum = await stellar_check_receive_sum(Asset(send_asset, send_asset_code), float2str(send_sum),
                                                       Asset(receive_asset, receive_asset_code))
+
         xdr = await stellar_swap(
-                                (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                                Asset(send_asset, send_asset_code),
-                                float2str(send_sum),
-                                Asset(receive_asset, receive_asset_code),
-                                receive_sum,
-                                cancel_offers=data.get('cancel_offers', False)
+                            (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+                            Asset(send_asset, send_asset_code),
+                            float2str(send_sum),
+                            Asset(receive_asset, receive_asset_code),
+                            receive_sum,
+                            xdr=xdr,
+                            cancel_offers=data.get('cancel_offers', False)
         )
 
         # Add msg about cancelling offers to the confirmation request

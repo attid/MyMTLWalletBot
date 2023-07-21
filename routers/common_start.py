@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta
 import jsonpickle
-from aiogram import Router, types
+from aiogram import Router, types, Bot
+from aiogram.enums import ChatAction
 from aiogram.filters import Command, Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, db_delete_all_by_user
+from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, \
+    db_delete_all_by_user, db_add_user_if_not_exists
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
@@ -25,7 +27,7 @@ class SettingState(StatesGroup):
 
 
 @router.message(Command(commands=["start"]), Text(contains="sign_"))
-async def cmd_start(message: types.Message, state: FSMContext, session: Session):
+async def cmd_start_sign(message: types.Message, state: FSMContext, session: Session):
     await state.clear()
 
     # check address
@@ -43,7 +45,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session)
 
 
 @router.message(Command(commands=["start"]))
-async def cmd_start(message: types.Message, state: FSMContext, session: Session):
+async def cmd_start(message: types.Message, state: FSMContext, session: Session, bot: Bot):
     # logger.info([message.from_user.id, ' cmd_start'])
     await state.clear()
 
@@ -52,8 +54,10 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session)
     await send_message(session, message.from_user.id, 'Loading')
 
     if check_user_lang(session, message.from_user.id) is None:
+        db_add_user_if_not_exists(session, message.from_user.id, message.from_user.username)
         await cmd_language(session, message.from_user.id)
     else:
+        await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         await cmd_show_balance(session, message.from_user.id, state)
 
 
@@ -178,7 +182,7 @@ async def cmd_donate_sum(message: types.Message, state: FSMContext, session: Ses
 
 
 @router.message(Command(commands=["delete_all"]))
-async def cmd_start(message: types.Message, state: FSMContext, session: Session):
+async def cmd_delete_all(message: types.Message, state: FSMContext, session: Session):
     db_delete_all_by_user(session, message.from_user.id)
     await send_message(session, message.from_user.id, 'All was delete, restart please')
     await state.clear()
