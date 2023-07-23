@@ -16,10 +16,7 @@
   "confirm_activate": " \n Račun ne postoji, ako želite aktivirati adresu {} sa zbrojem {} XLM, kliknite da",
   "confirm_asset": " \n Želite li otvoriti liniju povjerenja za {} {} ?",
   "confirm_close_asset": " \n Do želite li zatvoriti liniju povjerenja na {} {}?",
-  "confirm_send": " \n Ti želite li poslati {} {} \n na adresu \n {} \n memo : {}",
   "confirm_send2": "Potvrdite slanje",
-  "confirm_swap": " \n Do želite li {}razmijeniti svoje {} {} \n za {} {}?",
-  "confirm_cancel_offers": "otkažite sve ponude za prodaju {} i ",
   "create_msg": "Ako imate novčanik, možete unijeti privatni ključ i koristiti novčanik u ovom botu. Takođe možete odrediti pincode i ključ će biti sačuvan u šifrovanom obliku. Ako izgubite pincode, nećete moći koristiti novčanik. \n \n takođe možete kreirati besplatan novčanik, ali u njemu će biti dostupni samo MTL i EURMTL tokeni. Ako ne koristite besplatan novčanik duže od šest mjeseci, administracija zadržava pravo da izbriše vaš račun.",
   "delete_asset": "Odaberite način za dodavanje / uklanjanje tokena",
   "delete_asset2": "Odaberite liniju povjerenja koju želite ukloniti. Cijeli balans ovog tokena će biti uništen!",
@@ -69,8 +66,6 @@
   "send_password": "Unesite svoju lozinku",
   "send_sum": " \n Pošaljite iznos na {} \n dostupno \n <code>{}</code>",
   "send_sum_swap": " \n Pošaljite iznos na {} \n dostupno \n <code>{}</code> koji će biti zamijenjen za {}\n Look all order ({})",
-  "swap_summ_blocked_by_offers": "Pažnja! Imate ponude za prodaju tokena koji ste izabrali za razmenu. Blokirani iznos: {} {}.\n Ove offere možete otkazati pomoću dugmeta ispod.",
-  "kb_cancel_offers": "{} Otkažite sve ponude za prodaju {}",
   "send_xdr": " \n Pošaljite svoju XDR transakciju da potpiše",
   "setting_msg": "Postavljanje novčanika, ovdje možete izabrati podrazumevani novčanik, dodati novi, promeniti pin ili izbrisati novčanik",
   "support_bot": "Podrška bot @MyMTLWalletSupportBot",
@@ -121,5 +116,12 @@
   "delete_bim": "Želite li da uklonite {} iz OPM-a?",
   "kb_read_only": "Dodati adresu samo za čitanje",
   "add_read_only": "Dodati adresu samo za čitanje. Samo za xdr generaciju. Obratite pažnju: ako nemate privatni ključ i ako vam neko pošalje token, ćete ga izgubiti. \n Molimo, pošaljite svoju javnu adresu u stelar",
-  "kb_donate": "Donirati programerima"
+  "kb_donate": "Donirati programerima",
+
+  "confirm_swap": " \n Do želite li {}razmijeniti svoje {} {} \n za {} {}?",
+  "--confirm_cancel_offers": "otkažite sve ponude za prodaju {} i ",
+  "confirm_send": " \n Ti želite li {}poslati \n{} <b>{}</b> \nna adresu \n{} \nmemo : {}",
+  "--swap_summ_blocked_by_offers": "Pažnja! Imate ponude za prodaju tokena koji ste izabrali za razmenu. Blokirani iznos: {} {}.\n Ove offere možete otkazati pomoću dugmeta ispod.",
+  "--kb_cancel_offers": "{} Otkažite sve ponude za prodaju {}",
+  "--send_summ_blocked_by_offers": "<b>Attention!</b> You have offers that affect the token you have chosen to send. The blocked amount is {} {}.\n You can cancel offers by using the button below. "
 }
