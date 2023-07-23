@@ -14,10 +14,11 @@ from stellar_sdk.sep.federation import resolve_stellar_address
 
 from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list)
 from utils.aiogram_utils import my_gettext, send_message, bot, check_username
-from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
+from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
+                                        get_kb_return_offerscancel
 from mytypes import Balance
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
-    stellar_get_user_account, my_float, float2str, db_update_username
+    stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum
 
 
 class StateSendToken(StatesGroup):
@@ -149,11 +150,43 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
             else:
                 msg = my_gettext(callback, 'send_sum', (asset.asset_code,
                                                         asset.balance))
+
+                # Get summ of tokens, blocked by Sell offers 
+                blocked_token_sum = await stellar_get_selling_offers_sum(session, callback.from_user.id, asset)
+
+                # If user has some assets that are blocked by offers, remind him\her about it.
+                if blocked_token_sum > 0:
+                    msg +=  '\n\n' + my_gettext(
+                                        callback,
+                                        'send_summ_blocked_by_offers',
+                                        (blocked_token_sum, asset.asset_code)
+                    )
+
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
-                                        send_asset_max_sum=asset.balance, msg=msg)
+                                        send_asset_max_sum=asset.balance, send_asset_blocked_sum=blocked_token_sum,
+                                        msg=msg)
+                data = await state.get_data()   # Get updated data
+
                 await state.set_state(StateSendToken.sending_sum)
-                await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+                keyboard = get_kb_return_offerscancel(callback.message.from_user.id, data)
+                await send_message(session, callback, msg, reply_markup=keyboard)
     return True
+
+
+@router.callback_query(StateSendToken.sending_sum, Text("CancelOffers"))
+async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    """
+        Handle callback event 'CancelOffers_send' in state 'sending_sum'.
+        Invert state of 'cancel offers' flag by clicking on button.
+    """
+    data = await state.get_data()
+    data['cancel_offers'] = not data.get('cancel_offers', False) # Invert checkbox state
+    await state.update_data(cancel_offers=data['cancel_offers'])
+
+    # Update message with the same text and changed button checkbox state
+    msg = data['msg']
+    keyboard = get_kb_return_offerscancel(callback.from_user.id, data)
+    await send_message(session, callback, msg, reply_markup=keyboard)
 
 
 @router.message(StateSendToken.sending_sum)
@@ -184,12 +217,24 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     federal_memo = data.get("federal_memo")
     send_asset_name = data["send_asset_code"]
     send_asset_issuer = data["send_asset_issuer"]
+    cancel_offers = data.get('cancel_offers', False)
 
-    msg = my_gettext(message, 'confirm_send', (float2str(send_sum), send_asset_name, send_address, send_memo))
+
+    # Add msg about cancelling offers to the confirmation request
+    cancel_offers_msg = ''
+    if cancel_offers:
+        cancel_offers_msg = my_gettext(message, 'confirm_cancel_offers', (send_asset_name, ))
+
+    msg = my_gettext(
+        message,
+        'confirm_send', 
+        (cancel_offers_msg, float2str(send_sum), send_asset_name, send_address, send_memo)
+    )
 
     xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
                             send_address,
-                            Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo)
+                            Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo,
+                            cancel_offers=cancel_offers)
 
     await state.update_data(xdr=xdr, operation='send')
 

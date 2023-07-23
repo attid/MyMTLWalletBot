@@ -198,7 +198,7 @@ async def stellar_create_new(session: Session, user_id: int, username: str):
 
 
 async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount: float, create: bool = False,
-                      memo: str = None, xdr: str = None, fee=base_fee):
+                      memo: str = None, xdr: str = None, fee=base_fee, cancel_offers=False):
     if xdr:
         transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     else:
@@ -209,6 +209,10 @@ async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount:
         transaction = TransactionBuilder(source_account=source_account,
                                          network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=fee)
         transaction.set_timeout(60 * 60)
+
+    # If 'cancel offers' option is checked, add to transaction operations of deleting all related offers 
+    if cancel_offers:
+        await stellar_del_selling_offers(transaction, source_account.account.account_id, asset)
 
     if create:
         transaction.append_create_account_op(destination=for_account, starting_balance=float2str(round(amount, 7)))
@@ -234,7 +238,7 @@ async def stellar_get_selling_offers_sum(session: Session, user_id: int, sell_as
     offers = await stellar_get_offers(session, user_id)
     for offer in offers:
         if offer.selling.asset_code == sell_asset_filter.asset_code:
-            blocked_token_sum += offer.amount
+            blocked_token_sum += float(offer.amount)
     return blocked_token_sum
 
 
@@ -253,8 +257,8 @@ async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id
     # Add 'delete offer' operations to transaction
     for offer in offers.embedded.records:
         transaction.append_manage_sell_offer_op(
-                                        selling=offer.selling,
-                                        buying=offer.buying,
+                                        selling=Asset(offer.selling.asset_code, offer.selling.asset_issuer),
+                                        buying=Asset(offer.buying.asset_code, offer.buying.asset_issuer),
                                         amount='0',
                                         price='99999999',
                                         offer_id=offer.id
