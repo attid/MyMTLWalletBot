@@ -205,7 +205,9 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session
         await cmd_send_04(session, message, state)
         await message.delete()
     else:
-        await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}")
+        keyboard = get_kb_return_offerscancel(message.from_user.id, data)
+        await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}",
+                            reply_markup=keyboard)
 
 
 async def cmd_send_04(session: Session, message: types.Message, state: FSMContext, need_new_msg=None):
