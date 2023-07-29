@@ -81,3 +81,24 @@ def get_kb_resend(user_id: int) -> types.InlineKeyboardMarkup:
                get_return_button(user_id)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+
+def get_kb_return_offerscancel(user_id: int, data: dict) -> types.InlineKeyboardMarkup:
+    """
+        Create keyboard with optional checkbox-button '🟢 Cancel offers' and 'Return'-button
+    """
+    buttons = []
+    if data.get('send_asset_blocked_sum', 0.0) > 0:
+        cancel_offers_state = '🟢' if data.get('cancel_offers', False) else '⚪️'
+        btn_txt = my_gettext(
+            user_id,
+            'kb_cancel_offers',
+            (cancel_offers_state, data.get('send_asset_code'))
+        )
+        btn = [types.InlineKeyboardButton(text=btn_txt, callback_data='CancelOffers')]
+        buttons.append(btn)
+
+    buttons.append(get_return_button(user_id))
+
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
