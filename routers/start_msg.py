@@ -113,20 +113,20 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'setting_msg')
     buttons = []
     wallets = db_get_wallets_list(session, user_id)
-    for idx, wallet in enumerate(wallets):
+    for wallet in wallets:
         active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
         buttons.append([types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]}",
                                                    callback_data=WalletSettingCallbackData(action='NAME',
-                                                                                           idx=idx).pack()),
+                                                                                           idx=wallet.id).pack()),
                         types.InlineKeyboardButton(text=f"{active_name}",
                                                    callback_data=WalletSettingCallbackData(action='SET_ACTIVE',
-                                                                                           idx=idx).pack()),
+                                                                                           idx=wallet.id).pack()),
                         types.InlineKeyboardButton(text=f"Delete",
                                                    callback_data=WalletSettingCallbackData(action='DELETE',
-                                                                                           idx=idx).pack())
+                                                                                           idx=wallet.id).pack())
                         ])
     buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_new'), callback_data="AddNew")])
     buttons.append(get_return_button(user_id))
 
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.update_data(wallets=tuple(wallet.public_key for wallet in wallets))
+    await state.update_data(wallets={wallet.id: wallet.public_key for wallet in wallets})

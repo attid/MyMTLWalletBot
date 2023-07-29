@@ -65,13 +65,13 @@ async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, sess
 async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSettingCallbackData,
                      state: FSMContext, session: Session):
     answer = callback_data.action
-    idx = int(callback_data.idx)
+    idx = str(callback_data.idx)
     user_id = callback.from_user.id
     data = await state.get_data()
     wallets = data['wallets']
-    if idx < len(wallets):
+    if wallets.get(idx):
         if answer == 'DELETE':
-            db_delete_wallet(session, user_id, wallets[idx])
+            db_delete_wallet(session, user_id, wallets[idx], idx=int(idx))
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'SET_ACTIVE':
             db_set_default_wallets(session, user_id, wallets[idx])
