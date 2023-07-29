@@ -120,7 +120,7 @@ def db_get_address_book_by_id(session: Session, idx: int, user_id: int) -> Optio
 
 
 def db_delete_address_book_by_id(session: Session, idx: int, user_id: int) -> None:
-    book = session.query(MyMtlWalletBotBook).filter_by(id=idx, user_id=user_id).one()
+    book = session.query(MyMtlWalletBotBook).filter_by(id=idx, user_id=user_id).first()
     session.delete(book)
     session.commit()
 
@@ -167,11 +167,10 @@ def db_add_wallet(session: Session, user_id: int, public_key, secret_key: str, i
     db_set_default_wallets(session, user_id, public_key)
 
 
-
 def db_get_default_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
     wallet = session.query(MyMtlWalletBot).filter(
         MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1,
-        MyMtlWalletBot.need_delete == 0).one_or_none()
+        MyMtlWalletBot.need_delete == 0).first()
     return wallet
 
 
@@ -236,9 +235,13 @@ def db_delete_all_by_user(session: Session, user_id: int):
     session.commit()
 
 
-def db_delete_wallet(session: Session, user_id: int, public_key: str, erase: bool = False):
+def db_delete_wallet(session: Session, user_id: int, public_key: str, erase: bool = False, idx: int = None):
     wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
-                                                  MyMtlWalletBot.public_key == public_key).first()
+                                                  MyMtlWalletBot.public_key == public_key)
+    if idx is not None:
+        wallet = wallet.filter(MyMtlWalletBot.id == idx)
+
+    wallet = wallet.first()
 
     if wallet is not None:
         if erase:
@@ -279,12 +282,11 @@ def db_get_deleted_wallets_list(session: Session) -> List[MyMtlWalletBot]:
 def db_set_default_wallets(session: Session, user_id: int, public_key: str):
     # Set all other wallets of this user to not default
     session.query(MyMtlWalletBot).filter(
-        MyMtlWalletBot.user_id == user_id,
-        MyMtlWalletBot.public_key != public_key
+        MyMtlWalletBot.user_id == user_id
     ).update({MyMtlWalletBot.default_wallet: 0}, synchronize_session=False)
 
     # Set the specified wallet of this user to default
-    user = session.query(MyMtlWalletBot).filter_by(user_id=user_id, public_key=public_key).first()
+    user = session.query(MyMtlWalletBot).filter_by(user_id=user_id, public_key=public_key, need_delete=0).first()
     if user:
         user.default_wallet = 1
         session.commit()
