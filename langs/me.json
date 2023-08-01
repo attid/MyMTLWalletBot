@@ -123,5 +123,8 @@
   "confirm_send": " \n Ti želite li {}poslati \n{} <b>{}</b> \nna adresu \n{} \nmemo : {}",
   "--swap_summ_blocked_by_offers": "Pažnja! Imate ponude za prodaju tokena koji ste izabrali za razmenu. Blokirani iznos: {} {}.\n Ove offere možete otkazati pomoću dugmeta ispod.",
   "--kb_cancel_offers": "{} Otkažite sve ponude za prodaju {}",
-  "--send_summ_blocked_by_offers": "<b>Attention!</b> You have offers that affect the token you have chosen to send. The blocked amount is {} {}.\n You can cancel offers by using the button below. "
+  "--send_summ_blocked_by_offers": "<b>Attention!</b> You have offers that affect the token you have chosen to send. The blocked amount is {} {}.\n You can cancel offers by using the button below. ",
+
+  "--kb_show_less": "Show less",
+  "--kb_show_more": "Show more"
 }
