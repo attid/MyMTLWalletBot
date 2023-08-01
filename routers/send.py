@@ -43,7 +43,6 @@ def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int]) -> type
         user_id = user_id
 
     buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_choose'), switch_inline_query_current_chat='')],
-               [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_create_cheque'), callback_data="CreateCheque")],
                get_return_button(user_id)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
