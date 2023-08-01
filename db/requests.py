@@ -177,7 +177,7 @@ def db_get_default_wallet(session: Session, user_id: int) -> MyMtlWalletBot:
 def db_update_username(session: Session, user_id: int, username):
     username = username.lower() if username else username
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
-    if user is not None:
+    if (user is not None) and (user.user_name != username):
         user.user_name = username
         session.commit()
 

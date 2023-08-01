@@ -8,7 +8,7 @@ from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
 from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, \
-    db_delete_all_by_user, db_add_user_if_not_exists
+    db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
@@ -59,6 +59,9 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
     else:
         await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         await cmd_show_balance(session, message.from_user.id, state)
+        await check_update_username(
+            session, message.from_user.id, message.from_user.username, state
+        )
 
 
 @router.callback_query(Text(text=["Return"]))
@@ -73,6 +76,9 @@ async def cb_return(callback: types.CallbackQuery, state: FSMContext, session:Se
     else:
         await cmd_show_balance(session, callback.message.chat.id, state)
         await callback.answer()
+    await check_update_username(
+        session, callback.from_user.id, callback.from_user.username, state
+    )
 
 
 @router.callback_query(Text(text=["DeleteReturn"]))
@@ -85,6 +91,9 @@ async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, ses
 
     await cmd_show_balance(session, callback.message.chat.id, state)
     await callback.answer()
+    await check_update_username(
+        session, callback.from_user.id, callback.from_user.username, state
+    )
 
 
 @router.message(Command(commands=["about"]))
@@ -216,3 +225,19 @@ async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session:
     db_reset_balance(session, callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
     await callback.answer()
+    await check_update_username(
+        session, callback.from_user.id, callback.from_user.username, state
+    )
+
+
+async def check_update_username(session: Session, user_id: int, user_name: str, state: FSMContext):
+    """
+        Check if the user name in the database matches the real telegram-user name.
+        If not, then update in the database and in FSM-state.
+    """
+    user_name = user_name.lower()
+    data = await state.get_data()
+    state_user_name = data.get('user_name', '')
+    if user_name != state_user_name:
+        db_update_username(session, user_id, user_name)
+        await state.update_data(user_name=user_name)

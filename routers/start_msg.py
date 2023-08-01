@@ -54,7 +54,8 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             # start_time = datetime.now()
             # print(datetime.now(), f'time {datetime.now() - start_time}', 4)
             data = await state.get_data()
-            await state.clear()
+            await state.set_state(state=None)
+            await state.set_data({'user_name': data.get('user_name', '')})
 
             user_account = (await stellar_get_user_account(session, user_id)).account.account_id
             simple_account = user_account[:4] + '..' + user_account[-4:]
