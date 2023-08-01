@@ -12,7 +12,7 @@ from db.requests import db_get_default_address, db_set_default_address, db_reset
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
-from routers.start_msg import cmd_show_balance
+from routers.start_msg import cmd_show_balance, get_kb_default
 from utils.aiogram_utils import send_message, admin_id
 from utils.lang_utils import set_last_message_id, my_gettext, check_user_id, check_user_lang
 from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
@@ -215,4 +215,18 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
     db_reset_balance(session, callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
+    await callback.answer()
+
+
+@router.callback_query(Text("ShowMoreToggle"))
+async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    """
+        Invert state of 'show_more' flag by clicking on button.
+    """
+    data = await state.get_data()
+    new_state = not data.get('show_more', False) # Invert flag state
+    await state.update_data(show_more=new_state)
+    
+    keyboard = await get_kb_default(session, callback.from_user.id, state)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
     await callback.answer()
