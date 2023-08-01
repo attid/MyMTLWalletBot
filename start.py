@@ -91,6 +91,10 @@ async def set_commands(bot: Bot):
             command="send",
             description="Send tokens",
         ),
+        BotCommand(
+            command="create_cheque",
+            description="Create cheque",
+        ),
     ]
     if 'test' in sys.argv:
         commands_private.append(BotCommand(
