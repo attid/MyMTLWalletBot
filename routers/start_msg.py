@@ -18,7 +18,8 @@ class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"
     idx: int
 
 
-async def get_kb_default(session: Session, chat_id: int) -> types.InlineKeyboardMarkup:
+async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> types.InlineKeyboardMarkup:
+    data = await state.get_data()
     buttons = [
         [
             types.InlineKeyboardButton(text='⤵️ ' + my_gettext(chat_id, 'kb_receive'), callback_data="Receive"),
@@ -30,17 +31,26 @@ async def get_kb_default(session: Session, chat_id: int) -> types.InlineKeyboard
             types.InlineKeyboardButton(text='💸 ' + my_gettext(chat_id, 'kb_inout'), callback_data="InOut"),
             types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market'), callback_data="Market")
         ],
-        [types.InlineKeyboardButton(text='🏛 ' + my_gettext(chat_id, 'kb_mtl_tools'), callback_data="MTLTools")],
-        [types.InlineKeyboardButton(text='⚙️ ' + my_gettext(chat_id, 'kb_setting'), callback_data="WalletSetting")],
-        [types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
-                                    callback_data="ChangeWallet")],
-        [types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'), callback_data="Support")]
     ]
-    if not await stellar_is_free_wallet(session, chat_id):
-        buttons.append([types.InlineKeyboardButton(text='🖌 ' + my_gettext(chat_id, 'kb_sign'), callback_data="Sign")])
-
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    return keyboard
+    if data.get('show_more', False):
+        buttons.append(
+            [
+                types.InlineKeyboardButton(text='🏛 ' + my_gettext(chat_id, 'kb_mtl_tools'), callback_data="MTLTools"),
+                types.InlineKeyboardButton(text='⚙️ ' + my_gettext(chat_id, 'kb_setting'), callback_data="WalletSetting")
+            ]
+        )
+        buttons.append([types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
+                                           callback_data="ChangeWallet")])
+        buttons.append([types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'),
+                                           callback_data="Support")])
+        if not await stellar_is_free_wallet(session, chat_id):
+            buttons.append([types.InlineKeyboardButton(text='🖌 ' + my_gettext(chat_id, 'kb_sign'), callback_data="Sign")])
+        buttons.append([types.InlineKeyboardButton(text='≢ ' + my_gettext(chat_id, 'kb_show_less'),
+                                                callback_data="ShowMoreToggle")])
+    else:
+        buttons.append([types.InlineKeyboardButton(text='≡ ' + my_gettext(chat_id, 'kb_show_more'),
+                                                   callback_data="ShowMoreToggle")])
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
@@ -54,7 +64,12 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             # start_time = datetime.now()
             # print(datetime.now(), f'time {datetime.now() - start_time}', 4)
             data = await state.get_data()
-            await state.clear()
+            await state.set_state(state=None)
+            await state.set_data(
+                {
+                    'show_more': data.get('show_more', False)
+                }
+            )
 
             user_account = (await stellar_get_user_account(session, user_id)).account.account_id
             simple_account = user_account[:4] + '..' + user_account[-4:]
@@ -73,7 +88,8 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
                 await refresh_callback.answer('Nothing to update, the data is up to date.', show_alert=True)
                 await state.update_data(start_msg=msg)
             else:
-                await send_message(session, user_id, msg, reply_markup=await get_kb_default(session, user_id),
+                keyboard = await get_kb_default(session, user_id, state)
+                await send_message(session, user_id, msg, reply_markup=keyboard,
                                    need_new_msg=need_new_msg,
                                    parse_mode='HTML')
                 await state.update_data(start_msg=msg)

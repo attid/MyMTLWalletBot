@@ -50,11 +50,17 @@ class ChequeQuery:
 
 
 @router.callback_query(Text(text=["CreateCheque"]))
-async def cmd_create_cheque(callback: CallbackQuery, state: FSMContext, session: Session):
-    msg = my_gettext(callback, 'send_cheque_sum')
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+@router.message(Command('create_cheque'))
+async def cmd_create_cheque(
+    update: Union[CallbackQuery, Message], state: FSMContext, session: Session
+):
+    if isinstance(update, Message):
+        await update.delete()
+    msg = my_gettext(update, 'send_cheque_sum')
+    await send_message(session, update, msg, reply_markup=get_kb_return(update))
     await state.set_state(StateCheque.sending_sum)
-    await callback.answer()
+    if isinstance(update, CallbackQuery):
+        await update.answer()
 
 
 @router.message(StateCheque.sending_sum)
