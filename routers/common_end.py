@@ -5,7 +5,7 @@ import json
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address
+from db.requests import db_get_default_address, db_get_user_account_by_username
 from routers.send import cmd_send_04, cmd_send_choose_token
 from utils.gpt import gpt_check_message
 from utils.stellar_utils import find_stellar_public_key, find_stellar_federation_address, stellar_check_account
@@ -16,7 +16,7 @@ router = Router()
 
 
 @router.message()
-async def cmd_delete(message: types.Message, state: FSMContext, session: Session):
+async def cmd_last_route(message: types.Message, state: FSMContext, session: Session):
     # if forwarded
     if message.forward_sender_name or message.forward_from:
         public_key = find_stellar_public_key(message.text)
@@ -24,7 +24,7 @@ async def cmd_delete(message: types.Message, state: FSMContext, session: Session
             public_key = find_stellar_federation_address(message.text.lower())
 
         if message.forward_from and public_key is None:
-            public_key = db_get_default_address(session, message.forward_from.id)
+            public_key, user_id = db_get_user_account_by_username(session, '@'+message.forward_from.username)
 
         if public_key:
             my_account = await stellar_check_account(public_key)
@@ -35,6 +35,8 @@ async def cmd_delete(message: types.Message, state: FSMContext, session: Session
 
                 await state.set_state(None)
                 await cmd_send_choose_token(message, state, session)
+                return
+
 
     if message.from_user.username == "itolstov":
         if len(message.text.split()) > 3:
