@@ -18,7 +18,7 @@ router = Router()
 @router.message()
 async def cmd_delete(message: types.Message, state: FSMContext, session: Session):
     # if forwarded
-    if message.forward_sender_name:
+    if message.forward_sender_name or message.forward_from:
         public_key = find_stellar_public_key(message.text)
         if public_key is None:
             public_key = find_stellar_federation_address(message.text.lower())
