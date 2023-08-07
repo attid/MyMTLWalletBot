@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import re
 from contextlib import suppress
 
 import jsonpickle
@@ -242,7 +243,7 @@ async def stellar_get_selling_offers_sum(session: Session, user_id: int, sell_as
     return blocked_token_sum
 
 
-async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id: int, sell_asset_filter: Asset):
+async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id: str, sell_asset_filter: Asset):
     """
         Gets list of all offers of 'account' filtered by selling asset
         and add the delete operation to transaction for each or them.
@@ -251,17 +252,17 @@ async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id
     # Get list of offers to delete
     async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
         offers = MyOffers.from_dict(
-                await server.offers().for_seller(account_id).for_selling(sell_asset_filter).limit(90).call()
+            await server.offers().for_seller(account_id).for_selling(sell_asset_filter).limit(90).call()
         )
-        
+
     # Add 'delete offer' operations to transaction
     for offer in offers.embedded.records:
         transaction.append_manage_sell_offer_op(
-                                        selling=Asset(offer.selling.asset_code, offer.selling.asset_issuer),
-                                        buying=Asset(offer.buying.asset_code, offer.buying.asset_issuer),
-                                        amount='0',
-                                        price='99999999',
-                                        offer_id=offer.id
+            selling=Asset(offer.selling.asset_code, offer.selling.asset_issuer),
+            buying=Asset(offer.buying.asset_code, offer.buying.asset_issuer),
+            amount='0',
+            price='99999999',
+            offer_id=offer.id
         )
 
 
@@ -274,15 +275,14 @@ async def stellar_swap(from_account: str, send_asset: Asset, send_amount: str, r
                 horizon_url="https://horizon.stellar.org", client=AiohttpClient()
         ) as server:
             source_account = await server.load_account(from_account)
-    
+
         transaction = TransactionBuilder(source_account=source_account,
-                                        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+                                         network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
         transaction.set_timeout(60 * 60)
 
     # If 'cancel offers' option is checked, add to transaction operations of deleting all related offers 
     if cancel_offers:
         await stellar_del_selling_offers(transaction, source_account.account.account_id, send_asset)
-
 
     transaction.append_path_payment_strict_send_op(from_account, send_asset, send_amount, receive_asset,
                                                    receive_amount,
@@ -676,6 +676,20 @@ def float2str(f) -> str:
         if l == '.':
             break
     return s
+
+
+def find_stellar_public_key(text):
+    # Stellar публичные ключи начинаются с 'G' и содержат 56 символов
+    stellar_public_key_pattern = r'G[A-Za-z0-9]{55}'
+    match = re.search(stellar_public_key_pattern, text)
+    return match.group(0) if match else None
+
+
+def find_stellar_federation_address(text):
+    # Stellar федеральные адреса имеют формат 'username*domain.com'
+    stellar_federation_address_pattern = r'[a-z0-9]+[\._]?[a-z0-9]+[*][a-z0-9\-]+[\.][a-z0-9\.]+'
+    match = re.search(stellar_federation_address_pattern, text)
+    return match.group(0) if match else None
 
 
 if __name__ == "__main__":
