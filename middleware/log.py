@@ -28,7 +28,7 @@ class LogButtonClickCallbackMiddleware(BaseMiddleware):
 
 from sqlalchemy.exc import SQLAlchemyError
 
-async def log_worker(session: Session):
+async def log_worker(session_pool):
     while True:  # not queue.empty():
         log_item: LogQuery = await log_queue.get()
         try:
@@ -38,10 +38,10 @@ async def log_worker(session: Session):
                 log_operation=log_item.log_operation[:32],
                 log_operation_info=log_item.log_operation_info[:32]
             )
-            session.add(new_log)
-            session.commit()
+            with session_pool() as session:
+                session.add(new_log)
+                session.commit()
         except SQLAlchemyError as e:
             logger.warning(f'{log_item.user_id}-{log_item.log_operation} failed {type(e)}')
-            session.rollback()
         log_queue.task_done()
         await asyncio.sleep(1)

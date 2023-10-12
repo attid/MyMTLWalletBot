@@ -1,5 +1,5 @@
 from asyncio import sleep
-from aiogram import Router, types
+from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
@@ -10,7 +10,6 @@ from utils.lang_utils import my_gettext
 from utils.stellar_utils import *
 from utils.thothpay_utils import thoth_create_order, thoth_check_order
 from utils.tron_utils import *
-from aiogram.filters import Text
 
 router = Router()
 
@@ -28,7 +27,7 @@ min_btc_sum = 300
 max_btc_sum = 500000
 
 
-@router.callback_query(Text(text=["InOut"]))
+@router.callback_query(F.data=="InOut")
 async def cmd_inout(callback: types.CallbackQuery, session: Session):
     msg = my_gettext(callback, "inout")
     buttons = [[types.InlineKeyboardButton(text='USDT TRC20',
@@ -46,7 +45,7 @@ async def cmd_inout(callback: types.CallbackQuery, session: Session):
 ############################################################################
 
 
-@router.callback_query(Text(text=["USDT_TRC20"]))
+@router.callback_query(F.data=="USDT_TRC20")
 async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session):
     msg = my_gettext(callback, "inout_usdt")
     buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in'),
@@ -63,7 +62,7 @@ async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session):
 ############################################################################
 ############################################################################
 
-@router.callback_query(Text(text=["USDT_IN"]))
+@router.callback_query(F.data=="USDT_IN")
 async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_tron_private_key = db_get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
     usdc_sum = float((await stellar_get_balances(session, 0, asset_filter='USDC'))[0].balance)
@@ -79,7 +78,7 @@ async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session:
     await callback.answer()
 
 
-@router.callback_query(Text(text=["USDT_CHECK"]))
+@router.callback_query(F.data=="USDT_CHECK")
 async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     check_time = data.get("check_time")
@@ -125,14 +124,14 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
                                           usdc_asset, amount=round(usdt_balance) - 1)), master.secret)
     logger.info(xdr)
     await async_stellar_send(xdr)
-    await cmd_info_message(session, callback, 'All works done!')
+    await cmd_info_message(session,  callback, 'All works done!')
 
 
 ############################################################################
 ############################################################################
 ############################################################################
 
-@router.callback_query(Text(text=["USDT_OUT"]))
+@router.callback_query(F.data=="USDT_OUT")
 async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session: Session):
     usdt_master_balance = await get_usdt_balance(private_key=tron_master_key)
     show_max_sum = max_usdt_sum if usdt_master_balance > max_usdt_sum else usdt_master_balance
@@ -156,11 +155,11 @@ async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext)
 @router.message(StateInOut.sending_usdt_address)
 async def cmd_send_get_address(message: types.Message, state: FSMContext, session: Session):
     try:
-        if len(message.text) != 34:
+        if not check_valid_trx(message.text):
             raise ValueError
-        trx_sum = await get_trx_balance(public_key=message.text)
-        if trx_sum == 0:
-            raise ValueError
+        #trx_sum = await get_trx_balance(public_key=message.text)
+        ##if trx_sum == 0:
+        ##    raise ValueError
         await state.update_data(usdt_address=message.text, fsm_after_send=jsonpickle.dumps(cmd_after_send_usdt))
         await state.set_state(None)
         usdc_balance = await stellar_get_balances(session, message.from_user.id, asset_filter='USDC')
@@ -224,7 +223,7 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
 ############################################################################
 ############################################################################
 
-@router.callback_query(Text(text=["BTC"]))
+@router.callback_query(F.data=="BTC")
 async def cmd_receive_btc(callback: types.CallbackQuery, session: Session):
     # await callback.answer('Not implemented yet', show_alert=True)
     msg = my_gettext(callback, "inout_btc")
@@ -242,7 +241,7 @@ async def cmd_receive_btc(callback: types.CallbackQuery, session: Session):
 ############################################################################
 ############################################################################
 
-@router.callback_query(Text(text=["BTC_IN"]))
+@router.callback_query(F.data=="BTC_IN")
 async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_show_btc_in(session, callback.from_user.id, state)
     await callback.answer()
@@ -293,7 +292,7 @@ async def cmd_send_get_sum(message: types.Message, state: FSMContext, session: S
     await message.delete()
 
 
-@router.callback_query(Text(text=["BTC_CHECK"]))
+@router.callback_query(F.data=="BTC_CHECK")
 async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     check_time = data.get("check_time")
@@ -331,7 +330,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
             logger.info(xdr)
             db_set_btc_uuid(session, user_id=callback.from_user.id, btc_uuid=None)
             await async_stellar_send(xdr)
-            await cmd_info_message(session, callback, 'All works done!')
+            await cmd_info_message(session,  callback, 'All works done!')
     await callback.answer()
 
 
@@ -339,6 +338,6 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
 ############################################################################
 ############################################################################
 
-@router.callback_query(Text(text=["BTC_OUT"]))
+@router.callback_query(F.data=="BTC_OUT")
 async def cmd_btc_out(callback: types.CallbackQuery, state: FSMContext, session:Session):
     await callback.answer('Not implemented yet', show_alert=True)

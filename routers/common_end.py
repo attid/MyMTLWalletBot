@@ -5,7 +5,7 @@ import json
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address, db_get_user_account_by_username
+from db.requests import db_get_user_account_by_username
 from routers.send import cmd_send_04, cmd_send_choose_token
 from utils.gpt import gpt_check_message
 from utils.stellar_utils import find_stellar_public_key, find_stellar_federation_address, stellar_check_account

@@ -1,14 +1,14 @@
 from typing import List
 import jsonpickle
 from aiogram import Router, types, F
-from aiogram.filters import Text
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from requests import Session
 from stellar_sdk import Asset
 
-from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, db_insert_into_address_book, \
+from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
+    db_insert_into_address_book, \
     db_get_default_wallet
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from mytypes import Balance
@@ -20,7 +20,7 @@ from loguru import logger
 from utils.stellar_utils import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
                                  stellar_is_free_wallet, public_issuer, get_good_asset_list,
                                  stellar_pay, eurmtl_asset, float2str, stellar_get_user_keypair,
-                                 stellar_change_password, stellar_unfree_wallet)
+                                 stellar_change_password, stellar_unfree_wallet, have_free_xlm)
 
 
 class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
@@ -48,7 +48,7 @@ class StateAddressBook(StatesGroup):
 router = Router()
 
 
-@router.callback_query(Text(text=["WalletSetting"]))
+@router.callback_query(F.data == "WalletSetting")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'wallet_setting_msg')
     buttons = [
@@ -61,6 +61,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
         [types.InlineKeyboardButton(text=my_gettext(callback, 'change_lang'), callback_data="ChangeLang")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_default'), callback_data="SetDefault")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_limit'), callback_data="SetLimit")],
         get_return_button(callback)
     ]
 
@@ -68,7 +69,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
     await send_message(session, callback, msg, reply_markup=keyboard)
 
 
-@router.callback_query(Text(text=["AddAssetMenu"]))
+@router.callback_query(F.data == "AddAssetMenu")
 async def cmd_add_asset(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'delete_asset')
     buttons = [
@@ -86,7 +87,7 @@ async def cmd_add_asset(callback: types.CallbackQuery, state: FSMContext, sessio
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(Text(text=["DeleteAsset"]))
+@router.callback_query(F.data == "DeleteAsset")
 async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session):
     asset_list = await stellar_get_balances(session, callback.from_user.id)
 
@@ -135,12 +136,16 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(Text(text=["AddAsset"]))
+@router.callback_query(F.data == "AddAsset")
 async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_id = callback.from_user.id
     if await stellar_is_free_wallet(session, user_id) and (len(await stellar_get_balances(session, user_id)) > 5):
         await send_message(session, user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
         return False
+
+    if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
+        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        return
 
     good_asset = get_good_asset_list()
     for item in await stellar_get_balances(session, user_id):
@@ -188,12 +193,16 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(Text(text=["AddAssetExpert"]))
+@router.callback_query(F.data == "AddAssetExpert")
 async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_id = callback.from_user.id
     if await stellar_is_free_wallet(session, user_id) and (len(await stellar_get_balances(session, user_id)) > 5):
         await send_message(session, user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
         return False
+
+    if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
+        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        return
 
     await state.set_state(StateAddAsset.sending_code)
     msg = my_gettext(user_id, 'send_code')
@@ -250,7 +259,7 @@ async def remove_password(session: Session, user_id: int, state: FSMContext):
     await cmd_info_message(session, user_id, 'Password was unset', )
 
 
-@router.callback_query(Text(text=["RemovePassword"]))
+@router.callback_query(F.data == "RemovePassword")
 async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
     pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
     if pin_type in (1, 2):
@@ -264,7 +273,7 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
         await callback.answer('You dont have password or pin', show_alert=True)
 
 
-@router.callback_query(Text(text=["SetPassword"]))
+@router.callback_query(F.data == "SetPassword")
 async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
     pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
     if pin_type in (1, 2):
@@ -277,7 +286,7 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
         else:
             public_key = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
             await state.update_data(public_key=public_key)
-            await cmd_show_add_wallet_choose_pin(session,callback.from_user.id, state,
+            await cmd_show_add_wallet_choose_pin(session, callback.from_user.id, state,
                                                  my_gettext(callback, 'for_address', (public_key,)))
             await callback.answer()
 
@@ -291,7 +300,7 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext):
                        reply_markup=get_kb_del_return(user_id))
 
 
-@router.callback_query(Text(text=["GetPrivateKey"]))
+@router.callback_query(F.data == "GetPrivateKey")
 async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
     if await stellar_is_free_wallet(session, callback.from_user.id):
         await cmd_buy_private_key(callback, state, session)
@@ -316,7 +325,7 @@ async def cmd_after_buy(session: Session, user_id: int, state: FSMContext):
     await stellar_unfree_wallet(session, user_id)
 
 
-@router.callback_query(Text(text=["BuyAddress"]))
+@router.callback_query(F.data == "BuyAddress")
 async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
     if await stellar_is_free_wallet(session, callback.from_user.id):
         public_key = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
@@ -372,7 +381,7 @@ async def cmd_edit_address_book(session: Session, user_id: int):
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@router.callback_query(Text(text=["AddressBook"]))
+@router.callback_query(F.data == "AddressBook")
 async def cb_edit_address_book(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await callback.answer()
     await state.set_state(StateAddressBook.sending_new)

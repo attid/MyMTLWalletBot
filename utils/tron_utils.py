@@ -4,7 +4,7 @@ import asyncio
 import base58
 import requests
 from tronpy import Tron, AsyncTron, exceptions
-from tronpy.keys import PrivateKey
+from tronpy.keys import PrivateKey, is_address
 from tronpy.providers import HTTPProvider, AsyncHTTPProvider
 from config_reader import config
 
@@ -210,6 +210,12 @@ async def get_usdt_balance(public_key=None, private_key=None):
 
     return balance
 
+def check_valid_trx(public_key):
+    try:
+        return is_address(public_key)
+    except:
+        return False
+
 async def get_trx_balance(public_key=None, private_key=None):
     if private_key:
         public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
@@ -257,12 +263,16 @@ def tron_get_public(private_key):
 
 def tron_help():
     pass
+    print(check_valid_trx('TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn'))
+    print(asyncio.run(get_trx_balance(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
+
     #asyncio.run(send_trx_async(public_key_to='TKvcdvh628662g142UNQe2dpXxASRp7fv2', amount=50))
     #asyncio.run(send_usdt_async(public_key_to='TNsfWkRay3SczwkB4wqyB8sCPTzCNQo4Cb', amount=520, private_key_from='*'))
 
 if __name__ == "__main__":
     tron_help()
     #my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
+    #TV9NxnvRDMwtEoPPmqvk7kt3NDGZTMTNDd
     #print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
     #print(asyncio.run(get_trx_balance(my_tron)))
     #print(show_balance(my_tron))

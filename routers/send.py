@@ -1,8 +1,9 @@
 from typing import List, Union
+from urllib.parse import urlparse, parse_qs
 
 import jsonpickle
 from aiogram import Router, types, F
-from aiogram.filters import Text, Command
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -12,11 +13,13 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list)
+from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list,
+                         db_get_user)
 from utils.aiogram_utils import my_gettext, send_message, bot, check_username
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
-                                        get_kb_return_offerscancel
+    get_kb_offers_cancel
 from mytypes import Balance
+from utils.common_utils import get_user_id
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum
 
@@ -35,12 +38,7 @@ router = Router()
 
 
 def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
+    user_id = get_user_id(user_id)
 
     buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_choose'), switch_inline_query_current_chat='')],
                get_return_button(user_id)]
@@ -57,7 +55,7 @@ async def cmd_send_start(user_id: int, state: FSMContext, session: Session):
     await state.set_state(StateSendToken.sending_for)
 
 
-@router.callback_query(Text(text=["Send"]))
+@router.callback_query(F.data == "Send")
 async def cmd_send_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_send_start(callback.from_user.id, state, session)
     await callback.answer()
@@ -155,36 +153,36 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
 
                 # If user has some assets that are blocked by offers, remind him\her about it.
                 if blocked_token_sum > 0:
-                    msg +=  '\n\n' + my_gettext(
-                                        callback,
-                                        'send_summ_blocked_by_offers',
-                                        (blocked_token_sum, asset.asset_code)
+                    msg += '\n\n' + my_gettext(
+                        callback,
+                        'send_summ_blocked_by_offers',
+                        (blocked_token_sum, asset.asset_code)
                     )
 
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
                                         send_asset_max_sum=asset.balance, send_asset_blocked_sum=blocked_token_sum,
                                         msg=msg)
-                data = await state.get_data()   # Get updated data
+                data = await state.get_data()  # Get updated data
 
                 await state.set_state(StateSendToken.sending_sum)
-                keyboard = get_kb_return_offerscancel(callback.from_user.id, data)
+                keyboard = get_kb_offers_cancel(callback.from_user.id, data)
                 await send_message(session, callback, msg, reply_markup=keyboard)
     return True
 
 
-@router.callback_query(StateSendToken.sending_sum, Text("CancelOffers"))
+@router.callback_query(StateSendToken.sending_sum, F.data == "CancelOffers")
 async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
     """
         Handle callback event 'CancelOffers_send' in state 'sending_sum'.
         Invert state of 'cancel offers' flag by clicking on button.
     """
     data = await state.get_data()
-    data['cancel_offers'] = not data.get('cancel_offers', False) # Invert checkbox state
+    data['cancel_offers'] = not data.get('cancel_offers', False)  # Invert checkbox state
     await state.update_data(cancel_offers=data['cancel_offers'])
 
     # Update message with the same text and changed button checkbox state
     msg = data['msg']
-    keyboard = get_kb_return_offerscancel(callback.from_user.id, data)
+    keyboard = get_kb_offers_cancel(callback.from_user.id, data)
     await send_message(session, callback, msg, reply_markup=keyboard)
 
 
@@ -192,6 +190,14 @@ async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session):
     try:
         send_sum = my_float(message.text)
+        db_user = db_get_user(session, message.from_user.id)
+        if db_user.can_5000 == 0 and send_sum > 5000:
+            data = await state.get_data()
+            msg0 = my_gettext(message, 'need_update_limits')
+            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message))
+            await message.delete()
+            return
+
     except:
         send_sum = 0.0
 
@@ -204,9 +210,9 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session
         await cmd_send_04(session, message, state)
         await message.delete()
     else:
-        keyboard = get_kb_return_offerscancel(message.from_user.id, data)
+        keyboard = get_kb_offers_cancel(message.from_user.id, data)
         await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}",
-                            reply_markup=keyboard)
+                           reply_markup=keyboard)
 
 
 async def cmd_send_04(session: Session, message: types.Message, state: FSMContext, need_new_msg=None):
@@ -220,24 +226,23 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     send_asset_issuer = data["send_asset_issuer"]
     cancel_offers = data.get('cancel_offers', False)
 
-
     # Add msg about cancelling offers to the confirmation request
-    cancel_offers_msg = ''
-    if cancel_offers:
-        cancel_offers_msg = my_gettext(message, 'confirm_cancel_offers', (send_asset_name, ))
-
     msg = my_gettext(
         message,
-        'confirm_send', 
-        (cancel_offers_msg, float2str(send_sum), send_asset_name, send_address, send_memo)
+        'confirm_send',
+        (float2str(send_sum), send_asset_name, send_address, send_memo)
     )
+    if cancel_offers:
+        msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,))
 
     xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
                             send_address,
                             Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo,
                             cancel_offers=cancel_offers)
 
-    await state.update_data(xdr=xdr, operation='send')
+    await state.update_data(xdr=xdr, operation='send', success_msg=my_gettext(message, 'confirm_send_success',
+                                                                              (float2str(send_sum), send_asset_name,
+                                                                               send_address, send_memo)))
 
     add_button_memo = federal_memo is None
     await send_message(session, message, msg,
@@ -245,7 +250,7 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
                        need_new_msg=need_new_msg)
 
 
-@router.callback_query(Text(text=["Memo"]))
+@router.callback_query(F.data == "Memo")
 async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'send_memo')
     await state.set_state(StateSendToken.sending_memo)
@@ -284,13 +289,14 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session):
     await send_message(session, user_id, msg, reply_markup=kb, need_new_msg=True)
 
 
-@router.callback_query(Text(text=["Send15xlm"]))
+@router.callback_query(F.data == "Send15xlm")
 async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(activate_sum=15)
     await cmd_create_account(callback.from_user.id, state, session)
 
 
 @router.message(StateSendToken.sending_for, F.photo)
+@router.message(F.photo)
 async def handle_docs_photo(message: types.Message, state: FSMContext, session: Session):
     logger.info(f'{message.from_user.id}')
     if message.photo:
@@ -300,11 +306,34 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
         data = decode(Image.open(f"qr/{message.from_user.id}.jpg"))
         if data:
             logger.info(str(data[0].data))
-            # message.text = data[0].data.decode()
-            await state.update_data(qr=data[0].data.decode())
-            await message.reply(data[0].data.decode())
-            await cmd_send_for(message, state, session)
-            await message.delete()
+            qr_data = data[0].data.decode()
+            if len(qr_data) == 56 and qr_data[0] == 'G':
+                await state.update_data(qr=qr_data, last_message_id=0)
+                await message.reply(qr_data)
+                await cmd_send_for(message, state, session)
+            elif len(qr_data) > 56 and qr_data.startswith('web+stellar:pay'):
+                parsed = urlparse(qr_data)
+                query_parameters = parse_qs(parsed.query)
+
+                destination = query_parameters.get("destination")[0]
+                amount = query_parameters.get("amount")[0]
+                asset_code = query_parameters.get("asset_code")[0]
+                asset_issuer = query_parameters.get("asset_issuer")[0]
+                memo = query_parameters.get("memo")
+                if memo:
+                    memo = memo[0]
+
+                await state.update_data(send_sum=amount,
+                                        send_address=destination,
+                                        memo=memo,
+                                        send_asset_code=asset_code,
+                                        send_asset_issuer=asset_issuer,
+                                        last_message_id=0)
+
+                await cmd_send_04(session, message, state)
+            else:
+                await message.reply('Bad QR code =(')
+            # await message.delete()
 
 
 @router.inline_query(F.chat_type == "sender")

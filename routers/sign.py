@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta
 import jsonpickle
 import requests
-from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -13,10 +12,10 @@ from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from db.requests import db_reset_balance, db_get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery
+from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery, long_line
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
-                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair)
+                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri)
 
 
 class PinState(StatesGroup):
@@ -36,8 +35,10 @@ class PinCallbackData(CallbackData, prefix="pin_"):
 
 router = Router()
 
+kb_cash = {}
 
-@router.callback_query(Text(text=["Yes_send_xdr"]))
+
+@router.callback_query(F.data == "Yes_send_xdr")
 async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(PinState.sign_and_send)
 
@@ -46,11 +47,15 @@ async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session
 
 
 async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None):
-    if msg is None:
-        user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
-        simple_account = user_account[:4] + '..' + user_account[-4:]
-        msg = my_gettext(chat_id, "enter_password", (simple_account,))
     data = await state.get_data()
+    if msg is None:
+        msg = data.get('msg')
+        if msg is None:
+            user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
+            simple_account = user_account[:4] + '..' + user_account[-4:]
+            msg = my_gettext(chat_id, "enter_password", (simple_account,))
+            await state.update_data(msg=msg)
+
     pin_type = data.get("pin_type")
     pin = data.get("pin", '')
 
@@ -59,8 +64,8 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
         await state.update_data(pin_type=pin_type)
 
     if pin_type == 1:  # pin
-        msg = msg + "\n" + ''.ljust(len(pin), '*') + '\n\n' + ''.ljust(53, '⠀')
-        await send_message(session, chat_id, msg, reply_markup=get_kb_pin(chat_id))
+        msg = msg + "\n" + ''.ljust(len(pin), '*') + '\n\n' + long_line()
+        await send_message(session, chat_id, msg, reply_markup=get_kb_pin(data))
 
     if pin_type == 2:  # password
         msg = my_gettext(chat_id, "send_password")
@@ -69,35 +74,40 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
 
     if pin_type == 0:  # no password
         await state.update_data(pin=str(chat_id))
-        await send_message(session, chat_id, my_gettext(chat_id, 'confirm_send2'),
+        await send_message(session, chat_id, my_gettext(chat_id, 'confirm_send_mini'),
                            reply_markup=get_kb_nopassword(chat_id))
 
     if pin_type == 10:  # ro
         await state.update_data(pin='ro')
+        msg = my_gettext(chat_id, "your_xdr", (data['xdr'],))
         await cmd_show_sign(session, chat_id, state,
-                            my_gettext(chat_id, "your_xdr", (data['xdr'],)),
-                            use_send=False)
+                            msg,
+                            use_send=False, xdr_uri=data['xdr'])
 
 
-def get_kb_pin(chat_id: int) -> types.InlineKeyboardMarkup:
-    buttons_list = [["1", "2", "3", "A"],
-                    ["4", "5", "6", "B"],
-                    ["7", "8", "9", "C"],
-                    ["0", "D", "E", "F"],
-                    ['Del', 'Enter']]
+def get_kb_pin(data: dict) -> types.InlineKeyboardMarkup:
+    if data['user_lang'] in kb_cash:
+        return kb_cash[data['user_lang']]
+    else:
+        buttons_list = [["1", "2", "3", "A"],
+                        ["4", "5", "6", "B"],
+                        ["7", "8", "9", "C"],
+                        ["0", "D", "E", "F"],
+                        ['Del', 'Enter']]
 
-    kb_buttons = []
+        kb_buttons = []
 
-    for buttons in buttons_list:
-        tmp_buttons = []
-        for button in buttons:
-            tmp_buttons.append(
-                types.InlineKeyboardButton(text=button, callback_data=PinCallbackData(action=button).pack()))
-        kb_buttons.append(tmp_buttons)
+        for buttons in buttons_list:
+            tmp_buttons = []
+            for button in buttons:
+                tmp_buttons.append(
+                    types.InlineKeyboardButton(text=button, callback_data=PinCallbackData(action=button).pack()))
+            kb_buttons.append(tmp_buttons)
 
-    kb_buttons.append(get_return_button(chat_id))
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=kb_buttons)
-    return keyboard
+        kb_buttons.append(get_return_button(data['user_lang']))
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=kb_buttons)
+        kb_cash[data['user_lang']] = keyboard
+        return keyboard
 
 
 @router.callback_query(PinCallbackData.filter())
@@ -188,15 +198,22 @@ async def sign_xdr(session: Session, state, user_id):
                     if resp.paging_token:
                         link_msg = f'\n(<a href="https://stellar.expert/explorer/public/tx/{resp.paging_token}">expert link</a>)'
 
-                    await cmd_info_message(session, user_id,
-                                           my_gettext(user_id, "send_good") + link_msg,
-                                           )
+                    msg = my_gettext(user_id, "send_good") + link_msg
+
+                    success_msg = data.get('success_msg')
+                    if success_msg:
+                        msg = msg + '\n\n' + success_msg
+
+                    await cmd_info_message(session, user_id, msg)
+                    if success_msg:
+                        await state.update_data(last_message_id=0)
+
                     if fsm_after_send:
                         fsm_after_send = jsonpickle.loads(fsm_after_send)
                         await fsm_after_send(session, user_id, state)
                 if current_state == PinState.sign:
                     await cmd_show_sign(session, user_id, state,
-                                        my_gettext(user_id, "your_xdr", (xdr,)),
+                                        my_gettext(user_id, "your_xdr_sign", (xdr,)),
                                         use_send=True)
                 log_queue.put_nowait(LogQuery(
                     user_id=user_id,
@@ -234,7 +251,7 @@ def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
     return keyboard
 
 
-@router.callback_query(Text(text=["Sign"]))
+@router.callback_query(F.data == "Sign")
 async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_show_sign(session, callback.from_user.id, state, my_gettext(callback, 'send_xdr'))
     await state.set_state(StateSign.sending_xdr)
@@ -263,8 +280,8 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
         await cmd_show_sign(session, user_id, state, my_gettext(user_id, 'bad_xdr', (check_xdr,)))
 
 
-@router.callback_query(Text(text=["SendTr"]))
-@router.callback_query(Text(text=["SendTools"]))
+@router.callback_query(F.data == "SendTr")
+@router.callback_query(F.data == "SendTools")
 async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     xdr = data.get('xdr')
@@ -337,7 +354,7 @@ async def cmd_password_set2(message: types.Message, state: FSMContext, session: 
     data = await state.get_data()
     user_id = message.from_user.id
     pin = data.get('pin', '')
-    #public_key = data.get('public_key', '')
+    # public_key = data.get('public_key', '')
     if data['pin'] == message.text:
         await state.set_state(None)
         pin_type = data.get('pin_type', '')
@@ -352,7 +369,7 @@ async def cmd_password_set2(message: types.Message, state: FSMContext, session: 
                            reply_markup=get_kb_return(message.from_user.id))
 
 
-@router.callback_query(Text(text=["ReSend"]))
+@router.callback_query(F.data == "ReSend")
 async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     xdr = data.get('xdr')

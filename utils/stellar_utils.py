@@ -9,6 +9,7 @@ import requests
 from cryptocode import encrypt, decrypt
 from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError, NotFoundError
+from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
 from loguru import logger
 from config_reader import config
@@ -29,6 +30,7 @@ eurmtl_asset = Asset("EURMTL", public_issuer)
 btcmtl_asset = Asset("BTCMTL", public_issuer)
 satsmtl_asset = Asset("SATSMTL", public_issuer)
 usdc_asset = Asset("USDC", 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN')
+usdm_asset = Asset("USDM", 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM')
 
 
 # eurdebt_asset = Asset("EURDEBT", public_issuer)
@@ -49,6 +51,8 @@ def get_good_asset_list() -> List[Balance]:
         Balance.from_dict(
             {"asset_code": 'MTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
         Balance.from_dict(
+            {"asset_code": 'MTLRECT', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
+        Balance.from_dict(
             {"asset_code": 'MTLand', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
         Balance.from_dict(
             {"asset_code": 'MTLCITY', "asset_issuer": 'GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3'}),
@@ -64,6 +68,8 @@ def get_good_asset_list() -> List[Balance]:
             {"asset_code": 'USDM', "asset_issuer": 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM'}),
         Balance.from_dict(
             {"asset_code": 'MTLFEST', "asset_issuer": 'GCGWAPG6PKBMHEEAHRLTWHFCAGZTQZDOXDMWBUBCXHLQBSBNWFRYFEST'}),
+        Balance.from_dict(
+            {"asset_code": 'MTLAP', "asset_issuer": 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA'}),
     ]
 
 
@@ -178,6 +184,7 @@ def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: 
     db_add_user_if_not_exists(session, user_id, user_name)
 
     db_add_wallet(session, user_id, public_key, public_key, i_free_wallet)
+    db_update_secret_key(session=session, user_id=user_id, new_secret_key=public_key, password_type=10)
 
     return public_key
 
@@ -216,14 +223,14 @@ async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount:
         await stellar_del_selling_offers(transaction, source_account.account.account_id, asset)
 
     if create:
-        transaction.append_create_account_op(destination=for_account, starting_balance=float2str(round(amount, 7)))
+        transaction.append_create_account_op(destination=for_account, starting_balance=float2str(amount))
         transaction.add_text_memo('New account MyMTLWalletbot')
     else:
         if xdr:
-            transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset,
+            transaction.append_payment_op(destination=for_account, amount=float2str(amount), asset=asset,
                                           source=from_account)
         else:
-            transaction.append_payment_op(destination=for_account, amount=float2str(round(amount, 7)), asset=asset)
+            transaction.append_payment_op(destination=for_account, amount=float2str(amount), asset=asset)
         if memo:
             transaction.add_text_memo(memo)
     full_transaction = transaction.build()
@@ -377,12 +384,18 @@ async def stellar_delete_all_deleted(session: Session):
         db_delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
 
 
-async def stellar_get_balance_str(session: Session, user_id: int, public_key=None) -> str:
-    start_time = datetime.now()
-    balances = await stellar_get_balances(session, user_id, public_key)
+async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
+    # start_time = datetime.now()
+    balances = await stellar_get_balances(session, user_id, public_key, state=state)
     result = ''
     for balance in balances:
-        result += f"{balance.asset_code} : {float2str(balance.balance)}\n"
+        if balance.selling_liabilities and float(balance.selling_liabilities) > 0:
+            lock = float2str(balance.selling_liabilities, short=True)
+            full = float2str(balance.balance, short=True)
+            free = float2str(float(balance.balance) - float(balance.selling_liabilities), short=True)
+            result += f"{balance.asset_code} : {free} (+{lock}={full})\n"
+        else:
+            result += f"{balance.asset_code} : {float2str(balance.balance, short=True)}\n"
     return result
 
 
@@ -398,7 +411,8 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
         return
 
 
-async def stellar_get_balances(session, user_id: int, public_key=None, asset_filter: str = None) -> List[Balance]:
+async def stellar_get_balances(session, user_id: int, public_key=None, asset_filter: str = None, state=None) -> List[
+    Balance]:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     free_wallet = await stellar_is_free_wallet(session, user_id)
     wallet = db_get_default_wallet(session, user_id)
@@ -411,12 +425,25 @@ async def stellar_get_balances(session, user_id: int, public_key=None, asset_fil
         async with ServerAsync(
                 horizon_url="https://horizon.stellar.org", client=AiohttpClient()
         ) as server:
-            balances = MyAccount.from_dict(await server.accounts().account_id(
-                user_account.account.account_id).call()).balances
+            call = await server.accounts().account_id(user_account.account.account_id).call()
+
+            lock_sum = 1
+            lock_sum += float(call['num_sponsoring']) * 0.5
+            lock_sum += (len(call['signers']) - 1) * 0.5
+            lock_sum += (len(call['balances']) - 1) * 0.5
+            lock_sum += (len(call['data'])) * 0.5
+            balances = MyAccount.from_dict(call).balances
+            call = await server.offers().for_seller(user_account.account.account_id).limit(200).call()
+            lock_sum += len(call['_embedded']['records']) * 0.5
 
         for balance in balances:
-            if (balance.asset_type == "native") and (free_wallet == 0):
-                result.append(balance)
+            if balance.asset_type == "native":
+                balance.selling_liabilities = float(balance.selling_liabilities) + lock_sum
+                free_xlm = float(balance.balance) - float(balance.selling_liabilities)
+                if state:
+                    await state.update_data(free_xlm=free_xlm)
+                if free_wallet == 0:
+                    result.append(balance)
             elif balance.asset_type[:15] == "credit_alphanum":
                 result.append(balance)
         # получаем токены эмитента
@@ -437,6 +464,9 @@ async def stellar_get_balances(session, user_id: int, public_key=None, asset_fil
     if asset_filter:
         result = [balance for balance in result if balance.asset_code == asset_filter]
 
+    if state:
+        mtlap_value = any(balance.asset_code == 'MTLAP' for balance in result)
+        await state.update_data(mtlap=mtlap_value)
     return result
 
 
@@ -502,7 +532,7 @@ async def stellar_check_account(public_key: str) -> AccountAndMemo:
         # return None
 
 
-async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_asset: Asset) -> str:
+async def stellar_check_receive_sum_one(send_asset: Asset, send_sum: str, receive_asset: Asset) -> str:
     try:
         async with ServerAsync(
                 horizon_url="https://horizon.stellar.org", client=AiohttpClient()
@@ -515,6 +545,23 @@ async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_as
     except Exception as ex:
         logger.info(["stellar_check_receive_sum", send_asset.code + ' ' + send_sum + ' ' + receive_asset.code, ex])
         return '0'
+
+
+async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_asset: Asset) -> (str, bool):
+    check_sum = float2str(float(send_sum) / 100)
+
+    expected_receive = await stellar_check_receive_sum_one(send_asset, check_sum, receive_asset)
+    expected_receive = float2str(float(expected_receive) * 100)
+    actual_receive = await stellar_check_receive_sum_one(send_asset, send_sum, receive_asset)
+
+    # Считаем, на сколько процентов цена отличается при разных объемах сделки
+    difference_percentage = abs((float(actual_receive) - float(expected_receive)) / float(expected_receive) * 100)
+
+    # Если разница больше 10%, возвращаем предупреждение
+    if difference_percentage > 10:
+        return actual_receive, True
+
+    return actual_receive, False
 
 
 async def stellar_get_receive_path(send_asset: Asset, send_sum: str, receive_asset: Asset) -> list:
@@ -664,12 +711,15 @@ def my_float(s: str) -> float:
 #     logger.info(resp)
 
 
-def float2str(f) -> str:
+def float2str(f, short: bool = False) -> str:
     if isinstance(f, str):
         if f == 'unlimited':
             return f
         f = float(f)
-    s = "%.7f" % f
+    if short and f > 0.01:
+        s = "%.2f" % f
+    else:
+        s = "%.7f" % f
     while len(s) > 1 and s[-1] in ('0', '.'):
         l = s[-1]
         s = s[0:-1]
@@ -692,8 +742,30 @@ def find_stellar_federation_address(text):
     return match.group(0) if match else None
 
 
+def xdr_to_uri(xdr: str) -> str:
+    transaction_envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    t = stellar_uri.TransactionStellarUri(transaction_envelope=transaction_envelope)
+    # t.sign(config_reader.config.signing_key.get_secret_value())
+    return t.to_uri()
+
+
+async def have_free_xlm(session, user_id: int, state=None):
+    data = await state.get_data()
+    if float(data.get('free_xlm', 0.0)) > 0.5:
+        return True
+    return False
+
+
 if __name__ == "__main__":
     pass
-#    from db.quik_pool import quik_pool
+    a = asyncio.run(stellar_check_receive_sum(send_asset=usdc_asset,
+                                              send_sum='40000',
+                                              receive_asset=eurmtl_asset))
+    print(a)
+    a = asyncio.run(stellar_check_receive_sum(send_asset=usdc_asset,
+                                              send_sum='15000',
+                                              receive_asset=eurmtl_asset))
+    print(a)
 
+#    from db.quik_pool import quik_pool
 #    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
