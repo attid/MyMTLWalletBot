@@ -1,20 +1,20 @@
 from datetime import datetime, timedelta
 import jsonpickle
-from aiogram import Router, types, Bot
+from aiogram import Router, types, Bot, F
 from aiogram.enums import ChatAction
-from aiogram.filters import Command, Text
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
 from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, \
-    db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
-from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
+    db_delete_all_by_user, db_add_user_if_not_exists, db_update_username, db_get_user
+from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default
-from utils.aiogram_utils import send_message, admin_id
-from utils.lang_utils import set_last_message_id, my_gettext, check_user_id, check_user_lang
+from utils.aiogram_utils import send_message, admin_id, clear_state
+from utils.lang_utils import my_gettext, check_user_id, check_user_lang
 from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
                                  )
 
@@ -26,12 +26,12 @@ class SettingState(StatesGroup):
     send_default_address = State()
 
 
-@router.message(Command(commands=["start"]), Text(contains="sign_"))
+@router.message(Command(commands=["start"]), F.text.contains("sign_"))
 async def cmd_start_sign(message: types.Message, state: FSMContext, session: Session):
-    await state.clear()
+    await clear_state(state)
 
     # check address
-    set_last_message_id(session, message.from_user.id, 0)
+    await state.update_data(last_message_id=0)
     await send_message(session, message.from_user.id, 'Loading')
 
     # if user not exist
@@ -47,10 +47,10 @@ async def cmd_start_sign(message: types.Message, state: FSMContext, session: Ses
 @router.message(Command(commands=["start"]))
 async def cmd_start(message: types.Message, state: FSMContext, session: Session, bot: Bot):
     # logger.info([message.from_user.id, ' cmd_start'])
-    await state.clear()
+    await clear_state(state)
 
     # check address
-    set_last_message_id(session, message.from_user.id, 0)
+    await state.update_data(last_message_id=0)
     await send_message(session, message.from_user.id, 'Loading')
 
     if check_user_lang(session, message.from_user.id) is None:
@@ -64,8 +64,8 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         )
 
 
-@router.callback_query(Text(text=["Return"]))
-async def cb_return(callback: types.CallbackQuery, state: FSMContext, session:Session):
+@router.callback_query(F.data=="Return")
+async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     try_sent_xdr = data.get('try_sent_xdr')
     if try_sent_xdr and datetime.strptime(try_sent_xdr, '%d.%m.%Y %H:%M:%S') > datetime.now():
@@ -81,8 +81,8 @@ async def cb_return(callback: types.CallbackQuery, state: FSMContext, session:Se
     )
 
 
-@router.callback_query(Text(text=["DeleteReturn"]))
-async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, session:Session):
+@router.callback_query(F.data=="DeleteReturn")
+async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, session: Session):
     try:
         await callback.message.delete()
     except:
@@ -136,7 +136,7 @@ async def cmd_donate(session: Session, user_id, state: FSMContext):
     await send_message(session, user_id, msg, reply_markup=get_kb_donate(user_id))
 
 
-@router.callback_query(Text(text=["Donate"]))
+@router.callback_query(F.data=="Donate")
 async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_donate(session, callback.from_user.id, state)
     await callback.answer()
@@ -197,12 +197,25 @@ async def cmd_delete_all(message: types.Message, state: FSMContext, session: Ses
     await state.clear()
 
 
-@router.callback_query(Text(text=["SetDefault"]))
+@router.callback_query(F.data=="SetDefault")
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(SettingState.send_default_address)
     msg = my_gettext(callback, 'set_default', (db_get_default_address(session, callback.from_user.id),))
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
     await callback.answer()
+
+
+@router.callback_query(F.data=="SetLimit")
+@router.callback_query(F.data=="OffLimits")
+async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    db_user = db_get_user(session, callback.from_user.id)
+    if callback.data == 'OffLimits':
+        db_user.can_5000 = 1 if db_user.can_5000 == 0 else 0
+
+    msg = my_gettext(callback, 'limits')
+    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000))
+    await callback.answer()
+    session.commit()
 
 
 @router.message(SettingState.send_default_address)
@@ -220,7 +233,7 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
     await message.delete()
 
 
-@router.callback_query(Text(text=["Refresh"]))
+@router.callback_query(F.data=="Refresh")
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
     db_reset_balance(session, callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
@@ -232,10 +245,10 @@ async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session:
 
 async def check_update_username(session: Session, user_id: int, user_name: str, state: FSMContext):
     """
-        Check if the user name in the database matches the real telegram-user name.
+        Check if the username in the database matches the real telegram-user name.
         If not, then update in the database and in FSM-state.
     """
-    user_name = user_name.lower()
+    user_name = user_name.lower() if user_name else ''
     data = await state.get_data()
     state_user_name = data.get('user_name', '')
     if user_name != state_user_name:
@@ -243,15 +256,15 @@ async def check_update_username(session: Session, user_id: int, user_name: str, 
         await state.update_data(user_name=user_name)
 
 
-@router.callback_query(Text("ShowMoreToggle"))
+@router.callback_query(F.data=="ShowMoreToggle")
 async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
     """
         Invert state of 'show_more' flag by clicking on button.
     """
     data = await state.get_data()
-    new_state = not data.get('show_more', False) # Invert flag state
+    new_state = not data.get('show_more', False)  # Invert flag state
     await state.update_data(show_more=new_state)
-    
+
     keyboard = await get_kb_default(session, callback.from_user.id, state)
     await callback.message.edit_reply_markup(reply_markup=keyboard)
     await callback.answer()

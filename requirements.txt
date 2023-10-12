@@ -1,6 +1,6 @@
 aiofiles
-aiogram==3.0.0b7
-aiohttp==3.8.4
+aiogram==3.1.1
+aiohttp>=3.8.4
 aiohttp-sse-client==0.2.1
 aiosignal==1.3.1
 APScheduler==3.10.1
@@ -8,7 +8,7 @@ async-timeout==4.0.2
 attrs==23.1.0
 CacheControl==0.12.11
 cachy==0.3.0
-certifi==2022.12.7
+certifi>=2022.12.7
 cffi==1.15.1
 charset-normalizer
 cleo==2.0.1
@@ -33,7 +33,7 @@ jeepney==0.8.0
 jsonschema==4.17.3
 keyring==23.11.0
 lockfile==0.12.2
-magic-filter==1.0.9
+magic-filter>=1.0.9
 mnemonic==0.20
 more-itertools==9.0.0
 msgpack==1.0.4
@@ -50,7 +50,7 @@ psutil==5.9.5
 ptyprocess==0.7.0
 pycparser==2.21
 pycryptodomex==3.16.0
-pydantic~=1.10
+pydantic>=1.10
 pylev==1.4.0
 PyNaCl==1.5.0
 pyparsing==3.0.9
@@ -76,7 +76,7 @@ stellar-sdk==8.1.1
 toml==0.10.2
 tomlkit==0.11.6
 typeguard==2.13.3
-typing_extensions==4.4.0
+typing_extensions
 tzdata==2022.7
 tzlocal==4.2
 urllib3==1.26.13
@@ -92,3 +92,4 @@ base58>=2.1.1
 sqlalchemy-stubs
 sqlalchemy-firebird>=2
 openai~=0.27.8
+pydantic_settings

@@ -1,32 +1,41 @@
+from datetime import timedelta, datetime
+
+from aiogram import Dispatcher
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.fsm.storage.base import StorageKey
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 from sqlalchemy import and_
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages
+from db.requests import db_delete_wallet
 from routers.start_msg import cmd_info_message
-from utils.lang_utils import set_last_message_id, my_gettext
+from utils.aiogram_utils import bot
+from utils.lang_utils import my_gettext
 from utils.stellar_utils import float2str
 
 
-async def cmd_send_message_1m(session: Session):
-    messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
-    for message in messages:
-        try:
-            await cmd_info_message(session, message.user_id, message.user_message, None)
-        except Exception as ex:
-            session.query(MyMtlWalletBotMessages).filter(
-                MyMtlWalletBotMessages.message_id == message.message_id).update(
-                {MyMtlWalletBotMessages.was_send: 2})
-            session.commit()
-            logger.info(['cmd_send_message_1m', ex])
-        set_last_message_id(session, message.user_id, 0)
-        # await dp.bot.send_message(record[3], record[1], disable_web_page_preview=True)
+async def cmd_send_message_1m(session_pool, dp: Dispatcher):
+    with session_pool() as session:
+        messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
+        for message in messages:
+            try:
+                await cmd_info_message(session, message.user_id, message.user_message, None)
+            except Exception as ex:
+                session.query(MyMtlWalletBotMessages).filter(
+                    MyMtlWalletBotMessages.message_id == message.message_id).update(
+                    {MyMtlWalletBotMessages.was_send: 2})
+                session.commit()
+                logger.info(['cmd_send_message_1m', ex])
+            fsm_storage_key = StorageKey(bot_id=bot.id, user_id=message.user_id, chat_id=message.user_id)
+            await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+            # await dp.bot.send_message(record[3], record[1], disable_web_page_preview=True)
 
-        session.query(MyMtlWalletBotMessages).filter(
-            and_(MyMtlWalletBotMessages.message_id == message.message_id)).update(
-            {MyMtlWalletBotMessages.was_send: 1})
-        session.commit()
+            session.query(MyMtlWalletBotMessages).filter(
+                and_(MyMtlWalletBotMessages.message_id == message.message_id)).update(
+                {MyMtlWalletBotMessages.was_send: 1})
+            session.commit()
 
 
 def decode_db_effect(row):
@@ -47,31 +56,46 @@ def decode_db_effect(row):
         return f'new operation for {account_link} \n\n{op_link}'
 
 
-async def cmd_send_message_events(session: Session):
-    records = session.query(TOperations.id, TOperations.dt, TOperations.operation, TOperations.amount1,
-                            TOperations.code1, TOperations.amount2, TOperations.code2, TOperations.from_account,
-                            TOperations.for_account, MyMtlWalletBot.user_id) \
-        .filter(MyMtlWalletBot.public_key == TOperations.for_account,
-                TOperations.id > MyMtlWalletBot.last_event_id) \
-        .order_by(TOperations.id) \
-        .limit(10) \
-        .all()
+async def cmd_send_message_events(session_pool, dp: Dispatcher):
+    with session_pool() as session:
+        records = session.query(TOperations.id, TOperations.dt, TOperations.operation, TOperations.amount1,
+                                TOperations.code1, TOperations.amount2, TOperations.code2, TOperations.from_account,
+                                TOperations.for_account, MyMtlWalletBot.user_id) \
+            .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TOperations.for_account) \
+            .filter(MyMtlWalletBot.need_delete == 0,
+                    TOperations.id > MyMtlWalletBot.last_event_id,
+                    TOperations.dt > datetime.now() - timedelta(days=1),
+                    TOperations.arhived == None) \
+            .order_by(TOperations.id) \
+            .limit(10) \
+            .all()
 
-    for record in records:
-        try:
-            set_last_message_id(session, record.user_id, 0)
-            await cmd_info_message(session, record.user_id, decode_db_effect(record))
-            set_last_message_id(session, record.user_id, 0)
-        except Exception as ex:
-            logger.info(['cmd_send_message_events', record.id, ex])
+        for record in records:
+            try:
+                fsm_storage_key = StorageKey(bot_id=bot.id, user_id=record.user_id, chat_id=record.user_id)
+                await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+                await cmd_info_message(session, record.user_id, decode_db_effect(record))
+                await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+            except TelegramBadRequest as ex:
+                if ex.message == 'Telegram server says - Bad Request: chat not found':
+                    db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
+                    logger.info(['cmd_send_message_events', record.id, 'wallet was deleted'])
+                else:
+                    logger.info(['cmd_send_message_events 01', record.id, ex])
+            except TelegramForbiddenError:
+                # 'Telegram server says - Forbidden: bot was blocked by the user'
+                db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
+                logger.info(['cmd_send_message_events', record.id, 'Forbidden wallet was deleted'])
+            except Exception as ex:
+                logger.info(['cmd_send_message_events', record.id, ex])
 
-        # Update last_event_id for all users whose public_key matches record.for_account and last_event_id is smaller than record.id
-        session.query(MyMtlWalletBot) \
-            .filter(MyMtlWalletBot.public_key == record.for_account, MyMtlWalletBot.last_event_id < record.id) \
-            .update({MyMtlWalletBot.last_event_id: record.id})
-        session.commit()
+            # Update last_event_id for all users whose public_key matches record.for_account and last_event_id is smaller than record.id
+            session.query(MyMtlWalletBot) \
+                .filter(MyMtlWalletBot.public_key == record.for_account, MyMtlWalletBot.last_event_id < record.id) \
+                .update({MyMtlWalletBot.last_event_id: record.id})
+            session.commit()
 
 
-def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker):
-    scheduler.add_job(cmd_send_message_1m, "interval", seconds=10, args=(db_pool(),))
-    scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool(),))
+def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp):
+    scheduler.add_job(cmd_send_message_1m, "interval", seconds=10, args=(db_pool, dp), misfire_grace_time=60)
+    scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool, dp), misfire_grace_time=60)

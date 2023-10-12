@@ -1,6 +1,5 @@
 import jsonpickle
-from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
@@ -12,7 +11,7 @@ from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import send_message, my_gettext
 from utils.stellar_utils import stellar_create_new, stellar_save_new, \
-    stellar_get_balances, stellar_save_ro, async_stellar_send
+     stellar_save_ro, async_stellar_send
 
 
 class StateAddWallet(StatesGroup):
@@ -23,7 +22,7 @@ class StateAddWallet(StatesGroup):
 router = Router()
 
 
-@router.callback_query(Text(text=["AddNew"]))
+@router.callback_query(F.data=="AddNew")
 async def cmd_add_new(callback: types.CallbackQuery, session: Session):
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_have_key'),
@@ -38,7 +37,7 @@ async def cmd_add_new(callback: types.CallbackQuery, session: Session):
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@router.callback_query(Text(text=["AddWalletHaveKey"]))
+@router.callback_query(F.data=="AddWalletHaveKey")
 async def cq_add(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'send_key')
     await state.update_data(msg=msg)
@@ -67,13 +66,13 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
                            reply_markup=get_kb_return(message))
 
 
-@router.callback_query(Text(text=["AddWalletNewKey"]))
+@router.callback_query(F.data=="AddWalletNewKey")
 async def cq_add(callback: types.CallbackQuery, session: Session, state: FSMContext):
     if db_user_can_new_free(session, callback.from_user.id):
         xdr = await stellar_create_new(session,callback.from_user.id, callback.from_user.username)
-        await cmd_info_message(session, callback.message.chat.id, my_gettext(callback, "try_send"))
+        await cmd_info_message(session,  callback.message.chat.id, my_gettext(callback, "try_send"))
         await async_stellar_send(xdr)
-        await cmd_info_message(session, callback, my_gettext(callback, 'send_good'))
+        await cmd_info_message(session,  callback, my_gettext(callback, 'send_good'))
         await callback.answer()
         data = await state.get_data()
         fsm_after_send = data.get('fsm_after_send')
@@ -101,7 +100,7 @@ async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: 
                        parse_mode='HTML')
 
 
-@router.callback_query(Text(text=["AddWalletReadOnly"]))
+@router.callback_query(F.data=="AddWalletReadOnly")
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'add_read_only')
     await state.update_data(msg=msg)
@@ -127,14 +126,14 @@ async def cmd_sending_public(message: types.Message, state: FSMContext, session:
                            reply_markup=get_kb_return(message))
 
 
-@router.callback_query(Text(text=["PIN"]))
+@router.callback_query(F.data=="PIN")
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(PinState.set_pin)
     await state.update_data(pin_type=1)
     await cmd_ask_pin(session, callback.message.chat.id, state)
 
 
-@router.callback_query(Text(text=["Password"]))
+@router.callback_query(F.data=="Password")
 async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(pin_type=2)
     await state.set_state(PinState.ask_password_set)
@@ -142,7 +141,7 @@ async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, sess
                        reply_markup=get_kb_return(callback))
 
 
-@router.callback_query(Text(text=["NoPassword"]))
+@router.callback_query(F.data=="NoPassword")
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(pin_type=0)
     await cmd_show_balance(session, callback.from_user.id, state)

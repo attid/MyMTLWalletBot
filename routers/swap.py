@@ -1,16 +1,16 @@
 from typing import List
 
 import jsonpickle
-from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
+from db.requests import db_get_user
 from utils.aiogram_utils import my_gettext, send_message
-from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_return_offerscancel
+from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_offers_cancel, get_kb_return
 from mytypes import Balance
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
     stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float, float2str, \
@@ -32,7 +32,7 @@ class SwapAssetForCallbackData(CallbackData, prefix="SwapAssetForCallbackData"):
 router = Router()
 
 
-@router.callback_query(Text(text=["Swap"]))
+@router.callback_query(F.data=="Swap")
 async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'choose_token_swap')
     asset_list = await stellar_get_balances(session, callback.from_user.id)
@@ -100,7 +100,7 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
                                     receive_asset_issuer=asset.asset_issuer,
                                     receive_asset_min_sum=asset.balance)
             data = await state.get_data()
-            
+
             msg = my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
                                                          data.get('send_asset_max_sum', 0.0),
                                                          data.get('receive_asset_code'),
@@ -114,34 +114,34 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
             # If user has some assets that are blocked by offers, remind him\her about it.
             blocked_sum = data.get('send_asset_blocked_sum')
             if blocked_sum > 0:
-                msg +=  '\n\n' + my_gettext(
-                                    callback,
-                                    'swap_summ_blocked_by_offers',
-                                    (blocked_sum, data.get('send_asset_code'))
-                                )
+                msg += '\n\n' + my_gettext(
+                    callback,
+                    'swap_summ_blocked_by_offers',
+                    (blocked_sum, data.get('send_asset_code'))
+                )
 
             # Change state and show message
             await state.set_state(StateSwapToken.swap_sum)
             await state.update_data(msg=msg)
 
-            keyboard = get_kb_return_offerscancel(callback.from_user.id, data)
+            keyboard = get_kb_offers_cancel(callback.from_user.id, data)
             await send_message(session, callback, msg, reply_markup=keyboard)
     await callback.answer()
 
 
-@router.callback_query(StateSwapToken.swap_sum, Text("CancelOffers"))
+@router.callback_query(StateSwapToken.swap_sum, F.data == "CancelOffers")
 async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
     """
         Handle callback event 'CancelOffers_swap' in state 'swap_sum'.
         Invert state of 'cancel offers' flag by clicking on button.
     """
     data = await state.get_data()
-    data['cancel_offers'] = not data.get('cancel_offers', False) # Invert checkbox state
+    data['cancel_offers'] = not data.get('cancel_offers', False)  # Invert checkbox state
     await state.update_data(cancel_offers=data['cancel_offers'])
 
     # Update message with the same text and changed button checkbox state
     msg = data['msg']
-    keyboard = get_kb_return_offerscancel(callback.from_user.id, data)
+    keyboard = get_kb_offers_cancel(callback.from_user.id, data)
     await send_message(session, callback, msg, reply_markup=keyboard)
 
 
@@ -149,6 +149,13 @@ async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session):
     try:
         send_sum = my_float(message.text)
+        db_user = db_get_user(session, message.from_user.id)
+        if db_user.can_5000 == 0 and send_sum > 5000:
+            data = await state.get_data()
+            msg0 = my_gettext(message, 'need_update_limits')
+            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message))
+            await message.delete()
+            return
     except:
         send_sum = 0.0
 
@@ -162,34 +169,36 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         cancel_offers = data.get('cancel_offers', False)
         xdr = data.get('xdr')
 
-        receive_sum = await stellar_check_receive_sum(Asset(send_asset, send_asset_code), float2str(send_sum),
-                                                      Asset(receive_asset, receive_asset_code))
+        receive_sum, need_alert = await stellar_check_receive_sum(Asset(send_asset, send_asset_code),
+                                                                  float2str(send_sum),
+                                                                  Asset(receive_asset, receive_asset_code))
 
         xdr = await stellar_swap(
-                            (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                            Asset(send_asset, send_asset_code),
-                            float2str(send_sum),
-                            Asset(receive_asset, receive_asset_code),
-                            receive_sum,
-                            xdr=xdr,
-                            cancel_offers=cancel_offers
+            (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+            Asset(send_asset, send_asset_code),
+            float2str(send_sum),
+            Asset(receive_asset, receive_asset_code),
+            receive_sum,
+            xdr=xdr,
+            cancel_offers=cancel_offers
         )
 
         # Add msg about cancelling offers to the confirmation request
-        cancel_offers_msg = ''
-        if cancel_offers:
-            cancel_offers_msg = my_gettext(message, 'confirm_cancel_offers', (send_asset, ))
-
         msg = my_gettext(
-                    message,
-                    'confirm_swap',
-                    (cancel_offers_msg, float2str(send_sum), send_asset, receive_sum, receive_asset)
+            message,
+            'confirm_swap',
+            (float2str(send_sum), send_asset, receive_sum, receive_asset)
         )
+        if need_alert:
+            msg = my_gettext(message, 'swap_alert') + msg
+
+        if cancel_offers:
+            msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,))
 
         await state.update_data(xdr=xdr, operation='swap')
         await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
         await message.delete()
     else:
-        keyboard = get_kb_return_offerscancel(message.from_user.id, data)
+        keyboard = get_kb_offers_cancel(message.from_user.id, data)
         await send_message(session, message, my_gettext(message, 'bad_sum') + '\n' + data['msg'],
                            reply_markup=keyboard)

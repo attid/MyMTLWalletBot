@@ -16,7 +16,7 @@ from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
 from utils.aiogram_utils import bot, dp, scheduler, admin_id, helper_chat_id
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
-                     cheque)
+                     cheque, mtlap)
 from routers import veche, wallet_setting, common_end
 from loguru import logger
 
@@ -33,7 +33,7 @@ task_list = []
 async def main_bot(db_pool: sessionmaker):
     logger.add("MMWB.log", rotation="1 MB", level='INFO')
     dp.callback_query.middleware(LogButtonClickCallbackMiddleware())
-    dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool()))
+    dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool))
     dp.message.middleware(DbSessionMiddleware(db_pool))
     dp.callback_query.middleware(DbSessionMiddleware(db_pool))
     dp.inline_query.middleware(DbSessionMiddleware(db_pool))
@@ -53,6 +53,7 @@ async def main_bot(db_pool: sessionmaker):
     dp.include_router(swap.router)
     dp.include_router(wallet_setting.router)
     dp.include_router(inout.router)
+    dp.include_router(mtlap.router)
 
     # always the last
     dp.include_router(common_end.router)
@@ -61,10 +62,10 @@ async def main_bot(db_pool: sessionmaker):
     #    pass
     # else:
     scheduler.start()
-    time_handlers.scheduler_jobs(scheduler, db_pool)
+    time_handlers.scheduler_jobs(scheduler, db_pool, dp)
     global task_list
-    task_list = [asyncio.create_task(cheque_worker(db_pool())),
-                 asyncio.create_task(log_worker(db_pool())),
+    task_list = [asyncio.create_task(cheque_worker(db_pool)),
+                 asyncio.create_task(log_worker(db_pool)),
                  ]
 
     dp.startup.register(on_startup)
@@ -138,7 +139,7 @@ async def main():
     # Creating DB connections pool
     db_pool = sessionmaker(bind=engine)
     import utils.lang_utils
-    utils.lang_utils.lang_session = db_pool()
+    utils.lang_utils.lang_session_maker = db_pool
     await asyncio.gather(asyncio.create_task(main_bot(db_pool)),
                          return_exceptions=True)
 

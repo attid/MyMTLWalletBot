@@ -1,24 +1,24 @@
 import jsonpickle
 import requests
-from aiogram import Router, types
-from aiogram.filters import Text, Command
+from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message
+from utils.aiogram_utils import my_gettext, send_message, clear_state
 from keyboards.common_keyboards import get_kb_yesno_send_xdr
-from utils.lang_utils import set_last_message_id, check_user_id
+from utils.lang_utils import check_user_id
 from utils.stellar_utils import stellar_get_user_account, stellar_user_sign_message
 
 router = Router()
 
 
-@router.message(Command(commands=["start"]), Text(contains="veche_"))
+@router.message(Command(commands=["start"]), F.text.contains("veche_"))
 async def cmd_start_veche(message: types.Message, state: FSMContext, session: Session):
-    await state.clear()
+    await clear_state(state)
 
     # check address
-    set_last_message_id(session, message.from_user.id, 0)
+    await state.update_data(last_message_id=0)
     await send_message(session, message.from_user.id, 'Loading')
 
     # if user not exist
@@ -57,12 +57,12 @@ async def send_veche_link(session: Session, user_id: int, state: FSMContext):
     import urllib.parse
     link = link.replace('$$SIGN$$', urllib.parse.quote(msg))
     await state.update_data(link=link)
-    await cmd_info_message(session, user_id, my_gettext(user_id, 'veche_go', (link,)), )
-    set_last_message_id(session, user_id, 0)
+    await cmd_info_message(session,  user_id, my_gettext(user_id, 'veche_go', (link,)), )
+    await state.update_data(last_message_id=0)
     await state.set_state(None)
 
 
-@router.callback_query(Text(text=["MTLToolsVeche"]))
+@router.callback_query(F.data=="MTLToolsVeche")
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_key = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
     verifier = requests.post(f"https://veche.montelibero.org/auth/page/mymtlwalletbot/verifier",

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import String, func, SmallInteger, Float, ForeignKey, Text, Enum
+from sqlalchemy import String, func, SmallInteger, Float, ForeignKey, Enum, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, BigInteger, DateTime
 from sqlalchemy.sql.ddl import CreateTable
@@ -24,6 +24,7 @@ class TOperations(Base):
     memo = Column(String(64))
     transaction_hash = Column(String(64))
     ledger = Column(Integer)
+    arhived = Column(Integer)
 
 
 class MyMtlWalletBot(Base):
@@ -147,6 +148,7 @@ class MyMtlWalletBotUsers(Base):
     usdt = Column(String(64))
     btc = Column(String(64))
     btc_date = Column(DateTime)
+    can_5000 = Column(SmallInteger, default=0)
 
 
 class TMessage(Base):

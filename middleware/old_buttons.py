@@ -1,13 +1,13 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
-from utils.lang_utils import get_last_message_id
 
 
 class CheckOldButtonCallbackMiddleware(BaseMiddleware):
-    def __init__(self, session):
+    def __init__(self, session_pool):
         super().__init__()
-        self.session = session
+        self.session_pool = session_pool
 
     async def __call__(
             self,
@@ -15,7 +15,9 @@ class CheckOldButtonCallbackMiddleware(BaseMiddleware):
             event: CallbackQuery,
             data: Dict[str, Any]
     ) -> Any:
-        last_message_id = get_last_message_id(self.session, event.from_user.id)
+        fsm: FSMContext = data["state"]
+        fsm_data = await fsm.get_data()
+        last_message_id = fsm_data.get('last_message_id', 0)
         # logger.info(['good_id', last_message_id])
         if event.message.message_id == last_message_id:
             return await handler(event, data)

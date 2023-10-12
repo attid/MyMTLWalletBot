@@ -361,6 +361,22 @@ def db_add_cheque_history(session: Session, user_id: int, cheque_id: int):
     session.commit()
 
 
+def db_get_user(session: Session, user_id: int)->MyMtlWalletBotUsers:
+    return session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
+
+
+def get_user_lang(session: Session, user_id: int):
+    try:
+        user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).first()
+        if user is not None:
+            return user.lang
+        else:
+            return 'en'
+    except Exception as ex:
+        # print(ex)  # Or handle the exception in some other way
+        return 'en'
+
+
 if __name__ == '__main__':
     pass
     # from quik_pool import quik_pool

@@ -1,5 +1,5 @@
-from aiogram import Router, types
-from aiogram.filters import Text, Command
+from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from db.requests import db_delete_wallet
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
-from utils.aiogram_utils import send_message, my_gettext
+from utils.aiogram_utils import send_message, my_gettext, clear_state
 from utils.lang_utils import lang_dict, change_user_lang
 from utils.stellar_utils import db_set_default_wallets, \
     stellar_get_balance_str
@@ -35,7 +35,7 @@ async def cmd_language(session: Session, chat_id: int):
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@router.callback_query(Text(text=["ChangeLang"]))
+@router.callback_query(F.data == "ChangeLang")
 async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_language(session, callback.from_user.id)
 
@@ -46,11 +46,12 @@ async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallb
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
     change_user_lang(session, callback.from_user.id, lang)
+    await state.update_data(user_lang=lang)
     await callback.answer(my_gettext(callback, 'was_set', (lang,)))
     await cmd_show_balance(session, callback.from_user.id, state)
 
 
-@router.callback_query(Text(text=["ChangeWallet"]))
+@router.callback_query(F.data == "ChangeWallet")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_change_wallet(callback.from_user.id, state, session)
 
@@ -58,6 +59,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
 @router.message(Command(commands=["change_wallet"]))
 async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, session: Session):
     await message.delete()
+    await clear_state(state)
     await cmd_change_wallet(message.from_user.id, state, session)
 
 
@@ -86,6 +88,6 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     await callback.answer()
 
 
-@router.callback_query(Text(text=["Support"]))
+@router.callback_query(F.data == "Support")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await send_message(session, callback, my_gettext(callback, "support_bot"), reply_markup=get_kb_return(callback))

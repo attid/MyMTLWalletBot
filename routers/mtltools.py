@@ -1,5 +1,4 @@
-from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -9,7 +8,7 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from utils.aiogram_utils import my_gettext, send_message
 from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
-    my_float
+    my_float, have_free_xlm
 
 
 class StateTools(StatesGroup):
@@ -38,7 +37,7 @@ class BIMCallbackData(CallbackData, prefix="BIMCallbackData"):
 router = Router()
 
 
-@router.callback_query(Text(text=["MTLTools"]))
+@router.callback_query(F.data=="MTLTools")
 async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Session):
     user_id = callback.from_user.id
     msg = my_gettext(user_id, 'mtl_tools_msg')
@@ -63,7 +62,7 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Se
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(Text(text=["MTLToolsDelegate"]))
+@router.callback_query(F.data=="MTLToolsDelegate")
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
@@ -85,7 +84,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 
-@router.callback_query(Text(text=["MTLToolsDelDelegate"]))
+@router.callback_query(F.data=="MTLToolsDelDelegate")
 async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
@@ -105,8 +104,12 @@ async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContex
         await callback.answer('Nothing to delete')
 
 
-@router.callback_query(Text(text=["MTLToolsAddDelegate"]))
+@router.callback_query(F.data=="MTLToolsAddDelegate")
 async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        return
+
     await send_message(session,callback, my_gettext(callback, 'delegate_send_address'), reply_markup=get_kb_return(callback))
     await state.set_state(StateTools.delegate_for)
     await callback.answer()
@@ -134,7 +137,7 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, s
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(Text(text=["MTLToolsDonate"]))
+@router.callback_query(F.data=="MTLToolsDonate")
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
     data = await stellar_get_data(session,callback.from_user.id)
     donates = {}
@@ -174,8 +177,12 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 
-@router.callback_query(Text(text=["AddDonate"]))
+@router.callback_query(F.data=="AddDonate")
 async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        return
+
     await send_message(session,callback, my_gettext(callback, 'donate_send'), reply_markup=get_kb_return(callback))
     await state.set_state(StateTools.donate_address)
     await callback.answer()
@@ -255,7 +262,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: DonateCallbac
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(Text(text=["MTLToolsAddBIM"]))
+@router.callback_query(F.data=="MTLToolsAddBIM")
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
     data = await stellar_get_data(session,callback.from_user.id)
     bod_dict = {}
@@ -291,8 +298,12 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 
-@router.callback_query(Text(text=["AddBIM"]))
+@router.callback_query(F.data=="AddBIM")
 async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        return
+
     await send_message(session,callback, my_gettext(callback, 'send_bim_address'), reply_markup=get_kb_return(callback))
     await state.set_state(StateTools.bim_address)
     await callback.answer()

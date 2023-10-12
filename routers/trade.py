@@ -1,7 +1,6 @@
 import jsonpickle
 from typing import List
-from aiogram import Router, types
-from aiogram.filters import Text
+from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -12,7 +11,7 @@ from utils.aiogram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from mytypes import Balance, MyOffer
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers, \
-    stellar_get_market_link, my_float, float2str
+    stellar_get_market_link, my_float, float2str, have_free_xlm
 
 
 class StateSaleToken(StatesGroup):
@@ -37,7 +36,7 @@ class EditOrderCallbackData(CallbackData, prefix="EditOrderCallbackData"):
 router = Router()
 
 
-@router.callback_query(Text(text=["Market"]))
+@router.callback_query(F.data == "Market")
 async def cmd_market(callback: types.CallbackQuery, session: Session):
     await send_message(session, callback.message.chat.id, my_gettext(callback, 'kb_market'),
                        reply_markup=get_kb_market(callback.message.chat.id))
@@ -58,8 +57,12 @@ def get_kb_market(user_id: int) -> types.InlineKeyboardMarkup:
     return keyboard
 
 
-@router.callback_query(Text(text=["NewOrder"]))
+@router.callback_query(F.data == "NewOrder")
 async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        return
+
     msg = my_gettext(callback, 'choose_token_sale')
     asset_list = await stellar_get_balances(session, callback.from_user.id)
 
@@ -208,7 +211,7 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext):
 # **************************************************************************
 # edit
 
-@router.callback_query(Text(text=["ShowOrders"]))
+@router.callback_query(F.data == "ShowOrders")
 async def cmd_show_orders(callback: types.CallbackQuery, state: FSMContext, session: Session):
     offers = await stellar_get_offers(session, callback.from_user.id)
     await state.update_data(offers=jsonpickle.encode(offers))
@@ -261,7 +264,7 @@ def get_kb_edir_order(user_id: int) -> types.InlineKeyboardMarkup:
     return keyboard
 
 
-@router.callback_query(Text(text=["EditOrderAmount"]))
+@router.callback_query(F.data == "EditOrderAmount")
 async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     offers = jsonpickle.decode(data['offers'])
@@ -327,7 +330,7 @@ async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: 
         await message.delete()
 
 
-@router.callback_query(Text(text=["EditOrderCost"]))
+@router.callback_query(F.data == "EditOrderCost")
 async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     offers = jsonpickle.decode(data['offers'])
@@ -387,7 +390,7 @@ async def cmd_edit_sale_cost(message: types.Message, state: FSMContext, session:
         await message.delete()
 
 
-@router.callback_query(Text(text=["DeleteOrder"]))
+@router.callback_query(F.data == "DeleteOrder")
 async def cmd_delete_order(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     offers = jsonpickle.decode(data['offers'])

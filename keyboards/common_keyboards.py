@@ -1,11 +1,13 @@
 from typing import Union
 from aiogram import types
+
+from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 
 
-def get_return_button(user_id: Union[types.CallbackQuery, types.Message, int], text=None, callback=None) -> list:
+def get_return_button(user_id_or_lang: Union[types.CallbackQuery, types.Message, int, str], text=None, callback=None) -> list:
     if text is None:
-        text = my_gettext(user_id, 'kb_back')
+        text = my_gettext(user_id_or_lang, 'kb_back')
 
     if callback is None:
         callback = "Return"
@@ -14,12 +16,7 @@ def get_return_button(user_id: Union[types.CallbackQuery, types.Message, int], t
 
 
 def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
+    user_id = get_user_id(user_id)
 
     buttons = [get_return_button(user_id)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -27,12 +24,7 @@ def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> ty
 
 
 def get_kb_del_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
+    user_id = get_user_id(user_id)
 
     buttons = [get_return_button(user_id, text='Delete and Return', callback='DeleteReturn')]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -41,12 +33,7 @@ def get_kb_del_return(user_id: Union[types.CallbackQuery, types.Message, int]) -
 
 def get_kb_yesno_send_xdr(user_id: Union[types.CallbackQuery, types.Message, int],
                           add_button_memo: bool = False) -> types.InlineKeyboardMarkup:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
+    user_id = get_user_id(user_id)
 
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_yes'),
@@ -83,7 +70,7 @@ def get_kb_resend(user_id: int) -> types.InlineKeyboardMarkup:
     return keyboard
 
 
-def get_kb_return_offerscancel(user_id: int, data: dict) -> types.InlineKeyboardMarkup:
+def get_kb_offers_cancel(user_id: int, data: dict) -> types.InlineKeyboardMarkup:
     """
         Create keyboard with optional checkbox-button '🟢 Cancel offers' and 'Return'-button
     """
@@ -102,3 +89,18 @@ def get_kb_return_offerscancel(user_id: int, data: dict) -> types.InlineKeyboard
 
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
+def get_kb_limits(user_id: int, off_limit: int) -> types.InlineKeyboardMarkup:
+    buttons = []
+    state = '🟢' if off_limit == 1 else '⚪️'
+    btn_txt = my_gettext(
+        user_id,
+        'kb_update_limit',
+        (state,)
+    )
+    btn = [types.InlineKeyboardButton(text=btn_txt, callback_data='OffLimits')]
+    buttons.append(btn)
+
+    buttons.append(get_return_button(user_id))
+
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)

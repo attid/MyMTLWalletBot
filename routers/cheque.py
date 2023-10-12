@@ -2,7 +2,7 @@ import asyncio, uuid, jsonpickle
 from dataclasses import dataclass
 from typing import Union
 from aiogram import types, Router, F
-from aiogram.filters import Text, Command
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -19,7 +19,8 @@ from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
 from utils.aiogram_utils import send_message, bot, cheque_queue
-from utils.lang_utils import my_gettext, set_last_message_id
+from utils.common_utils import get_user_id
+from utils.lang_utils import my_gettext
 from utils.stellar_utils import (my_float, float2str, stellar_pay, stellar_get_user_account, eurmtl_asset,
                                  db_is_new_user,
                                  stellar_create_new, async_stellar_send, stellar_sign, stellar_get_master,
@@ -49,10 +50,10 @@ class ChequeQuery:
     for_cancel: bool = False
 
 
-@router.callback_query(Text(text=["CreateCheque"]))
+@router.callback_query(F.data=="CreateCheque")
 @router.message(Command('create_cheque'))
 async def cmd_create_cheque(
-    update: Union[CallbackQuery, Message], state: FSMContext, session: Session
+        update: Union[CallbackQuery, Message], state: FSMContext, session: Session
 ):
     if isinstance(update, Message):
         await update.delete()
@@ -104,12 +105,7 @@ async def cmd_cheque_show(session: Session, message: Message, state: FSMContext)
 
 
 def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
-    if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
-    elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
-    else:
-        user_id = user_id
+    user_id = get_user_id(user_id)
 
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_create_cheque'), callback_data="ChequeExecute")],
@@ -121,7 +117,7 @@ def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int]) 
     return keyboard
 
 
-@router.callback_query(Text(text=["ChequeCount"]))
+@router.callback_query(F.data=="ChequeCount")
 async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'kb_change_count')
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
@@ -148,7 +144,7 @@ async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Ses
         await message.delete()
 
 
-@router.callback_query(Text(text=["ChequeComment"]))
+@router.callback_query(F.data=="ChequeComment")
 async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'kb_change_comment')
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
@@ -170,7 +166,7 @@ async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: S
         await message.delete()
 
 
-@router.callback_query(Text(text=["ChequeExecute"]))
+@router.callback_query(F.data=="ChequeExecute")
 async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     send_sum = data.get("send_sum")
@@ -193,7 +189,7 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext):
     cheque = db_get_cheque(session, send_uuid)
     if cheque is None:
         cheque = db_add_cheque(session, send_uuid, send_sum, send_count, user_id, send_comment)
-    set_last_message_id(session, user_id, 0)
+    await state.update_data(last_message_id=0)
     #  "send_cheque_resend": "You have cheque {} with sum {} EURMTL for {} users, total sum {} with comment \"{}\" you can send link {} or press button to send"
     link = f'https://t.me/{(await bot.me()).username}?start=cheque_{send_uuid}'
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -215,7 +211,7 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext):
                                                          cheque.cheque_asset.split(':')[0], send_comment, link)),
                            reply_markup=kb)
 
-    set_last_message_id(session, user_id, 0)
+    await state.update_data(last_message_id=0)
 
 
 @router.callback_query(ChequeCallbackData.filter())
@@ -251,10 +247,10 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
                             eurmtl_asset, (total_count - receive_count) * float(cheque_pay), memo=cheque_uuid[:16])
     xdr = stellar_sign(xdr, stellar_get_master(session).secret)
 
-    await cmd_info_message(session, user_id, my_gettext(user_id, "try_send2"))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2"))
     await state.update_data(xdr=xdr, operation='cancel_cheque')
     await async_stellar_send(xdr)
-    await cmd_info_message(session, user_id, my_gettext(user_id, 'send_good_cheque'))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque'))
     db_reset_balance(session, user_id)
 
 
@@ -298,13 +294,13 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
 ########################################################################################################################
 
 
-@router.message(Command(commands=["start"]), Text(contains="cheque_"))
-@router.message(Command(commands=["start"]), Text(contains="invoice_"))
+@router.message(Command(commands=["start"]), F.text.contains("cheque_"))
+@router.message(Command(commands=["start"]), F.text.contains("invoice_"))
 async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session):
-    await state.clear()
+    # await clear_state(state)
 
     # check address
-    set_last_message_id(session, message.from_user.id, 0)
+    await state.update_data(last_message_id=0)
     await send_message(session, message.from_user.id, 'Loading')
 
     cheque_uuid = message.text.split(' ')[1].split('_')[1]
@@ -335,7 +331,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
     await send_message(session, message, msg, reply_markup=kb)
 
 
-@router.callback_query(Text(text=["ChequeYes"]))
+@router.callback_query(F.data=="ChequeYes")
 async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     # await cmd_send_money_from_cheque(callback.from_user.id, state, cheque_uuid=data['cheque_uuid'],
@@ -368,10 +364,10 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
 
     xdr = stellar_sign(xdr, stellar_get_master(session).secret)
 
-    await cmd_info_message(session, user_id, my_gettext(user_id, "try_send2"))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2"))
     await state.update_data(xdr=xdr, operation='receive_cheque')
     await async_stellar_send(xdr)
-    await cmd_info_message(session, user_id, my_gettext(user_id, 'send_good_cheque'))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque'))
     db_reset_balance(session, user_id)
 
     if was_new:
@@ -379,25 +375,25 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
         await cmd_language(session, user_id)
 
 
-async def cheque_worker(session: Session):
+async def cheque_worker(session_pool):
     while True:  # not queue.empty():
         cheque_item: ChequeQuery = await cheque_queue.get()
         # logger.info(f'{cheque_item} start')
 
         try:
-            if cheque_item.for_cancel:
-                await cmd_cancel_cheque(session, cheque_item.user_id, cheque_item.cheque_uuid, cheque_item.state)
-            else:
-                await cmd_send_money_from_cheque(session, cheque_item.user_id, cheque_item.state,
-                                                 cheque_item.cheque_uuid,
-                                                 cheque_item.username)
-
+            with session_pool() as session:
+                if cheque_item.for_cancel:
+                    await cmd_cancel_cheque(session, cheque_item.user_id, cheque_item.cheque_uuid, cheque_item.state)
+                else:
+                    await cmd_send_money_from_cheque(session, cheque_item.user_id, cheque_item.state,
+                                                     cheque_item.cheque_uuid,
+                                                     cheque_item.username)
         except Exception as e:
             logger.warning(f' {cheque_item.cheque_uuid}-{cheque_item.user_id} failed {type(e)}')
         cheque_queue.task_done()
 
 
-@router.callback_query(Text(text=["InvoiceYes"]))
+@router.callback_query(F.data=="InvoiceYes")
 async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: Session):
     # Step 1: Check if the invoice is alive
     data = await state.get_data()
@@ -423,7 +419,6 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
         max_eurmtl = asset_list[0].balance
     else:
         max_eurmtl = 0
-
 
     await state.update_data(send_asset_code=eurmtl_asset.code,
                             send_asset_issuer=eurmtl_asset.issuer,
@@ -464,5 +459,5 @@ async def cmd_cheques(message: types.Message, state: FSMContext, session: Sessio
             "send_comment": cheque.cheque_comment,
             "send_uuid": cheque.cheque_uuid,
         }
-        await state.set_data(data)
+        await state.update_data(data)
         await cheque_after_send(session, message.from_user.id, state)
