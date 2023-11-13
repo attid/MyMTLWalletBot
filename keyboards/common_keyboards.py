@@ -53,7 +53,7 @@ def get_kb_yesno_send_xdr(user_id: Union[types.CallbackQuery, types.Message, int
 
 
 def get_kb_send(user_id: int, with_tools: bool = False) -> types.InlineKeyboardMarkup:
-    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send'), callback_data="SendTr")]]
+    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tr'), callback_data="SendTr")]]
 
     if with_tools:
         buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tools'),

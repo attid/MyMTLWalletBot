@@ -1,3 +1,7 @@
+import json
+
+import aiohttp
+import requests
 from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -6,9 +10,11 @@ from aiogram.types import WebAppInfo
 from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
-from utils.aiogram_utils import my_gettext, send_message
+from routers.sign import cmd_check_xdr
+from utils.aiogram_utils import my_gettext, send_message, clear_last_message_id
+from utils.gspread_utils import gs_check_multi
 from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
-    my_float, have_free_xlm
+    my_float, have_free_xlm, stellar_get_multi_sign_xdr
 
 
 class StateTools(StatesGroup):
@@ -50,8 +56,8 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Se
                                     callback_data="MTLToolsDelegate")],
         [types.InlineKeyboardButton(text='💸 ' + my_gettext(user_id, 'kb_tools_add_bim'),
                                     callback_data="MTLToolsAddBIM")],
-        [types.InlineKeyboardButton(text='Test Local Storage',
-                                    web_app=WebAppInfo(url='https://eurmtl.me/mmwb'))],
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_tools_update_multi'),
+                                    callback_data="MTLToolsUpdateMulti")],
         get_return_button(user_id)
     ]
     await send_message(session,user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -361,6 +367,35 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: BIMCallbackDa
             await send_message(session,callback, my_gettext(callback, 'delete_bim', (donates[idx][1],)),
                                reply_markup=get_kb_yesno_send_xdr(callback))
     await callback.answer()
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+
+@router.callback_query(F.data=="MTLToolsUpdateMulti")
+async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContext, session:Session):
+    account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
+    if not await gs_check_multi(account_id):
+        await callback.answer('Ваш адрес не найден в реестре', show_alert=True)
+        return
+    else:
+        await callback.message.answer('Сейчас будет сформирована транзакция.'
+                                      'Внимательно ознакомьтесь с данные перед отправкой.')
+        # get xdr
+        xdr = await stellar_get_multi_sign_xdr(account_id)
+        async with aiohttp.ClientSession() as web_session:
+            async with web_session.post("https://eurmtl.me/remote/decode", json={"xdr": xdr}) as response:
+                if response.status == 200:
+                    answer = await response.json()
+                    msg = answer['text']
+                else:
+                    msg = "Ошибка запроса"
+        msg = msg.replace("<br>", "\n")
+        msg = msg.replace("&nbsp;", "\u00A0")
+        await callback.message.answer(msg)
+        await clear_last_message_id(callback.from_user.id)
+        await cmd_check_xdr(session, xdr, callback.from_user.id, state)
+
 
 ########################################################################################################################
 ########################################################################################################################

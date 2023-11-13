@@ -131,3 +131,13 @@ async def clear_state(state: FSMContext):
 
 def long_line() -> str:
     return ''.ljust(53, '⠀')
+
+
+async def set_last_message_id(chat_id: int, msg_id: int):
+    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=chat_id, chat_id=chat_id)
+    # data = await dp.storage.get_data(key=fsm_storage_key)
+    await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
+
+
+async def clear_last_message_id(chat_id: int):
+    await set_last_message_id(chat_id, 0)

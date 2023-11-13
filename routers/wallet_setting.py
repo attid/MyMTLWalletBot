@@ -1,6 +1,7 @@
 from typing import List
 import jsonpickle
 from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -9,14 +10,16 @@ from stellar_sdk import Asset
 
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
     db_insert_into_address_book, \
-    db_get_default_wallet
+    db_get_default_wallet, db_get_user_account_by_username
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, my_gettext, admin_id
+from utils.aiogram_utils import send_message, my_gettext, admin_id, clear_state
 from loguru import logger
+
+from utils.lang_utils import check_user_id
 from utils.stellar_utils import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
                                  stellar_is_free_wallet, public_issuer, get_good_asset_list,
                                  stellar_pay, eurmtl_asset, float2str, stellar_get_user_keypair,
@@ -211,7 +214,7 @@ async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext,
 
 
 @router.message(StateAddAsset.sending_code)
-async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_code(message: types.Message, state: FSMContext, session: Session):
     user_id = message.from_user.id
     asset_code = message.text
     await state.update_data(send_asset_code=asset_code)
@@ -223,8 +226,44 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
 
 
 @router.message(StateAddAsset.sending_issuer)
-async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_issuer(message: types.Message, state: FSMContext, session: Session):
     await state.update_data(send_asset_issuer=message.text)
+    await cmd_add_asset_end(message.chat.id, state, session, )
+
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+
+@router.message(Command(commands=["start"]), F.text.contains("asset_"))
+async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session):
+    await clear_state(state)
+
+    # check address
+    await state.update_data(last_message_id=0)
+    await send_message(session, message.from_user.id, 'Loading')
+
+    # if user not exist
+    if not check_user_id(session, message.from_user.id):
+        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start')
+        return
+
+    asset = message.text.split(' ')[1][6:]
+    asset_code = asset.split('-')[0]
+    asset_issuer = asset.split('-')[1]
+
+    try:
+        public_key, user_id = db_get_user_account_by_username(session, '@' + asset_issuer)
+        if public_key is None:
+            raise Exception("public_key is None")
+        # logger.info(f"{message.from_user.id}, {message.text}, {message.text[1:]}, {public_key}")
+    except Exception as ex:
+        await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
+                           reply_markup=get_kb_return(message))
+        return
+
+    await state.update_data(send_asset_code=asset_code)
+    await state.update_data(send_asset_issuer=public_key)
     await cmd_add_asset_end(message.chat.id, state, session, )
 
 

@@ -13,18 +13,25 @@ from utils.stellar_utils import find_stellar_public_key, find_stellar_federation
 router = Router()
 
 
-
-
 @router.message()
 async def cmd_last_route(message: types.Message, state: FSMContext, session: Session):
+    if message.chat.type != "private":
+        return
     # if forwarded
     if message.forward_sender_name or message.forward_from:
-        public_key = find_stellar_public_key(message.text)
-        if public_key is None:
-            public_key = find_stellar_federation_address(message.text.lower())
+        public_key = None
+        if message.text:
+            public_key = find_stellar_public_key(message.text)
+            if public_key is None:
+                public_key = find_stellar_federation_address(message.text.lower())
+
+        if message.caption and public_key is None:
+            public_key = find_stellar_public_key(message.caption)
+            if public_key is None:
+                public_key = find_stellar_federation_address(message.caption.lower())
 
         if message.forward_from and public_key is None:
-            public_key, user_id = db_get_user_account_by_username(session, '@'+message.forward_from.username)
+            public_key, user_id = db_get_user_account_by_username(session, '@' + message.forward_from.username)
 
         if public_key:
             my_account = await stellar_check_account(public_key)
@@ -36,7 +43,6 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                 await state.set_state(None)
                 await cmd_send_choose_token(message, state, session)
                 return
-
 
     if message.from_user.username == "itolstov":
         if len(message.text.split()) > 3:
