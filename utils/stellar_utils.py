@@ -674,7 +674,8 @@ def gen_new(last_name):
 def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset):
     sale_asset = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
     buy_asset = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
-    market_link = f'https://stellar.expert/explorer/public/market/{sale_asset}/{buy_asset}'
+    # market_link = f'https://stellar.expert/explorer/public/market/{sale_asset}/{buy_asset}'
+    market_link = f'https://eurmtl.me/cup/orderbook/{sale_asset}/{buy_asset}'
     market_link = html_decoration.link(value='expert', link=market_link)
     return market_link
 
@@ -756,15 +757,86 @@ async def have_free_xlm(session, user_id: int, state=None):
     return False
 
 
+async def stellar_get_multi_sign_xdr(public_key) -> str:
+    async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+    ) as server:
+        public_issuer_signers = MyAccount.from_dict(await server.accounts().account_id(public_issuer).call()).signers
+        public_issuer_signers = sorted(
+            public_issuer_signers,
+            key=lambda x: (x.weight, x.key),
+            reverse=True
+        )
+        public_issuer_signers = [signer for signer in public_issuer_signers if signer.key != public_issuer]
+
+        account = MyAccount.from_dict(await server.accounts().account_id(public_key).call())
+        data = account.data
+        signers = account.signers
+
+    for data_name in list(data):
+        data[data_name] = decode_data_value(data[data_name])
+
+    new_signers = {}
+    for key, value in data.items():
+        # Проверяем, начинается ли ключ с 'master_key_' и содержит ли он два подчеркивания
+        if key.startswith('master_key_') and key.count('_') == 3:
+            # Извлекаем число из ключа (оно находится между вторым и третьим подчеркиванием)
+            number = key.split('_')[2]
+            new_signers[value] = int(number)
+
+    if public_key not in new_signers:
+        new_signers[public_key] = 15
+
+    # Проходим по public_issuer_signers и добавляем записи в new_signers
+    for signer in public_issuer_signers:
+        # Проверяем, достигнут ли предел в 21 запись, учитывая исходный словарь данных
+        if len(new_signers) < 21:
+            # Проверяем, есть ли уже ключ в new_signers
+            if signer.key not in new_signers:
+                new_signers[signer.key] = 1
+
+    current_signers = {signer.key: signer.weight for signer in signers}
+
+    # Создаем список для обновленных подписантов
+    updated_signers = []
+
+    # Шаг 1: Добавляем подписантов для удаления (вес 0)
+    for signer in current_signers:
+        if signer not in new_signers:
+            updated_signers.append({'key': signer, 'weight': 0})
+
+    # Шаг 2: Обновляем вес для существующих подписантов
+    for signer, weight in current_signers.items():
+        if signer in new_signers and new_signers[signer] != weight:
+            updated_signers.append({'key': signer, 'weight': new_signers[signer]})
+
+    # Шаг 3: Добавляем новых подписантов
+    for signer, weight in new_signers.items():
+        if signer not in current_signers:
+            updated_signers.append({'key': signer, 'weight': weight})
+
+    async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+    ) as server:
+        source_account = await server.load_account(public_key)
+        transaction = TransactionBuilder(source_account=source_account,
+                                         network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+        transaction.set_timeout(60 * 60 * 24)
+        for signer in updated_signers:
+            if signer['key'] == public_key:
+                transaction.append_set_options_op(master_weight=signer['weight'])
+            else:
+                transaction.append_ed25519_public_key_signer(signer['key'], signer['weight'])
+
+        if account.thresholds.med_threshold != 15:
+            transaction.append_set_options_op(med_threshold=15, low_threshold=15, high_threshold=15)
+
+        return transaction.build().to_xdr()
+
+
 if __name__ == "__main__":
     pass
-    a = asyncio.run(stellar_check_receive_sum(send_asset=usdc_asset,
-                                              send_sum='40000',
-                                              receive_asset=eurmtl_asset))
-    print(a)
-    a = asyncio.run(stellar_check_receive_sum(send_asset=usdc_asset,
-                                              send_sum='15000',
-                                              receive_asset=eurmtl_asset))
+    a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     print(a)
 
 #    from db.quik_pool import quik_pool

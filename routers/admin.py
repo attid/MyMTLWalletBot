@@ -21,7 +21,7 @@ router = Router()
 
 @router.message(Command(commands=["exit"]))
 @router.message(Command(commands=["restart"]))
-async def cmd_exit(message: types.Message, state: FSMContext, session:Session):
+async def cmd_exit(message: types.Message, state: FSMContext, session: Session):
     my_state = await state.get_state()
     if message.from_user.username == "itolstov":
         if my_state == ExitState.need_exit:

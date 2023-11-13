@@ -92,4 +92,5 @@ base58>=2.1.1
 sqlalchemy-stubs
 sqlalchemy-firebird>=2
 openai~=0.27.8
-pydantic_settings
+pydantic-settings
+gspread-asyncio

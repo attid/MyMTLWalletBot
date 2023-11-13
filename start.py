@@ -40,6 +40,7 @@ async def main_bot(db_pool: sessionmaker):
 
     dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
+    dp.include_router(wallet_setting.router) # first
     dp.include_router(common_start.router)
 
     dp.include_router(sign.router)
@@ -51,7 +52,6 @@ async def main_bot(db_pool: sessionmaker):
     dp.include_router(trade.router)
     dp.include_router(send.router)
     dp.include_router(swap.router)
-    dp.include_router(wallet_setting.router)
     dp.include_router(inout.router)
     dp.include_router(mtlap.router)
 

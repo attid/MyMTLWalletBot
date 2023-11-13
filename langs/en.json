@@ -41,6 +41,7 @@
   "kb_remove_password": "Remove password",
   "kb_resend": "Try sending again",
   "kb_send": "Send",
+  "kb_send_tr": "Send to blockchain",
   "kb_send_tools": "Send to eurmtl.me",
   "kb_set_password": "Set password",
   "kb_setting": "Settings",
@@ -66,7 +67,7 @@
   "send_password": "Enter your password",
   "send_sum": " \n Enter the amount of {} to send.\n\nNow it is available: <code>{}</code>",
   "send_sum_swap": " \nEnter the amount of {} to exchange\n\nNow it is available: <code>{}</code>.\n\n The tokens will be exchanged for {}\n\n Look all order ({})",
-  "send_xdr": " \n Send your xdr transaction to sign",
+  "send_xdr": " \n Send your xdr transaction to sign or link at eurmtl.me",
   "setting_msg": "Setting up wallets, here you can choose a default wallet, add a new one, change the pin or delete the wallet",
   "support_bot": "Support bot @MyMTLWalletSupportBot",
   "try_send": "Successfully signed, trying to send to the blockchain, waiting up to 5 minutes",
@@ -177,5 +178,6 @@
   "confirm_send_success": " \n You send \n{} <b>{}</b> \nto the address \n{} \nwith memo : {}",
   "kb_mtlap_tools": "MTL Association Tools",
   "your_xdr": "Your transaction for sign:\n\n<code>{}</code>\n\n",
-  "low_xlm": "You have less than 0.5 free XLM"
+  "low_xlm": "You have less than 0.5 free XLM",
+  "kb_tools_update_multi": "Update MultiSign"
 }
