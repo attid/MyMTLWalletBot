@@ -34,7 +34,11 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
             types.InlineKeyboardButton(text='💸 ' + my_gettext(chat_id, 'kb_inout'), callback_data="InOut"),
             types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market'), callback_data="Market")
         ],
+        [
+            types.InlineKeyboardButton(text='🥳 ' + "Radio World", callback_data="Fest")
+        ]
     ]
+
     if data.get('show_more', False):
         if data.get('mtlap', False):
             buttons.append(

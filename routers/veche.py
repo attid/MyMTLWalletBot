@@ -1,11 +1,10 @@
 import jsonpickle
-import requests
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message, clear_state
+from utils.aiogram_utils import my_gettext, send_message, clear_state, get_web_request
 from keyboards.common_keyboards import get_kb_yesno_send_xdr
 from utils.lang_utils import check_user_id
 from utils.stellar_utils import stellar_get_user_account, stellar_user_sign_message
@@ -65,9 +64,8 @@ async def send_veche_link(session: Session, user_id: int, state: FSMContext):
 @router.callback_query(F.data=="MTLToolsVeche")
 async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_key = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
-    verifier = requests.post(f"https://veche.montelibero.org/auth/page/mymtlwalletbot/verifier",
-                             params={'account': user_key}).text
-    # print(token)
+    status, verifier = await get_web_request('GET', data={'account': user_key},
+                                             url="https://veche.montelibero.org/auth/page/mymtlwalletbot/verifier")
     if verifier:
         await cmd_login_to_veche(session, callback.from_user.id, state, verifier=verifier)
     else:

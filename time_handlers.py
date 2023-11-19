@@ -62,7 +62,7 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                                 TOperations.code1, TOperations.amount2, TOperations.code2, TOperations.from_account,
                                 TOperations.for_account, MyMtlWalletBot.user_id) \
             .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TOperations.for_account) \
-            .filter(MyMtlWalletBot.need_delete == 0,
+            .filter(MyMtlWalletBot.need_delete == 0, MyMtlWalletBot.user_id > 0,
                     TOperations.id > MyMtlWalletBot.last_event_id,
                     TOperations.dt > datetime.now() - timedelta(days=1),
                     TOperations.arhived == None) \
@@ -77,7 +77,8 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                 await cmd_info_message(session, record.user_id, decode_db_effect(record))
                 await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             except TelegramBadRequest as ex:
-                if ex.message == 'Telegram server says - Bad Request: chat not found':
+                if str(ex).find('Bad Request: chat not found') > 0:
+                # if ex.message == 'Telegram server says - Bad Request: chat not found':
                     db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
                     logger.info(['cmd_send_message_events', record.id, 'wallet was deleted'])
                 else:

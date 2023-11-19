@@ -16,9 +16,11 @@ from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
 from utils.aiogram_utils import bot, dp, scheduler, admin_id, helper_chat_id
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
-                     cheque, mtlap)
+                     cheque, mtlap, fest)
 from routers import veche, wallet_setting, common_end
 from loguru import logger
+
+from utils.gspread_utils import gs_update_fest_menu
 
 task_list = []
 
@@ -40,9 +42,10 @@ async def main_bot(db_pool: sessionmaker):
 
     dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
-    dp.include_router(wallet_setting.router) # first
+    dp.include_router(wallet_setting.router)  # first
     dp.include_router(common_start.router)
 
+    dp.include_router(fest.router)
     dp.include_router(sign.router)
     dp.include_router(add_wallet.router)
     dp.include_router(admin.router)
@@ -124,6 +127,7 @@ async def on_startup(bot: Bot):
         await bot.send_message(chat_id=admin_id, text='Bot started')
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=helper_chat_id, text='Bot started')
+    fest.fest_menu = await gs_update_fest_menu()
 
 
 async def on_shutdown(bot: Bot):
@@ -135,7 +139,11 @@ async def on_shutdown(bot: Bot):
 
 async def main():
     # Запуск бота
-    engine = create_engine(config.db_dns, pool_pre_ping=True)
+    engine = create_engine(config.db_dns,
+                           pool_pre_ping=True,
+                           pool_size=20,
+                           max_overflow=50
+                           )
     # Creating DB connections pool
     db_pool = sessionmaker(bind=engine)
     import utils.lang_utils

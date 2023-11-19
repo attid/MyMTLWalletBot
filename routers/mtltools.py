@@ -1,17 +1,11 @@
-import json
-
-import aiohttp
-import requests
 from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import WebAppInfo
 from sqlalchemy.orm import Session
-
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from routers.sign import cmd_check_xdr
-from utils.aiogram_utils import my_gettext, send_message, clear_last_message_id
+from utils.aiogram_utils import my_gettext, send_message, clear_last_message_id, get_web_request
 from utils.gspread_utils import gs_check_multi
 from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
     my_float, have_free_xlm, stellar_get_multi_sign_xdr
@@ -383,13 +377,13 @@ async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContex
                                       'Внимательно ознакомьтесь с данные перед отправкой.')
         # get xdr
         xdr = await stellar_get_multi_sign_xdr(account_id)
-        async with aiohttp.ClientSession() as web_session:
-            async with web_session.post("https://eurmtl.me/remote/decode", json={"xdr": xdr}) as response:
-                if response.status == 200:
-                    answer = await response.json()
-                    msg = answer['text']
-                else:
-                    msg = "Ошибка запроса"
+
+        status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
+        if status == 200:
+            msg = response_json['text']
+        else:
+            msg = "Ошибка запроса"
+
         msg = msg.replace("<br>", "\n")
         msg = msg.replace("&nbsp;", "\u00A0")
         await callback.message.answer(msg)

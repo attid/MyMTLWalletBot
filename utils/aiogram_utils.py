@@ -1,9 +1,10 @@
 import asyncio
+import aiohttp
 import sys
+import tzlocal
 from contextlib import suppress
 from datetime import datetime
 from typing import Union
-import tzlocal
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -16,7 +17,6 @@ from aiogram import types
 from config_reader import config
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 
@@ -141,3 +141,19 @@ async def set_last_message_id(chat_id: int, msg_id: int):
 
 async def clear_last_message_id(chat_id: int):
     await set_last_message_id(chat_id, 0)
+
+
+async def get_web_request(method, url, json=None, headers=None, data=None, return_type=None):
+    async with aiohttp.ClientSession() as web_session:
+        if method.upper() == 'POST':
+            request_coroutine = web_session.post(url, json=json, headers=headers, data=data)
+        elif method.upper() == 'GET':
+            request_coroutine = web_session.get(url, headers=headers, params=data)
+        else:
+            raise ValueError("Неизвестный метод запроса")
+
+        async with request_coroutine as response:
+            if response.headers.get('Content-Type') == 'application/json' or return_type == 'json':
+                return response.status, await response.json()
+            else:
+                return response.status, await response.text()

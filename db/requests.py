@@ -228,6 +228,8 @@ def db_update_mymtlwalletbot_balances(session: Session, balances: str, user_id: 
 
 
 def db_delete_all_by_user(session: Session, user_id: int):
+    if user_id < 1:
+        return
     session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id).update(
         {MyMtlWalletBot.need_delete: 1})
     session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.user_id == user_id).delete()
@@ -236,6 +238,8 @@ def db_delete_all_by_user(session: Session, user_id: int):
 
 
 def db_delete_wallet(session: Session, user_id: int, public_key: str, erase: bool = False, idx: int = None):
+    if user_id < 1:
+        return
     wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
                                                   MyMtlWalletBot.public_key == public_key)
     if idx is not None:

@@ -4,6 +4,7 @@ from typing import Union
 from aiogram import types
 from sqlalchemy.orm import Session, sessionmaker
 
+from config_reader import start_path
 from db.models import MyMtlWalletBotUsers
 from db.requests import get_user_lang
 from utils.common_utils import get_user_id
@@ -12,9 +13,10 @@ user_lang_dic = {}
 lang_dict = {}
 lang_session_maker: sessionmaker
 
-for file in listdir("langs/"):
+
+for file in listdir(f"{start_path}/langs/"):
     if file.endswith(".json"):
-        with open("langs/" + file, "r") as fp:
+        with open(f"{start_path}/langs/" + file, "r") as fp:
             lang_dict[file.split('.')[0]] = json.load(fp)
 
 

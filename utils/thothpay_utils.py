@@ -1,11 +1,8 @@
 import uuid
 from datetime import datetime, timedelta
-
 import asyncio
-
-import aiohttp
-import requests
 from config_reader import config
+from utils.aiogram_utils import get_web_request
 
 
 def test():
@@ -58,10 +55,10 @@ def test():
 
     print(j2)
 
-    resp = requests.post("https://thothpay.com//api/invoice", headers=headers, json=j2)
+    # resp = requests.post("https://thothpay.com//api/invoice", headers=headers, json=j2)
 
-    print(resp)
-    print(resp.json())
+    # print(resp)
+    # print(resp.json())
 
 
 async def thoth_create_order(user_id, amount):
@@ -77,54 +74,40 @@ async def thoth_create_order(user_id, amount):
                          "name": "Exchange with MMWB"
                      }
                  ],
-                  "due_date": (
+                 "due_date": (
                          datetime.now() + timedelta(
                      minutes=30)).strftime(
                      "%Y-%m-%dT%H:%M:%S")
                  # "callback_url": "string"
                  }
 
-    #print(json_data)
-
-    # resp = requests.post("https://thothpay.com//api/invoice", headers=headers, json=j2)
-    async with aiohttp.ClientSession() as session:
-        url = "https://thothpay.com/api/invoice"
-        headers = {
-            "accept": "application/json",
-            'Content-Type': 'application/json',
-            "Authorization": config.thothpay_api.get_secret_value()
-        }
-        #print(json.dumps(json_data))
-        async with session.post(url, headers=headers, json=json_data) as response:
-            data = await response.json()
-            if response.status == 200:
-                return data
-            #print(response)
-
+    url = "https://thothpay.com/api/invoice"
+    headers = {
+        "accept": "application/json",
+        'Content-Type': 'application/json',
+        "Authorization": config.thothpay_api.get_secret_value()
+    }
+    status, response_json = await get_web_request('POST', url=url, headers=headers, json=json_data)
+    if status == 200:
+        return response_json
 
 
 async def thoth_check_order(invoice_id):
-    #/ api / invoice?id =
-    async with aiohttp.ClientSession() as session:
-        url = "https://thothpay.com/api/invoice?id="+invoice_id
-        headers = {
-            "accept": "application/json",
-            'Content-Type': 'application/json',
-            "Authorization": config.thothpay_api.get_secret_value()
-        }
-        async with session.get(url, headers=headers) as response:
-            data = await response.json()
-            #print(data.get('state'))
-            if data.get('state') and isinstance(data.get('state'),dict) and 'Finished' in data.get('state') :
-                return True, int(data['items'][0]['amount'])
-            #print(response)
-        return False, 0
+    # / api / invoice?id =
+    url = "https://thothpay.com/api/invoice?id=" + invoice_id
+    headers = {
+        "accept": "application/json",
+        'Content-Type': 'application/json',
+        "Authorization": config.thothpay_api.get_secret_value()
+    }
+    status, data = await get_web_request('POST', url=url, headers=headers)
+    if status == 200:
+        if data.get('state') and isinstance(data.get('state'), dict) and 'Finished' in data.get('state'):
+            return True, int(data['items'][0]['amount'])
+    return False, 0
 
 
 if __name__ == "__main__":
-    #asyncio.run(thoth_create_order(1, 1000))
-    #https://thothpay.com/invoice?id=ab8b5c3f-a888-4a28-9004-a5f9f668df60
+    # asyncio.run(thoth_create_order(1, 1000))
+    # https://thothpay.com/invoice?id=ab8b5c3f-a888-4a28-9004-a5f9f668df60
     print(asyncio.run(thoth_check_order('5d13769f-3102-4ca5-a4ea-06101d1c473f')))
-
-
-

@@ -1,17 +1,19 @@
+from contextlib import suppress
+
 import jsonpickle
 from aiogram import Router, types, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
-
 from db.requests import db_user_can_new_free
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import send_message, my_gettext
 from utils.stellar_utils import stellar_create_new, stellar_save_new, \
-     stellar_save_ro, async_stellar_send
+    stellar_save_ro, async_stellar_send, new_wallet_lock
 
 
 class StateAddWallet(StatesGroup):
@@ -22,7 +24,7 @@ class StateAddWallet(StatesGroup):
 router = Router()
 
 
-@router.callback_query(F.data=="AddNew")
+@router.callback_query(F.data == "AddNew")
 async def cmd_add_new(callback: types.CallbackQuery, session: Session):
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_have_key'),
@@ -37,7 +39,7 @@ async def cmd_add_new(callback: types.CallbackQuery, session: Session):
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@router.callback_query(F.data=="AddWalletHaveKey")
+@router.callback_query(F.data == "AddWalletHaveKey")
 async def cq_add(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'send_key')
     await state.update_data(msg=msg)
@@ -66,20 +68,28 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
                            reply_markup=get_kb_return(message))
 
 
-@router.callback_query(F.data=="AddWalletNewKey")
+@router.callback_query(F.data == "AddWalletNewKey")
 async def cq_add(callback: types.CallbackQuery, session: Session, state: FSMContext):
     if db_user_can_new_free(session, callback.from_user.id):
-        xdr = await stellar_create_new(session,callback.from_user.id, callback.from_user.username)
-        await cmd_info_message(session,  callback.message.chat.id, my_gettext(callback, "try_send"))
-        await async_stellar_send(xdr)
-        await cmd_info_message(session,  callback, my_gettext(callback, 'send_good'))
-        await callback.answer()
+        msg = my_gettext(callback, "try_send")
+        waiting_count = new_wallet_lock.waiting_count()
+        if waiting_count > 0:
+            await cmd_info_message(session, callback.message.chat.id,
+                                   f'Please wait, your position in the queue is {waiting_count}.')
+
+        async with new_wallet_lock:
+            xdr = await stellar_create_new(session, callback.from_user.id, callback.from_user.username)
+            await cmd_info_message(session, callback.message.chat.id, msg)
+            await async_stellar_send(xdr)
+
+        await cmd_info_message(session, callback, my_gettext(callback, 'send_good'))
+        with suppress(TelegramBadRequest):
+            await callback.answer()
         data = await state.get_data()
         fsm_after_send = data.get('fsm_after_send')
         if fsm_after_send:
             fsm_after_send = jsonpickle.loads(fsm_after_send)
             await fsm_after_send(session, callback.from_user.id, state)
-
     else:
         await callback.answer(my_gettext(callback.message.chat.id, "max_wallets"), show_alert=True)
 
@@ -100,7 +110,7 @@ async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: 
                        parse_mode='HTML')
 
 
-@router.callback_query(F.data=="AddWalletReadOnly")
+@router.callback_query(F.data == "AddWalletReadOnly")
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'add_read_only')
     await state.update_data(msg=msg)
@@ -111,7 +121,7 @@ async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, ses
 @router.message(StateAddWallet.sending_public)
 async def cmd_sending_public(message: types.Message, state: FSMContext, session: Session):
     try:
-        #await stellar_get_balances(session, message.from_user.id, public_key=message.text)
+        # await stellar_get_balances(session, message.from_user.id, public_key=message.text)
         await state.update_data(public_key=message.text)
         await state.set_state(None)
 
@@ -126,14 +136,14 @@ async def cmd_sending_public(message: types.Message, state: FSMContext, session:
                            reply_markup=get_kb_return(message))
 
 
-@router.callback_query(F.data=="PIN")
+@router.callback_query(F.data == "PIN")
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(PinState.set_pin)
     await state.update_data(pin_type=1)
     await cmd_ask_pin(session, callback.message.chat.id, state)
 
 
-@router.callback_query(F.data=="Password")
+@router.callback_query(F.data == "Password")
 async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(pin_type=2)
     await state.set_state(PinState.ask_password_set)
@@ -141,7 +151,7 @@ async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, sess
                        reply_markup=get_kb_return(callback))
 
 
-@router.callback_query(F.data=="NoPassword")
+@router.callback_query(F.data == "NoPassword")
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(pin_type=0)
     await cmd_show_balance(session, callback.from_user.id, state)
