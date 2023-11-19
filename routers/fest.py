@@ -18,71 +18,6 @@ from utils.tron_utils import *
 router = Router()
 
 fest_menu = {
-    "Еда": {
-        "en": "Food",
-        "level2": {
-            "Шум": {
-                "en": "Shoom",
-                "address_id": "GBSO2XTJ6VBGJQTRDFQHQRA4JFAUU2DTSJRJJLWFDSKGRBAHLH24C67A",
-            },
-            "Нур": {
-                "en": "Nur",
-                "address_id": "GBR2OOELH3RULCGYK24TX2QX6XFSEALHUZXGLN3CL3DHG7MLVWWG4SBA",
-            },
-            "Montespirits": {
-                "en": "Montespirits",
-                "address_id": "GBPJJYVFIYSSRWYZBNHL7EIRBOXEX5JQHJALD2EVOQFZO2ESQGJPFPZW",
-            },
-            "Сидр": {
-                "en": "Sidr",
-                "address_id": "GA7C5RVQXIGU3IOARQZARUTCC3B5PD7YOCC4B6KO2QTIUQDICWEK6H2E",
-            },
-            "ИдК": {
-                "en": "IdK",
-                "address_id": "GCHMLPSNB4G7XUPDW44P4I64P3GLLUJZPF63UYN4RK3AUQTGF2XPOD27",
-            },
-            "Chicago Street Food": {
-                "en": "Chicago Street Food",
-                "address_id": "GA5N3MESHDUGW4CMRQ6BWIH3WL6LSFCD5HKRXGSRHRAW7DPSTTR3SPTR",
-            },
-
-        }
-    },
-    "Ярмарка": {
-        "en": "City Fair",
-        "level2": {
-            "Ольга Футболки": {
-                "en": "Olga T-Shirts",
-                "address_id": "GD2QQH5T72SJO3AEZBVGR4HMYK7N6OPBA2OJ6QHOGUA7K3QDSJ4OLQ4U"
-            },
-            "Инна Аквагрим": {
-                "en": "Inna Aquagrim",
-                "address_id": "GDTVPQQLT6RJNHWFGTYG6G3L6PG6QIT5IPXUSN3H4RNKDTGHLHKPN5MS"
-            },
-            "Лика Корзинки": {
-                "en": "Lika Baskets",
-                "address_id": "GDUKYQHTGHIHTXL4QK2OQF2GKKAO2THGOP7LLP3NQJNTHE7BLDNJZJEY"
-            },
-            "Настя Рисунки": {
-                "en": "Nastya Drawings",
-                "address_id": "GAZEFASTL4P7A6ERCSHKWDCKBQVGA4R3V5336ILQF4MSALSAH3VMGHIW"
-            },
-            "Софи Сувениры": {
-                "en": "Sofi Souvenirs",
-                "address_id": "GBR2OOELH3RULCGYK24TX2QX6XFSEALHUZXGLN3CL3DHG7MLVWWG4SBA",
-                "memo": "СУВЕНИРЫ",
-
-            },
-            "Головоломки": {
-                "en": "Puzzles",
-                "address_id": "GBZLRUMH2OFB5OOGA6BHWSKG4IXWIJRJZCUP3JT3NGK53SLARDLRLY7K",
-            },
-            "Анкап книжка": {
-                "en": "Ankap Book",
-                "address_id": "GA6BT2ZF577HWKLKVKMXIEM7TVA7LQIRNAGCUHZWBLSGZYJ4CPNA33RR",
-            },
-        }
-    },
     "Донаты": {
         "en": "Donations",
         "level2": {
@@ -90,22 +25,26 @@ fest_menu = {
                 "en": "Fest",
                 "address_id": "GBJ4BPR6WESHII6TO4ZUQBB6NJD3NBTK5LISVNKXMPOMMYSLR5DOXMFD",
                 "memo": "DONATE_FEST",
+                "num": 2
             },
             "Спорт": {
                 "en": "Sport",
                 "address_id": "GBJ4BPR6WESHII6TO4ZUQBB6NJD3NBTK5LISVNKXMPOMMYSLR5DOXMFD",
                 "memo": "DONATE_SPORT",
+                "num": 3
             },
             "Дети": {
                 "en": "Children",
                 "address_id": "GBJ4BPR6WESHII6TO4ZUQBB6NJD3NBTK5LISVNKXMPOMMYSLR5DOXMFD",
                 "memo": "DONATE_CHILD",
+                "num": 4
             },
             "MTL-Кошелек": {
                 "en": "MTL-Wallet",
                 "address_id": "GBSNN2SPYZB2A5RPDTO3BLX4TP5KNYI7UMUABUS3TYWWEWAAM2D7CMMW",
                 "memo": "DONATE",
-                "msg": "Донаты на развитие этого кошелька MTL-Wallet"
+                "msg": "Донаты на развитие этого кошелька MTL-Wallet",
+                "num": 5
             },
         }
     },
@@ -116,6 +55,7 @@ fest_menu = {
                 "en": "Parking",
                 "address_id": "GAXZNLEPYG2M77TWGFYZL6IHJKGX6P5BCCJ7WAMVOOP3UPC5U4LCVCJV",
                 "memo": "PARKING",
+                "num": 8
             },
         }
     }
@@ -148,12 +88,15 @@ async def cmd_fest(callback: types.CallbackQuery, session: Session, state: FSMCo
 
     kb_tmp = []
     for level_1 in fest_menu:
-        menu_name = level_1 if lang_num == 0 else fest_menu[level_1]['en']
+        menu_name = level_1 if lang_num == 0 else fest_menu[level_1].get('en', level_1)
         kb_tmp.append([types.InlineKeyboardButton(text=f"{menu_name}",
                                                   callback_data=SendLevel1(
                                                       level_1=level_1).pack()
                                                   )])
 
+    kb_tmp.append([types.InlineKeyboardButton(text="Купить билет 🥳",
+                                              url="https://extravaganza-events.com/radio-world-ru"
+                                              )])
     kb_tmp.append(get_return_button(callback))
     await send_message(session, callback, msg + long_line(),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp),
@@ -173,7 +116,8 @@ async def cmd_fest_level_1(callback: types.CallbackQuery, callback_data: SendLev
     level_1 = callback_data.level_1
     kb_tmp = []
     for level_2 in fest_menu[level_1]['level2']:
-        menu_name = level_2 if lang_num == 0 else fest_menu[level_1]['level2'][level_2]['en']
+        menu_name = fest_menu[level_1]['level2'][level_2].get('ru', level_2) if lang_num == 0 \
+            else fest_menu[level_1]['level2'][level_2].get('en', level_2)
         kb_tmp.append([types.InlineKeyboardButton(text=f"{menu_name}",
                                                   callback_data=SendLevel2(
                                                       level_1=level_1, level_2=level_2).pack()
@@ -196,11 +140,13 @@ async def cmd_fest_level_2(callback: types.CallbackQuery, callback_data: SendLev
     await state.set_state(StateFest.sending_sum)
     if data.get('user_lang') and data.get('user_lang') == 'ru':
         lang_num = 0
-        menu_name = level_2 if lang_num == 0 else fest_menu[level_1]['level2'][level_2]['en']
+        menu_name = fest_menu[level_1]['level2'][level_2].get('ru', level_2) if lang_num == 0 \
+            else fest_menu[level_1]['level2'][level_2].get('en', level_2)
         msg = 'Пришлите сумму в EURMTL для отправки на кошелек ' + menu_name
     else:
         lang_num = 1
-        menu_name = level_2 if lang_num == 0 else fest_menu[level_1]['level2'][level_2]['en']
+        menu_name = fest_menu[level_1]['level2'][level_2].get('ru', level_2) if lang_num == 0 \
+            else fest_menu[level_1]['level2'][level_2].get('en', level_2)
         msg = 'Send sum in EURMTL to wallet ' + menu_name
 
     if seller.get('msg') is not None:

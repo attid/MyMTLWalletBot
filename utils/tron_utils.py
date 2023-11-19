@@ -1,5 +1,4 @@
 from contextlib import suppress
-import aiohttp
 import asyncio
 import base58
 import requests
@@ -7,6 +6,7 @@ from tronpy import Tron, AsyncTron, exceptions
 from tronpy.keys import PrivateKey, is_address
 from tronpy.providers import HTTPProvider, AsyncHTTPProvider
 from config_reader import config
+from utils.aiogram_utils import get_web_request
 
 # api_key from https://www.trongrid.io
 api_key = config.tron_api_key.get_secret_value()
@@ -210,11 +210,13 @@ async def get_usdt_balance(public_key=None, private_key=None):
 
     return balance
 
+
 def check_valid_trx(public_key):
     try:
         return is_address(public_key)
     except:
         return False
+
 
 async def get_trx_balance(public_key=None, private_key=None):
     if private_key:
@@ -226,20 +228,19 @@ async def get_trx_balance(public_key=None, private_key=None):
             balance = await client.get_account_balance(public_key)
     return balance
 
+
 async def get_last_usdt_transaction_sum(public_key=None, private_key=None):
     if private_key:
         public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
 
-    async with aiohttp.ClientSession() as session:
-        url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
-              f"only_confirmed=true&limit=10&contract_address={usdt_contract}"
-        headers = {
-            "accept": "application/json",
-            "TRON-PRO-API-KEY": api_key
-        }
-        async with session.get(url, headers=headers) as response:
-            data = await response.json()
-            transactions = data["data"]
+    url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
+          f"only_confirmed=true&limit=10&contract_address={usdt_contract}"
+    headers = {
+        "accept": "application/json",
+        "TRON-PRO-API-KEY": api_key
+    }
+    status, response_json = await get_web_request('GET', url=url, headers=headers, return_type='json')
+    transactions = response_json["data"]
 
     last_usdt_txn = None
 
@@ -257,23 +258,28 @@ async def get_last_usdt_transaction_sum(public_key=None, private_key=None):
     else:
         return
 
+
 def tron_get_public(private_key):
     public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
     return public_key
 
+
 def tron_help():
     pass
-    print(check_valid_trx('TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn'))
-    print(asyncio.run(get_trx_balance(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
+    #print(check_valid_trx('TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn'))
+    #print(asyncio.run(get_trx_balance(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
+    print(asyncio.run(get_last_usdt_transaction_sum(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
 
-    #asyncio.run(send_trx_async(public_key_to='TKvcdvh628662g142UNQe2dpXxASRp7fv2', amount=50))
-    #asyncio.run(send_usdt_async(public_key_to='TNsfWkRay3SczwkB4wqyB8sCPTzCNQo4Cb', amount=520, private_key_from='*'))
+
+    # asyncio.run(send_trx_async(public_key_to='TKvcdvh628662g142UNQe2dpXxASRp7fv2', amount=50))
+    # asyncio.run(send_usdt_async(public_key_to='TNsfWkRay3SczwkB4wqyB8sCPTzCNQo4Cb', amount=520, private_key_from='*'))
+
 
 if __name__ == "__main__":
     tron_help()
-    #my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
-    #TV9NxnvRDMwtEoPPmqvk7kt3NDGZTMTNDd
-    #print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
-    #print(asyncio.run(get_trx_balance(my_tron)))
-    #print(show_balance(my_tron))
-    #print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))
+    # my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
+    # TV9NxnvRDMwtEoPPmqvk7kt3NDGZTMTNDd
+    # print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
+    # print(asyncio.run(get_trx_balance(my_tron)))
+    # print(show_balance(my_tron))
+    # print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))

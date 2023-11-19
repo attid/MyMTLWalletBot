@@ -2,22 +2,25 @@ import asyncio
 import base64
 import re
 from contextlib import suppress
-
 import jsonpickle
 from aiogram.utils.text_decorations import html_decoration
-import requests
 from cryptocode import encrypt, decrypt
 from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
-from loguru import logger
 from config_reader import config
 from db.requests import *
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
 from stellar_sdk import AiohttpClient, ServerAsync
 
+from utils.aiogram_utils import get_web_request
+from utils.counting_lock import CountingLock
+
 base_fee = config.base_fee
+
+new_wallet_lock = CountingLock()
+
 
 # https://stellar-sdk.readthedocs.io/en/latest/
 
@@ -103,8 +106,9 @@ def stellar_sign(xdr: str, private_key: str):
     return transaction.to_xdr()
 
 
-def get_url_xdr(url):
-    rq = requests.get(url).text
+async def get_url_xdr(url):
+    status, response_text = await get_web_request('GET', url=url)
+    rq = response_text
     rq = rq[rq.find('<span class="tx-body">') + 22:]
     # logger.info(rq)
     rq = rq[:rq.find('</span>')]
@@ -113,12 +117,12 @@ def get_url_xdr(url):
     return rq
 
 
-def stellar_check_xdr(xdr: str):
+async def stellar_check_xdr(xdr: str):
     result = None
     # "https://mtl.ergvein.net/view?tid=7ec5e397140fadf0d384860a35d19cf9f60e00a49b3b2cc250b832076fab7e7f"
     try:
         if xdr.find('mtl.ergvein.net/view') > -1 or xdr.find('eurmtl.me/sign_tools') > -1:
-            xdr = get_url_xdr(xdr)
+            xdr = await get_url_xdr(xdr)
             result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()
         else:
             result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()

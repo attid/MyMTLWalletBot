@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 import jsonpickle
-import requests
 from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -8,11 +7,11 @@ from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
-
 from db.requests import db_reset_balance, db_get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery, long_line
+from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery, long_line, \
+    get_web_request
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
                                  async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri)
@@ -266,7 +265,7 @@ async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Sessi
 
 async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext):
     try:
-        xdr = stellar_check_xdr(check_xdr)
+        xdr = await stellar_check_xdr(check_xdr)
         if xdr:
             await state.update_data(xdr=xdr)
             if check_xdr.find('mtl.ergvein.net/view') > -1 or check_xdr.find('eurmtl.me/sign_tools') > -1:
@@ -285,33 +284,23 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
 async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     xdr = data.get('xdr')
-    tools = data.get('tools')
     try:
         if callback.data == "SendTools":
             try:
-                # logger.info({"tx_body": xdr})
-                if data.get('tools').find('mtl.ergvein.net/view') > -1:
-                    rq = requests.post("https://mtl.ergvein.net/update", data={"tx_body": xdr})
-                    parse_text = rq.text
-                    if parse_text.find('Transaction history') > 0:
-                        await cmd_info_message(session, callback, my_gettext(callback, 'check_here', (tools,)))
-                    else:
-                        parse_text = parse_text[parse_text.find('<section id="main">'):parse_text.find("</section>")]
-                        await cmd_info_message(session, callback, parse_text[:4000])
-                else:  # "https://eurmtl.me/sign_tools"
-                    rq = requests.post(data.get('tools'), data={"tx_body": xdr})
-                    parse_text = rq.text
-                    # logger.info(parse_text)
-                    if parse_text.find('Transaction signatures') > 0:
-                        await cmd_info_message(session, callback, my_gettext(callback, 'check_here', (tools,)))
-                    else:
-                        parse_text = parse_text[parse_text.find('<section id="main">'):parse_text.find("</section>")]
-                        await cmd_info_message(session, callback, parse_text[:4000])
+                status, response_json = await get_web_request('POST', url='https://eurmtl.me/remote/update_signature',
+                                                              json={"xdr": xdr})
+                # { "SUCCESS": true/false, "MESSAGES": ["список", "сообщений", "об", "обработке"] }
+                msgs = '\n'.join(response_json.get('MESSAGES'))
+                if response_json.get('SUCCESS'):
+                    await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
+                else:
+                    await cmd_info_message(session, callback, f'ERROR\n{msgs}')
+                # else:
+                #     await cmd_info_message(session, callback, status)
 
             except Exception as ex:
                 logger.info(['cmd_show_send_tr', callback, ex])
                 await cmd_info_message(session, callback, my_gettext(callback, 'send_error'))
-
         else:
             await cmd_info_message(session, callback,
                                    my_gettext(callback, "try_send"),
