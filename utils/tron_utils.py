@@ -265,12 +265,31 @@ def tron_get_public(private_key):
 
 
 def tron_help():
+    # how do it manually
+    # 1 get public key
+    # GBVDLK25AILUULY6B5OYB2WCZUIESWU4KY63OKDVEYRV76NNFLT32XEH
+    # 2  get usdt
+    user_tron_private_key = '*'
+    print(tron_get_public(user_tron_private_key))
+    user_tron_public_key = 'TUTBziqeXsh3LAH7QUYoaAYruzhUqLWu2n'
+    #
+    # check last_usdt_transaction_sum
+    usdt_balance = asyncio.run(get_last_usdt_transaction_sum(public_key=user_tron_public_key))
+    print(usdt_balance)
+    # 40
+    # check address
+    print(asyncio.run(get_trx_balance(private_key=user_tron_private_key)))
+    # if 0 then
+    # print(asyncio.run(send_trx_async(amount=50, private_key_to=user_tron_private_key)))
+
+    # if last_usdt_transaction_sum
+    print(asyncio.run(send_usdt_async(amount=usdt_balance,
+                                      private_key_to=tron_master_key,
+                                      private_key_from=user_tron_private_key)))
+
     pass
-    #print(check_valid_trx('TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn'))
-    #print(asyncio.run(get_trx_balance(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
-    print(asyncio.run(get_last_usdt_transaction_sum(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
-
-
+    # print(check_valid_trx('TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn'))
+    # print(asyncio.run(get_trx_balance(public_key='TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn')))
     # asyncio.run(send_trx_async(public_key_to='TKvcdvh628662g142UNQe2dpXxASRp7fv2', amount=50))
     # asyncio.run(send_usdt_async(public_key_to='TNsfWkRay3SczwkB4wqyB8sCPTzCNQo4Cb', amount=520, private_key_from='*'))
 

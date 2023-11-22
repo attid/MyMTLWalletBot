@@ -19,6 +19,7 @@ from routers.start_msg import cmd_info_message
 from utils.aiogram_utils import send_message, my_gettext, admin_id, clear_state
 from loguru import logger
 
+from utils.gspread_utils import gs_get_asset
 from utils.lang_utils import check_user_id
 from utils.stellar_utils import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
                                  stellar_is_free_wallet, public_issuer, get_good_asset_list,
@@ -253,10 +254,12 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
     asset_issuer = asset.split('-')[1]
 
     try:
-        public_key, user_id = db_get_user_account_by_username(session, '@' + asset_issuer)
+        if asset_issuer == '0':
+            public_key = gs_get_asset(asset_code)
+        else:
+            public_key, user_id = db_get_user_account_by_username(session, '@' + asset_issuer)
         if public_key is None:
             raise Exception("public_key is None")
-        # logger.info(f"{message.from_user.id}, {message.text}, {message.text[1:]}, {public_key}")
     except Exception as ex:
         await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
                            reply_markup=get_kb_return(message))

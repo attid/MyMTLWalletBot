@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from contextlib import suppress
-
+import sentry_sdk
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
@@ -139,6 +139,11 @@ async def on_shutdown(bot: Bot):
 
 async def main():
     # Запуск бота
+    sentry_sdk.init(
+        dsn=config.sentry_dsn,
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+    )
     engine = create_engine(config.db_dns,
                            pool_pre_ping=True,
                            pool_size=20,
