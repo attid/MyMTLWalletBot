@@ -34,9 +34,9 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
             types.InlineKeyboardButton(text='💸 ' + my_gettext(chat_id, 'kb_inout'), callback_data="InOut"),
             types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market'), callback_data="Market")
         ],
-        [
-            types.InlineKeyboardButton(text='🥳 ' + "Radio World", callback_data="Fest")
-        ]
+        # [
+        #     types.InlineKeyboardButton(text='🥳 ' + "Radio World", callback_data="Fest")
+        # ]
     ]
 
     if data.get('show_more', False):
@@ -133,11 +133,13 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
         await send_message(session, user_id, msg, reply_markup=get_kb_resend(user_id))
     else:
         await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
-#user_id = 123456
+
+
+# user_id = 123456
 #    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)#
 #
- #   # Clear user state
-  #  await dp.storage.set_state(fsm_storage_key, None) #workflow_data
+#   # Clear user state
+#  await dp.storage.set_state(fsm_storage_key, None) #workflow_data
 
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'setting_msg')

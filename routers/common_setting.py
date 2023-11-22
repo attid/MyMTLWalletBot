@@ -80,7 +80,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'NAME':
             try:
-                msg = f"{wallets[idx]}\n" + my_gettext(callback, 'your_balance') + await stellar_get_balance_str(
+                msg = f"{wallets[idx]}\n" + my_gettext(callback, 'your_balance') + '\n' + await stellar_get_balance_str(
                     session, user_id, wallets[idx])
             except:
                 msg = f'Error load. Please delete this'

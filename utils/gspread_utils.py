@@ -78,6 +78,20 @@ async def gs_update_fest_menu():
     return result
 
 
+async def gs_get_asset(asset_code):
+    agc = await agcm.authorize()
+    ss = await agc.open("MTL_assets")
+    ws = await ss.worksheet("ASSETS")
+    cell = await ws.find(asset_code, in_column=0)
+    if cell:
+        row_number = cell.row
+        row_data = await ws.row_values(row_number)
+        if row_data[13] == 'TRUE':
+            return row_data[5]
+        # ['EURMTL', 'EURMTL', 'tokenized', 'F', '', 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V', 'mtl.montelibero.org', '45\xa0500', '1', '', 'https://t.me/eurmtl_club', '', '', 'TRUE', 'https://eurmtl.me/asset/EURMTL']
+        # code	name	descr	status	stellar	issuer	domain	MTL-fund	e-rate	b-rate	chat	contract	person	eurmtl.me
+
+
 if __name__ == "__main__":
     pass
     a = asyncio.run(gs_update_fest_menu())

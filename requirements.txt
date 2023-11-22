@@ -94,3 +94,4 @@ sqlalchemy-firebird>=2
 openai~=0.27.8
 pydantic-settings
 gspread-asyncio
+sentry-sdk
