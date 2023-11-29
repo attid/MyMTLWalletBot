@@ -100,7 +100,8 @@ async def thoth_check_order(invoice_id):
         'Content-Type': 'application/json',
         "Authorization": config.thothpay_api.get_secret_value()
     }
-    status, data = await get_web_request('POST', url=url, headers=headers)
+    status, data = await get_web_request('GET', url=url, headers=headers)
+    print(status, data)
     if status == 200:
         if data.get('state') and isinstance(data.get('state'), dict) and 'Finished' in data.get('state'):
             return True, int(data['items'][0]['amount'])
@@ -110,4 +111,4 @@ async def thoth_check_order(invoice_id):
 if __name__ == "__main__":
     # asyncio.run(thoth_create_order(1, 1000))
     # https://thothpay.com/invoice?id=ab8b5c3f-a888-4a28-9004-a5f9f668df60
-    print(asyncio.run(thoth_check_order('5d13769f-3102-4ca5-a4ea-06101d1c473f')))
+    print(asyncio.run(thoth_check_order('bdafb9fb-c7c0-4091-83d7-e01886039993')))
