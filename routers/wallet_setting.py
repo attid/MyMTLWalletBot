@@ -255,7 +255,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 
     try:
         if asset_issuer == '0':
-            public_key = gs_get_asset(asset_code)
+            public_key = await gs_get_asset(asset_code)
         else:
             public_key, user_id = db_get_user_account_by_username(session, '@' + asset_issuer)
         if public_key is None:
