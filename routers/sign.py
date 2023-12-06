@@ -11,7 +11,7 @@ from db.requests import db_reset_balance, db_get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery, long_line, \
-    get_web_request
+    get_web_request, clear_last_message_id
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
                                  async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri)
@@ -268,7 +268,7 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
         xdr = await stellar_check_xdr(check_xdr)
         if xdr:
             await state.update_data(xdr=xdr)
-            if check_xdr.find('mtl.ergvein.net/view') > -1 or check_xdr.find('eurmtl.me/sign_tools') > -1:
+            if check_xdr.find('eurmtl.me/sign_tools') > -1:
                 await state.update_data(tools=check_xdr, operation='sign_tools')
             await state.set_state(PinState.sign)
             await cmd_ask_pin(session, user_id, state)
@@ -377,3 +377,22 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: 
         data = await state.get_data()
         data[xdr] = xdr
         await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}", resend_transaction=True)
+
+
+@router.callback_query(F.data == "Decode")
+async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    data = await state.get_data()
+    xdr = data.get('xdr')
+
+    status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
+    if status == 200:
+        msg = response_json['text']
+    else:
+        msg = "Ошибка запроса"
+
+    msg = msg.replace("<br>", "\n")
+    msg = msg.replace("&nbsp;", "\u00A0")
+    #await callback.message.answer(msg)
+    #await clear_last_message_id(callback.from_user.id)
+    #await cmd_check_xdr(session, xdr, callback.from_user.id, state)
+    await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True)

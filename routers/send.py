@@ -240,9 +240,9 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
                             Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo,
                             cancel_offers=cancel_offers)
 
-    await state.update_data(xdr=xdr, operation='send', success_msg=my_gettext(message, 'confirm_send_success',
-                                                                              (float2str(send_sum), send_asset_name,
-                                                                               send_address, send_memo)))
+    await state.update_data(xdr=xdr, operation='send', msg=None,
+                            success_msg=my_gettext(message, 'confirm_send_success',
+                                                   (float2str(send_sum), send_asset_name, send_address, send_memo)))
 
     add_button_memo = federal_memo is None
     await send_message(session, message, msg,

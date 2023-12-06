@@ -167,7 +167,7 @@ async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session:
 
     data = await state.get_data()
     if receive_sum > 0.0:
-        await state.update_data(receive_sum=receive_sum)
+        await state.update_data(receive_sum=receive_sum, msg=None)
         await state.set_state(None)
 
         await cmd_xdr_order(session, message, state)
@@ -202,7 +202,7 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext):
         msg = my_gettext(message, 'delete_sale', (send_sum, send_asset, receive_sum, receive_asset))
     else:
         msg = my_gettext(message, 'confirm_sale', (send_sum, send_asset, receive_sum, receive_asset))
-    await state.update_data(xdr=xdr, operation='trade')
+    await state.update_data(xdr=xdr, operation='trade', msg=None)
     await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
 
 
@@ -318,7 +318,8 @@ async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: 
     if send_sum > 0.0:
         receive_sum = data.get('receive_sum', 1)
         old_sum = data.get('send_sum', 1)
-        await state.update_data(send_sum=send_sum, receive_sum=float(receive_sum) * float(send_sum) / float(old_sum))
+        await state.update_data(send_sum=send_sum, receive_sum=float(receive_sum) * float(send_sum) / float(old_sum),
+                                msg=None)
 
         await state.set_state(None)
 
@@ -378,7 +379,7 @@ async def cmd_edit_sale_cost(message: types.Message, state: FSMContext, session:
 
     data = await state.get_data()
     if receive_sum > 0.0:
-        await state.update_data(receive_sum=receive_sum)
+        await state.update_data(receive_sum=receive_sum, msg=None)
 
         await state.set_state(None)
 

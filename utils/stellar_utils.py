@@ -21,7 +21,6 @@ base_fee = config.base_fee
 
 new_wallet_lock = CountingLock()
 
-
 # https://stellar-sdk.readthedocs.io/en/latest/
 
 public_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
@@ -745,6 +744,24 @@ def find_stellar_federation_address(text):
     stellar_federation_address_pattern = r'[a-z0-9]+[\._]?[a-z0-9]+[*][a-z0-9\-]+[\.][a-z0-9\.]+'
     match = re.search(stellar_federation_address_pattern, text)
     return match.group(0) if match else None
+
+
+def extract_url(msg, surl='eurmtl.me'):
+    try:
+        if surl:
+            pattern = f"https?://{surl}[^\s]+"
+        else:
+            pattern = "https?://[^\s]+"
+
+        search_result = re.search(pattern, msg)
+
+        if search_result:
+            return search_result.group(0)  # Извлекаем URL
+        else:
+            return None  # URL не найден
+    except Exception as e:
+        print(f"Ошибка при извлечении URL: {e}")
+        return None
 
 
 def xdr_to_uri(xdr: str) -> str:

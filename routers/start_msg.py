@@ -7,6 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
+
+from db.requests import db_get_default_address
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
 from utils.aiogram_utils import send_message, bot, clear_state, dp
 from utils.common_utils import get_user_id
@@ -143,11 +145,24 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
 
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'setting_msg')
+    default_address = db_get_default_address(session, user_id)
     buttons = []
     wallets = db_get_wallets_list(session, user_id)
     for wallet in wallets:
         active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
-        buttons.append([types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]}",
+        if wallet.free_wallet == 1:
+            info_text = '(free)'
+        elif wallet.use_pin == 1:
+            info_text = '(pin)'
+        elif wallet.use_pin == 2:
+            info_text = '(pass)'
+        elif wallet.use_pin == 10:
+            info_text = '(r/o)'
+        else:
+            info_text = '(0_0)'
+        if default_address == wallet.public_key:
+            info_text += '📩'
+        buttons.append([types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]} {info_text}",
                                                    callback_data=WalletSettingCallbackData(action='NAME',
                                                                                            idx=wallet.id).pack()),
                         types.InlineKeyboardButton(text=f"{active_name}",
