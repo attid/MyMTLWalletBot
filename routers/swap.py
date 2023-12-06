@@ -195,7 +195,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         if cancel_offers:
             msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,))
 
-        await state.update_data(xdr=xdr, operation='swap')
+        await state.update_data(xdr=xdr, operation='swap', msg=None)
         await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
         await message.delete()
     else:

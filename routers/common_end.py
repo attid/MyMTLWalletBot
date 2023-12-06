@@ -7,8 +7,11 @@ from sqlalchemy.orm import Session
 
 from db.requests import db_get_user_account_by_username
 from routers.send import cmd_send_04, cmd_send_choose_token
+from routers.sign import cmd_check_xdr
+from utils.aiogram_utils import clear_last_message_id
 from utils.gpt import gpt_check_message
-from utils.stellar_utils import find_stellar_public_key, find_stellar_federation_address, stellar_check_account
+from utils.stellar_utils import find_stellar_public_key, find_stellar_federation_address, stellar_check_account, \
+    extract_url
 
 router = Router()
 
@@ -17,6 +20,13 @@ router = Router()
 async def cmd_last_route(message: types.Message, state: FSMContext, session: Session):
     if message.chat.type != "private":
         return
+
+    if message.text.find('eurmtl.me/sign_tools') > 0:
+        await clear_last_message_id(message.from_user.id)
+        await cmd_check_xdr(session=session, check_xdr=extract_url(message.text),
+                            user_id=message.from_user.id, state=state)
+        return
+
     # if forwarded
     if message.forward_sender_name or message.forward_from:
         public_key = None

@@ -109,6 +109,7 @@ async def thoth_check_order(invoice_id):
 
 
 if __name__ == "__main__":
-    # asyncio.run(thoth_create_order(1, 1000))
+    print(asyncio.run(thoth_create_order(1, 1000)))
+
     # https://thothpay.com/invoice?id=ab8b5c3f-a888-4a28-9004-a5f9f668df60
     print(asyncio.run(thoth_check_order('bdafb9fb-c7c0-4091-83d7-e01886039993')))

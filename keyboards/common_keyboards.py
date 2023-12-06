@@ -58,6 +58,8 @@ def get_kb_send(user_id: int, with_tools: bool = False) -> types.InlineKeyboardM
     if with_tools:
         buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tools'),
                                                    callback_data="SendTools")])
+    buttons.append([types.InlineKeyboardButton(text='Decode',
+                                               callback_data="Decode")])
     buttons.append(get_return_button(user_id))
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
