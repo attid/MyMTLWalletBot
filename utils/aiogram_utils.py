@@ -84,6 +84,10 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
     data = await state.get_data()
     tools = data.get('tools')
 
+    if not use_send:
+        await get_web_request('POST', url="https://vault.lobstr.co/api/transactions/",
+                              json={"xdr": xdr_uri})
+
     if use_send:
         kb = get_kb_send(chat_id)
         if tools:

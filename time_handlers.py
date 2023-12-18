@@ -72,13 +72,16 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
 
         for record in records:
             try:
+                if record.code1 == 'XLM' and float(record.amount1) < 0.0001:
+                    continue
+
                 fsm_storage_key = StorageKey(bot_id=bot.id, user_id=record.user_id, chat_id=record.user_id)
                 await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
                 await cmd_info_message(session, record.user_id, decode_db_effect(record))
                 await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             except TelegramBadRequest as ex:
                 if str(ex).find('Bad Request: chat not found') > 0:
-                # if ex.message == 'Telegram server says - Bad Request: chat not found':
+                    # if ex.message == 'Telegram server says - Bad Request: chat not found':
                     db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
                     logger.info(['cmd_send_message_events', record.id, 'wallet was deleted'])
                 else:

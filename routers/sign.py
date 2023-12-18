@@ -10,8 +10,9 @@ from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from db.requests import db_reset_balance, db_get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import my_gettext, send_message, cmd_show_sign, StateSign, log_queue, LogQuery, long_line, \
-    get_web_request, clear_last_message_id
+from utils.aiogram_utils import (my_gettext, send_message, cmd_show_sign,
+                                 StateSign, log_queue, LogQuery, long_line,
+                                 get_web_request, clear_last_message_id)
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
                                  async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri)
@@ -392,7 +393,7 @@ async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, sessi
 
     msg = msg.replace("<br>", "\n")
     msg = msg.replace("&nbsp;", "\u00A0")
-    #await callback.message.answer(msg)
-    #await clear_last_message_id(callback.from_user.id)
-    #await cmd_check_xdr(session, xdr, callback.from_user.id, state)
+    # await callback.message.answer(msg)
+    # await clear_last_message_id(callback.from_user.id)
+    # await cmd_check_xdr(session, xdr, callback.from_user.id, state)
     await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True)

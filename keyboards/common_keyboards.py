@@ -5,7 +5,8 @@ from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 
 
-def get_return_button(user_id_or_lang: Union[types.CallbackQuery, types.Message, int, str], text=None, callback=None) -> list:
+def get_return_button(user_id_or_lang: Union[types.CallbackQuery, types.Message, int, str], text=None,
+                      callback=None) -> list:
     if text is None:
         text = my_gettext(user_id_or_lang, 'kb_back')
 
@@ -15,10 +16,14 @@ def get_return_button(user_id_or_lang: Union[types.CallbackQuery, types.Message,
     return [types.InlineKeyboardButton(text=text, callback_data=callback)]
 
 
-def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
+def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int],
+                  add_buttons=None) -> types.InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
-    buttons = [get_return_button(user_id)]
+    if add_buttons:
+        buttons = [add_buttons, get_return_button(user_id)]
+    else:
+        buttons = [get_return_button(user_id)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 

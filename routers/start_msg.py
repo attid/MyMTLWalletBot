@@ -1,7 +1,9 @@
+from contextlib import suppress
 from typing import Union
 
 import jsonpickle
 from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
@@ -10,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from db.requests import db_get_default_address
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
-from utils.aiogram_utils import send_message, bot, clear_state, dp
+from utils.aiogram_utils import send_message, bot, clear_state, dp, clear_last_message_id
 from utils.common_utils import get_user_id
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, \
@@ -123,14 +125,16 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
 
     if send_file:
         photo = types.FSInputFile(send_file)
-        await bot.send_photo(user_id, photo=photo, caption=msg, reply_markup=get_kb_return(user_id))
+        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_asset'),
+                                                  callback_data="AddAssetMenu")]
+        await bot.send_photo(user_id, photo=photo, caption=msg,
+                             reply_markup=get_kb_return(user_id, add_buttons))
         fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
         data = await dp.storage.get_data(key=fsm_storage_key)
-        try:
+        with suppress(TelegramBadRequest):
             await bot.delete_message(user_id, data.get('last_message_id', 0))
-        except:
-            pass
-        await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+        await clear_last_message_id(user_id)
+
     elif resend_transaction:
         await send_message(session, user_id, msg, reply_markup=get_kb_resend(user_id))
     else:
@@ -162,16 +166,17 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
             info_text = '(0_0)'
         if default_address == wallet.public_key:
             info_text += '📩'
-        buttons.append([types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]} {info_text}",
-                                                   callback_data=WalletSettingCallbackData(action='NAME',
-                                                                                           idx=wallet.id).pack()),
-                        types.InlineKeyboardButton(text=f"{active_name}",
-                                                   callback_data=WalletSettingCallbackData(action='SET_ACTIVE',
-                                                                                           idx=wallet.id).pack()),
-                        types.InlineKeyboardButton(text=f"Delete",
-                                                   callback_data=WalletSettingCallbackData(action='DELETE',
-                                                                                           idx=wallet.id).pack())
-                        ])
+        buttons.append(
+            [types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]} {info_text}",
+                                        callback_data=WalletSettingCallbackData(action='NAME',
+                                                                                idx=wallet.id).pack()),
+             types.InlineKeyboardButton(text=f"{active_name}",
+                                        callback_data=WalletSettingCallbackData(action='SET_ACTIVE',
+                                                                                idx=wallet.id).pack()),
+             types.InlineKeyboardButton(text=f"Delete",
+                                        callback_data=WalletSettingCallbackData(action='DELETE',
+                                                                                idx=wallet.id).pack())
+             ])
     buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_new'), callback_data="AddNew")])
     buttons.append(get_return_button(user_id))
 

@@ -34,6 +34,7 @@ class MyMtlWalletBot(Base):
     user_id = Column(BigInteger, nullable=False)
     public_key = Column(String(60))
     secret_key = Column(String(160))
+    seed_key = Column(String(400))
     credit = Column(Integer)
     last_use_day = Column(DateTime)
     use_pin = Column(SmallInteger, default=0)

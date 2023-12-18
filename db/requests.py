@@ -148,7 +148,8 @@ def db_add_user_if_not_exists(session: Session, user_id: int, user_name: str):
         session.commit()
 
 
-def db_add_wallet(session: Session, user_id: int, public_key, secret_key: str, i_free_wallet: int):
+def db_add_wallet(session: Session, user_id: int, public_key, secret_key: str, i_free_wallet: int,
+                  seed_key: str = None):
     # Get the maximum `last_event_id`
     last_event_id = session.query(func.max(MyMtlWalletBot.last_event_id)).scalar()
 
@@ -157,6 +158,7 @@ def db_add_wallet(session: Session, user_id: int, public_key, secret_key: str, i
         user_id=user_id,
         public_key=public_key,
         secret_key=secret_key,
+        seed_key=seed_key,
         credit=5,
         default_wallet=0,
         free_wallet=i_free_wallet,
