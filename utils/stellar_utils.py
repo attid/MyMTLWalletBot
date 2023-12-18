@@ -159,7 +159,7 @@ async def async_stellar_check_fee() -> str:
 
 
 def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key: str, free_wallet: bool,
-                     address: str = None):
+                     address: str = None, mnemonic_phrase: str = None):
     if user_name:
         user_name = user_name.lower()
 
@@ -170,9 +170,10 @@ def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key:
         new_account = Keypair.from_secret(secret_key)
         public_key = new_account.public_key
     i_free_wallet = 1 if free_wallet else 0
+    seed_key = None if mnemonic_phrase is None else encrypt(mnemonic_phrase, new_account.secret)
     db_add_user_if_not_exists(session, user_id, user_name)
 
-    db_add_wallet(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet)
+    db_add_wallet(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet, seed_key)
 
     return public_key
 
@@ -193,8 +194,9 @@ def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: 
 
 
 async def stellar_create_new(session: Session, user_id: int, username: str):
-    new_account = Keypair.random()
-    stellar_save_new(session, user_id, username, new_account.secret, True)
+    mnemonic_phrase = Keypair.generate_mnemonic_phrase()
+    new_account = Keypair.from_mnemonic_phrase(mnemonic_phrase)
+    stellar_save_new(session, user_id, username, new_account.secret, free_wallet=True, mnemonic_phrase=mnemonic_phrase)
 
     master = stellar_get_master(session)
     xdr = await stellar_pay(master.public_key, new_account.public_key, xlm_asset, 5, create=True, fee=1001001)
@@ -857,8 +859,17 @@ async def stellar_get_multi_sign_xdr(public_key) -> str:
 
 if __name__ == "__main__":
     pass
-    a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
-    print(a)
+    # a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
+    # print(a)
+    # 191 SDUZWHTMCWTQY52ZMYX4O2JXF7RLA2XTIXAKV5GB226PQBZGL6SU4HJG V/CaovjMubo/C3TAc9CDP3NbMPq901vJaMGFhZYJl+VYQsKiIoj0K86jKQZjwdlPvRsFHl3wD63Lk/e42mNpLn7UXyJCiFFNvP1OA6x91Xa+Q2J1eQ==*RpzNPDHBLiqXCELksjmO9w==*xiyHoBVHzm3pU7LpY0JM3w==*Gd0RBJHVXLSUAUm1xBwgrw==
+    print(decrypt(
+        'V/CaovjMubo/C3TAc9CDP3NbMPq901vJaMGFhZYJl+VYQsKiIoj0K86jKQZjwdlPvRsFHl3wD63Lk/e42mNpLn7UXyJCiFFNvP1OA6x91Xa+Q2J1eQ==*RpzNPDHBLiqXCELksjmO9w==*xiyHoBVHzm3pU7LpY0JM3w==*Gd0RBJHVXLSUAUm1xBwgrw==',
+        'SDUZWHTMCWTQY52ZMYX4O2JXF7RLA2XTIXAKV5GB226PQBZGL6SU4HJG'))
+    # for i in range(100):
+    #     mnemonic_phrase = Keypair.generate_mnemonic_phrase()
+    #     k = Keypair.from_mnemonic_phrase(mnemonic_phrase)
+    #     s = encrypt(mnemonic_phrase, k.secret)
+    #     print(len(s), k.secret, s)
 
 #    from db.quik_pool import quik_pool
 #    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
