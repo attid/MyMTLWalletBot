@@ -497,6 +497,13 @@ async def stellar_get_offers(session: Session, user_id: int, public_key=None) ->
         offers = MyOffers.from_dict(await server.offers().for_seller(
             user_account.account.account_id).limit(90).call())
 
+
+        for offer in offers.embedded.records:
+            if offer.selling.asset_type == "native":
+                offer.selling.asset_code = "XLM"
+            if offer.buying.asset_type == "native":
+                offer.buying.asset_code = "XLM"
+
         return offers.embedded.records
 
 
@@ -861,15 +868,5 @@ if __name__ == "__main__":
     pass
     # a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     # print(a)
-    # 191 SDUZWHTMCWTQY52ZMYX4O2JXF7RLA2XTIXAKV5GB226PQBZGL6SU4HJG V/CaovjMubo/C3TAc9CDP3NbMPq901vJaMGFhZYJl+VYQsKiIoj0K86jKQZjwdlPvRsFHl3wD63Lk/e42mNpLn7UXyJCiFFNvP1OA6x91Xa+Q2J1eQ==*RpzNPDHBLiqXCELksjmO9w==*xiyHoBVHzm3pU7LpY0JM3w==*Gd0RBJHVXLSUAUm1xBwgrw==
-    print(decrypt(
-        'V/CaovjMubo/C3TAc9CDP3NbMPq901vJaMGFhZYJl+VYQsKiIoj0K86jKQZjwdlPvRsFHl3wD63Lk/e42mNpLn7UXyJCiFFNvP1OA6x91Xa+Q2J1eQ==*RpzNPDHBLiqXCELksjmO9w==*xiyHoBVHzm3pU7LpY0JM3w==*Gd0RBJHVXLSUAUm1xBwgrw==',
-        'SDUZWHTMCWTQY52ZMYX4O2JXF7RLA2XTIXAKV5GB226PQBZGL6SU4HJG'))
-    # for i in range(100):
-    #     mnemonic_phrase = Keypair.generate_mnemonic_phrase()
-    #     k = Keypair.from_mnemonic_phrase(mnemonic_phrase)
-    #     s = encrypt(mnemonic_phrase, k.secret)
-    #     print(len(s), k.secret, s)
-
 #    from db.quik_pool import quik_pool
 #    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
