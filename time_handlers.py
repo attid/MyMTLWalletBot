@@ -1,5 +1,4 @@
 from datetime import timedelta, datetime
-
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
@@ -7,7 +6,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 from sqlalchemy import and_
 from sqlalchemy.orm import sessionmaker
-
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages
 from db.requests import db_delete_wallet
 from routers.start_msg import cmd_info_message
@@ -73,12 +71,12 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
         for record in records:
             try:
                 if record.code1 == 'XLM' and float(record.amount1) < 0.0001:
-                    continue
-
-                fsm_storage_key = StorageKey(bot_id=bot.id, user_id=record.user_id, chat_id=record.user_id)
-                await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
-                await cmd_info_message(session, record.user_id, decode_db_effect(record))
-                await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+                    pass
+                else:
+                    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=record.user_id, chat_id=record.user_id)
+                    await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+                    await cmd_info_message(session, record.user_id, decode_db_effect(record))
+                    await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             except TelegramBadRequest as ex:
                 if str(ex).find('Bad Request: chat not found') > 0:
                     # if ex.message == 'Telegram server says - Bad Request: chat not found':
