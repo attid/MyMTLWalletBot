@@ -7,7 +7,7 @@
   "bad_sum": "Nije moguće prepoznati iznos",
   "bad_xdr": "Nije moguće učitati transakciju \n \n {} \n ",
   "big_xdr": "xdr se ne uklapa u poruku. možete samo poslati",
-  "change_lang": "Prebacite jezik",
+  "change_lang": "Prebacite jezik (lang)",
   "check_here": "Čini se da je sve uspješno, možete da provjerite ovdje - {}",
   "choose_protect": "Odaberite opcije za zaštitu ključa! \n \n PIN numerička tastatura će biti prikazana za svaku operaciju (preporučeno) \n \n Šifra. Uskoro ćete moći unijeti lozinku koja se sastoji od bilo kojeg slova i brojeva (funkcija je trenutno u razvoju) \n \n Bez šifre. Uskoro šifra neće biti potrebna. \n \n ",
   "choose_token": "Odaberite token za slanje na adresu \n {} \n If Ako na listi nema tokena, onda strana koja prima nema otvorenu liniju povjerenja za ovaj token.",
