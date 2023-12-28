@@ -79,7 +79,8 @@ async def send_message(session: Session, user_id: Union[types.CallbackQuery, typ
         await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
 
 
-async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None):
+async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,
+                        parse_mode='HTML'):
     # msg = msg + my_gettext(chat_id, 'send_xdr')
     data = await state.get_data()
     tools = data.get('tools')
@@ -106,9 +107,9 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
 
     if len(msg) > 4000:
         await send_message(session, chat_id, my_gettext(chat_id, 'big_xdr'), reply_markup=kb,
-                           parse_mode='HTML')
+                           parse_mode=parse_mode)
     else:
-        await send_message(session, chat_id, msg, reply_markup=kb, parse_mode='HTML')
+        await send_message(session, chat_id, msg, reply_markup=kb, parse_mode=parse_mode)
 
 
 async def check_username(user_id: int) -> str:

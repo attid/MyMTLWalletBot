@@ -96,3 +96,4 @@ pydantic-settings==2.1.0
 gspread-asyncio
 sentry-sdk==1.39.1
 qrcode~=7.4.2
+sulguk~=0.6.0
