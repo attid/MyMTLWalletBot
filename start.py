@@ -7,6 +7,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sulguk import AiogramSulgukMiddleware
 
 import time_handlers
 from config_reader import config
@@ -34,6 +35,7 @@ task_list = []
 @logger.catch
 async def main_bot(db_pool: sessionmaker):
     logger.add("MMWB.log", rotation="1 MB", level='INFO')
+    bot.session.middleware(AiogramSulgukMiddleware())
     dp.callback_query.middleware(LogButtonClickCallbackMiddleware())
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool))
     dp.message.middleware(DbSessionMiddleware(db_pool))

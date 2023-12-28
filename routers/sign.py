@@ -7,6 +7,8 @@ from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
+from sulguk import SULGUK_PARSE_MODE
+
 from db.requests import db_reset_balance, db_get_default_wallet
 from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
@@ -391,9 +393,5 @@ async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, sessi
     else:
         msg = "Ошибка запроса"
 
-    msg = msg.replace("<br>", "\n")
-    msg = msg.replace("&nbsp;", "\u00A0")
-    # await callback.message.answer(msg)
-    # await clear_last_message_id(callback.from_user.id)
-    # await cmd_check_xdr(session, xdr, callback.from_user.id, state)
-    await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True)
+    # msg = msg.replace("&nbsp;", "\u00A0")
+    await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True, parse_mode=SULGUK_PARSE_MODE)
