@@ -160,14 +160,12 @@
   "send_invoice_buy_resend": "Your invoice {} for an amount of {} EURMTL (0 means you can choose) for {} recipient(s), for purchasing tokens {} \n\n with a comment \"{}\" \n\n you can send the link to this cheque {} \n\n or press the \"Send\" button to send in a convenient format",
   "inline_invoice_buy": "Invoice for purchase {}, \n\n {}",
   "kb_get_invoice_buy": "Buy",
-
   "confirm_swap": " \n Do you want to exchange \n\n {} {} -> {} {} ? \n\n Attention, the operation is carried out on a decentralized exchange. Execution of this operation cannot be canceled. Make sure all the figures are correct!",
   "confirm_cancel_offers": "\nThis operation will also cancel all sale offers for {}",
   "confirm_send": " \n You want to send \n{} <b>{}</b> \nto the address \n{} \nwith memo : {}",
   "swap_summ_blocked_by_offers": "<b>Attention!</b> You have offers that affect the token you have chosen to exchange. The blocked amount is {} {}.\n You can cancel offers by using the button below. ",
   "kb_cancel_offers": "{} Cancel all {} Sell offers",
   "send_summ_blocked_by_offers": "<b>Attention!</b> You have offers that affect the token you have chosen to send. The blocked amount is {} {}.\n You can cancel offers by using the button below. ",
-
   "kb_show_less": "Show less",
   "kb_show_more": "Show more",
   "kb_set_limit": "Adjust limits",
@@ -179,5 +177,9 @@
   "kb_mtlap_tools": "MTL Association Tools",
   "your_xdr": "Your transaction for sign:\n\n<code>{}</code>\n\n",
   "low_xlm": "You have less than 0.5 free XLM",
-  "kb_tools_update_multi": "Update MultiSign"
+  "kb_tools_update_multi": "Update MultiSign",
+  "delegate_ready": "\nIf you want to be on the Council send <code>ready</code>",
+  "kb_mtlap_assembly": "Delegate vote to the Assembly",
+  "kb_mtlap_council": "Delegate vote to Council",
+  "mtlap_tools_text": "The Assembly is the supreme body of the Association that makes decisions through liquid democracy and manages key aspects of operations.\n\nThe Council is the executive body that implements the decisions of the Meeting and manages administrative functions. For example managing the multi-signature."
 }
