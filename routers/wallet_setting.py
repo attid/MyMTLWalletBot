@@ -7,7 +7,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from requests import Session
 from stellar_sdk import Asset
+from sulguk import SULGUK_PARSE_MODE
 
+from config_reader import config
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
     db_insert_into_address_book, \
     db_get_default_wallet, db_get_user_account_by_username
@@ -16,7 +18,7 @@ from mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, my_gettext, admin_id, clear_state
+from utils.aiogram_utils import send_message, my_gettext, admin_id, clear_state, get_web_request, get_web_decoded_xdr
 from loguru import logger
 
 from utils.gspread_utils import gs_get_asset
@@ -33,6 +35,10 @@ class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
 
 class AddAssetCallbackData(CallbackData, prefix="AddAssetCallbackData"):
     answer: str
+
+
+class MDCallbackData(CallbackData, prefix="MDCallbackData"):
+    uuid_callback: str
 
 
 class AddressBookCallbackData(CallbackData, prefix="AddressBookCallbackData"):
@@ -58,6 +64,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_asset'), callback_data="AddAssetMenu")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_address_book'), callback_data="AddressBook")],
+        [types.InlineKeyboardButton(text='Manage Data', callback_data="ManageData")],
         # [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy'), callback_data="BuyAddress")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key'), callback_data="GetPrivateKey")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_password'), callback_data="SetPassword")],
@@ -65,7 +72,8 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_default'), callback_data="SetDefault")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_limit'), callback_data="SetLimit")],
-        [types.InlineKeyboardButton(text='🌐 ' + my_gettext(callback, 'change_lang'), callback_data="ChangeLang")], #last button
+        [types.InlineKeyboardButton(text='🌐 ' + my_gettext(callback, 'change_lang'), callback_data="ChangeLang")],
+        # last button
         get_return_button(callback)
     ]
 
@@ -456,3 +464,56 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCa
         await cmd_edit_address_book(session, user_id)
 
     await callback.answer()
+
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+
+@router.callback_query(F.data == "ManageData")
+async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
+    buttons = [
+        [types.InlineKeyboardButton(text='Manage Data',
+                                    web_app=types.WebAppInfo(url=f'https://eurmtl.me/ManageData'
+                                                                 f'?user_id={callback.from_user.id}'
+                                                                 f'&message_id={callback.message.message_id}'
+                                                                 f'&account_id={account_id}'))],
+        [types.InlineKeyboardButton(text='Return', callback_data="Return")]
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    await send_message(session, callback, "There you can manage your data:", reply_markup=keyboard)
+
+
+@router.callback_query(MDCallbackData.filter())
+async def cq_add_asset(callback: types.CallbackQuery, callback_data: MDCallbackData,
+                       state: FSMContext, session: Session):
+    uuid_callback = callback_data.uuid_callback
+    data = await state.get_data()
+
+    headers = {
+        "Authorization": f"Bearer {config.eurmtl_key}",
+        "Content-Type": "application/json"
+    }
+    json = {
+        "uuid": uuid_callback,
+        "user_id": callback.from_user.id
+    }
+    status, json_data = await get_web_request('POST', url=f"https://eurmtl.me/remote/get_mmwb_transaction",
+                                              headers=headers, json=json, return_type='json')
+
+    if json_data is not None:
+        if 'message' in json_data:
+            await callback.answer(json_data['message'], show_alert=True)
+            return
+        xdr = json_data['xdr']
+        await state.update_data(xdr=xdr)
+        msg = await get_web_decoded_xdr(xdr)
+        await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback),
+                           parse_mode=SULGUK_PARSE_MODE)
+    else:
+        await callback.answer("Error getting data", show_alert=True)
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################

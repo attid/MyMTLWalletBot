@@ -7,6 +7,7 @@ from tronpy.keys import PrivateKey, is_address
 from tronpy.providers import HTTPProvider, AsyncHTTPProvider
 from config_reader import config
 from utils.aiogram_utils import get_web_request
+from tronpy.keys import to_hex_address
 
 # api_key from https://www.trongrid.io
 api_key = config.tron_api_key.get_secret_value()
@@ -14,6 +15,7 @@ tron_master_address = config.tron_master_address
 tron_master_key = config.tron_master_key.get_secret_value()
 usdt_contract = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 usdt_hex_contract = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c'
+transfer_contract = 'TEZ8rh3z7Hxbx6HjS3KzEQQ8wNxHT4sLLJ'
 
 
 def create_trc_private_key():
@@ -294,11 +296,279 @@ def tron_help():
     # asyncio.run(send_usdt_async(public_key_to='TNsfWkRay3SczwkB4wqyB8sCPTzCNQo4Cb', amount=520, private_key_from='*'))
 
 
+async def estimate_usdt_transfer_fee0(public_key_from, amount):
+    """
+    Оценивает стоимость отправки определённого количества USDT.
+    :param public_key_from: Публичный ключ отправителя.
+    :param amount: Количество USDT для отправки.
+    :return: Оценочная стоимость отправки в TRX.
+    """
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        contract = await client.get_contract(usdt_contract)
+
+        txb = await contract.functions.transfer(
+            public_key_from,
+            int(amount * 10 ** 6)
+        )
+
+        txb_with_owner = txb.with_owner(public_key_from).fee_limit(100_000_000)
+
+        estimated_fee = await client.trigger_constant_contract(txb_with_owner)
+        energy_used = estimated_fee["energy_used"]
+        total_fee_in_trx = energy_used / client.energy_price  # Конвертация использованной энергии в TRX
+
+        return total_fee_in_trx
+
+
+async def get_usdt_transfer_fee(from_address_base58, to_address_base58, amount):
+    # Преобразование адресов отправителя и получателя из Base58 в hex
+    from_address_hex = to_hex_address(from_address_base58)
+    to_address_hex = to_hex_address(to_address_base58)[2:]  # Прямое преобразование в hex без '0x' и '41'
+
+    # Преобразование суммы в наименьшие единицы и кодирование в hex с ведущими нулями до 32 байтов
+    amount_hex = format(amount * 10 ** 6, '064x')
+
+    # Соединение адреса и суммы в одну строку параметров
+    parameter = '0' * 24 + to_address_hex + amount_hex
+
+    url = "https://api.trongrid.io/wallet/triggerconstantcontract"
+
+    payload = {
+        "owner_address": from_address_hex,
+        "contract_address": to_hex_address(usdt_contract),
+        "function_selector": "transfer(address,uint256)",
+        "parameter": parameter,
+        "visible": False
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "TRON-PRO-API-KEY": api_key
+    }
+
+    # response = requests.post(url, json=payload, headers=headers)
+    status, response_json = await get_web_request("POST", url, headers=headers, json=payload,
+                                                  return_type='json')
+
+    if status != 200:
+        raise ValueError(f"Ошибка при запросе к API Tron: {status}")
+
+    # Вывод ответа API
+    # print(response.json())
+    energy_used = response_json['energy_used']
+    cost_per_energy_unit = await get_energy_fee()  # Стоимость за единицу энергии в SUN
+    total_cost_in_sun = energy_used * cost_per_energy_unit  # Общая стоимость в SUN
+    total_cost_in_trx = total_cost_in_sun / 1_000_000  # Конвертация в TRX
+    trc_cost = await get_tron_price_from_coingecko()
+    # print(f"Общая стоимость использованной энергии: {total_cost_in_trx} TRX ({total_cost_in_trx * trc_cost} USDT)")
+    return total_cost_in_trx*trc_cost
+
+
+def get_energy_fee_():
+    url = "https://api.trongrid.io/wallet/getchainparameters"
+    response = requests.get(url)
+    energy_fee = None
+    if response.status_code == 200:
+        for param in response.json().get("chainParameter", []):
+            if param.get("key") == "getEnergyFee":  # Это ключ может отличаться или отсутствовать
+                energy_fee = int(param.get("value"))
+                # print(f"Стоимость энергии: {energy_fee}")
+                break
+    return energy_fee
+
+async def get_energy_fee() -> int:
+  """
+  Получает текущую плату за энергию Tron (TRX) из TronGrid API.
+
+  Returns:
+      int: Плата за энергию Tron (TRX).
+  """
+  url = "https://api.trongrid.io/wallet/getchainparameters"
+  headers = {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "TRON-PRO-API-KEY": api_key
+  }
+
+  status, response_data = await get_web_request("GET", url, headers=headers, return_type='json')
+
+  if status != 200:
+    raise ValueError(f"Ошибка при запросе к API TronGrid: {status}")
+
+  energy_fee = None
+  for param in response_data.get("chainParameter", []):
+    if param.get("key") == "getEnergyFee":
+      energy_fee = int(param.get("value"))
+      break
+
+  if energy_fee is None:
+    raise ValueError("Не удалось найти параметр 'getEnergyFee' в ответе API")
+
+  return energy_fee
+
+
+def test4():
+    from tronpy import Tron
+    from tronpy.keys import PrivateKey
+
+    client = Tron(HTTPProvider(api_key=api_key))
+    contract = client.get_contract(usdt_contract)
+
+    # Построение транзакции без непосредственной отправки
+    txn = (
+        contract.functions.transfer('TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', 10 * 10 ** 6)
+        .with_owner(tron_master_address)
+        .fee_limit(20_000_000)
+        .build()
+    )
+
+    # Просмотр закодированных данных транзакции
+    print("Transaction data:", txn.to_json())
+
+    s = {'txID': '10ec1aedd7fbbaf98a51f003054d43c6331124ef3f5b324b3036d449d986b577', 'raw_data': {'contract': [{
+        'parameter': {
+            'value': {
+                'owner_address': '415e62c22aa70ba7530c8272ee34e4cbb23174fb0b',
+                'contract_address': '41a614f803b6fd780986a42c78ec9c7f77e6ded13c',
+                'data': 'a9059cbb00000000000000000000000098a9eeaafd78a1c6cbb7e7901ce7b5c1310d59f80000000000000000000000000000000000000000000000000000000000989680',
+                'call_token_value': 0,
+                'call_value': 0,
+                'token_id': 0},
+            'type_url': 'type.googleapis.com/protocol.TriggerSmartContract'},
+        'type': 'TriggerSmartContract'}],
+        'timestamp': 1708729524697,
+        'expiration': 1708729584697,
+        'ref_block_bytes': 'd583',
+        'ref_block_hash': 'a207774cf197fd07',
+        'fee_limit': 20000000},
+         'signature': [],
+         'permission': {'keys': [{'address': '415e62c22aa70ba7530c8272ee34e4cbb23174fb0b', 'weight': 1}],
+                        'threshold': 1, 'permission_name': 'owner'}}
+
+
+async def get_allowance(check_address):
+    """
+    Asynchronously gets the allowance for a specific address by interacting with the Tron blockchain.
+
+    Args:
+        check_address: The address for which the allowance needs to be checked (str)
+
+    Returns:
+        The allowance amount (int)
+    """
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        token_contract = await client.get_contract(usdt_contract)
+
+        allowance = await token_contract.functions.allowance(check_address, transfer_contract)
+        return allowance
+
+
+async def set_allowance(amount=None, private_key=None):
+    if amount:
+        amount = amount * 10 ** 6
+    else:
+        amount = 115792089237316195423570985008687907853269984665640564039457
+
+    private_key = PrivateKey(bytes.fromhex(private_key))
+    public_key = private_key.public_key.to_base58check_address()
+
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        token_contract = await client.get_contract(usdt_contract)
+
+        txb = await token_contract.functions.approve(transfer_contract, amount)
+        # print(txb, type(txb))
+        txb = txb.with_owner(public_key).fee_limit(20_000_000)
+        # txn = txn.sign(priv_key).inspect()
+        txn = await txb.build()
+        txn_ret = await txn.sign(private_key).broadcast()
+        print(txn_ret)
+        await txn_ret.wait()
+
+
+async def check_unconfirmed_usdt_transactions(public_key: str = None, private_key: str = None) -> bool:
+    """
+    Проверяет наличие неподтвержденных транзакций USDT.
+
+    Args:
+        public_key (str): Публичный ключ адреса.
+        private_key (str, optional): Приватный ключ (необязательно).
+
+    Returns:
+        bool: True, если есть неподтвержденные транзакции, False - если нет.
+    """
+
+    if private_key:
+        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    confirmed_url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
+                    f"only_confirmed=true&limit=100&contract_address={usdt_contract}"
+    unconfirmed_url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
+                      f"only_confirmed=false&limit=100&contract_address={usdt_contract}"
+
+    headers = {
+        "accept": "application/json",
+        "TRON-PRO-API-KEY": api_key
+    }
+
+    confirmed_status, confirmed_response_json = await get_web_request('GET', url=confirmed_url,
+                                                                      headers=headers, return_type='json')
+    unconfirmed_status, unconfirmed_response_json = await get_web_request('GET', url=unconfirmed_url,
+                                                                          headers=headers, return_type='json')
+
+    if confirmed_status != 200 or unconfirmed_status != 200:
+        raise ValueError("Ошибка при запросе к API TronGrid")
+
+    confirmed_transactions = confirmed_response_json["data"]
+    unconfirmed_transactions = unconfirmed_response_json["data"]
+
+    confirmed_tx_ids = set()
+    unconfirmed_tx_ids = set()
+
+    for txn in confirmed_transactions:
+        if "token_info" in txn and txn["token_info"]["address"] == usdt_contract:
+            confirmed_tx_ids.add(txn["transaction_id"])
+
+    for txn in unconfirmed_transactions:
+        if "token_info" in txn and txn["token_info"]["address"] == usdt_contract:
+            unconfirmed_tx_ids.add(txn["transaction_id"])
+
+    print(confirmed_tx_ids, '\n', unconfirmed_tx_ids)
+    return confirmed_tx_ids != unconfirmed_tx_ids
+
+
+async def get_tron_price_from_coingecko() -> float:
+    """
+    Получает текущую цену Tron (TRX) в долларах США (USD) с CoinGecko API.
+
+    Returns:
+        float: Цена Tron (TRX) в долларах США (USD).
+    """
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd"
+    headers = {"accept": "application/json"}
+
+    status, response_data = await get_web_request("GET", url, headers=headers, return_type='json')
+
+    if status != 200:
+        raise ValueError(f"Ошибка при запросе к API CoinGecko: {status}")
+
+    price_usd = response_data["tron"]["usd"]
+    return float(price_usd)
+
+
 if __name__ == "__main__":
-    tron_help()
+    pass
+    # Private test
+    # Key is df99b0d90e4b5a457516793924bd678efa1e0ac5a772b14be3cdc0c6969c9969
+    # Address is TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY
+
+    # asyncio.run(set_allowance(20, private_key='4064ec31de595c27ea1381d080151be23b1a0c9aa68ce6f82d63033dcbdd4231'))
+    # print(asyncio.run(get_allowance('TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ')))
+    print(asyncio.run(get_usdt_transfer_fee(tron_master_address, 'TV9NxnvRDMwtEoPPmqvk7kt3NDGZTMTNDd', 100)))
+    print(asyncio.run(get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 100)))
+    print(asyncio.run(get_usdt_transfer_fee(tron_master_address, 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', 100)))
     # my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
-    # TV9NxnvRDMwtEoPPmqvk7kt3NDGZTMTNDd
+    # private_key = PrivateKey(bytes.fromhex(tron_master_key))
+    # public_key_from = private_key.public_key.to_base58check_address()
     # print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
-    # print(asyncio.run(get_trx_balance(my_tron)))
-    # print(show_balance(my_tron))
+    # print(asyncio.run(estimate_usdt_transfer_fee(public_key_from, 500)))
     # print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))

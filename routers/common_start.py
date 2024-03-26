@@ -12,7 +12,7 @@ from db.requests import db_get_default_address, db_set_default_address, db_reset
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
-from routers.start_msg import cmd_show_balance, get_kb_default
+from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
 from utils.aiogram_utils import send_message, admin_id, clear_state
 from utils.lang_utils import my_gettext, check_user_id, check_user_lang
 from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
@@ -44,7 +44,8 @@ async def cmd_start_sign(message: types.Message, state: FSMContext, session: Ses
                         state)
 
 
-@router.message(Command(commands=["start"]))
+# @router.message(Command(commands=["start"]))
+@router.message(F.text.lower() == '/start', F.chat.type == 'private')
 async def cmd_start(message: types.Message, state: FSMContext, session: Session, bot: Bot):
     # logger.info([message.from_user.id, ' cmd_start'])
     await clear_state(state)
@@ -64,7 +65,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         )
 
 
-@router.callback_query(F.data=="Return")
+@router.callback_query(F.data == "Return")
 async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     try_sent_xdr = data.get('try_sent_xdr')
@@ -81,7 +82,7 @@ async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: S
     )
 
 
-@router.callback_query(F.data=="DeleteReturn")
+@router.callback_query(F.data == "DeleteReturn")
 async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, session: Session):
     try:
         await callback.message.delete()
@@ -136,7 +137,7 @@ async def cmd_donate(session: Session, user_id, state: FSMContext):
     await send_message(session, user_id, msg, reply_markup=get_kb_donate(user_id))
 
 
-@router.callback_query(F.data=="Donate")
+@router.callback_query(F.data == "Donate")
 async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_donate(session, callback.from_user.id, state)
     await callback.answer()
@@ -197,7 +198,7 @@ async def cmd_delete_all(message: types.Message, state: FSMContext, session: Ses
     await state.clear()
 
 
-@router.callback_query(F.data=="SetDefault")
+@router.callback_query(F.data == "SetDefault")
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(SettingState.send_default_address)
     msg = my_gettext(callback, 'set_default', (db_get_default_address(session, callback.from_user.id),))
@@ -205,8 +206,8 @@ async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, sessi
     await callback.answer()
 
 
-@router.callback_query(F.data=="SetLimit")
-@router.callback_query(F.data=="OffLimits")
+@router.callback_query(F.data == "SetLimit")
+@router.callback_query(F.data == "OffLimits")
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
     db_user = db_get_user(session, callback.from_user.id)
     if callback.data == 'OffLimits':
@@ -233,7 +234,7 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
     await message.delete()
 
 
-@router.callback_query(F.data=="Refresh")
+@router.callback_query(F.data == "Refresh")
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
     db_reset_balance(session, callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
@@ -256,7 +257,7 @@ async def check_update_username(session: Session, user_id: int, user_name: str, 
         await state.update_data(user_name=user_name)
 
 
-@router.callback_query(F.data=="ShowMoreToggle")
+@router.callback_query(F.data == "ShowMoreToggle")
 async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
     """
         Invert state of 'show_more' flag by clicking on button.
@@ -266,5 +267,6 @@ async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMConte
     await state.update_data(show_more=new_state)
 
     keyboard = await get_kb_default(session, callback.from_user.id, state)
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    await callback.message.edit_text(text=await get_start_text(session, state, callback.from_user.id),
+                                     reply_markup=keyboard, disable_web_page_preview=True)
     await callback.answer()

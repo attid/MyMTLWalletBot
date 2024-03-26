@@ -147,6 +147,7 @@ class MyMtlWalletBotUsers(Base):
     donate_sum = Column(Float, default=0, nullable=False)
     default_address = Column(String(60), default='', nullable=False)
     usdt = Column(String(64))
+    usdt_amount = Column(Integer, default=0)
     btc = Column(String(64))
     btc_date = Column(DateTime)
     can_5000 = Column(SmallInteger, default=0)

@@ -42,10 +42,10 @@ async def main_bot(db_pool: sessionmaker):
     dp.callback_query.middleware(DbSessionMiddleware(db_pool))
     dp.inline_query.middleware(DbSessionMiddleware(db_pool))
 
+    dp.include_router(common_start.router) # first # first
     dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
     dp.include_router(wallet_setting.router)  # first
-    dp.include_router(common_start.router)
 
     dp.include_router(fest.router)
     dp.include_router(sign.router)
@@ -63,11 +63,11 @@ async def main_bot(db_pool: sessionmaker):
     # always the last
     dp.include_router(common_end.router)
 
-    # if 'test' in sys.argv:
-    #    pass
-    # else:
-    scheduler.start()
-    time_handlers.scheduler_jobs(scheduler, db_pool, dp)
+    if 'test' in sys.argv:
+       pass
+    else:
+        scheduler.start()
+        time_handlers.scheduler_jobs(scheduler, db_pool, dp)
     global task_list
     task_list = [asyncio.create_task(cheque_worker(db_pool)),
                  asyncio.create_task(log_worker(db_pool)),
@@ -123,13 +123,14 @@ async def set_commands(bot: Bot):
     await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=admin_id))
 
 
+
 async def on_startup(bot: Bot):
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=admin_id, text='Bot started')
-    with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=helper_chat_id, text='Bot started')
-    fest.fest_menu = await gs_update_fest_menu()
+    # with suppress(TelegramBadRequest):
+    #     await bot.send_message(chat_id=helper_chat_id, text='Bot started')
+    # fest.fest_menu = await gs_update_fest_menu()
 
 
 async def on_shutdown(bot: Bot):

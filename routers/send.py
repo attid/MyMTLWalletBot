@@ -15,13 +15,14 @@ from stellar_sdk.sep.federation import resolve_stellar_address
 
 from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list,
                          db_get_user)
-from utils.aiogram_utils import my_gettext, send_message, bot, check_username
+from utils.aiogram_utils import my_gettext, send_message, bot, check_username, clear_state
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from mytypes import Balance
 from utils.common_utils import get_user_id
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
-    stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum
+    stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
+    cut_text_to_28_bytes
 
 
 class StateSendToken(StatesGroup):
@@ -48,6 +49,7 @@ def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int]) -> type
 
 async def cmd_send_start(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'send_address')
+    await clear_state(state)
     # keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True,
     #                                     keyboard=[[types.KeyboardButtonRequestUser()]])
     # await send_message(session,user_id, msg, reply_markup=keyboard)
@@ -113,12 +115,20 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
 async def cmd_send_choose_token(message: types.Message, state: FSMContext, session: Session):
     data = await state.get_data()
     address = data.get('send_address')
-    link = 'https://stellar.expert/explorer/public/account/' + address
-    link = f'<a href="{link}">{address}</a>'
 
-    msg = my_gettext(message, 'choose_token', (link,))
     asset_list = await stellar_get_balances(session, message.from_user.id)
     sender_asset_list = await stellar_get_balances(session, message.from_user.id, address)
+    mtlap_balance = [balance for balance in sender_asset_list if
+                    balance.asset_code == 'MTLAP' and balance.asset_issuer == 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA']
+    mtlap_amount = int(float(mtlap_balance[0].balance)) if mtlap_balance else 0
+    mtlap_stars = '⭐' * mtlap_amount
+    await state.update_data(mtlap_stars=mtlap_stars)
+
+    link = 'https://stellar.expert/explorer/public/account/' + address
+
+    link = f'<a href="{link}">{address}</a>{mtlap_stars}'
+    msg = my_gettext(message, 'choose_token', (link,))
+
     kb_tmp = []
     for token in asset_list:
         for sender_token in sender_asset_list:
@@ -225,12 +235,13 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     send_asset_name = data["send_asset_code"]
     send_asset_issuer = data["send_asset_issuer"]
     cancel_offers = data.get('cancel_offers', False)
+    mtlap_stars = data.get("mtlap_stars",'')
 
     # Add msg about cancelling offers to the confirmation request
     msg = my_gettext(
         message,
         'confirm_send',
-        (float2str(send_sum), send_asset_name, send_address, send_memo)
+        (float2str(send_sum), send_asset_name, send_address +' '+ mtlap_stars, send_memo)
     )
     if cancel_offers:
         msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,))
@@ -242,7 +253,7 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
 
     await state.update_data(xdr=xdr, operation='send', msg=None,
                             success_msg=my_gettext(message, 'confirm_send_success',
-                                                   (float2str(send_sum), send_asset_name, send_address, send_memo)))
+                                                   (float2str(send_sum), send_asset_name, send_address +' '+ mtlap_stars, send_memo)))
 
     add_button_memo = federal_memo is None
     await send_message(session, message, msg,
@@ -259,7 +270,7 @@ async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session
 
 @router.message(StateSendToken.sending_memo)
 async def cmd_send_memo(message: Message, state: FSMContext, session: Session):
-    send_memo = message.text[:28]
+    send_memo = cut_text_to_28_bytes(message.text)
 
     if len(send_memo) > 0:
         await state.update_data(memo=send_memo)

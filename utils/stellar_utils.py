@@ -80,7 +80,7 @@ async def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete
         transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     else:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             source_account = await server.load_account(user_key)
             transaction = TransactionBuilder(source_account=source_account,
@@ -105,23 +105,26 @@ def stellar_sign(xdr: str, private_key: str):
     return transaction.to_xdr()
 
 
-async def get_url_xdr(url):
-    status, response_text = await get_web_request('GET', url=url)
-    rq = response_text
-    rq = rq[rq.find('<span class="tx-body">') + 22:]
-    # logger.info(rq)
-    rq = rq[:rq.find('</span>')]
-    rq = rq.replace("&#x3D;", "=")
-    # logger.info(rq)
-    return rq
+async def get_eurmtl_xdr(url):
+    try:
+        url = 'https://eurmtl.me/remote/get_xdr/' + url.split('/')[-1]
+        status, response_json = await get_web_request('GET', url=url)
+
+        if 'xdr' in response_json:
+            return response_json['xdr']
+        else:
+            return 'Invalid response format: missing "xdr" field.'
+
+    except Exception as ex:
+        logger.info(['get_eurmtl_xdr', ex])
+        return 'An error occurred during the request.'
 
 
 async def stellar_check_xdr(xdr: str):
     result = None
-    # "https://mtl.ergvein.net/view?tid=7ec5e397140fadf0d384860a35d19cf9f60e00a49b3b2cc250b832076fab7e7f"
     try:
-        if xdr.find('mtl.ergvein.net/view') > -1 or xdr.find('eurmtl.me/sign_tools') > -1:
-            xdr = await get_url_xdr(xdr)
+        if xdr.find('eurmtl.me/sign_tools') > -1:
+            xdr = await get_eurmtl_xdr(xdr)
             result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()
         else:
             result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()
@@ -143,7 +146,7 @@ def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_pas
 
 async def async_stellar_send(xdr: str):
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url_rw, client=AiohttpClient()
     ) as server:
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
         transaction_resp = await server.submit_transaction(transaction)
@@ -152,7 +155,7 @@ async def async_stellar_send(xdr: str):
 
 async def async_stellar_check_fee() -> str:
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         fee = (await server.fee_stats().call())["fee_charged"]
         return fee['min'] + '-' + fee['max']
@@ -205,7 +208,7 @@ async def stellar_create_new(session: Session, user_id: int, username: str):
     xdr = await stellar_add_trust(new_account.public_key, mtl_asset, xdr=xdr)
     xdr = await stellar_add_trust(new_account.public_key, eurmtl_asset, xdr=xdr)
     xdr = await stellar_add_trust(new_account.public_key, satsmtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, usdc_asset, xdr=xdr)
+    xdr = await stellar_add_trust(new_account.public_key, usdm_asset, xdr=xdr)
     xdr = stellar_sign(xdr, new_account.secret)
     return stellar_sign(xdr, master.secret)
 
@@ -216,7 +219,7 @@ async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount:
         transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     else:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             source_account = await server.load_account(from_account)
         transaction = TransactionBuilder(source_account=source_account,
@@ -262,7 +265,7 @@ async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id
     """
 
     # Get list of offers to delete
-    async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
+    async with ServerAsync(horizon_url=config.horizon_url, client=AiohttpClient()) as server:
         offers = MyOffers.from_dict(
             await server.offers().for_seller(account_id).for_selling(sell_asset_filter).limit(90).call()
         )
@@ -284,7 +287,7 @@ async def stellar_swap(from_account: str, send_asset: Asset, send_amount: str, r
         transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     else:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             source_account = await server.load_account(from_account)
 
@@ -308,7 +311,7 @@ async def stellar_swap(from_account: str, send_asset: Asset, send_amount: str, r
 async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, receive_asset: Asset,
                        receive_amount: str, offer_id: int = 0):
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         source_account = await server.load_account(from_account)
 
@@ -339,7 +342,7 @@ async def stellar_get_user_account(session: Session, user_id: int, public_key=No
     else:
         result = db_get_default_wallet(session, user_id).public_key
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         return await server.load_account(result)
 
@@ -350,7 +353,7 @@ def stellar_get_master(session: Session) -> Keypair:
 
 async def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         logger.info(['delete_account', delete_account.public_key])
         source_account = await server.load_account(master_account)
@@ -391,7 +394,11 @@ async def stellar_delete_all_deleted(session: Session):
 
 async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
     # start_time = datetime.now()
-    balances = await stellar_get_balances(session, user_id, public_key, state=state)
+    asset_filter = None
+    #only_eurmtl
+    if public_key is None and state and (await state.get_data()).get('show_more', False) == False:
+        asset_filter = 'EURMTL'
+    balances = await stellar_get_balances(session, user_id, public_key, state=state, asset_filter=asset_filter)
     result = ''
     for balance in balances:
         if balance.selling_liabilities and float(balance.selling_liabilities) > 0:
@@ -416,8 +423,8 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
         return
 
 
-async def stellar_get_balances(session, user_id: int, public_key=None, asset_filter: str = None, state=None) -> List[
-    Balance]:
+async def stellar_get_balances(session, user_id: int, public_key=None,
+                               asset_filter: str = None, state=None) -> List[Balance]:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     free_wallet = await stellar_is_free_wallet(session, user_id)
     wallet = db_get_default_wallet(session, user_id)
@@ -428,7 +435,7 @@ async def stellar_get_balances(session, user_id: int, public_key=None, asset_fil
     if balances is None:
         # получаем балансы
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             call = await server.accounts().account_id(user_account.account.account_id).call()
 
@@ -453,7 +460,7 @@ async def stellar_get_balances(session, user_id: int, public_key=None, asset_fil
                 result.append(balance)
         # получаем токены эмитента
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             issuer = await server.assets().for_issuer(user_account.account.account_id).call()
         for record in issuer['_embedded']['records']:
@@ -478,7 +485,7 @@ async def stellar_get_balances(session, user_id: int, public_key=None, asset_fil
 async def stellar_get_data(session: Session, user_id: int, public_key=None) -> dict:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         data = MyAccount.from_dict(await server.accounts().account_id(
             user_account.account.account_id).call()).data
@@ -492,11 +499,10 @@ async def stellar_get_data(session: Session, user_id: int, public_key=None) -> d
 async def stellar_get_offers(session: Session, user_id: int, public_key=None) -> List[MyOffer]:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         offers = MyOffers.from_dict(await server.offers().for_seller(
             user_account.account.account_id).limit(90).call())
-
 
         for offer in offers.embedded.records:
             if offer.selling.asset_type == "native":
@@ -527,7 +533,7 @@ class AccountAndMemo:
 async def stellar_check_account(public_key: str) -> AccountAndMemo:
     try:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
 
             if public_key.find('*') > 0:
@@ -547,7 +553,7 @@ async def stellar_check_account(public_key: str) -> AccountAndMemo:
 async def stellar_check_receive_sum_one(send_asset: Asset, send_sum: str, receive_asset: Asset) -> str:
     try:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             call_result = await server.strict_send_paths(send_asset, send_sum, [receive_asset]).call()
             if len(call_result['_embedded']['records']) > 0:
@@ -579,7 +585,7 @@ async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_as
 async def stellar_get_receive_path(send_asset: Asset, send_sum: str, receive_asset: Asset) -> list:
     try:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             call_result = await server.strict_send_paths(send_asset, send_sum, [receive_asset]).call()
             if len(call_result['_embedded']['records']) > 0:
@@ -608,7 +614,7 @@ async def stellar_get_receive_path(send_asset: Asset, send_sum: str, receive_ass
 async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_assets: list) -> list:
     try:
         async with ServerAsync(
-                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+                horizon_url=config.horizon_url, client=AiohttpClient()
         ) as server:
             records = []
             while len(receive_assets) > 0:
@@ -657,7 +663,7 @@ def decode_data_value(data_value: str):
 
 async def cmd_gen_data_xdr(from_account: str, name: str, value):
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         source_account = await server.load_account(from_account)
         transaction = TransactionBuilder(source_account=source_account,
@@ -789,7 +795,7 @@ async def have_free_xlm(session, user_id: int, state=None):
 
 async def stellar_get_multi_sign_xdr(public_key) -> str:
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         public_issuer_signers = MyAccount.from_dict(await server.accounts().account_id(public_issuer).call()).signers
         public_issuer_signers = sorted(
@@ -846,7 +852,7 @@ async def stellar_get_multi_sign_xdr(public_key) -> str:
             updated_signers.append({'key': signer, 'weight': weight})
 
     async with ServerAsync(
-            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+            horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         source_account = await server.load_account(public_key)
         transaction = TransactionBuilder(source_account=source_account,
@@ -862,6 +868,19 @@ async def stellar_get_multi_sign_xdr(public_key) -> str:
             transaction.append_set_options_op(med_threshold=15, low_threshold=15, high_threshold=15)
 
         return transaction.build().to_xdr()
+
+
+def cut_text_to_28_bytes(text: str) -> str:
+    encoded_text = text.encode("utf-8")
+    if len(encoded_text) <= 28:
+        return text
+
+    trimmed_text = encoded_text[:28]
+
+    try:
+        return trimmed_text.decode("utf-8")
+    except UnicodeDecodeError:
+        return trimmed_text[:27].decode("utf-8")
 
 
 if __name__ == "__main__":
