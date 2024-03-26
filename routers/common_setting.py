@@ -4,7 +4,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 from sqlalchemy.orm import Session
-from db.requests import db_delete_wallet
+from db.requests import db_delete_wallet, get_wallet_info
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
 from utils.aiogram_utils import send_message, my_gettext, clear_state
@@ -73,19 +73,48 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     wallets = data['wallets']
     if wallets.get(idx):
         if answer == 'DELETE':
-            db_delete_wallet(session, user_id, wallets[idx], idx=int(idx))
-            await cmd_change_wallet(callback.message.chat.id, state, session)
+            await state.update_data(idx=idx)
+            await cmd_confirm_delete(session, user_id, state)
         if answer == 'SET_ACTIVE':
             db_set_default_wallets(session, user_id, wallets[idx])
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'NAME':
             try:
-                msg = f"{wallets[idx]}\n" + my_gettext(callback, 'your_balance') + '\n' + await stellar_get_balance_str(
+                info = get_wallet_info(session, user_id, wallets[idx])
+                msg = f"{wallets[idx]} {info}\n" + my_gettext(callback,
+                                                              'your_balance') + '\n' + await stellar_get_balance_str(
                     session, user_id, wallets[idx])
             except:
                 msg = f'Error load. Please delete this'
             await callback.answer(msg[:200], show_alert=True)
     await callback.answer()
+
+
+async def cmd_confirm_delete(session: Session, user_id, state: FSMContext):
+    buttons = [
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_yes'),
+                                    callback_data="YES_DELETE"),
+         types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_no'),
+                                    callback_data="Return"),
+         ]
+    ]
+    #"kb_delete": "Удалить",
+    data = await state.get_data()
+    idx = data.get('idx')
+    wallets = data['wallets']
+    wallet = wallets[idx]
+    text = my_gettext(user_id, 'kb_delete') + '\n' + wallet
+    await send_message(session=session, user_id=user_id, msg=text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data == "YES_DELETE")
+async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    data = await state.get_data()
+    idx = data.get('idx')
+    wallets = data['wallets']
+    db_delete_wallet(session, callback.from_user.id, wallets[idx], idx=int(idx))
+    await callback.answer()
+    await cmd_change_wallet(callback.message.chat.id, state, session)
 
 
 @router.callback_query(F.data == "Support")

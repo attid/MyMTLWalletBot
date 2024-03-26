@@ -14,7 +14,7 @@ from mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import (my_gettext, send_message, cmd_show_sign,
                                  StateSign, log_queue, LogQuery, long_line,
-                                 get_web_request, clear_last_message_id)
+                                 get_web_request, clear_last_message_id, get_web_decoded_xdr)
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
                                  async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri)
@@ -237,6 +237,9 @@ async def sign_xdr(session: Session, state, user_id):
         await cmd_info_message(session, user_id,
                                f"{my_gettext(user_id, 'send_error')}\n{msg}", resend_transaction=True)
         await state.update_data(try_sent_xdr=None)
+    except TimeoutError as ex:
+        logger.info(['TimeoutError', ex, current_state])
+        await cmd_info_message(session, user_id, 'timeout error =( ')
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password"))
@@ -387,11 +390,7 @@ async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, sessi
     data = await state.get_data()
     xdr = data.get('xdr')
 
-    status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
-    if status == 200:
-        msg = response_json['text']
-    else:
-        msg = "Ошибка запроса"
+    msg = await get_web_decoded_xdr(xdr)
 
     # msg = msg.replace("&nbsp;", "\u00A0")
     await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True, parse_mode=SULGUK_PARSE_MODE)

@@ -10,7 +10,7 @@ from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address
+from db.requests import db_get_default_address, get_wallet_info
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
 from utils.aiogram_utils import send_message, bot, clear_state, dp, clear_last_message_id
 from utils.common_utils import get_user_id
@@ -87,18 +87,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             data = await state.get_data()
             await state.set_state(state=None)
             await clear_state(state)
-            user_account = (await stellar_get_user_account(session, user_id)).account.account_id
-            simple_account = user_account[:4] + '..' + user_account[-4:]
-
-            link = 'https://stellar.expert/explorer/public/account/' + user_account
-            # a = await stellar_get_balance_str(user_id)
-            msg = f'<a href="{link}">{simple_account}</a> {my_gettext(user_id, "your_balance")}\n\n' \
-                  f'{await stellar_get_balance_str(session, user_id, state=state)}'
-
-            # if str(start_cmd).find('veche_') == 0:
-            #    pass
-            #    # await cmd_login_to_veche(chat_id, state, start_cmd)
-            # else:
+            msg = await get_start_text(session, state, user_id)
 
             if refresh_callback and msg == data.get('start_msg'):
                 await refresh_callback.answer('Nothing to update, the data is up to date.', show_alert=True)
@@ -117,6 +106,17 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             await send_message(session, user_id, my_gettext(user_id, 'load_error'),
                                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
             await state.update_data(last_message_id=0)
+
+
+async def get_start_text(session, state, user_id):
+    user_account = (await stellar_get_user_account(session, user_id)).account.account_id
+    simple_account = user_account[:4] + '..' + user_account[-4:]
+    info = get_wallet_info(session, user_id, user_account)
+    link = 'https://stellar.expert/explorer/public/account/' + user_account
+    # a = await stellar_get_balance_str(user_id)
+    msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
+          f'{await stellar_get_balance_str(session, user_id, state=state)}'
+    return msg
 
 
 async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery, types.Message, int],
@@ -149,25 +149,12 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
 
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'setting_msg')
-    default_address = db_get_default_address(session, user_id)
     buttons = []
     wallets = db_get_wallets_list(session, user_id)
     for wallet in wallets:
         active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
-        if wallet.free_wallet == 1:
-            info_text = '(free)'
-        elif wallet.use_pin == 1:
-            info_text = '(pin)'
-        elif wallet.use_pin == 2:
-            info_text = '(pass)'
-        elif wallet.use_pin == 10:
-            info_text = '(r/o)'
-        else:
-            info_text = '(0_0)'
-        if default_address == wallet.public_key:
-            info_text += '📩'
         buttons.append(
-            [types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]} {info_text}",
+            [types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]}",
                                         callback_data=WalletSettingCallbackData(action='NAME',
                                                                                 idx=wallet.id).pack()),
              types.InlineKeyboardButton(text=f"{active_name}",

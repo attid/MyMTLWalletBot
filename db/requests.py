@@ -4,7 +4,7 @@ from typing import Union, List, Optional
 
 from loguru import logger
 from sqlalchemy import update, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, Query
 from db.models import *
 
 
@@ -77,12 +77,22 @@ def db_get_user_account_by_username(session: Session, username: str):
 def db_get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=None):
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user and user.usdt and len(user.usdt) == 64:
-        return user.usdt
+        return user.usdt, user.usdt_amount
     else:
         addr = create_trc_private_key()
         user.usdt = addr
         session.commit()
-        return addr
+        return addr, 0
+
+
+def db_update_usdt_sum(session: Session, user_id: int, update_summ: int):
+    user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
+    if user and user.usdt and len(user.usdt) == 64:
+        user.usdt_amount = user.usdt_amount + update_summ
+        session.commit()
+        return user.usdt
+    else:
+        raise ValueError(f"No user found with id {user_id}")
 
 
 def db_get_btc_uuid(session: Session, user_id: int):
@@ -367,7 +377,7 @@ def db_add_cheque_history(session: Session, user_id: int, cheque_id: int):
     session.commit()
 
 
-def db_get_user(session: Session, user_id: int)->MyMtlWalletBotUsers:
+def db_get_user(session: Session, user_id: int) -> MyMtlWalletBotUsers:
     return session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
 
 
@@ -381,6 +391,31 @@ def get_user_lang(session: Session, user_id: int):
     except Exception as ex:
         # print(ex)  # Or handle the exception in some other way
         return 'en'
+
+
+def get_wallet_info(session: Session, user_id: int, public_key: str) -> str:
+    wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
+                                                  MyMtlWalletBot.public_key == public_key,
+                                                  MyMtlWalletBot.need_delete == 0).first()
+    if wallet is None:
+        return "(нет данных)"
+    if wallet.free_wallet == 1:
+        info_text = '(free)'
+    elif wallet.use_pin == 0:
+        info_text = '(no pin)'
+    elif wallet.use_pin == 1:
+        info_text = '(pin)'
+    elif wallet.use_pin == 2:
+        info_text = '(pass)'
+    elif wallet.use_pin == 10:
+        info_text = '(r/o)'
+    else:
+        info_text = '(0_0)'
+
+    default_address = db_get_default_address(session, user_id)
+    if default_address == wallet.public_key:
+        info_text += ' 📩'
+    return info_text
 
 
 if __name__ == '__main__':

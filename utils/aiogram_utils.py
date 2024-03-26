@@ -162,3 +162,12 @@ async def get_web_request(method, url, json=None, headers=None, data=None, retur
                 return response.status, await response.json()
             else:
                 return response.status, await response.text()
+
+
+async def get_web_decoded_xdr(xdr):
+    status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
+    if status == 200:
+        msg = response_json['text']
+    else:
+        msg = "Ошибка запроса"
+    return msg

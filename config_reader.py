@@ -16,7 +16,10 @@ class Settings(BaseSettings):
     tron_master_key: SecretStr
     thothpay_api: SecretStr
     openai_key: SecretStr
+    eurmtl_key: str
     sentry_dsn: str
+    horizon_url: str
+    horizon_url_rw: str
 
     class Config:
         env_file = dotenv_path
