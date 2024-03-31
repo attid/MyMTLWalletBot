@@ -3,10 +3,8 @@ from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery
 from loguru import logger
-from sqlalchemy.orm import Session
-
 from db.models import MyMtlWalletBotLog
-from utils.aiogram_utils import log_queue, LogQuery
+from utils.global_data import global_data, LogQuery
 
 
 class LogButtonClickCallbackMiddleware(BaseMiddleware):
@@ -16,7 +14,7 @@ class LogButtonClickCallbackMiddleware(BaseMiddleware):
             event: CallbackQuery,
             data: Dict[str, Any]
     ) -> Any:
-        log_queue.put_nowait(LogQuery(
+        global_data.log_queue.put_nowait(LogQuery(
             user_id=event.from_user.id,
             log_operation='callback',
             log_operation_info=event.data.split(':')[0]
@@ -30,7 +28,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 async def log_worker(session_pool):
     while True:  # not queue.empty():
-        log_item: LogQuery = await log_queue.get()
+        log_item: LogQuery = await global_data.log_queue.get()
         try:
             new_log = MyMtlWalletBotLog(
                 user_id=log_item.user_id,
@@ -43,5 +41,5 @@ async def log_worker(session_pool):
                 session.commit()
         except SQLAlchemyError as e:
             logger.warning(f'{log_item.user_id}-{log_item.log_operation} failed {type(e)}')
-        log_queue.task_done()
+        global_data.log_queue.task_done()
         await asyncio.sleep(1)

@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import re
 from contextlib import suppress

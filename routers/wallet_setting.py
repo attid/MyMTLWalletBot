@@ -18,9 +18,10 @@ from mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, my_gettext, admin_id, clear_state, get_web_request, get_web_decoded_xdr
+from utils.aiogram_utils import send_message, my_gettext, clear_state, get_web_request, get_web_decoded_xdr
 from loguru import logger
 
+from utils.global_data import global_data
 from utils.gspread_utils import gs_get_asset
 from utils.lang_utils import check_user_id
 from utils.stellar_utils import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
@@ -370,7 +371,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
 async def cmd_after_buy(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     buy_address = data.get('buy_address')
-    await send_message(session, user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
+    await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
     await stellar_unfree_wallet(session, user_id)
 

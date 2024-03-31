@@ -4,8 +4,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, admin_id, clear_last_message_id
+from utils.aiogram_utils import send_message, clear_last_message_id
 from utils.common_utils import get_user_id
+from utils.global_data import global_data
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import *
 from utils.thothpay_utils import thoth_create_order, thoth_check_order
@@ -132,7 +133,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         # if full_usdt_balance > 500:
         #     await send_usdt_async(amount=income_usdt_balance, private_key_to=tron_master_key, private_key_from=user_tron_private_key)
         db_update_usdt_sum(session, get_user_id(callback), income_usdt_balance)
-        await bot.send_message(chat_id=admin_id,
+        await bot.send_message(chat_id=global_data.admin_id,
                                text=f"{get_user_id(callback)} send {income_usdt_balance} usdt (full {full_usdt_balance})")
         master = stellar_get_master(session)
         xdr = stellar_sign((await stellar_pay((await stellar_get_user_account(session, 0)).account.account_id,
@@ -189,19 +190,19 @@ async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMCon
         if out_pay_usdt:
             usdt_address = data.get('usdt_address')
             usdt_sum = data.get('usdt_sum')
-            await send_message(session, user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address}',
+            await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address}',
                                need_new_msg=True,
                                reply_markup=get_kb_return(user_id))
-            await clear_last_message_id(admin_id)
+            await clear_last_message_id(global_data.admin_id)
             try:
                 await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address)
                 await state.update_data(out_pay_usdt=None)
-                await send_message(session, user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address} good',
+                await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address} good',
                                    need_new_msg=True, reply_markup=get_kb_return(user_id))
-                await clear_last_message_id(admin_id)
+                await clear_last_message_id(global_data.admin_id)
             except Exception as e:
                 logger.error(e)
-                await send_message(session, user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address} bad \n{e}',
+                await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address} bad \n{e}',
                                    need_new_msg=True, reply_markup=get_kb_return(user_id))
 
 

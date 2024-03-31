@@ -8,7 +8,8 @@ from db.requests import db_delete_wallet, get_wallet_info
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
 from utils.aiogram_utils import send_message, my_gettext, clear_state
-from utils.lang_utils import lang_dict, change_user_lang
+from utils.global_data import global_data
+from utils.lang_utils import change_user_lang
 from utils.stellar_utils import db_set_default_wallets, \
     stellar_get_balance_str
 
@@ -23,9 +24,9 @@ router = Router()
 async def cmd_language(session: Session, chat_id: int):
     buttons = []
 
-    for lang in lang_dict:
+    for lang in global_data.lang_dict:
         buttons.append([
-            types.InlineKeyboardButton(text=lang_dict[lang].get('1_lang', 'lang name error'),
+            types.InlineKeyboardButton(text=global_data.lang_dict[lang].get('1_lang', 'lang name error'),
                                        callback_data=LangCallbackData(action=lang).pack())
         ])
 

@@ -2,22 +2,18 @@ import json
 from os import listdir
 from typing import Union
 from aiogram import types
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from config_reader import start_path
 from db.models import MyMtlWalletBotUsers
 from db.requests import get_user_lang
 from utils.common_utils import get_user_id
-
-user_lang_dic = {}
-lang_dict = {}
-lang_session_maker: sessionmaker
-
+from utils.global_data import global_data
 
 for file in listdir(f"{start_path}/langs/"):
     if file.endswith(".json"):
         with open(f"{start_path}/langs/" + file, "r") as fp:
-            lang_dict[file.split('.')[0]] = json.load(fp)
+            global_data.lang_dict[file.split('.')[0]] = json.load(fp)
 
 
 def change_user_lang(session: Session, user_id: int, lang: str):
@@ -25,7 +21,7 @@ def change_user_lang(session: Session, user_id: int, lang: str):
     if user is not None:
         user.lang = lang
         session.commit()
-        user_lang_dic[user_id] = lang  # assuming user_lang_dic is accessible
+        global_data.user_lang_dic[user_id] = lang  # assuming user_lang_dic is accessible
     else:
         raise ValueError(f"No user found with user_id {user_id}")
 
@@ -44,18 +40,19 @@ def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], tex
     else:
         user_id = get_user_id(user_id)
 
-        if user_id in user_lang_dic:
-            lang = user_lang_dic[user_id]
+        if user_id in global_data.user_lang_dic:
+            lang = global_data.user_lang_dic[user_id]
         else:
-            with lang_session_maker() as session:
+            with global_data.db_pool() as session:
                 lang = get_user_lang(session, user_id)
-            user_lang_dic[user_id] = lang
+            global_data.user_lang_dic[user_id] = lang
 
-    text: str = lang_dict[lang].get(text, lang_dict['en'].get(text, f'{text} 0_0'))
+    text: str = global_data.lang_dict[lang].get(text, global_data.lang_dict['en'].get(text, f'{text} 0_0'))
     # won't use format if will be error in lang file
     for par in param:
         text = text.replace('{}', str(par), 1)
     return text
+
 
 def check_user_id(session: Session, user_id: int):
     user_count = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).count()
