@@ -13,7 +13,8 @@ from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
-from utils.aiogram_utils import send_message, admin_id, clear_state
+from utils.aiogram_utils import send_message, clear_state
+from utils.global_data import global_data
 from utils.lang_utils import my_gettext, check_user_id, check_user_lang
 from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
                                  )
@@ -151,7 +152,7 @@ async def cmd_donate_message(message: types.Message, state: FSMContext, session:
 async def cmd_after_donate(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     donate_sum = data.get('donate_sum')
-    await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
+    await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
     await db_add_donate(session, user_id, donate_sum)
 

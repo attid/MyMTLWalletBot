@@ -1,82 +1,43 @@
-import asyncio
 import aiohttp
-import sys
-import tzlocal
 from contextlib import suppress
-from datetime import datetime
 from typing import Union
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.storage.base import StorageKey
-from aiogram.fsm.storage.redis import RedisStorage
-from redis.asyncio.client import Redis
-from aiogram import Bot, Dispatcher
 from sqlalchemy.orm import Session
 from aiogram import types
-from config_reader import config
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from utils.common_utils import get_user_id
+from utils.global_data import global_data
 from utils.lang_utils import my_gettext
-
-if 'test' in sys.argv:
-    bot = Bot(token=config.test_bot_token.get_secret_value(), parse_mode='HTML')
-    # storage = MemoryStorage()
-    storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
-    dp = Dispatcher(storage=storage)
-    print('start test')
-else:
-    bot = Bot(token=config.bot_token.get_secret_value(), parse_mode='HTML')
-    # storage = MemoryStorage()
-    storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
-    dp = Dispatcher(storage=storage)
-
-scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
-cheque_queue = asyncio.Queue()
-log_queue = asyncio.Queue()
-
-admin_id = 84131737
-helper_chat_id = -1001466779498
-
-
-class StateSign(StatesGroup):
-    sending_xdr = State()
-
-
-class LogQuery:
-    def __init__(self, user_id: int, log_operation: str, log_operation_info: str):
-        self.user_id = user_id
-        self.log_operation = log_operation
-        self.log_operation_info = log_operation_info
-        self.log_dt = datetime.now()
 
 
 async def send_message(session: Session, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
                        reply_markup=None, need_new_msg=None, parse_mode='HTML'):
     user_id = get_user_id(user_id)
 
-    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
-    data = await dp.storage.get_data(key=fsm_storage_key)
+    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)
+    data = await global_data.dispatcher.storage.get_data(key=fsm_storage_key)
     msg_id = data.get('last_message_id', 0)
     if need_new_msg:
-        new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
-                                         disable_web_page_preview=True)
+        new_msg = await global_data.bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
+                                                     disable_web_page_preview=True)
         if msg_id > 0:
             with suppress(TelegramBadRequest):
-                await bot.delete_message(user_id, msg_id)
-        await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
+                await global_data.bot.delete_message(user_id, msg_id)
+        await global_data.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
     else:
         if msg_id > 0:
             try:
-                await bot.edit_message_text(msg, user_id, msg_id, reply_markup=reply_markup, parse_mode=parse_mode,
-                                            disable_web_page_preview=True)
+                await global_data.bot.edit_message_text(msg, user_id, msg_id, reply_markup=reply_markup,
+                                                        parse_mode=parse_mode,
+                                                        disable_web_page_preview=True)
                 return
             except:
                 pass
-        new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
-                                         disable_web_page_preview=True)
-        await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
+        new_msg = await global_data.bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
+                                                     disable_web_page_preview=True)
+        await global_data.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
 
 
 async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,
@@ -114,7 +75,7 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
 
 async def check_username(user_id: int) -> str:
     with suppress(TelegramBadRequest):
-        chat = await bot.get_chat(user_id)
+        chat = await global_data.bot.get_chat(user_id)
         return chat.username
 
 
@@ -139,9 +100,9 @@ def long_line() -> str:
 
 
 async def set_last_message_id(chat_id: int, msg_id: int):
-    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=chat_id, chat_id=chat_id)
+    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=chat_id, chat_id=chat_id)
     # data = await dp.storage.get_data(key=fsm_storage_key)
-    await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
+    await global_data.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
 
 
 async def clear_last_message_id(chat_id: int):

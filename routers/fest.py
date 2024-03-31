@@ -1,19 +1,13 @@
-from asyncio import sleep
 from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
-
-from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
+from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.send import cmd_send_04
-from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, admin_id, long_line
-from utils.common_utils import get_user_id
+from utils.aiogram_utils import send_message, long_line
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import *
-from utils.thothpay_utils import thoth_create_order, thoth_check_order
-from utils.tron_utils import *
 
 router = Router()
 

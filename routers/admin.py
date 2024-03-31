@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from utils.aiogram_utils import bot
+from utils.global_data import global_data
 from utils.stellar_utils import async_stellar_check_fee
 
 
@@ -35,7 +35,7 @@ async def cmd_exit(message: types.Message, state: FSMContext, session: Session):
 
 async def cmd_send_file(message: types.Message, filename):
     if os.path.isfile(filename):
-        await bot.send_document(message.chat.id, types.FSInputFile(filename))
+        await global_data.bot.send_document(message.chat.id, types.FSInputFile(filename))
 
 
 async def cmd_delete_file(filename):
@@ -114,8 +114,8 @@ async def cmd_fee(message: types.Message):
 async def cmd_test(message: types.Message):
     if message.from_user.username == "itolstov":
         with suppress(TelegramBadRequest):
-            chat = await bot.get_chat(215155653)
+            chat = await global_data.bot.get_chat(215155653)
             await message.answer(chat.json())
         with suppress(TelegramBadRequest):
-            chat = await bot.get_chat(5687567734)
+            chat = await global_data.bot.get_chat(5687567734)
             await message.answer(chat.json())

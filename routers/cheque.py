@@ -18,8 +18,9 @@ from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_
 from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
-from utils.aiogram_utils import send_message, bot, cheque_queue
+from utils.aiogram_utils import send_message
 from utils.common_utils import get_user_id
+from utils.global_data import global_data
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import (my_float, float2str, stellar_pay, stellar_get_user_account, eurmtl_asset,
                                  db_is_new_user,
@@ -191,7 +192,7 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext):
         cheque = db_add_cheque(session, send_uuid, send_sum, send_count, user_id, send_comment)
     await state.update_data(last_message_id=0)
     #  "send_cheque_resend": "You have cheque {} with sum {} EURMTL for {} users, total sum {} with comment \"{}\" you can send link {} or press button to send"
-    link = f'https://t.me/{(await bot.me()).username}?start=cheque_{send_uuid}'
+    link = f'https://t.me/{(await global_data.bot.me()).username}?start=cheque_{send_uuid}'
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_cheque'), switch_inline_query='')],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_cheque_info'),
@@ -229,7 +230,7 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
         await callback.answer(f'Cheque was received {receive_count} from {total_count}', show_alert=True)
     elif cmd == 'cancel':
         if total_count > receive_count:
-            cheque_queue.put_nowait(ChequeQuery(user_id=callback.from_user.id, cheque_uuid=cheque_uuid, state=state,
+            global_data.cheque_queue.put_nowait(ChequeQuery(user_id=callback.from_user.id, cheque_uuid=cheque_uuid, state=state,
                                                 username='', for_cancel=True))
             await callback.answer()
         else:
@@ -260,7 +261,7 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
     # all exist cheques
     data = db_get_available_cheques(session, inline_query.from_user.id)
 
-    bot_name = (await bot.me()).username
+    bot_name = (await global_data.bot.me()).username
     for record in data:
         if record.cheque_status == ChequeStatus.CHEQUE.value:
             link = f'https://t.me/{bot_name}?start=cheque_{record.cheque_uuid}'
@@ -336,7 +337,7 @@ async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: Se
     data = await state.get_data()
     # await cmd_send_money_from_cheque(callback.from_user.id, state, cheque_uuid=data['cheque_uuid'],
     #                                 message=callback)
-    cheque_queue.put_nowait(ChequeQuery(user_id=callback.from_user.id, cheque_uuid=data['cheque_uuid'], state=state,
+    global_data.cheque_queue.put_nowait(ChequeQuery(user_id=callback.from_user.id, cheque_uuid=data['cheque_uuid'], state=state,
                                         username=callback.from_user.username))
     await callback.answer()
 
@@ -377,7 +378,7 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
 
 async def cheque_worker(session_pool):
     while True:  # not queue.empty():
-        cheque_item: ChequeQuery = await cheque_queue.get()
+        cheque_item: ChequeQuery = await global_data.cheque_queue.get()
         # logger.info(f'{cheque_item} start')
 
         try:
@@ -390,7 +391,7 @@ async def cheque_worker(session_pool):
                                                      cheque_item.username)
         except Exception as e:
             logger.warning(f' {cheque_item.cheque_uuid}-{cheque_item.user_id} failed {type(e)}')
-        cheque_queue.task_done()
+        global_data.cheque_queue.task_done()
 
 
 @router.callback_query(F.data=="InvoiceYes")

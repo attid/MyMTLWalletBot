@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages
 from db.requests import db_delete_wallet
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import bot
+from utils.global_data import global_data
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import float2str
 
@@ -27,7 +27,7 @@ async def cmd_send_message_1m(session_pool, dp: Dispatcher):
                     {MyMtlWalletBotMessages.was_send: 2})
                 session.commit()
                 logger.info(['cmd_send_message_1m', ex])
-            fsm_storage_key = StorageKey(bot_id=bot.id, user_id=message.user_id, chat_id=message.user_id)
+            fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=message.user_id, chat_id=message.user_id)
             await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             # await dp.bot.send_message(record[3], record[1], disable_web_page_preview=True)
 
@@ -65,7 +65,7 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
             .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TOperations.for_account) \
             .filter(MyMtlWalletBot.need_delete == 0, MyMtlWalletBot.user_id > 0,
                     TOperations.id > MyMtlWalletBot.last_event_id,
-                    TOperations.dt > datetime.now() - timedelta(hours=1, minutes=10),
+                    TOperations.dt > datetime.utcnow() - timedelta(hours=0, minutes=30),
                     TOperations.arhived == None) \
             .order_by(TOperations.id) \
             .limit(10)
@@ -77,7 +77,7 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                 if record.code1 == 'XLM' and float(record.amount1) < 0.1:
                     pass
                 else:
-                    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=record.user_id, chat_id=record.user_id)
+                    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=record.user_id, chat_id=record.user_id)
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
                     await cmd_info_message(session, record.user_id, decode_db_effect(record))
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})

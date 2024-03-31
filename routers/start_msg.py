@@ -10,10 +10,11 @@ from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address, get_wallet_info
+from db.requests import get_wallet_info
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
-from utils.aiogram_utils import send_message, bot, clear_state, dp, clear_last_message_id
+from utils.aiogram_utils import send_message, clear_state, clear_last_message_id
 from utils.common_utils import get_user_id
+from utils.global_data import global_data
 from utils.lang_utils import my_gettext
 from utils.stellar_utils import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, \
     db_is_new_user, \
@@ -127,12 +128,12 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
         photo = types.FSInputFile(send_file)
         add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_asset'),
                                                   callback_data="AddAssetMenu")]
-        await bot.send_photo(user_id, photo=photo, caption=msg,
+        await global_data.bot.send_photo(user_id, photo=photo, caption=msg,
                              reply_markup=get_kb_return(user_id, add_buttons))
-        fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
-        data = await dp.storage.get_data(key=fsm_storage_key)
+        fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)
+        data = await global_data.dispatcher.storage.get_data(key=fsm_storage_key)
         with suppress(TelegramBadRequest):
-            await bot.delete_message(user_id, data.get('last_message_id', 0))
+            await global_data.bot.delete_message(user_id, data.get('last_message_id', 0))
         await clear_last_message_id(user_id)
 
     elif resend_transaction:

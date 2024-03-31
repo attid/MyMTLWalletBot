@@ -1,14 +1,12 @@
 from aiogram import Router, types, F
-from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import WebAppInfo
 from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from utils.aiogram_utils import my_gettext, send_message
 from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
-    my_float, have_free_xlm
+    have_free_xlm
 
 
 class MTLAPStateTools(StatesGroup):
