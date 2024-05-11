@@ -19,11 +19,11 @@ from utils.aiogram_utils import my_gettext, send_message, check_username, clear_
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from mytypes import Balance
-from utils.common_utils import get_user_id
+from utils.common_utils import get_user_id, decode_qr_code
 from utils.global_data import global_data
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
-    cut_text_to_28_bytes
+    cut_text_to_28_bytes, get_first_balance_from_list
 
 
 class StateSendToken(StatesGroup):
@@ -126,8 +126,11 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
                          balance.asset_code == 'MTLAP' and balance.asset_issuer == 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA']
         mtlac_balance = [balance for balance in sender_asset_list if
                          balance.asset_code == 'MTLAC' and balance.asset_issuer == 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA']
-        mtla_balance = max(mtlap_balance, mtlac_balance)
-        mtla_amount = int(float(mtla_balance[0].balance)) if mtla_balance else 0
+        mtlap_amount = get_first_balance_from_list(mtlap_balance)
+        mtlac_amount = get_first_balance_from_list(mtlac_balance)
+
+        mtla_amount = int(max(mtlap_amount, mtlac_amount))
+
     mtlap_stars = '⭐' * mtla_amount
     await state.update_data(mtlap_stars=mtlap_stars)
 
@@ -319,16 +322,17 @@ async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session
 async def handle_docs_photo(message: types.Message, state: FSMContext, session: Session):
     logger.info(f'{message.from_user.id}')
     if message.photo:
+        await message.reply('is being recognized')
         await global_data.bot.download(message.photo[-1], destination=f'qr/{message.from_user.id}.jpg')
-        from PIL import Image
-        from pyzbar.pyzbar import decode
-        data = decode(Image.open(f"qr/{message.from_user.id}.jpg"))
-        if data:
-            logger.info(str(data[0].data))
-            qr_data = data[0].data.decode()
+
+        qr_data = decode_qr_code(f'qr/{message.from_user.id}.jpg') #decode(Image.open(f"qr/{message.from_user.id}.jpg"))
+        if qr_data:
+            logger.info(qr_data)
+            qr_data = qr_data
             if len(qr_data) == 56 and qr_data[0] == 'G':
                 await state.update_data(qr=qr_data, last_message_id=0)
-                await message.reply(qr_data)
+                await message.reply(f'QR code: <code>{qr_data}</code>\n'
+                                    f'preparations are in progress...')
                 await cmd_send_for(message, state, session)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:pay'):
                 parsed = urlparse(qr_data)
@@ -352,7 +356,8 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 await cmd_send_04(session, message, state)
             else:
                 await message.reply('Bad QR code =(')
-            # await message.delete()
+        else:
+            await message.reply('Bad QR code =(')
 
 
 @router.inline_query(F.chat_type == "sender")

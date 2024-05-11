@@ -17,7 +17,8 @@ from utils.aiogram_utils import (my_gettext, send_message, cmd_show_sign,       
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.global_data import global_data, LogQuery, StateSign
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
-                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri)
+                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri,
+                                 stellar_is_free_wallet)
 
 
 class PinState(StatesGroup):
@@ -271,7 +272,8 @@ async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Sessi
 
 async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext):
     try:
-        xdr = await stellar_check_xdr(check_xdr)
+        is_free = await stellar_is_free_wallet(session, user_id)
+        xdr = await stellar_check_xdr(check_xdr, for_free_account=is_free)
         if xdr:
             await state.update_data(xdr=xdr)
             if check_xdr.find('eurmtl.me/sign_tools') > -1:

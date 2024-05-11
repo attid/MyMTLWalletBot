@@ -11,7 +11,7 @@ from routers.sign import cmd_check_xdr
 from utils.aiogram_utils import clear_last_message_id
 from utils.gpt import gpt_check_message
 from utils.stellar_utils import find_stellar_public_key, find_stellar_federation_address, stellar_check_account, \
-    extract_url
+    extract_url, is_base64
 
 router = Router()
 
@@ -21,9 +21,11 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
     if message.chat.type != "private":
         return
 
-    if message.text.find('eurmtl.me/sign_tools') > 0:
+    text = message.text
+    if 'eurmtl.me/sign_tools' in text or (len(text) > 60 and is_base64(text)):
         await clear_last_message_id(message.from_user.id)
-        await cmd_check_xdr(session=session, check_xdr=extract_url(message.text),
+        xdr_to_check = extract_url(text) if 'eurmtl.me/sign_tools' in text else text
+        await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
                             user_id=message.from_user.id, state=state)
         return
 
@@ -54,29 +56,29 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                 await cmd_send_choose_token(message, state, session)
                 return
 
-    if message.from_user.username == "itolstov":
-        if len(message.text.split()) > 3:
-            gpt_answer = await gpt_check_message(message.text)
-
-            json_match = re.search(r'{.*}', gpt_answer)
-            if json_match:
-                json_cmd = json.loads(json_match.group())
-                # { "command": "transfer", "amount": 10, "address": "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB", "memo": "спасибо за помощь" }
-                if json_cmd.get('command') == 'transfer':
-                    try:
-                        await state.update_data(send_sum=float(json_cmd.get('amount')),
-                                                send_asset_code='EURMTL',
-                                                send_address=json_cmd.get('address'),
-                                                send_asset_issuer='GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
-                                                )
-                        # if memo exist add memo
-                        if json_cmd.get('memo'):
-                            await state.update_data(memo=json_cmd.get('memo'))
-                        await cmd_send_04(session, message, state)
-                    except:
-                        pass
-
-            else:
-                await message.answer(gpt_answer)
+    # if message.from_user.username == "itolstov":
+    #     if len(message.text.split()) > 3:
+    #         gpt_answer = await gpt_check_message(message.text)
+    #
+    #         json_match = re.search(r'{.*}', gpt_answer)
+    #         if json_match:
+    #             json_cmd = json.loads(json_match.group())
+    #             # { "command": "transfer", "amount": 10, "address": "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB", "memo": "спасибо за помощь" }
+    #             if json_cmd.get('command') == 'transfer':
+    #                 try:
+    #                     await state.update_data(send_sum=float(json_cmd.get('amount')),
+    #                                             send_asset_code='EURMTL',
+    #                                             send_address=json_cmd.get('address'),
+    #                                             send_asset_issuer='GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
+    #                                             )
+    #                     # if memo exist add memo
+    #                     if json_cmd.get('memo'):
+    #                         await state.update_data(memo=json_cmd.get('memo'))
+    #                     await cmd_send_04(session, message, state)
+    #                 except:
+    #                     pass
+    #
+    #         else:
+    #             await message.answer(gpt_answer)
 
     await message.delete()
