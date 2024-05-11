@@ -119,23 +119,50 @@ async def get_eurmtl_xdr(url):
         return 'An error occurred during the request.'
 
 
-async def stellar_check_xdr(xdr: str):
+async def stellar_check_xdr(xdr: str, for_free_account=False):
     result = None
+    allowed_operations = ["ManageData", "Payment", "ChangeTrust"]
+
     try:
         if xdr.find('eurmtl.me/sign_tools') > -1:
             xdr = await get_eurmtl_xdr(xdr)
-            result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()
-        else:
-            result = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).to_xdr()
+
+        envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+
+        if for_free_account:
+            all_operations_allowed = True
+
+            for operation in envelope.transaction.operations:
+                type_name = type(operation).__name__
+                if type_name not in allowed_operations:
+                    all_operations_allowed = False
+                    break
+                if type_name == "Payment" and operation.asset.code == "XLM":
+                    all_operations_allowed = False
+                    break
+
+            if not all_operations_allowed and for_free_account:
+                raise ValueError("Not all operations are allowed for free accounts.")
+
+        result = envelope.to_xdr()
 
     except Exception as ex:
         logger.info(['stellar_check_xdr', xdr, ex])
+
     return result
 
 
 def stellar_user_sign(session: Session, xdr: str, user_id: int, user_password: str):
     user_key_pair = stellar_get_user_keypair(session, user_id, user_password)
     return stellar_sign(xdr, user_key_pair.secret)
+
+
+def is_base64(s):
+    try:
+        if base64.b64encode(base64.b64decode(s)) == s.encode():
+            return True
+    except Exception:
+        return False
 
 
 def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_password: str) -> str:
@@ -394,7 +421,7 @@ async def stellar_delete_all_deleted(session: Session):
 async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
     # start_time = datetime.now()
     asset_filter = None
-    #only_eurmtl
+    # only_eurmtl
     if public_key is None and state and (await state.get_data()).get('show_more', False) == False:
         asset_filter = 'EURMTL'
     balances = await stellar_get_balances(session, user_id, public_key, state=state, asset_filter=asset_filter)
@@ -479,6 +506,12 @@ async def stellar_get_balances(session, user_id: int, public_key=None,
         mtlap_value = any(balance.asset_code == 'MTLAP' for balance in result)
         await state.update_data(mtlap=mtlap_value)
     return result
+
+
+def get_first_balance_from_list(balance_list):
+    if balance_list:
+        return float(balance_list[0].balance)
+    return 0.0
 
 
 async def stellar_get_data(session: Session, user_id: int, public_key=None) -> dict:

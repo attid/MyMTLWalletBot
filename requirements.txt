@@ -23,5 +23,5 @@ openai==1.13.3
 fdb
 sqlalchemy-firebird
 aiohttp-sse-client
-pyzbar
 sqlalchemy-stubs
+opencv-python

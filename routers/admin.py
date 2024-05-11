@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
+from db.requests import db_get_usdt_balances
 from utils.global_data import global_data
 from utils.stellar_utils import async_stellar_check_fee
 
@@ -66,6 +67,22 @@ async def cmd_log(message: types.Message):
 @router.message(Command(commands=["fee"]))
 async def cmd_fee(message: types.Message):
     await message.answer("Комиссия (мин и мах) " + await async_stellar_check_fee())
+
+
+@router.message(Command(commands=["balance"]))
+async def cmd_balance(message: types.Message, session: Session):
+    if message.from_user.username == "itolstov":
+        balances = db_get_usdt_balances(session)
+        if balances:
+            balance_message = "\n".join(f"Адрес: {addr}, USDT: {amount}" for addr, amount in balances)
+
+            total_balance = sum(amount for _, amount in balances)
+            balance_message += f"\nИтого: {total_balance} USDT"
+        else:
+            balance_message = "У вас нет активных балансов USDT."
+        await message.answer(balance_message)
+    else:
+        await message.answer("У вас нет доступа к этой команде.")
 
 
 # @router.message(Command(commands=["update"]))
