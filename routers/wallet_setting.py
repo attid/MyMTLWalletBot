@@ -62,12 +62,18 @@ router = Router()
 @router.callback_query(F.data == "WalletSetting")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'wallet_setting_msg')
+    free_wallet = await stellar_is_free_wallet(session, callback.from_user.id)
+    if free_wallet:
+        private_button = types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy'), callback_data="BuyAddress")
+    else:
+        private_button = types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key'),
+                                                    callback_data="GetPrivateKey")
+
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_asset'), callback_data="AddAssetMenu")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_address_book'), callback_data="AddressBook")],
         [types.InlineKeyboardButton(text='Manage Data', callback_data="ManageData")],
-        # [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy'), callback_data="BuyAddress")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key'), callback_data="GetPrivateKey")],
+        [private_button],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_password'), callback_data="SetPassword")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_remove_password'), callback_data="RemovePassword")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
