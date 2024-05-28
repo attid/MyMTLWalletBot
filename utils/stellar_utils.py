@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import re
 from contextlib import suppress
@@ -386,15 +387,25 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
         transaction = TransactionBuilder(source_account=source_account,
                                          network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
         account = await server.accounts().account_id(delete_account.public_key).call()
+        master_account_details = await server.accounts().account_id(master_account.public_key).call()
+        master_account_trustlines = {(balance['asset_code'], balance['asset_issuer']): balance
+                                     for balance in master_account_details['balances'] if balance['asset_type'] != "native"}
+
         for balance in account['balances']:
             if balance['asset_type'] != "native":
+                asset = Asset(balance['asset_code'], balance['asset_issuer'])
                 if float(balance['balance']) > 0.0:
+                    if (balance['asset_code'], balance['asset_issuer']) not in master_account_trustlines:
+                        transaction.append_change_trust_op(asset=asset, source=master_account.public_key)
+
                     transaction.append_payment_op(destination=master_account.public_key, amount=balance['balance'],
-                                                  asset=Asset(balance['asset_code'], balance['asset_issuer']),
+                                                  asset=asset,
                                                   source=delete_account.public_key)
-                transaction.append_change_trust_op(asset=Asset(balance['asset_code'], balance['asset_issuer']),
-                                                   limit='0',
-                                                   source=delete_account.public_key)
+                transaction.append_change_trust_op(asset=asset, limit='0', source=delete_account.public_key)
+
+        data_entries = account.get('data', {})
+        for data_key in data_entries.keys():
+            transaction.append_manage_data_op(data_name=data_key, data_value=None, source=delete_account.public_key)
 
         transaction.append_account_merge_op(master_account.public_key, delete_account.public_key)
         transaction.add_text_memo('Eat MyMTLWalletbot')
@@ -425,6 +436,7 @@ async def stellar_get_balance_str(session: Session, user_id: int, public_key=Non
     if public_key is None and state and (await state.get_data()).get('show_more', False) == False:
         asset_filter = 'EURMTL'
     balances = await stellar_get_balances(session, user_id, public_key, state=state, asset_filter=asset_filter)
+    free_wallet = await stellar_is_free_wallet(session, user_id)
     result = ''
     for balance in balances:
         if balance.selling_liabilities and float(balance.selling_liabilities) > 0:
@@ -434,6 +446,8 @@ async def stellar_get_balance_str(session: Session, user_id: int, public_key=Non
             result += f"{balance.asset_code} : {free} (+{lock}={full})\n"
         else:
             result += f"{balance.asset_code} : {float2str(balance.balance, short=True)}\n"
+    if free_wallet:
+        result += 'XLM : <a href="https://telegra.ph/XLM-05-28">?</a>\n'
     return result
 
 
@@ -919,5 +933,5 @@ if __name__ == "__main__":
     pass
     # a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     # print(a)
-#    from db.quik_pool import quik_pool
-#    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
+    from db.quik_pool import quik_pool
+    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
