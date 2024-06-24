@@ -1,5 +1,8 @@
+import html
 from asyncio import sleep
 from aiogram import Router, types, F, Bot
+from aiogram.enums import ContentType
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
@@ -21,6 +24,7 @@ class StateInOut(StatesGroup):
     sending_btc_address = State()
     sending_btc_sum_in = State()
     sending_btc_sum_out = State()
+    sending_starts_sum_in = State()
 
 
 min_usdt_sum = 10
@@ -37,10 +41,12 @@ usdt_in_fee = 0
 async def cmd_inout(callback: types.CallbackQuery, session: Session):
     msg = my_gettext(callback, "inout")
     buttons = [[types.InlineKeyboardButton(text='USDT TRC20',
-                                           callback_data="USDT_TRC20"),
-                types.InlineKeyboardButton(text='BTC lightning',
-                                           callback_data="BTC"),
-                ], get_return_button(callback)]
+                                           callback_data="USDT_TRC20")],
+               [types.InlineKeyboardButton(text='BTC lightning',
+                                           callback_data="BTC")],
+               [types.InlineKeyboardButton(text='STARTS',
+                                           callback_data="STARTS")],
+               get_return_button(callback)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     await send_message(session, callback, msg, reply_markup=keyboard)
     await callback.answer()
@@ -195,14 +201,18 @@ async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMCon
                                reply_markup=get_kb_return(user_id))
             await clear_last_message_id(global_data.admin_id)
             try:
-                await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address)
-                await state.update_data(out_pay_usdt=None)
-                await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address} good',
-                                   need_new_msg=True, reply_markup=get_kb_return(user_id))
-                await clear_last_message_id(global_data.admin_id)
+                if await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address, sun_fee=data.get("sun_fee",0)):
+                    await state.update_data(out_pay_usdt=None)
+                    await send_message(session, user_id=global_data.admin_id,
+                                       msg=f'{user_id} {usdt_sum} usdt {usdt_address} good',
+                                       need_new_msg=True, reply_markup=get_kb_return(user_id))
+                    await clear_last_message_id(global_data.admin_id)
+                else:
+                    raise Exception("USDT send failed")
             except Exception as e:
                 logger.error(e)
-                await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address} bad \n{e}',
+                await send_message(session, user_id=global_data.admin_id,
+                                   msg=f'{user_id} {usdt_sum} usdt {usdt_address} bad \n{e}',
                                    need_new_msg=True, reply_markup=get_kb_return(user_id))
 
 
@@ -272,12 +282,12 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
-    usdt_out_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
+    usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
     usdt_out_fee = round(usdt_out_fee)
     send_address = (await stellar_get_user_account(session, 0)).account.account_id
     send_memo = 'For USDT'
     usdt_sum = int(send_sum) - usdt_out_fee
-    await state.update_data(usdt_sum=usdt_sum)
+    await state.update_data(usdt_sum=usdt_sum, sun_fee=sun_fee)
 
     msg = my_gettext(message, 'confirm_send', (float2str(send_sum), usdm_asset.code, send_address, send_memo))
     msg += f"\n you will receive {usdt_sum} USDT for this address <b>{data.get('usdt_address')}</b>"
@@ -415,3 +425,114 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
 @router.callback_query(F.data == "BTC_OUT")
 async def cmd_btc_out(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await callback.answer('Not implemented yet', show_alert=True)
+
+
+############################################################################
+############################################################################
+############################################################################
+
+@router.callback_query(F.data == "STARTS")
+async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    await callback.answer()
+    await state.set_state(StateInOut.sending_starts_sum_in)
+    # await state.update_data(msg=msg)
+    eurmtl_sum = float((await stellar_get_balances(session, 0, asset_filter='EURMTL'))[0].balance)
+    await send_message(session, callback, 'Введи сумму в EURMTL которую вы хотите получить\n 1 EURMTL = 85 STARS\n'
+                                          f'максимально в наличии {int(eurmtl_sum)} EURMTL',
+                       reply_markup=get_kb_return(callback))
+
+
+@router.message(StateInOut.sending_starts_sum_in)
+async def cmd_send_get_sum(message: types.Message, state: FSMContext, session: Session, bot: Bot):
+    try:
+        send_sum = int(message.text)
+    except:
+        send_sum = 0
+
+    eurmtl_sum = int(float((await stellar_get_balances(session, 0, asset_filter='EURMTL'))[0].balance))
+
+    await state.update_data(send_sum=send_sum)
+    if 0 < send_sum < eurmtl_sum:
+        await state.set_state(None)
+        msg = await bot.send_invoice(message.chat.id, title=f"{send_sum} EURMTL",
+                                     description=f"{send_sum} EURMTL на ваш кошелек",
+                                     payload="STARS",
+                                     currency="XTR", provider_token='',
+                                     prices=[types.LabeledPrice(label="STARS", amount=send_sum * 85)],
+                                     photo_url='https://montelibero.org/wp-content/uploads/2022/02/EURMTL_LOGO_NEW_1-1043x675.jpg')
+
+    await message.delete()
+    await clear_last_message_id(message.chat.id)
+
+
+@router.pre_checkout_query()
+async def cmd_process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery, bot: Bot):
+    logger.info(pre_checkout_query)
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+
+@router.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
+async def cmd_process_message_successful_payment(message: types.Message, session: Session, state: FSMContext):
+    logger.info(message.successful_payment)
+    data = await state.get_data()
+    send_sum = data.get("send_sum")
+    async with new_wallet_lock:
+        if len(await stellar_get_balances(session, message.from_user.id, asset_filter='EURMTL')) == 0:
+            await message.answer(text=f"You don't have a trust line to EURMTL, continuation is not possible",
+                                 show_alert=True)
+            return
+        await message.answer(text=f"Found pay for {round(send_sum)} EURMTL, wait transaction",
+                             show_alert=True)
+        await sleep(1)
+
+        master = stellar_get_master(session)
+        xdr = stellar_sign(await stellar_pay((await stellar_get_user_account(session, 0)).account.account_id,
+                                             (await stellar_get_user_account(session,
+                                                                             message.from_user.id)).account.account_id,
+                                             eurmtl_asset, amount=round(send_sum)), master.secret)
+        logger.info(xdr)
+        await async_stellar_send(xdr)
+        await cmd_info_message(session, message.chat.id, 'All works done!')
+        await send_message(session, user_id=global_data.admin_id,
+                           msg=html.escape(f'{message.from_user} {message.successful_payment} good'),
+                           need_new_msg=True, reply_markup=get_kb_return(message.chat.id))
+
+
+############################################################################
+############################################################################
+############################################################################
+
+
+@router.message(Command(commands=["balance"]))
+async def cmd_balance(message: types.Message, session: Session):
+    if message.from_user.username == "itolstov":
+        balances = db_get_usdt_balances(session)
+        if balances:
+            balance_message = "\n".join(f"Адрес: {addr}, USDT: {amount}" for addr, amount in balances)
+
+            total_balance = sum(amount for _, amount in balances)
+            balance_message += f"\nИтого: {total_balance} USDT"
+        else:
+            balance_message = "У вас нет активных балансов USDT."
+        await message.answer(balance_message)
+    else:
+        await message.answer("У вас нет доступа к этой команде.")
+
+
+@router.message(Command(commands=["usdt"]))
+async def cmd_balance(message: types.Message, session: Session, command: CommandObject):
+    if message.from_user.username == "itolstov" and len(command.args) > 0:
+        username = command.args[0]
+        usdt_key, balance = db_get_usdt_private_key(session, 0, user_name=username)
+        await message.answer(f"Fount USDT: {balance}")
+        await delegate_energy(private_key_to=usdt_key, energy_amount=65_000)
+        if await get_trx_balance(public_key=usdt_key) < 3:
+            await send_trx(public_key_to=usdt_key, amount=5, private_key_from=tron_master_key)
+        if await send_usdt_async(public_key_to=tron_master_key, amount=balance, private_key_from=usdt_key):
+            async with new_wallet_lock:
+                db_update_usdt_sum(session, 0, 0, user_name=username)
+        await delegate_energy(private_key_to=usdt_key, energy_amount=65_000, undo=True)
+
+        await message.answer("Done!")
+
+

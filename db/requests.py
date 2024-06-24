@@ -74,8 +74,11 @@ def db_get_user_account_by_username(session: Session, username: str):
     return None, None
 
 
-def db_get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=None):
-    user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
+def db_get_usdt_private_key(session: Session, user_id: int, create_trc_private_key=None, user_name: str = None):
+    if user_name:
+        user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_name == user_name).one_or_none()
+    else:
+        user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user and user.usdt and len(user.usdt) == 64:
         return user.usdt, user.usdt_amount
     else:
@@ -85,8 +88,12 @@ def db_get_usdt_private_key(session: Session, user_id: int, create_trc_private_k
         return addr, 0
 
 
-def db_update_usdt_sum(session: Session, user_id: int, update_summ: int):
-    user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
+def db_update_usdt_sum(session: Session, user_id: int, update_summ: int, user_name: str = None):
+    if user_name:
+        user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_name == user_name).one_or_none()
+    else:
+        user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
+
     if user and user.usdt and len(user.usdt) == 64:
         user.usdt_amount = user.usdt_amount + update_summ
         session.commit()
@@ -427,4 +434,5 @@ def get_wallet_info(session: Session, user_id: int, public_key: str) -> str:
 
 if __name__ == '__main__':
     pass
-    # from quik_pool import quik_pool
+    from quik_pool import quik_pool
+    print(db_get_usdt_private_key(quik_pool(), 1, user_name='itolstov'))

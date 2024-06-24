@@ -325,7 +325,8 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
         await message.reply('is being recognized')
         await global_data.bot.download(message.photo[-1], destination=f'qr/{message.from_user.id}.jpg')
 
-        qr_data = decode_qr_code(f'qr/{message.from_user.id}.jpg') #decode(Image.open(f"qr/{message.from_user.id}.jpg"))
+        qr_data = decode_qr_code(f'qr/{message.from_user.id}.jpg')
+        # decode(Image.open(f"qr/{message.from_user.id}.jpg"))
         if qr_data:
             logger.info(qr_data)
             qr_data = qr_data
@@ -361,11 +362,13 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
 
 
 @router.inline_query(F.chat_type == "sender")
-async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ):
+async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
     if inline_query.chat_type != "sender":
         await inline_query.answer([], is_personal=True, cache_time=100)
         return
+
     results = []
+    seen_ids = set()  # Для отслеживания уникальных идентификаторов
 
     # Query from the address book
     book_data = db_get_book_data(session, inline_query.from_user.id)
@@ -380,27 +383,36 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ):
     if len(inline_query.query) > 2:
         for record in data:
             if (record[0] + record[1]).upper().find(inline_query.query.upper()) != -1:
-                results.append(types.InlineQueryResultArticle(id=record[0],
-                                                              title=record[1],
-                                                              input_message_content=types.InputTextMessageContent(
-                                                                  message_text=record[0])))
+                if record[0] not in seen_ids:
+                    seen_ids.add(record[0])
+                    results.append(types.InlineQueryResultArticle(
+                        id=record[0],
+                        title=record[1],
+                        input_message_content=types.InputTextMessageContent(message_text=record[0])
+                    ))
 
         # Query from users
         user_data = db_get_user_data(session, inline_query.query)
         for record in user_data:
             user = f'@{record.user_name}'
-            results.append(types.InlineQueryResultArticle(id=user, title=user,
-                                                          input_message_content=types.InputTextMessageContent(
-                                                              message_text=user)))
-        await inline_query.answer(
-            results[:49], is_personal=True
-        )
+            if user not in seen_ids:
+                seen_ids.add(user)
+                results.append(types.InlineQueryResultArticle(
+                    id=user,
+                    title=user,
+                    input_message_content=types.InputTextMessageContent(message_text=user)
+                ))
+
+        await inline_query.answer(results[:49], is_personal=True)
+
     else:
         for record in data:
-            results.append(types.InlineQueryResultArticle(id=record[0],
-                                                          title=record[1],
-                                                          input_message_content=types.InputTextMessageContent(
-                                                              message_text=record[0])))
-        await inline_query.answer(
-            results[:49], is_personal=True
-        )
+            if record[0] not in seen_ids:
+                seen_ids.add(record[0])
+                results.append(types.InlineQueryResultArticle(
+                    id=record[0],
+                    title=record[1],
+                    input_message_content=types.InputTextMessageContent(message_text=record[0])
+                ))
+
+        await inline_query.answer(results[:49], is_personal=True)

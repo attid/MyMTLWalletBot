@@ -174,6 +174,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    logger.add("mmwb.log", rotation="1 MB")
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
