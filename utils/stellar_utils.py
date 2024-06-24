@@ -122,7 +122,7 @@ async def get_eurmtl_xdr(url):
 
 async def stellar_check_xdr(xdr: str, for_free_account=False):
     result = None
-    allowed_operations = ["ManageData", "Payment", "ChangeTrust"]
+    allowed_operations = ["ManageData", "Payment", "ChangeTrust", "Clawback"]
 
     try:
         if xdr.find('eurmtl.me/sign_tools') > -1:
@@ -389,7 +389,8 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
         account = await server.accounts().account_id(delete_account.public_key).call()
         master_account_details = await server.accounts().account_id(master_account.public_key).call()
         master_account_trustlines = {(balance['asset_code'], balance['asset_issuer']): balance
-                                     for balance in master_account_details['balances'] if balance['asset_type'] != "native"}
+                                     for balance in master_account_details['balances'] if
+                                     balance['asset_type'] != "native"}
 
         for balance in account['balances']:
             if balance['asset_type'] != "native":
@@ -776,6 +777,10 @@ def my_float(s: str) -> float:
 #     logger.info(resp)
 
 
+def my_round(x: float, base=2):
+    return int(x * 10 ** base) / 10 ** base
+
+
 def float2str(f, short: bool = False) -> str:
     if isinstance(f, str):
         if f == 'unlimited':
@@ -784,7 +789,8 @@ def float2str(f, short: bool = False) -> str:
     if short and f > 0.01:
         s = "%.2f" % f
     else:
-        s = "%.7f" % f
+        s = "%.8f" % f
+        s = s[:-1]
     while len(s) > 1 and s[-1] in ('0', '.'):
         l = s[-1]
         s = s[0:-1]
@@ -933,5 +939,5 @@ if __name__ == "__main__":
     pass
     # a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     # print(a)
-    from db.quik_pool import quik_pool
-    print(asyncio.run(stellar_delete_all_deleted(quik_pool())))
+    # from db.quik_pool import quik_pool
+    # print(asyncio.run(stellar_delete_all_deleted(quik_pool())))

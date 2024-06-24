@@ -14,7 +14,7 @@ from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button,
 from mytypes import Balance
 from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
     stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float, float2str, \
-    stellar_get_selling_offers_sum
+    stellar_get_selling_offers_sum, my_round
 
 
 class StateSwapToken(StatesGroup):
@@ -32,7 +32,7 @@ class SwapAssetForCallbackData(CallbackData, prefix="SwapAssetForCallbackData"):
 router = Router()
 
 
-@router.callback_query(F.data=="Swap")
+@router.callback_query(F.data == "Swap")
 async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'choose_token_swap')
     asset_list = await stellar_get_balances(session, callback.from_user.id)
@@ -172,6 +172,8 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         receive_sum, need_alert = await stellar_check_receive_sum(Asset(send_asset, send_asset_code),
                                                                   float2str(send_sum),
                                                                   Asset(receive_asset, receive_asset_code))
+        if float(receive_sum) > 10:
+            receive_sum = float2str(my_round(float(receive_sum), 3))
 
         xdr = await stellar_swap(
             (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
