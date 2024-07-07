@@ -4,6 +4,7 @@ from typing import Union
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
+from loguru import logger
 from sqlalchemy.orm import Session
 from aiogram import types
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
@@ -25,19 +26,22 @@ async def send_message(session: Session, user_id: Union[types.CallbackQuery, typ
         if msg_id > 0:
             with suppress(TelegramBadRequest):
                 await global_data.bot.delete_message(user_id, msg_id)
-        await global_data.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
+        await global_data.dispatcher.storage.update_data(key=fsm_storage_key,
+                                                         data={'last_message_id': new_msg.message_id})
     else:
         if msg_id > 0:
             try:
-                await global_data.bot.edit_message_text(msg, user_id, msg_id, reply_markup=reply_markup,
-                                                        parse_mode=parse_mode,
+                await global_data.bot.edit_message_text(text=msg, chat_id=user_id, message_id=msg_id,
+                                                        reply_markup=reply_markup, parse_mode=parse_mode,
                                                         disable_web_page_preview=True)
                 return
-            except:
-                pass
+            except Exception as ex:
+                logger.info(['send_message edit_text error', ex.__class__])
+
         new_msg = await global_data.bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
                                                      disable_web_page_preview=True)
-        await global_data.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': new_msg.message_id})
+        await global_data.dispatcher.storage.update_data(key=fsm_storage_key,
+                                                         data={'last_message_id': new_msg.message_id})
 
 
 async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,

@@ -284,6 +284,9 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     send_sum = data.get("send_sum")
     usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
     usdt_out_fee = round(usdt_out_fee)
+    if await get_account_energy() > 65_000:
+        usdt_out_fee = 0
+
     send_address = (await stellar_get_user_account(session, 0)).account.account_id
     send_memo = 'For USDT'
     usdt_sum = int(send_sum) - usdt_out_fee
@@ -522,17 +525,15 @@ async def cmd_balance(message: types.Message, session: Session):
 @router.message(Command(commands=["usdt"]))
 async def cmd_balance(message: types.Message, session: Session, command: CommandObject):
     if message.from_user.username == "itolstov" and len(command.args) > 0:
-        username = command.args[0]
+        username = command.args
         usdt_key, balance = db_get_usdt_private_key(session, 0, user_name=username)
         await message.answer(f"Fount USDT: {balance}")
+        if await get_trx_balance(private_key=usdt_key) < 3:
+            await send_trx_async(private_key_to=usdt_key, amount=5, private_key_from=tron_master_key)
         await delegate_energy(private_key_to=usdt_key, energy_amount=65_000)
-        if await get_trx_balance(public_key=usdt_key) < 3:
-            await send_trx(public_key_to=usdt_key, amount=5, private_key_from=tron_master_key)
-        if await send_usdt_async(public_key_to=tron_master_key, amount=balance, private_key_from=usdt_key):
+        if await send_usdt_async(private_key_to=tron_master_key, amount=balance, private_key_from=usdt_key):
             async with new_wallet_lock:
-                db_update_usdt_sum(session, 0, 0, user_name=username)
+                db_update_usdt_sum(session, 0, -1 * balance, user_name=username)
         await delegate_energy(private_key_to=usdt_key, energy_amount=65_000, undo=True)
 
         await message.answer("Done!")
-
-
