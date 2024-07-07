@@ -25,7 +25,7 @@ from utils.common_utils import get_user_id, decode_qr_code
 from utils.global_data import global_data
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
-    cut_text_to_28_bytes, get_first_balance_from_list
+    cut_text_to_28_bytes, get_first_balance_from_list, base_fee
 
 
 class StateSendToken(StatesGroup):
@@ -362,9 +362,11 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 source_account = await stellar_get_user_account(session, message.from_user.id)
                 transaction = TransactionBuilder(
                     source_account=source_account,
-                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                    base_fee=base_fee,
                 )
                 transaction.set_timeout(60 * 60)
+
                 for operation in data.transaction_envelope.transaction.operations:
                     transaction.append_operation(operation)
                 envelop = transaction.build()
