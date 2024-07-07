@@ -10,8 +10,9 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from loguru import logger
 from sqlalchemy.orm import Session
-from stellar_sdk import Asset
+from stellar_sdk import Asset, Network
 from stellar_sdk.sep.federation import resolve_stellar_address
+from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
 from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list,
                          db_get_user)
@@ -355,6 +356,23 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                                         last_message_id=0)
 
                 await cmd_send_04(session, message, state)
+            elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
+                data = TransactionStellarUri.from_uri(qr_data, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+                source_account = await stellar_get_user_account(session, message.from_user.id)
+                transaction = TransactionBuilder(
+                    source_account=source_account,
+                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+                )
+                transaction.set_timeout(60 * 60)
+                allowed_operations = ["ManageData", "Payment", "ChangeTrust", "Clawback"]
+                for operation in data.transaction_envelope.transaction.operations:
+                    type_name = type(operation).__name__
+                    if type_name in allowed_operations:
+                        transaction.append_operation(operation)
+
+                envelop = transaction.build()
+                xdr = envelop.to_xdr()
+                await state.update_data(xdr=xdr)
             else:
                 await message.reply('Bad QR code =(')
         else:
