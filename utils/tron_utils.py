@@ -60,10 +60,13 @@ def send_usdt(public_key_to, amount, private_key_from):
     print(txn.broadcast().wait())
 
 
-def send_trx(public_key_to, amount, private_key_from):
+def send_trx(public_key_to, amount, private_key_from, private_key_to=None):
     client = Tron(HTTPProvider(api_key=api_key))
     private_key = PrivateKey(bytes.fromhex(private_key_from))
     public_key_from = private_key.public_key.to_base58check_address()
+
+    if private_key_to is not None:
+        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
 
     txn = (
         client.trx.transfer(public_key_from, public_key_to, amount * 10 ** 6)
@@ -620,31 +623,22 @@ async def delegate_energy(energy_amount: int, public_key_to=None, private_key_to
             raise
 
 
+async def get_account_energy(address=None, private_key=tron_master_key):
+    if address is None:
+        address = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
 
-def get_account_energy(private_key):
-    # Создаем клиент Tron
-    client = Tron(HTTPProvider(api_key=api_key))
+    async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
+        account_resources = await client.get_account_resource(address)
+        # print(account_resources)
+        return account_resources.get('EnergyLimit', 0) - account_resources.get('EnergyUsed', 0)
 
-    # Получаем адрес из приватного ключа
-    address = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
-
-    # Получаем ресурсы аккаунта
-    account_resources = client.get_account_resource('TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ')
-    print(account_resources)
-
-    # Извлекаем количество энергии
-    energy_limit = account_resources.get('EnergyLimit', 0)
-    energy_used = account_resources.get('EnergyUsed', 0)
-
-    # Вычисляем доступную энергию
-    available_energy = energy_limit - energy_used
-
-    return available_energy
 
 async def run_test():
-    #a = await delegate_energy(public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', energy_amount=100, undo=False)
-    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
-    print(a)
+    # a = await delegate_energy(public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', energy_amount=100, undo=False)
+#    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
+ #   print(a)
+    print(await get_account_energy())
+
 
 if __name__ == "__main__":
     pass
