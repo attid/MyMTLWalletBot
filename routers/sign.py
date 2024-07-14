@@ -51,16 +51,17 @@ async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session
 
 async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None):
     data = await state.get_data()
+    user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
+    simple_account = user_account[:4] + '..' + user_account[-4:]
     if msg is None:
         msg = data.get('msg')
         if msg is None:
-            user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
-            simple_account = user_account[:4] + '..' + user_account[-4:]
             msg = my_gettext(chat_id, "enter_password", (simple_account,))
             await state.update_data(msg=msg)
 
     pin_type = data.get("pin_type")
     pin = data.get("pin", '')
+    current_state = await state.get_state()
 
     if pin_type is None:
         pin_type = db_get_default_wallet(session, chat_id).use_pin
@@ -68,16 +69,23 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
 
     if pin_type == 1:  # pin
         msg = msg + "\n" + ''.ljust(len(pin), '*') + '\n\n' + long_line()
+        if current_state == PinState.sign:
+            msg += my_gettext(chat_id, 'confirm_send_mini_xdr')
         await send_message(session, chat_id, msg, reply_markup=get_kb_pin(data))
 
     if pin_type == 2:  # password
-        msg = my_gettext(chat_id, "send_password")
+        msg = my_gettext(chat_id, "send_password", (simple_account,))
+        if current_state == PinState.sign:
+            msg += my_gettext(chat_id, 'confirm_send_mini_xdr')
         await state.set_state(PinState.ask_password)
         await send_message(session, chat_id, msg, reply_markup=get_kb_return(chat_id))
 
     if pin_type == 0:  # no password
         await state.update_data(pin=str(chat_id))
-        await send_message(session, chat_id, my_gettext(chat_id, 'confirm_send_mini'),
+        msg = my_gettext(chat_id, 'confirm_send_mini', (simple_account,))
+        if current_state == PinState.sign:
+            msg += my_gettext(chat_id, 'confirm_send_mini_xdr')
+        await send_message(session, chat_id, msg,
                            reply_markup=get_kb_nopassword(chat_id))
 
     if pin_type == 10:  # ro
