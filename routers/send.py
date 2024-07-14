@@ -371,6 +371,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                     transaction.append_operation(operation)
                 envelop = transaction.build()
                 xdr_to_check = envelop.to_xdr()
+                await state.update_data(last_message_id=0)
                 await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
                                     user_id=message.from_user.id, state=state)
 
