@@ -16,16 +16,16 @@ from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
 from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list,
                          db_get_user)
-from routers.sign import cmd_check_xdr
-from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from mytypes import Balance
+from routers.sign import cmd_check_xdr
+from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state
 from utils.common_utils import get_user_id, decode_qr_code
 from utils.global_data import global_data
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
-    cut_text_to_28_bytes, get_first_balance_from_list, base_fee
+    cut_text_to_28_bytes, get_first_balance_from_list, base_fee, is_valid_stellar_address
 
 
 class StateSendToken(StatesGroup):
@@ -92,7 +92,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
         public_key = data.get('qr', message.text)
     my_account = await stellar_check_account(public_key)
     if my_account:
-        await state.update_data(send_address=my_account.account.account.account_id)
+        await state.update_data(send_address=my_account.account_id)
         if my_account.memo:
             await state.update_data(memo=my_account.memo, federal_memo=True)
 
@@ -331,8 +331,8 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
         # decode(Image.open(f"qr/{message.from_user.id}.jpg"))
         if qr_data:
             logger.info(qr_data)
-            qr_data = qr_data
-            if len(qr_data) == 56 and qr_data[0] == 'G':
+
+            if is_valid_stellar_address(qr_data):
                 await state.update_data(qr=qr_data, last_message_id=0)
                 await message.reply(f'QR code: <code>{qr_data}</code>\n'
                                     f'preparations are in progress...')

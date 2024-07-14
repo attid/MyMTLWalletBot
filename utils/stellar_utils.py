@@ -1,19 +1,19 @@
-import asyncio
 import base64
 import re
 from contextlib import suppress
+
 import jsonpickle
 from aiogram.utils.text_decorations import html_decoration
 from cryptocode import encrypt, decrypt
+from stellar_sdk import AiohttpClient, ServerAsync, StrKey, MuxedAccount
 from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
+
 from config_reader import config
 from db.requests import *
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
-from stellar_sdk import AiohttpClient, ServerAsync
-
 from utils.aiogram_utils import get_web_request
 from utils.counting_lock import CountingLock
 
@@ -571,10 +571,12 @@ class AccountAndMemo:
     def __init__(
             self,
             account: Account,
-            memo: Optional[str] = None
+            memo: Optional[str] = None,
+            account_id: Optional[str] = None
     ) -> None:
         self.account = account
         self.memo = memo
+        self.account_id = account_id
 
 
 async def stellar_check_account(public_key: str) -> AccountAndMemo:
@@ -589,8 +591,10 @@ async def stellar_check_account(public_key: str) -> AccountAndMemo:
                 account = AccountAndMemo(await server.load_account(public_key))
                 if record.memo:
                     account.memo = record.memo
+                account.account_id = public_key
             else:
                 account = AccountAndMemo(await server.load_account(public_key))
+                account.account_id = public_key
             return account
     except Exception as ex:
         logger.info(["stellar_check_account", public_key, ex])
@@ -799,11 +803,26 @@ def float2str(f, short: bool = False) -> str:
     return s
 
 
-def find_stellar_public_key(text):
-    # Stellar публичные ключи начинаются с 'G' и содержат 56 символов
+def find_stellar_addresses(text):
+    # Паттерн для обычных Stellar публичных ключей (начинаются с 'G' и содержат 56 символов)
     stellar_public_key_pattern = r'G[A-Za-z0-9]{55}'
-    match = re.search(stellar_public_key_pattern, text)
-    return match.group(0) if match else None
+
+    # Паттерн для Muxed адресов (начинаются с 'M' и содержат 69 символов)
+    muxed_address_pattern = r'M[A-Za-z0-9]{68}'
+
+    # Объединяем паттерны
+    combined_pattern = f'({stellar_public_key_pattern}|{muxed_address_pattern})'
+
+    # Находим все совпадения
+    matches = re.findall(combined_pattern, text)
+
+    # Проверяем каждое совпадение на валидность
+    valid_addresses = []
+    for match in matches:
+        if is_valid_stellar_address(match):
+            valid_addresses.append(match)
+
+    return valid_addresses
 
 
 def find_stellar_federation_address(text):
@@ -935,7 +954,22 @@ def cut_text_to_28_bytes(text: str) -> str:
         return trimmed_text[:27].decode("utf-8")
 
 
+def is_valid_stellar_address(address):
+    try:
+        if address.startswith('G'):
+            StrKey.decode_ed25519_public_key(address)
+        elif address.startswith('M'):
+            MuxedAccount.from_account(address)
+        else:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
+    print(is_valid_stellar_address('MAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCAAAAAAAAAAAARXWI'))
+    print(is_valid_stellar_address('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     pass
     # a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     # print(a)

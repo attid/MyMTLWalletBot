@@ -10,8 +10,8 @@ from routers.send import cmd_send_04, cmd_send_choose_token
 from routers.sign import cmd_check_xdr
 from utils.aiogram_utils import clear_last_message_id
 from utils.gpt import gpt_check_message
-from utils.stellar_utils import find_stellar_public_key, find_stellar_federation_address, stellar_check_account, \
-    extract_url, is_base64
+from utils.stellar_utils import find_stellar_addresses, find_stellar_federation_address, stellar_check_account, \
+    extract_url, is_base64, is_valid_stellar_address
 
 router = Router()
 
@@ -29,17 +29,23 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                             user_id=message.from_user.id, state=state)
         return
 
+    message_is_key = len(text) > 55 and is_valid_stellar_address(text)
+
     # if forwarded
-    if message.forward_sender_name or message.forward_from:
+    if message.forward_sender_name or message.forward_from or message_is_key:
         public_key = None
         if message.text:
-            public_key = find_stellar_public_key(message.text)
-            if public_key is None:
+            public_keys = find_stellar_addresses(message.text)
+            if public_keys:
+                public_key = public_keys[0]
+            else:
                 public_key = find_stellar_federation_address(message.text.lower())
 
         if message.caption and public_key is None:
-            public_key = find_stellar_public_key(message.caption)
-            if public_key is None:
+            public_keys = find_stellar_addresses(message.caption)
+            if public_keys:
+                public_key = public_keys[0]
+            else:
                 public_key = find_stellar_federation_address(message.caption.lower())
 
         if message.forward_from and public_key is None:
@@ -48,7 +54,7 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
         if public_key:
             my_account = await stellar_check_account(public_key)
             if my_account:
-                await state.update_data(send_address=my_account.account.account.account_id)
+                await state.update_data(send_address=my_account.account_id)
                 if my_account.memo:
                     await state.update_data(memo=my_account.memo, federal_memo=True)
 
