@@ -638,6 +638,7 @@ async def run_test():
 #    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
  #   print(a)
     print(await get_account_energy())
+    print(await get_usdt_balance('TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az'))
 
 
 if __name__ == "__main__":
