@@ -56,7 +56,7 @@ def decode_db_effect(row):
 
 
 async def cmd_send_message_events(session_pool, dp: Dispatcher):
-    loop = asyncio.get_event_loop()
+    #loop = asyncio.get_event_loop()
 
     with session_pool() as session:
         query = session.query(TOperations.id, TOperations.dt, TOperations.operation, TOperations.amount1,
@@ -70,7 +70,8 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
             .order_by(TOperations.id) \
             .limit(10)
 
-        records = await loop.run_in_executor(None, lambda: query.all())
+        # records = await loop.run_in_executor(None, lambda: query.all())
+        records = await asyncio.to_thread(query.all())
 
         for record in records:
             try:

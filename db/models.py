@@ -7,6 +7,12 @@ from sqlalchemy import Column, Integer, BigInteger, DateTime
 Base = declarative_base()
 metadata = Base.metadata
 
+class TLOperations(Base):
+    __tablename__ = 'TL_OPERATIONS'
+    id = Column(String(32))
+    dt = Column(DateTime)
+    account = Column(String(64))
+
 
 class TOperations(Base):
     __tablename__ = 'T_OPERATIONS'
