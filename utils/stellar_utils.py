@@ -122,7 +122,7 @@ async def get_eurmtl_xdr(url):
 
 async def stellar_check_xdr(xdr: str, for_free_account=False):
     result = None
-    allowed_operations = ["ManageData", "Payment", "ChangeTrust", "Clawback"]
+    allowed_operations = ["ManageData", "Payment", "ChangeTrust", "Clawback", "SetTrustLineFlags"]
 
     try:
         if xdr.find('eurmtl.me/sign_tools') > -1:

@@ -101,6 +101,14 @@ async def set_commands(bot: Bot):
             command="fee",
             description="check fee",
         ),
+        BotCommand(
+            command="horizon",
+            description="change horizon",
+        ),
+        BotCommand(
+            command="horizon_rx",
+            description="change horizon_rw",
+        ),
     ]
 
     await bot.set_my_commands(commands=commands_clear, scope=BotCommandScopeDefault())
