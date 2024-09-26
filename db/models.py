@@ -11,7 +11,7 @@ class TLOperations(Base):
     __tablename__ = 'TL_OPERATIONS'
     id = Column(String(32))
     dt = Column(DateTime)
-    account = Column(String(64))
+    account = Column(String(64), primary_key=True)
 
 
 class TOperations(Base):
