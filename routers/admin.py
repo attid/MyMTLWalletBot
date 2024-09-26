@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
+from config_reader import config, horizont_urls
 from db.requests import db_get_usdt_balances
 from utils.global_data import global_data
 from utils.stellar_utils import async_stellar_check_fee
@@ -32,6 +33,28 @@ async def cmd_exit(message: types.Message, state: FSMContext, session: Session):
         else:
             await state.set_state(ExitState.need_exit)
             await message.reply(":'[")
+
+
+@router.message(Command(commands=["horizon"]))
+async def cmd_horizon(message: types.Message, state: FSMContext, session: Session):
+    if message.from_user.username == "itolstov":
+        if config.horizon_url in horizont_urls:
+            config.horizon_url = horizont_urls[(horizont_urls.index(config.horizon_url) + 1) % len(horizont_urls)]
+        else:
+            horizont_urls.append(config.horizon_url)
+            config.horizon_url = horizont_urls[0]
+        await message.reply(f"Horizon url: {config.horizon_url}")
+
+
+@router.message(Command(commands=["horizon_rw"]))
+async def cmd_horizon(message: types.Message, state: FSMContext, session: Session):
+    if message.from_user.username == "itolstov":
+        if config.horizon_url_rw in horizont_urls:
+            config.horizon_url_rw = horizont_urls[(horizont_urls.index(config.horizon_url_rw) + 1) % len(horizont_urls)]
+        else:
+            horizont_urls.append(config.horizon_url_rw)
+            config.horizon_url_rw = horizont_urls[0]
+        await message.reply(f"Horizon url: {config.horizon_url_rw}")
 
 
 async def cmd_send_file(message: types.Message, filename):
