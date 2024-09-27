@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import re
 from contextlib import suppress
@@ -16,6 +17,7 @@ from db.requests import *
 from mytypes import MyOffers, MyAccount, Balance, MyOffer
 from utils.aiogram_utils import get_web_request
 from utils.counting_lock import CountingLock
+from utils.tron_utils import test4
 
 base_fee = config.base_fee
 
@@ -75,9 +77,44 @@ def get_good_asset_list() -> List[Balance]:
     ]
 
 
+def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
+    # Преобразуем XDR обратно в TransactionEnvelope
+    transaction_envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+
+    # Извлекаем существующую транзакцию из TransactionEnvelope
+    existing_transaction = transaction_envelope.transaction
+
+    # Загружаем исходную учетную запись
+    source_account = Account(account=existing_transaction.source.account_id,
+                             sequence=existing_transaction.sequence - 1)
+    #await server.load_account(account_id=existing_transaction.source.account_id)
+
+    # Создаем новый TransactionBuilder с той же исходной информацией
+    transaction_builder = TransactionBuilder(
+        source_account=source_account,
+        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+        base_fee=existing_transaction.fee  # Сохраняем исходную базовую комиссию
+    )
+
+    # Устанавливаем временные границы, если они были заданы
+    if existing_transaction.preconditions.time_bounds:
+        transaction_builder.set_timeout(existing_transaction.preconditions.time_bounds.max_time)
+    else:
+        # Если временные границы не заданы, задаем неограниченное время
+        transaction_builder.set_timeout(0)
+
+    # Добавляем все существующие операции из старой транзакции
+    for op in existing_transaction.operations:
+        transaction_builder.append_operation(op)
+
+    # Возвращаем объект TransactionBuilder для дальнейших модификаций
+    return transaction_builder
+
+
 async def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete: bool = False):
     if xdr:
-        transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        transaction = stellar_get_transaction_builder(xdr)
+        # TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     else:
         async with ServerAsync(
                 horizon_url=config.horizon_url, client=AiohttpClient()
@@ -95,13 +132,14 @@ async def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete
     transaction = transaction.build()
 
     xdr = transaction.to_xdr()
-    # logger.info(f"xdr: {xdr}")
+    logger.info(f"new xdr: {xdr}")
     return xdr
 
 
 def stellar_sign(xdr: str, private_key: str):
     transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     transaction.sign(private_key)
+    logger.info(f"new xdr sign : {transaction.to_xdr()}")
     return transaction.to_xdr()
 
 
@@ -832,21 +870,21 @@ def find_stellar_federation_address(text):
     return match.group(0) if match else None
 
 
+import re
+
+
 def extract_url(msg, surl='eurmtl.me'):
     try:
         if surl:
-            pattern = f"https?://{surl}[^\s]+"
+            pattern = rf"https?://{re.escape(surl)}[^\s]+"
         else:
-            pattern = "https?://[^\s]+"
+            pattern = r"https?://[^\s]+"
 
         search_result = re.search(pattern, msg)
 
-        if search_result:
-            return search_result.group(0)  # Извлекаем URL
-        else:
-            return None  # URL не найден
+        return search_result.group(0) if search_result else None
     except Exception as e:
-        print(f"Ошибка при извлечении URL: {e}")
+        print(f"Error extracting URL: {e}")
         return None
 
 
@@ -967,9 +1005,26 @@ def is_valid_stellar_address(address):
         return False
 
 
+async def test():
+    mnemonic_phrase = Keypair.generate_mnemonic_phrase()
+    new_account = Keypair.from_mnemonic_phrase(mnemonic_phrase)
+
+    xdr = await stellar_pay('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI', new_account.public_key,
+                            xlm_asset, 5, create=True, fee=1001001)
+    # stellar_send(stellar_sign(xdr, master.secret))
+
+    xdr = await stellar_add_trust(new_account.public_key, mtl_asset, xdr=xdr)
+    xdr = await stellar_add_trust(new_account.public_key, eurmtl_asset, xdr=xdr)
+    xdr = await stellar_add_trust(new_account.public_key, satsmtl_asset, xdr=xdr)
+    xdr = await stellar_add_trust(new_account.public_key, usdm_asset, xdr=xdr)
+    print(xdr)
+
+
 if __name__ == "__main__":
-    print(is_valid_stellar_address('MAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCAAAAAAAAAAAARXWI'))
-    print(is_valid_stellar_address('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
+    # print(is_valid_stellar_address('MAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCAAAAAAAAAAAARXWI'))
+    # print(is_valid_stellar_address('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
+    a = asyncio.run(test())
+    print(a)
     pass
     # a = asyncio.run(stellar_get_multi_sign_xdr('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'))
     # print(a)

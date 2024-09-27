@@ -3,10 +3,11 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
+
+from db.mongo import mongo_check_multi
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from routers.sign import cmd_check_xdr
 from utils.aiogram_utils import my_gettext, send_message, clear_last_message_id, get_web_request
-from utils.gspread_utils import gs_check_multi
 from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
     my_float, have_free_xlm, stellar_get_multi_sign_xdr
 
@@ -369,7 +370,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: BIMCallbackDa
 @router.callback_query(F.data=="MTLToolsUpdateMulti")
 async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContext, session:Session):
     account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
-    if not await gs_check_multi(account_id):
+    if not await mongo_check_multi(account_id):
         await callback.answer('Ваш адрес не найден в реестре', show_alert=True)
         return
     else:

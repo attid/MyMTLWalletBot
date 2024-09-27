@@ -27,3 +27,4 @@ sqlalchemy-stubs
 opencv-python~=4.10.0.82
 pip
 pyzbar~=0.1.9
+motor

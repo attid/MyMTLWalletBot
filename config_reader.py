@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     sentry_dsn: str
     horizon_url: str
     horizon_url_rw: str
+    mongodb_url: str
     # horizon_url_id: Optional[int] = 0
 
     class Config:

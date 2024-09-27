@@ -22,30 +22,6 @@ def get_creds():
 agcm = gspread_asyncio.AsyncioGspreadClientManager(get_creds)
 
 
-async def gs_check_multi(public_key):
-    # Open the MTL_assets worksheet
-    agc = await agcm.authorize()
-    ss = await agc.open("MTL_assets")
-
-    # Check and process the ACCOUNTS worksheet
-    ws_accounts = await ss.worksheet("ACCOUNTS")
-
-    # Find the public_key in the 'pub_key' column (which is column 7, assuming the first column is 1)
-    data = await ws_accounts.find(str(public_key), in_column=7)
-
-    if data:
-        # Get the whole row where the public_key was found
-        row = await ws_accounts.row_values(data.row)
-
-        # Check if 'reserv' is part of the 'signers' column in the found row
-        # 'signers' column is assumed to be column 6
-        if 'reserv' in row[5]:  # Index 5 because list indexing starts at 0
-            return True
-
-    # Return False if public_key is not found or if 'reserv' is not in the 'signers' column
-    return False
-
-
 async def gs_update_fest_menu():
     agc = await agcm.authorize()
     ss = await agc.open_by_key('1onvv99Cq4awJ970UNEwxPUTDoQcAxnAur0pDu8y_sP8')
@@ -76,20 +52,6 @@ async def gs_update_fest_menu():
         num += 1
 
     return result
-
-
-async def gs_get_asset(asset_code):
-    agc = await agcm.authorize()
-    ss = await agc.open("MTL_assets")
-    ws = await ss.worksheet("ASSETS")
-    cell = await ws.find(asset_code, in_column=0)
-    if cell:
-        row_number = cell.row
-        row_data = await ws.row_values(row_number)
-        if row_data[13] == 'TRUE':
-            return row_data[5]
-        # ['EURMTL', 'EURMTL', 'tokenized', 'F', '', 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V', 'mtl.montelibero.org', '45\xa0500', '1', '', 'https://t.me/eurmtl_club', '', '', 'TRUE', 'https://eurmtl.me/asset/EURMTL']
-        # code	name	descr	status	stellar	issuer	domain	MTL-fund	e-rate	b-rate	chat	contract	person	eurmtl.me
 
 
 if __name__ == "__main__":
