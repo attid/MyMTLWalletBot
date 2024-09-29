@@ -1,0 +1,21 @@
+[Unit]
+Description=mmwb_bot Application
+After=network.target
+After=systemd-user-sessions.service
+After=network-online.target
+
+[Service]
+User=attid
+Group=attid
+Type=simple
+WorkingDirectory=/home/mmwb_bot
+ExecStart=/home/mmwb_bot/deploy/mmwb_bot.start.sh
+StandardError=append:/home/mmwb_bot/logs/service.err.log
+StandardOutput=append:/home/mmwb_bot/logs/service.out.log
+TimeoutSec=30
+Restart=always
+RestartSec=15
+
+
+[Install]
+WantedBy=multi-user.target
