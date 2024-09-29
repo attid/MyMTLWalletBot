@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import re
 from contextlib import suppress
 
 import jsonpickle
@@ -12,12 +11,11 @@ from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from config_reader import config
+from data.config_reader import config
 from db.requests import *
-from mytypes import MyOffers, MyAccount, Balance, MyOffer
+from utils.mytypes import MyOffers, MyAccount, Balance, MyOffer
 from utils.aiogram_utils import get_web_request
 from utils.counting_lock import CountingLock
-from utils.tron_utils import test4
 
 base_fee = config.base_fee
 

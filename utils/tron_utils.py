@@ -6,7 +6,7 @@ from loguru import logger
 from tronpy import Tron, AsyncTron, exceptions
 from tronpy.keys import PrivateKey, is_address
 from tronpy.providers import HTTPProvider, AsyncHTTPProvider
-from config_reader import config
+from data.config_reader import config
 from utils.aiogram_utils import get_web_request
 from tronpy.keys import to_hex_address
 
@@ -432,7 +432,6 @@ async def get_energy_fee() -> int:
 
 def test4():
     from tronpy import Tron
-    from tronpy.keys import PrivateKey
 
     client = Tron(HTTPProvider(api_key=api_key))
     contract = client.get_contract(usdt_contract)

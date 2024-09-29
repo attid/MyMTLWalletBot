@@ -194,7 +194,7 @@ async def cmd_donate_sum(message: types.Message, state: FSMContext, session: Ses
 
 @router.message(Command(commands=["delete_all"]))
 async def cmd_delete_all(message: types.Message, state: FSMContext, session: Session):
-    db_delete_all_by_user(session, message.from_user.id)
+    # db_delete_all_by_user(session, message.from_user.id)
     await send_message(session, message.from_user.id, 'All was delete, restart please')
     await state.clear()
 

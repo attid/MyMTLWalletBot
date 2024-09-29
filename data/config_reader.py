@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     horizon_url: str
     horizon_url_rw: str
     mongodb_url: str
+    test_mode: bool = False
+
     # horizon_url_id: Optional[int] = 0
 
     class Config:
@@ -36,3 +38,10 @@ class Settings(BaseSettings):
 
 
 config = Settings()
+
+if os.getenv('ENVIRONMENT', 'test') == 'production':
+    config.test_mode = False
+    # BOT_TOKEN = os.getenv("BOT_TOKEN")
+else:
+    config.test_mode = True
+    # BOT_TOKEN = os.getenv("TEST_BOT_TOKEN")
