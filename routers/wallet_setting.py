@@ -9,13 +9,13 @@ from requests import Session
 from stellar_sdk import Asset
 from sulguk import SULGUK_PARSE_MODE
 
-from config_reader import config
+from data.config_reader import config
 from db.mongo import mongo_get_asset_issuer
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
     db_insert_into_address_book, \
     db_get_default_wallet, db_get_user_account_by_username
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
-from mytypes import Balance
+from utils.mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message

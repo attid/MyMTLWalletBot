@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 import asyncio
-from config_reader import config
+from data.config_reader import config
 from utils.aiogram_utils import get_web_request
 
 

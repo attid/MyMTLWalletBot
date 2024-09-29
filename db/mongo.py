@@ -1,12 +1,7 @@
 import asyncio
-import json
-from datetime import datetime
-from enum import Enum
-from typing import Dict, Optional, List, Any
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
-from pydantic import BaseModel
-from config_reader import config
+from motor.motor_asyncio import AsyncIOMotorClient
+from data.config_reader import config
 
 client = AsyncIOMotorClient(config.mongodb_url)
 db = client['mtl_tables']

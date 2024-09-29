@@ -10,14 +10,14 @@ from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from sulguk import SULGUK_PARSE_MODE
 
 from db.requests import db_reset_balance, db_get_default_wallet
-from mytypes import MyResponse
+from utils.mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from utils.aiogram_utils import (my_gettext, send_message, cmd_show_sign,         long_line,
                                  get_web_request, get_web_decoded_xdr)
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.global_data import global_data, LogQuery, StateSign
 from utils.stellar_utils import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
-                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair, xdr_to_uri,
+                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair,
                                  stellar_is_free_wallet)
 
 

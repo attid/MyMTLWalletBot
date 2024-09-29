@@ -18,7 +18,7 @@ from db.requests import (db_get_user_account_by_username, db_get_book_data, db_g
                          db_get_user)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
-from mytypes import Balance
+from utils.mytypes import Balance
 from routers.sign import cmd_check_xdr
 from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state
 from utils.common_utils import get_user_id, decode_qr_code

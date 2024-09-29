@@ -1,9 +1,10 @@
 import asyncio
 import sys
 
+import uvloop
 from aiogram.client.default import DefaultBotProperties
 
-import time_handlers
+from utils import time_handlers
 import sentry_sdk
 import tzlocal
 from contextlib import suppress
@@ -16,7 +17,7 @@ from redis.asyncio import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sulguk import AiogramSulgukMiddleware
-from config_reader import config
+from data.config_reader import config
 from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
@@ -87,11 +88,11 @@ async def set_commands(bot: Bot):
             description="Create cheque",
         ),
     ]
-    if 'test' in sys.argv:
-        commands_private.append(BotCommand(
-            command="delete_all",
-            description="Delete all data",
-        ))
+    # if 'test' in sys.argv:
+    #     commands_private.append(BotCommand(
+    #         command="delete_all",
+    #         description="Delete all data",
+    #     ))
     commands_admin = commands_private + [
         BotCommand(
             command="restart",
@@ -121,7 +122,7 @@ async def on_startup(bot: Bot):
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=global_data.admin_id, text='Bot started')
     # fest.fest_menu = await gs_update_fest_menu()
-    if 'test' in sys.argv:
+    if config.test_mode:
         global_data.task_list = [
             # asyncio.create_task(cheque_worker(global_data.db_pool)),
             asyncio.create_task(log_worker(global_data.db_pool)),
@@ -155,7 +156,7 @@ async def main():
     db_pool = sessionmaker(bind=engine)
 
     default_bot_properties = DefaultBotProperties(parse_mode='HTML')
-    if 'test' in sys.argv:
+    if config.test_mode:
         bot = Bot(token=config.test_bot_token.get_secret_value(), default=default_bot_properties)
         storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
         dp = Dispatcher(storage=storage)
@@ -182,8 +183,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    logger.add("mmwb.log", rotation="1 MB")
+    logger.add("logs/mmwb.log", rotation="1 MB")
     try:
+        uvloop.install()
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logger.error("Exit")
