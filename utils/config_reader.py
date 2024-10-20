@@ -4,8 +4,8 @@ from typing import Optional
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
-start_path = os.path.dirname(__file__)
-dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+start_path = os.path.dirname(os.path.dirname(__file__))
+dotenv_path = os.path.join(start_path, '.env')
 
 horizont_urls = [
     'https://horizon.stellar.org',
@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     horizon_url: str
     horizon_url_rw: str
     mongodb_url: str
+    grist_token: str
     test_mode: bool = False
+    fest_menu: dict = {}
 
     # horizon_url_id: Optional[int] = 0
 

@@ -9,7 +9,7 @@ from requests import Session
 from stellar_sdk import Asset
 from sulguk import SULGUK_PARSE_MODE
 
-from data.config_reader import config
+from utils.config_reader import config
 from db.mongo import mongo_get_asset_issuer
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
     db_insert_into_address_book, \

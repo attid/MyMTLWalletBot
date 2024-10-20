@@ -26,14 +26,14 @@ def db_add_message(session: Session, user_id: int, text: str, use_alarm: int = 0
     session.commit()
 
 
-def db_send_admin_message(session: Session, msg: str):
-    db_add_message(session, 84131737, msg)
-    # add text to file error.txt
-    with open('error.txt', 'a') as f:
-        f.write(f"{argv} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        f.write(msg)
-        f.write('\n')
-        f.write('******************************************************************************\n')
+# def db_send_admin_message(session: Session, msg: str):
+#     db_add_message(session, 84131737, msg)
+#     # add text to file error.txt
+#     with open('error.txt', 'a') as f:
+#         f.write(f"{argv} {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+#         f.write(msg)
+#         f.write('\n')
+#         f.write('******************************************************************************\n')
 
 
 def db_get_default_address(session: Session, user_id: int):

@@ -40,7 +40,7 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
             types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market'), callback_data="Market")
         ],
         # [
-        #     types.InlineKeyboardButton(text='🥳 ' + "Radio World", callback_data="Fest")
+        #     types.InlineKeyboardButton(text='🥳 ' + "MTLFEST 2024", callback_data="Fest2024")
         # ]
     ]
 

@@ -3,7 +3,7 @@ import asyncio
 import openai as openai
 from loguru import logger
 
-from data.config_reader import config
+from utils.config_reader import config
 
 openai_key = config.openai_key.get_secret_value()
 

@@ -123,7 +123,8 @@ async def get_web_request(method, url, json=None, headers=None, data=None, retur
             raise ValueError("Неизвестный метод запроса")
 
         async with request_coroutine as response:
-            if response.headers.get('Content-Type') == 'application/json' or return_type == 'json':
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/json' in content_type or return_type == 'json':
                 return response.status, await response.json()
             else:
                 return response.status, await response.text()

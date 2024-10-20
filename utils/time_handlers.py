@@ -1,5 +1,7 @@
 import asyncio
 from datetime import timedelta, datetime
+from functools import wraps
+
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
@@ -16,6 +18,55 @@ from utils.lang_utils import my_gettext
 from utils.stellar_utils import float2str
 
 
+class TaskKilled(Exception):
+    pass
+
+
+def kill_task(task):
+    task.cancel()
+
+
+async def task_with_timeout(func, timeout, kill_on_timeout, *args, **kwargs):
+    loop = asyncio.get_event_loop()
+    task = loop.create_task(func(*args, **kwargs))
+    try:
+        return await asyncio.wait_for(task, timeout=timeout)
+    except asyncio.TimeoutError:
+        # dp:Dispatcher = next((arg for arg in args if isinstance(arg, Dispatcher)), None)
+        try:
+            await global_data.bot.send_message(chat_id=global_data.admin_id,
+                                               text=f"Task {func.__name__} exceeded timeout of {timeout} seconds.")
+        except:
+            pass
+
+        if kill_on_timeout:
+            logger.warning(f"Task {func.__name__} exceeded timeout of {timeout} seconds. Killing the task.")
+            kill_task(task)
+            raise TaskKilled(f"Task {func.__name__} was killed due to timeout")
+        else:
+            logger.warning(f"Task {func.__name__} exceeded timeout of {timeout} seconds. Continuing execution.")
+    finally:
+        if kill_on_timeout and not task.done():
+            kill_task(task)
+
+
+def with_timeout(timeout, kill_on_timeout=False):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await task_with_timeout(func, timeout, kill_on_timeout, *args, **kwargs)
+            except TaskKilled as e:
+                logger.error(str(e))
+                # Здесь вы можете добавить дополнительную обработку "убитой" задачи
+                return None
+
+        return wrapper
+
+    return decorator
+
+
+@with_timeout(60)
 async def cmd_send_message_1m(session_pool, dp: Dispatcher):
     with session_pool() as session:
         messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
@@ -56,6 +107,7 @@ def decode_db_effect(row):
         return f'new operation for {account_link} \n\n{op_link}'
 
 
+@with_timeout(60)
 async def cmd_send_message_events(session_pool, dp: Dispatcher):
     with session_pool() as session:
         # First, query TLOperations to find accounts with new operations
@@ -63,14 +115,14 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
             .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TLOperations.account) \
             .filter(MyMtlWalletBot.need_delete == 0,
                     MyMtlWalletBot.user_id > 0,
-                    TLOperations.dt > datetime.utcnow() - timedelta(hours=0, minutes=30),
+                    TLOperations.dt > datetime.utcnow() - timedelta(minutes=30),
                     TLOperations.id > MyMtlWalletBot.last_event_id
                     )
 
         # print(tl_query)
 
         tl_results = await asyncio.to_thread(tl_query.all)
-        logger.info(f'founded accounts: {len(tl_results)}')
+        # logger.info(f'founded accounts: {len(tl_results)}')
 
         for tl_result in tl_results:
             logger.info(tl_result.account)
@@ -82,20 +134,26 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                 .filter(MyMtlWalletBot.need_delete == 0, MyMtlWalletBot.user_id > 0,
                         TOperations.id > MyMtlWalletBot.last_event_id,
                         TOperations.for_account == tl_result.account,
-                        TOperations.dt > datetime.utcnow() - timedelta(hours=0, minutes=30),
+                        TOperations.dt > datetime.utcnow() - timedelta(minutes=30),
                         TOperations.arhived == None) \
                 .order_by(TOperations.id) \
                 .limit(10)
 
-            #records = query.all()
+            # records = query.all()
             records = await asyncio.to_thread(query.all)
 
             for record in records:
+                # Обновление last_event_id перед проверкой
+                session.query(MyMtlWalletBot) \
+                    .filter(MyMtlWalletBot.public_key == record.for_account) \
+                    .update({MyMtlWalletBot.last_event_id: record.id})
+
                 try:
                     if record.code1 == 'XLM' and float(record.amount1) < 0.1:
                         continue
 
-                    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=record.user_id, chat_id=record.user_id)
+                    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=record.user_id,
+                                                 chat_id=record.user_id)
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
                     await cmd_info_message(session, record.user_id, decode_db_effect(record))
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
@@ -111,21 +169,18 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                 except Exception as ex:
                     logger.info(['cmd_send_message_events', record.id, ex])
 
-                # Update last_event_id for the user
-                session.query(MyMtlWalletBot) \
-                    .filter(MyMtlWalletBot.public_key == record.for_account) \
-                    .update({MyMtlWalletBot.last_event_id: record.id})
-
             session.commit()
 
 
-def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp):
+def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp: Dispatcher):
     scheduler.add_job(cmd_send_message_1m, "interval", seconds=10, args=(db_pool, dp), misfire_grace_time=60)
     scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool, dp), misfire_grace_time=60)
+
 
 async def test():
     a = await cmd_send_message_events(quik_pool, None)
     print(a)
+
 
 if __name__ == '__main__':
     asyncio.run(test())

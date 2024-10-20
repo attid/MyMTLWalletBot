@@ -11,7 +11,7 @@ from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from data.config_reader import config
+from utils.config_reader import config
 from db.requests import *
 from utils.mytypes import MyOffers, MyAccount, Balance, MyOffer
 from utils.aiogram_utils import get_web_request

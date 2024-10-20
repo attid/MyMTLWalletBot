@@ -1,7 +1,7 @@
 import asyncio
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from data.config_reader import config
+from utils.config_reader import config
 
 client = AsyncIOMotorClient(config.mongodb_url)
 db = client['mtl_tables']

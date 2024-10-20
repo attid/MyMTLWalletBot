@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import jsonpickle
 from aiogram import Router, types, F
+from aiogram.filters import StateFilter
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -173,6 +174,20 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                 await query.answer(my_gettext(user_id, "bad_password"), show_alert=True)
                 return True
         return True
+
+
+@router.message(StateFilter(PinState.sign, PinState.sign_and_send))
+async def cmd_password_from_pin(message: types.Message, state: FSMContext, session: Session):
+    pin = message.text.upper()
+    user_id = message.from_user.id
+    await state.update_data(pin=pin)
+    await message.delete()
+    await cmd_ask_pin(session, user_id, state)
+    try:
+        stellar_get_user_keypair(session, user_id, pin)  # test pin
+        await sign_xdr(session, state, user_id)
+    except:
+        pass
 
 
 async def sign_xdr(session: Session, state, user_id):

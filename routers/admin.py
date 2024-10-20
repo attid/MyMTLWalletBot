@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from data.config_reader import config, horizont_urls
+from utils.config_reader import config, horizont_urls
 from utils.global_data import global_data
 from utils.stellar_utils import async_stellar_check_fee
 
