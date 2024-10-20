@@ -1,5 +1,4 @@
 import asyncio
-import sys
 
 import uvloop
 from aiogram.client.default import DefaultBotProperties
@@ -17,7 +16,7 @@ from redis.asyncio import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sulguk import AiogramSulgukMiddleware
-from data.config_reader import config
+from utils.config_reader import config
 from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
@@ -27,6 +26,7 @@ from routers import (add_wallet, admin, common_start, common_setting, mtltools, 
 from routers import veche, wallet_setting, common_end
 from loguru import logger
 from utils.global_data import global_data
+from utils.grist_tools import load_fest_info
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -133,6 +133,8 @@ async def on_startup(bot: Bot):
             asyncio.create_task(log_worker(global_data.db_pool)),
         ]
 
+    config.fest_menu = await load_fest_info()
+
 
 async def on_shutdown(bot: Bot):
     with suppress(TelegramBadRequest):
@@ -180,6 +182,7 @@ async def main():
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from loguru import logger
 from tronpy import Tron, AsyncTron, exceptions
 from tronpy.keys import PrivateKey, is_address
 from tronpy.providers import HTTPProvider, AsyncHTTPProvider
-from data.config_reader import config
+from utils.config_reader import config
 from utils.aiogram_utils import get_web_request
 from tronpy.keys import to_hex_address
 

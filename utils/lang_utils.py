@@ -4,7 +4,7 @@ from typing import Union
 from aiogram import types
 from sqlalchemy.orm import Session
 
-from data.config_reader import start_path
+from utils.config_reader import start_path
 from db.models import MyMtlWalletBotUsers
 from db.requests import get_user_lang
 from utils.common_utils import get_user_id
