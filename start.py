@@ -27,6 +27,7 @@ from routers import veche, wallet_setting, common_end
 from loguru import logger
 from utils.global_data import global_data
 from utils.grist_tools import load_fest_info
+from utils.time_handlers import events_worker
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -117,7 +118,7 @@ async def set_commands(bot: Bot):
     await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=global_data.admin_id))
 
 
-async def on_startup(bot: Bot):
+async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=global_data.admin_id, text='Bot started')
@@ -126,11 +127,13 @@ async def on_startup(bot: Bot):
         global_data.task_list = [
             # asyncio.create_task(cheque_worker(global_data.db_pool)),
             asyncio.create_task(log_worker(global_data.db_pool)),
+            asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
         ]
     else:
         global_data.task_list = [
             asyncio.create_task(cheque_worker(global_data.db_pool)),
             asyncio.create_task(log_worker(global_data.db_pool)),
+            asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
         ]
 
     config.fest_menu = await load_fest_info()
@@ -160,19 +163,15 @@ async def main():
     default_bot_properties = DefaultBotProperties(parse_mode='HTML')
     if config.test_mode:
         bot = Bot(token=config.test_bot_token.get_secret_value(), default=default_bot_properties)
-        storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
-        dp = Dispatcher(storage=storage)
         print('start test')
-        scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
-        scheduler.start()
-        time_handlers.scheduler_jobs(scheduler, db_pool, dp)
     else:
         bot = Bot(token=config.bot_token.get_secret_value(), default=default_bot_properties)
-        storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
-        dp = Dispatcher(storage=storage)
-        scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
-        scheduler.start()
-        time_handlers.scheduler_jobs(scheduler, db_pool, dp)
+
+    storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
+    dp = Dispatcher(storage=storage)
+    scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
+    scheduler.start()
+    time_handlers.scheduler_jobs(scheduler, db_pool, dp)
 
     global_data.bot = bot
     global_data.dispatcher = dp

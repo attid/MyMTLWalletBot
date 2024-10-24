@@ -27,27 +27,45 @@ def kill_task(task):
 
 
 async def task_with_timeout(func, timeout, kill_on_timeout, *args, **kwargs):
-    loop = asyncio.get_event_loop()
-    task = loop.create_task(func(*args, **kwargs))
-    try:
-        return await asyncio.wait_for(task, timeout=timeout)
-    except asyncio.TimeoutError:
-        # dp:Dispatcher = next((arg for arg in args if isinstance(arg, Dispatcher)), None)
-        try:
-            await global_data.bot.send_message(chat_id=global_data.admin_id,
-                                               text=f"Task {func.__name__} exceeded timeout of {timeout} seconds.")
-        except:
-            pass
+    task = asyncio.create_task(func(*args, **kwargs))
 
-        if kill_on_timeout:
-            logger.warning(f"Task {func.__name__} exceeded timeout of {timeout} seconds. Killing the task.")
-            kill_task(task)
-            raise TaskKilled(f"Task {func.__name__} was killed due to timeout")
-        else:
-            logger.warning(f"Task {func.__name__} exceeded timeout of {timeout} seconds. Continuing execution.")
+    # start_time = datetime.now()
+
+    async def send_update():
+        minutes_passed = 0
+        while not task.done():
+            await asyncio.sleep(60)  # Wait for 1 minute
+            minutes_passed += 1
+            try:
+                await global_data.bot.send_message(
+                    chat_id=global_data.admin_id,
+                    text=f"Task {func.__name__} has been running for {minutes_passed} minute(s)."
+                )
+            except:
+                pass
+
+    update_task = asyncio.create_task(send_update())
+
+    try:
+        result = await asyncio.wait_for(task, timeout=timeout)
+        update_task.cancel()
+        return result
+    except asyncio.TimeoutError:
+        update_task.cancel()
+        raise TaskKilled(f"Task {func.__name__} was killed due to timeout")
     finally:
         if kill_on_timeout and not task.done():
             kill_task(task)
+
+        # Send final runtime message
+        # total_runtime = (datetime.now() - start_time).total_seconds() / 60
+        # try:
+        #     await global_data.bot.send_message(
+        #         chat_id=global_data.admin_id,
+        #         text=f"Task {func.__name__} finished. Total runtime: {total_runtime:.2f} minute(s)."
+        #     )
+        # except:
+        #     pass
 
 
 def with_timeout(timeout, kill_on_timeout=False):
@@ -174,7 +192,16 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
 
 def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp: Dispatcher):
     scheduler.add_job(cmd_send_message_1m, "interval", seconds=10, args=(db_pool, dp), misfire_grace_time=60)
-    scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool, dp), misfire_grace_time=60)
+    # scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool, dp), misfire_grace_time=60)
+
+
+async def events_worker(db_pool: sessionmaker, dp: Dispatcher):
+    while True:
+        try:
+            await cmd_send_message_events(db_pool, dp)
+        except Exception as ex:
+            logger.info(['events_worker', ex])
+        await asyncio.sleep(10)
 
 
 async def test():
