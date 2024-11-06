@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 import jsonpickle
 from aiogram import Router, types, F
@@ -13,7 +14,7 @@ from sulguk import SULGUK_PARSE_MODE
 from db.requests import db_reset_balance, db_get_default_wallet
 from utils.mytypes import MyResponse
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from utils.aiogram_utils import (my_gettext, send_message, cmd_show_sign,         long_line,
+from utils.aiogram_utils import (my_gettext, send_message, cmd_show_sign, long_line,
                                  get_web_request, get_web_decoded_xdr)
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from utils.global_data import global_data, LogQuery, StateSign
@@ -284,6 +285,7 @@ def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
 async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await cmd_show_sign(session, callback.from_user.id, state, my_gettext(callback, 'send_xdr'))
     await state.set_state(StateSign.sending_xdr)
+    await state.update_data(part_xdr='')
     await callback.answer()
 
 
@@ -295,6 +297,26 @@ async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Sessi
 
 async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext):
     try:
+        data = await state.get_data()
+        part_xdr = data.get('part_xdr')
+
+        if len(check_xdr) >= 4096:
+            # possible we have xdr in 2\3 message
+            part_xdr = part_xdr + check_xdr
+            await state.update_data(part_xdr=part_xdr)
+            await asyncio.sleep(3)
+
+            data = await state.get_data()
+            part_xdr = data.get('part_xdr')
+            if len(part_xdr) == 0:
+                return
+            check_xdr = part_xdr
+
+        # else:
+        check_xdr = part_xdr + check_xdr
+        await state.update_data(part_xdr='')
+
+        ####
         is_free = await stellar_is_free_wallet(session, user_id)
         xdr = await stellar_check_xdr(check_xdr, for_free_account=is_free)
         if xdr:

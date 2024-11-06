@@ -648,16 +648,4 @@ if __name__ == "__main__":
     # Key is df99b0d90e4b5a457516793924bd678efa1e0ac5a772b14be3cdc0c6969c9969
     # Address is TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY
 
-    # asyncio.run(set_allowance(20, private_key='4064ec31de595c27ea1381d080151be23b1a0c9aa68ce6f82d63033dcbdd4231'))
-    # print(asyncio.run(get_allowance('TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ')))
-    # print(asyncio.run(get_usdt_transfer_fee(tron_master_address, 'TV9NxnvRDMwtEoPPmqvk7kt3NDGZTMTNDd', 10)))
-    # print(asyncio.run(get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)))
-    # print(asyncio.run(get_usdt_transfer_fee(tron_master_address, 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', 10)))
-    # print(asyncio.run(send_usdt_async(amount=10, public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', sun_fee=1000)))
-    # print(asyncio.run(delegate_energy(public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', energy_amount=500*2, undo=True)))
-    # my_tron = 'TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ'
-    # private_key = PrivateKey(bytes.fromhex(tron_master_key))
-    # public_key_from = private_key.public_key.to_base58check_address()
-    # print(asyncio.run(get_trx_balance(private_key=create_trc_private_key())))
-    # print(asyncio.run(estimate_usdt_transfer_fee(public_key_from, 500)))
-    # print(show_balance(PrivateKey(bytes.fromhex(create_trc_private_key())).public_key.to_base58check_address()))
+
