@@ -59,9 +59,9 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
         if tools:
             kb = get_kb_send(chat_id, with_tools=tools)
     elif xdr_uri:
-        from urllib.parse import quote
-        # params = {'xdr': xdr_uri}
-        url = 'https://eurmtl.me/uri?xdr=' + quote(xdr_uri)
+        from urllib.parse import urlencode, quote
+        params = {'xdr': xdr_uri}
+        url = 'https://eurmtl.me/uri?' + urlencode(params, quote_via=quote)
 
         buttons = [get_return_button(chat_id),
                    [types.InlineKeyboardButton(text='Sign Tools', url=url)]
