@@ -57,6 +57,7 @@ class StateAddressBook(StatesGroup):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "WalletSetting")

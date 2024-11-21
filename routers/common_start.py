@@ -21,6 +21,7 @@ from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account,
                                  )
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 class SettingState(StatesGroup):

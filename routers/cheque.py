@@ -28,6 +28,7 @@ from utils.stellar_utils import (my_float, float2str, stellar_pay, stellar_get_u
                                  stellar_user_sign, stellar_get_balances, stellar_add_trust, stellar_get_market_link)
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 cheque_public = 'GCYTGJ4VFRWYULX746TAOF4V6RYCEWG3TJ42JMG3GMJF7BJ44VVX6OUT'
 
 

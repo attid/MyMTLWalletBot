@@ -1,7 +1,7 @@
 import os
 from contextlib import suppress
 
-from aiogram import Router, types
+from aiogram import Router, types, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -18,6 +18,7 @@ class ExitState(StatesGroup):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.message(Command(commands=["exit"]))
