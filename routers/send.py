@@ -39,6 +39,7 @@ class SendAssetCallbackData(CallbackData, prefix="send_asset_"):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:

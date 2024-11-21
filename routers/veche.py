@@ -10,6 +10,7 @@ from utils.lang_utils import check_user_id
 from utils.stellar_utils import stellar_get_user_account, stellar_user_sign_message
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.message(Command(commands=["start"]), F.text.contains("veche_"))

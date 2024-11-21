@@ -34,6 +34,7 @@ class EditOrderCallbackData(CallbackData, prefix="EditOrderCallbackData"):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "Market")

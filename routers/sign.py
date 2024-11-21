@@ -39,6 +39,7 @@ class PinCallbackData(CallbackData, prefix="pin_"):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 kb_cash = {}
 

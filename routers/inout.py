@@ -16,6 +16,7 @@ from utils.thothpay_utils import thoth_create_order, thoth_check_order
 from utils.tron_utils import *
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 class StateInOut(StatesGroup):
