@@ -20,12 +20,12 @@ from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_
     get_kb_offers_cancel
 from utils.mytypes import Balance
 from routers.sign import cmd_check_xdr
-from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state
+from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state, clear_last_message_id
 from utils.common_utils import get_user_id, decode_qr_code
 from utils.global_data import global_data
 from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
-    cut_text_to_28_bytes, get_first_balance_from_list, base_fee, is_valid_stellar_address
+    cut_text_to_28_bytes, get_first_balance_from_list, base_fee, is_valid_stellar_address, eurmtl_asset
 
 
 class StateSendToken(StatesGroup):
@@ -70,6 +70,93 @@ async def cmd_send_callback(callback: types.CallbackQuery, state: FSMContext, se
 async def cmd_send_message(message: types.Message, state: FSMContext, session: Session):
     await message.delete()
     await cmd_send_start(message.from_user.id, state, session)
+
+
+async def cmd_send_token(message: types.Message, state: FSMContext, session: Session,
+                         send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, ):
+    try:
+        if '@' == send_for[0]:
+            send_address, user_id = db_get_user_account_by_username(session, send_for)
+            tmp_name = await check_username(user_id)
+            if tmp_name is None or tmp_name.lower() != send_for.lower()[1:]:
+                db_update_username(session, user_id, tmp_name)
+                raise Exception("Имя пользователя не совпадает")
+        else:
+            send_address = send_for
+        await stellar_check_account(send_address)
+    except Exception as ex:
+        logger.info(["cmd_send_token", send_for, ex])
+        await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
+                           reply_markup=get_kb_return(message))
+        return
+
+    await state.update_data(send_sum=send_sum,
+                            send_address=send_address,
+                            send_asset_code=send_asset.code,
+                            send_asset_issuer=send_asset.issuer,
+                            # mtlap_stars=mtlap_stars todo нужно ли?
+                            )
+
+    if send_memo:
+        await state.update_data(memo=send_memo, federal_memo=True)
+
+    await cmd_send_04(session, message, state)
+
+
+@router.message(Command(commands=["eurmtl"]))
+async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session):
+    await clear_state(state)
+    await clear_last_message_id(message.chat.id)
+
+    parts = message.text.split()
+    if len(parts) < 3:
+        await send_message(session, message.from_user.id,
+                           'Invalid command format. Usage: /eurmtl @username|address amount [memo]')
+        return
+
+    try:
+        send_for = parts[1]
+        amount = float(parts[2])
+    except ValueError:
+        await send_message(session, message.from_user.id, 'Invalid amount. Please enter a numerical value.')
+        return
+
+    memo = ' '.join(parts[3:]) if len(parts) > 3 else None
+
+    # Call the cmd_send_token function with provided details
+    await cmd_send_token(message=message, state=state, session=session, send_for=send_for,
+                         send_asset=eurmtl_asset, send_sum=amount, send_memo=memo)
+
+
+@router.message(Command(commands=["start"]), F.text.contains("eurmtl_"))
+async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: Session):
+    await message.delete()
+
+    # Parse the start command
+    parts = message.text.split('eurmtl_')[1].strip().split('-')
+    if len(parts) < 2:
+        await send_message(session, message.from_user.id, 'Invalid command format')
+        return
+
+    username = parts[0]
+    try:
+        amount = float(parts[1])
+    except ValueError:
+        await send_message(session, message.from_user.id, 'Invalid amount')
+        return
+
+    memo = '-'.join(parts[2:]) if len(parts) > 2 else None
+
+    # Convert username to Stellar address
+    try:
+        send_for = '@' + username
+        stellar_address, _ = db_get_user_account_by_username(session, send_for)
+    except Exception as ex:
+        await send_message(session, message.from_user.id, f'Error: {str(ex)}')
+        return
+
+    # Call the cmd_send_token function
+    await cmd_send_token(message, state, session, stellar_address, eurmtl_asset, amount, memo)
 
 
 @router.message(StateSendToken.sending_for, F.text)
