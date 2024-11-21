@@ -1,13 +1,14 @@
 import asyncio
 from datetime import timedelta, datetime
 from functools import wraps
+from time import time
 
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import sessionmaker
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages, TLOperations
 from db.quik_pool import quik_pool
@@ -52,7 +53,7 @@ async def task_with_timeout(func, timeout, kill_on_timeout, *args, **kwargs):
         return result
     except asyncio.TimeoutError:
         update_task.cancel()
-        raise TaskKilled(f"Task {func.__name__} was killed due to timeout")
+        raise TaskKilled(f"Task {func.__name__} was timeout")
     finally:
         if kill_on_timeout and not task.done():
             kill_task(task)
@@ -72,12 +73,40 @@ def with_timeout(timeout, kill_on_timeout=False):
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            start_time = time()
+            task = asyncio.create_task(func(*args, **kwargs))
+            minutes_logged = 0
+
+            while not task.done():
+                await asyncio.sleep(1)  # Проверяем каждую секунду
+                elapsed_time = time() - start_time
+                minutes = int(elapsed_time / 60)
+                if elapsed_time > timeout and minutes > minutes_logged:
+                    logger.warning(f"Функция {func.__name__} работает {minutes} минут")
+
+                    if kill_on_timeout:
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            logger.error(f"Задача {func.__name__} была принудительно остановлена")
+                        return None
+                    else:
+                        logger.info(f"Ожидание завершения {func.__name__} после превышения времени выполнения")
+
+                    minutes_logged = minutes
+
             try:
-                return await task_with_timeout(func, timeout, kill_on_timeout, *args, **kwargs)
-            except TaskKilled as e:
-                logger.error(str(e))
-                # Здесь вы можете добавить дополнительную обработку "убитой" задачи
-                return None
+                result = await task
+                return result
+            finally:
+                if not task.done():
+                    logger.warning(f"Задача {func.__name__} все еще выполняется после обработки")
+                else:
+                    total_minutes = int((time() - start_time) / 60)
+                    if total_minutes > 0:
+                        logger.info(
+                            f"Функция {func.__name__} завершилась, общее время выполнения: {total_minutes} минут")
 
         return wrapper
 
@@ -125,7 +154,7 @@ def decode_db_effect(row):
         return f'new operation for {account_link} \n\n{op_link}'
 
 
-@with_timeout(60)
+@with_timeout(60, kill_on_timeout=False)
 async def cmd_send_message_events(session_pool, dp: Dispatcher):
     with session_pool() as session:
         # First, query TLOperations to find accounts with new operations
@@ -140,7 +169,8 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
         # print(tl_query)
 
         tl_results = await asyncio.to_thread(tl_query.all)
-        # logger.info(f'founded accounts: {len(tl_results)}')
+        if len(tl_results) > 10:
+            logger.info(f'founded accounts: {len(tl_results)}')
 
         for tl_result in tl_results:
             logger.info(tl_result.account)
@@ -151,14 +181,15 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                 .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TOperations.for_account) \
                 .filter(MyMtlWalletBot.need_delete == 0, MyMtlWalletBot.user_id > 0,
                         TOperations.id > MyMtlWalletBot.last_event_id,
-                        TOperations.for_account == tl_result.account,
+                        or_(TOperations.for_account == tl_result.account,
+                            TOperations.from_account == tl_result.account),
                         TOperations.dt > datetime.utcnow() - timedelta(minutes=30),
                         TOperations.arhived == None) \
-                .order_by(TOperations.id) \
-                .limit(10)
+                .order_by(TOperations.id)
 
             # records = query.all()
             records = await asyncio.to_thread(query.all)
+            # logger.info(f"founded records: {records}")
 
             for record in records:
                 # Обновление last_event_id перед проверкой
@@ -175,6 +206,7 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
                     await cmd_info_message(session, record.user_id, decode_db_effect(record))
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+                    await asyncio.sleep(0.1)
                 except TelegramBadRequest as ex:
                     if "Bad Request: chat not found" in str(ex):
                         db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
@@ -188,6 +220,9 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                     logger.info(['cmd_send_message_events', record.id, ex])
 
             session.commit()
+
+        if len(tl_results) > 10:
+            logger.info('Ended')
 
 
 def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp: Dispatcher):

@@ -2,7 +2,9 @@ import asyncio
 
 import uvloop
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 
+from middleware.retry import RetryRequestMiddleware
 from utils import time_handlers
 import sentry_sdk
 import tzlocal
@@ -161,11 +163,13 @@ async def main():
     db_pool = sessionmaker(bind=engine)
 
     default_bot_properties = DefaultBotProperties(parse_mode='HTML')
+    session: AiohttpSession = AiohttpSession()
+    session.middleware(RetryRequestMiddleware())
     if config.test_mode:
-        bot = Bot(token=config.test_bot_token.get_secret_value(), default=default_bot_properties)
+        bot = Bot(token=config.test_bot_token.get_secret_value(), default=default_bot_properties, session=session)
         print('start test')
     else:
-        bot = Bot(token=config.bot_token.get_secret_value(), default=default_bot_properties)
+        bot = Bot(token=config.bot_token.get_secret_value(), default=default_bot_properties, session=session)
 
     storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
     dp = Dispatcher(storage=storage)

@@ -313,8 +313,9 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
             check_xdr = part_xdr
 
         # else:
-        check_xdr = part_xdr + check_xdr
-        await state.update_data(part_xdr='')
+        if part_xdr:
+            check_xdr = part_xdr + check_xdr
+            await state.update_data(part_xdr='')
 
         ####
         is_free = await stellar_is_free_wallet(session, user_id)
