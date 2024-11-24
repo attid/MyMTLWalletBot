@@ -18,6 +18,7 @@ from db.requests import (db_get_user_account_by_username, db_get_book_data, db_g
                          db_get_user)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
+from utils.lang_utils import check_user_id
 from utils.mytypes import Balance
 from routers.sign import cmd_check_xdr
 from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state, clear_last_message_id
@@ -132,6 +133,16 @@ async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session
 @router.message(Command(commands=["start"]), F.text.contains("eurmtl_"))
 async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: Session):
     await message.delete()
+    await clear_state(state)
+
+    # check address
+    await state.update_data(last_message_id=0)
+    await send_message(session, message.from_user.id, 'Loading')
+
+    # if user not exist
+    if not check_user_id(session, message.from_user.id):
+        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start')
+        return
 
     # Parse the start command
     parts = message.text.split('eurmtl_')[1].strip().split('-')
@@ -146,7 +157,7 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
         await send_message(session, message.from_user.id, 'Invalid amount')
         return
 
-    memo = '-'.join(parts[2:]) if len(parts) > 2 else None
+    memo = ' '.join(parts[2:]) if len(parts) > 2 else None
 
     # Convert username to Stellar address
     try:
