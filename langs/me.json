@@ -118,5 +118,14 @@
   "kb_donate": "Donirati programerima",
 
   "confirm_swap": " \n Do želite li razmijeniti svoje {} {} \n za {} {}?",
-  "confirm_send": " \n Ti želite li poslati \n{} <b>{}</b> \nna adresu \n{} \nmemo : {}"
+  "confirm_send": " \n Ti želite li poslati \n{} <b>{}</b> \nna adresu \n{} \nmemo : {}",
+  "bsn_help_text": "Da biste obrisali tag, pošaljite `&lt;tag&gt; <code>{}</code>`\n\nKorišćenje više tagova\n(Na primjer: Employee1, Employee2, Employee100500):\n - Ako tag nije označen brojem, sistem će automatski dodijeliti prvi slobodan broj\n - Da biste obrisali ili izmijenili tag, morate navesti broj\n",
+  "bsn_empty_message": "Režim dodavanja BSN tagova\nPošaljite tagove i vrijednosti (jedan po liniji) u formatu:\n`&lt;tag&gt; &lt;vrijednost&gt;`\n\n",
+  "bsn_address_part": "Na adresi {} biće izmijenjeni sljedeći tagovi:\n",
+  "bsn_warning": "\n⚠\uFE0F - Nepoznati tagovi\n",
+  "bsn_last_part": "\nMožete poslati još tagova\n\n",
+  "bsn_error": "Greška: {}",
+  "bsn_tag_value": "Poslali ste [{tag}], ali očekujemo format `<tag> <vrijednost>`",
+  "bsn_empty_tag_error": "Tag mora sadržati barem jedno slovo. [{}]",
+  "bsn_length_error": "Dužina stringa {} prelazi 64 karaktera. [{}]"
 }

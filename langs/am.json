@@ -177,5 +177,14 @@
   "kb_mtlap_tools": "የMTL ማህበር መሳሪያዎች",
   "your_xdr": "የምልክት ግብይትዎ:\n\n<code>{}</code>\n\n",
   "low_xlm": "ከ0.5 ነፃ XLM አለዎት",
-  "kb_tools_update_multi": "MultiSign ያዘምኑ"
+  "kb_tools_update_multi": "MultiSign ያዘምኑ",
+  "bsn_help_text": "መለያን ለማጥፋት `&lt;መለያ&gt; <code>{}</code>` ይላኩ\n\nበብዛት መጠቀም\n(ለምሳሌ: Employee1, Employee2, Employee100500):\n - መለያው ቁጥር ካልተጠቀሰበት ቁጥር እንዲሰጠው በራሱ ይወስዳል\n - መለያን ለማጥፋት ወይም ለማሻሻል ቁጥሩን መጠቀም አለብዎት\n",
+  "bsn_empty_message": "የBSN መለያ መጨመሪያ ሁነታ\nመለያዎችን እና ዋጋዎችን (በመስመር በአንዱ) በእንግሊዝኛ ቅርጽ ያስገቡ:\n`&lt;መለያ&gt; &lt;ዋጋ&gt;`\n\n",
+  "bsn_address_part": "በአድራሻ {} ላይ የሚስተካከሉት መለያዎች:\n",
+  "bsn_warning": "\n⚠\uFE0F - አልታወቁ መለያዎች\n",
+  "bsn_last_part": "\nተጨማሪ መለያዎችን ማስገባት ትችላላችሁ\n\n",
+  "bsn_error": "ስህተት: {}",
+  "bsn_tag_value": "እርስዎ [{}] ላኩ፣ እኛ ግን `<መለያ> <ዋጋ>` ቅርጽን እንጠብቃለን",
+  "bsn_empty_tag_error": "መለያ ቢያንስ አንድ ፊደል መያዝ አለበት። [{}]",
+  "bsn_length_error": "የጽሑፍ ርዝመት {} 64 ቁምፊዎችን በመስበር ከፍ አለ [{}]"
 }

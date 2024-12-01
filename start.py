@@ -24,6 +24,7 @@ from routers.cheque import cheque_worker
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
                      cheque, mtlap, fest)
 from routers import veche, wallet_setting, common_end
+from routers.bsn import bsn_router
 from loguru import logger
 from utils.global_data import global_data
 from utils.grist_tools import load_fest_info
@@ -64,6 +65,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
 
     # always the last
     dp.include_router(common_end.router)
+    dp.include_router(bsn_router)
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
