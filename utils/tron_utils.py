@@ -209,18 +209,18 @@ async def send_usdt_async(public_key_to=None, amount=0, private_key_from=tron_ma
         # txn = txn.sign(priv_key).inspect()
         txn = await txb.build()
         txn_ret = await txn.sign(private_key).broadcast()
-        logger.info(f"Транзакция отправлена. ID: {txn_ret.txid}")
+        transaction_hash = txn_ret.txid
+        logger.info(f"Транзакция отправлена. Hash: {transaction_hash}")
 
         result = await txn_ret.wait()
-        print(result)
 
-        if result and 'receipt' in result and 'result' in result['receipt'] and result['receipt'][
-            'result'] == 'SUCCESS':
+        if result and 'receipt' in result and 'result' in result['receipt'] and result['receipt']['result'] == 'SUCCESS':
             logger.info("Транзакция успешно выполнена")
-            return True
+            return True, transaction_hash
         else:
             logger.error(f"Транзакция не удалась. Статус: {result}")
-            return False
+            return False, transaction_hash
+
 
 
 async def get_usdt_balance(public_key=None, private_key=None):
