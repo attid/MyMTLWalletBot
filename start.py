@@ -64,10 +64,10 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.include_router(swap.router)
     dp.include_router(inout.router)
     dp.include_router(mtlap.router)
+    dp.include_router(bsn_router)
 
     # always the last
     dp.include_router(common_end.router)
-    dp.include_router(bsn_router)
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
