@@ -116,6 +116,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
     async with new_wallet_lock:
         user_tron_private_key, usdt_old_sum = db_get_usdt_private_key(session, get_user_id(callback),
                                                                       create_trc_private_key)
+        user_tron_key = tron_get_public(user_tron_private_key)
         full_usdt_balance = int(await get_usdt_balance(private_key=user_tron_private_key))
         income_usdt_balance = int(full_usdt_balance - usdt_old_sum)
         if income_usdt_balance < min_usdt_sum:
@@ -140,8 +141,10 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         # if full_usdt_balance > 500:
         #     await send_usdt_async(amount=income_usdt_balance, private_key_to=tron_master_key, private_key_from=user_tron_private_key)
         db_update_usdt_sum(session, get_user_id(callback), income_usdt_balance)
+        url = f'<a href="https://tronscan.org/#/address/{user_tron_key}">{user_tron_key}</a>'
         await bot.send_message(chat_id=global_data.admin_id,
-                               text=f"{get_user_id(callback)} send {income_usdt_balance} usdt (full {full_usdt_balance})")
+                               text=f"{get_user_id(callback)} send {income_usdt_balance} usdt "
+                                    f"(full {full_usdt_balance})\n {url}")
         master = stellar_get_master(session)
         xdr = stellar_sign((await stellar_pay((await stellar_get_user_account(session, 0)).account.account_id,
                                               (await stellar_get_user_account(session,
@@ -202,12 +205,18 @@ async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMCon
                                reply_markup=get_kb_return(user_id))
             await clear_last_message_id(global_data.admin_id)
             try:
-                if await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address, sun_fee=data.get("sun_fee",0)):
+                success, tx_hash = await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address,
+                                                         sun_fee=data.get("sun_fee", 0))
+                if success:
                     await state.update_data(out_pay_usdt=None)
+                    url = f'<a href="https://tronscan.org/#/transaction/{tx_hash}">{tx_hash}</a>'
                     await send_message(session, user_id=global_data.admin_id,
-                                       msg=f'{user_id} {usdt_sum} usdt {usdt_address} good',
+                                       msg=f'{user_id} {usdt_sum} usdt {usdt_address} good \n {url}',
                                        need_new_msg=True, reply_markup=get_kb_return(user_id))
                     await clear_last_message_id(global_data.admin_id)
+                    await send_message(session, user_id=user_id, msg=f'YOUR TRANSACTION: {url}',
+                                       need_new_msg=True, reply_markup=get_kb_return(user_id))
+                    await clear_last_message_id(user_id)
                 else:
                     raise Exception("USDT send failed")
             except Exception as e:
