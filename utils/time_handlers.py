@@ -16,6 +16,7 @@ from db.requests import db_delete_wallet
 from routers.start_msg import cmd_info_message
 from utils.global_data import global_data
 from utils.lang_utils import my_gettext
+from utils.loguru_tools import safe_catch_async
 from utils.stellar_utils import float2str
 
 
@@ -27,6 +28,7 @@ def kill_task(task):
     task.cancel()
 
 
+@safe_catch_async
 async def task_with_timeout(func, timeout, kill_on_timeout, *args, **kwargs):
     task = asyncio.create_task(func(*args, **kwargs))
 
@@ -114,6 +116,7 @@ def with_timeout(timeout, kill_on_timeout=False):
 
 
 @with_timeout(60)
+@safe_catch_async
 async def cmd_send_message_1m(session_pool, dp: Dispatcher):
     with session_pool() as session:
         messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
@@ -135,7 +138,6 @@ async def cmd_send_message_1m(session_pool, dp: Dispatcher):
                 {MyMtlWalletBotMessages.was_send: 1})
             session.commit()
 
-
 def decode_db_effect(row):
     # id, dt, operation, amount1, code1, amount2, code2, from_account, for_account,
     simple_account = row[8][:4] + '..' + row[8][-4:]
@@ -155,6 +157,7 @@ def decode_db_effect(row):
 
 
 @with_timeout(60, kill_on_timeout=False)
+@safe_catch_async
 async def cmd_send_message_events(session_pool, dp: Dispatcher):
     with session_pool() as session:
         # First, query TLOperations to find accounts with new operations
@@ -230,6 +233,7 @@ def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp: Dispa
     # scheduler.add_job(cmd_send_message_events, "interval", seconds=8, args=(db_pool, dp), misfire_grace_time=60)
 
 
+@safe_catch_async
 async def events_worker(db_pool: sessionmaker, dp: Dispatcher):
     while True:
         try:
