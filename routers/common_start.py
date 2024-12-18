@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, \
     db_delete_all_by_user, db_add_user_if_not_exists, db_update_username, db_get_user
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
+from middleware.throttling import rate_limit
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
@@ -20,6 +21,7 @@ from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account,
                                  )
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 class SettingState(StatesGroup):
@@ -235,6 +237,7 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
     await message.delete()
 
 
+@rate_limit(3, 'private_links')
 @router.callback_query(F.data == "Refresh")
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
     db_reset_balance(session, callback.from_user.id)

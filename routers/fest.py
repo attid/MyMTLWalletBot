@@ -12,6 +12,7 @@ from utils.lang_utils import my_gettext
 from utils.stellar_utils import *
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 # fest_menu_ = {

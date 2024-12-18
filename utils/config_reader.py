@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     horizon_url_rw: str
     mongodb_url: str
     grist_token: str
+    tonconsole_token: str
+    ton_token: str
+    wallet_cost: float
     test_mode: bool = False
     fest_menu: dict = {}
 

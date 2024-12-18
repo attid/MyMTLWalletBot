@@ -1,4 +1,4 @@
-from aiogram import Router, types
+from aiogram import Router, types, F
 import re
 import json
 
@@ -14,6 +14,7 @@ from utils.stellar_utils import find_stellar_addresses, find_stellar_federation_
     extract_url, is_base64, is_valid_stellar_address
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.message()

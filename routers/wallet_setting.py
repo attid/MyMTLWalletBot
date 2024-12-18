@@ -57,6 +57,7 @@ class StateAddressBook(StatesGroup):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "WalletSetting")
@@ -394,16 +395,16 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
             if balance.asset_code == 'EURMTL':
                 eurmtl_balance = float(balance.balance)
                 break
-        if eurmtl_balance < 1:
+        if eurmtl_balance < config.wallet_cost:
             await callback.answer(
-                "You have free account. Please buy it first. You don't have enough money. Need 1 EURMTL",
+                f"You have free account. Please buy it first. You don't have enough money. Need {config.wallet_cost} EURMTL",
                 show_alert=True)
         else:
             await callback.answer("You have free account. Please buy it first", show_alert=True)
             memo = f"{callback.from_user.id}*{public_key[len(public_key) - 4:]}"
-            xdr = await stellar_pay(public_key, father_key, eurmtl_asset, 1, memo=memo)
+            xdr = await stellar_pay(public_key, father_key, eurmtl_asset, config.wallet_cost, memo=memo)
             await state.update_data(xdr=xdr)
-            msg = my_gettext(callback, 'confirm_send', (1, eurmtl_asset.code, father_key, memo))
+            msg = my_gettext(callback, 'confirm_send', (config.wallet_cost, eurmtl_asset.code, father_key, memo))
             msg = f"For buy {public_key}\n{msg}"
 
             await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
