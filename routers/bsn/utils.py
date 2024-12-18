@@ -3,6 +3,7 @@ from typing import Union
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from db.requests import db_get_user_account_by_username
 from utils.config_reader import config
 from stellar_sdk import ServerAsync, AiohttpClient, TransactionBuilder, Network
 
@@ -56,7 +57,7 @@ def get_bsn_kb(user_id: Union[CallbackQuery, Message, int, str], send_enabled: b
     builder.adjust(1, 1)
     return builder.as_markup()
 
-async def parse_tag(tag, bsn_data: BSNData, message: "Message") -> None:
+async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session: "Session") -> None:
     if tag:
         tag_value = tag.split(' ', 1)
         if len(tag_value) == 2:
@@ -64,7 +65,12 @@ async def parse_tag(tag, bsn_data: BSNData, message: "Message") -> None:
                 if tag_value[1] == DELETE_KEY:
                     bsn_data.del_data_row(key=Key(tag_value[0]))
                 else:
-                    bsn_data.add_new_data_row(key=Key(tag_value[0]), value=Value(tag_value[1]))
+                    key, value = tag_value
+                    if value.startswith('@'):
+                        public_key, user_id = db_get_user_account_by_username(session, value)
+                        if public_key:
+                            value = public_key
+                    bsn_data.add_new_data_row(key=Key(key), value=Value(value))
             except ValueError as e:
                 await message.answer(my_gettext(message, 'bsn_error', (parse_exception(e, message),)))
         else:
