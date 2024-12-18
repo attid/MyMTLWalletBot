@@ -30,6 +30,7 @@ class SwapAssetForCallbackData(CallbackData, prefix="SwapAssetForCallbackData"):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "Swap")

@@ -19,6 +19,7 @@ class LangCallbackData(CallbackData, prefix="lang_"):
 
 
 router = Router()
+router.message.filter(F.chat.type == "private")
 
 
 async def cmd_language(session: Session, chat_id: int):
