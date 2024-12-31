@@ -138,7 +138,7 @@ async def cmd_send_message_1m(session_pool, dp: Dispatcher):
                 {MyMtlWalletBotMessages.was_send: 1})
             session.commit()
 
-def decode_db_effect(row):
+def decode_db_effect(row, decode_for):
     # id, dt, operation, amount1, code1, amount2, code2, from_account, for_account,
     simple_account = row[8][:4] + '..' + row[8][-4:]
     account_link = 'https://stellar.expert/explorer/public/account/' + row[8]
@@ -152,8 +152,17 @@ def decode_db_effect(row):
         return my_gettext(row[9], 'info_debit', (account_link, float2str(row[3]), row[4], op_link))
     elif row[2] == 'account_credited':
         return my_gettext(row[9], 'info_credit', (account_link, float2str(row[3]), row[4], op_link))
+    elif row[2] == 'data_removed':
+        return f"You remove DATA: \n\n{row[4]} \n\non {account_link}\n\n{op_link}"
+    elif row[2] in ('data_created', 'data_updated'):
+        if row[8] == decode_for:
+            return f"You added DATA on {account_link}\n\n{op_link}\n\nData:\n\n{row[4]}\n{row[6]}"
+        if row[6] == decode_for:
+            return f"{account_link} set your account on his DATA \n\n{op_link}\n\nData Name:\n\n{row[4]}"
+        logger.info(f"op type: {row[2]}, from: {row[8]}, {row[4]}/{row[6]}")
     else:
         return f'new operation for {account_link} \n\n{op_link}'
+
 
 
 @with_timeout(60, kill_on_timeout=False)
@@ -169,7 +178,7 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                     TLOperations.id > MyMtlWalletBot.last_event_id
                     )
 
-        # print(tl_query)
+        #print(tl_query.statement.compile(compile_kwargs={"literal_binds": True}))
 
         tl_results = await asyncio.to_thread(tl_query.all)
         if len(tl_results) > 10:
@@ -179,25 +188,29 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
             logger.info(tl_result.account)
             # For each account with new operations, query TOperations
             query = session.query(TOperations.id, TOperations.dt, TOperations.operation, TOperations.amount1,
-                                  TOperations.code1, TOperations.amount2, TOperations.code2, TOperations.from_account,
-                                  TOperations.for_account, MyMtlWalletBot.user_id) \
-                .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TOperations.for_account) \
+                                 TOperations.code1, TOperations.amount2, TOperations.code2, TOperations.from_account,
+                                 TOperations.for_account, MyMtlWalletBot.user_id, MyMtlWalletBot.public_key) \
+                .join(MyMtlWalletBot,
+                      or_(MyMtlWalletBot.public_key == TOperations.for_account,
+                          MyMtlWalletBot.public_key == TOperations.code2)) \
                 .filter(MyMtlWalletBot.need_delete == 0, MyMtlWalletBot.user_id > 0,
                         TOperations.id > MyMtlWalletBot.last_event_id,
                         or_(TOperations.for_account == tl_result.account,
-                            TOperations.from_account == tl_result.account),
+                            TOperations.from_account == tl_result.account,
+                            TOperations.code2 == tl_result.account),
                         TOperations.dt > datetime.utcnow() - timedelta(minutes=30),
                         TOperations.arhived == None) \
                 .order_by(TOperations.id)
 
             # records = query.all()
+            #print(query.statement.compile(compile_kwargs={"literal_binds": True}))
             records = await asyncio.to_thread(query.all)
             # logger.info(f"founded records: {records}")
 
             for record in records:
                 # Обновление last_event_id перед проверкой
                 session.query(MyMtlWalletBot) \
-                    .filter(MyMtlWalletBot.public_key == record.for_account) \
+                    .filter(MyMtlWalletBot.public_key == record.public_key) \
                     .update({MyMtlWalletBot.last_event_id: record.id})
 
                 try:
@@ -207,17 +220,17 @@ async def cmd_send_message_events(session_pool, dp: Dispatcher):
                     fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=record.user_id,
                                                  chat_id=record.user_id)
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
-                    await cmd_info_message(session, record.user_id, decode_db_effect(record))
+                    await cmd_info_message(session, record.user_id, decode_db_effect(record, record.public_key))
                     await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
                     await asyncio.sleep(0.1)
                 except TelegramBadRequest as ex:
                     if "Bad Request: chat not found" in str(ex):
-                        db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
+                        db_delete_wallet(session=session, user_id=record.user_id, public_key=record.public_key)
                         logger.info(['cmd_send_message_events', record.id, 'wallet was deleted'])
                     else:
                         logger.info(['cmd_send_message_events 01', record.id, ex])
                 except TelegramForbiddenError:
-                    db_delete_wallet(session=session, user_id=record.user_id, public_key=record.for_account)
+                    db_delete_wallet(session=session, user_id=record.user_id, public_key=record.public_key)
                     logger.info(['cmd_send_message_events', record.id, 'Forbidden wallet was deleted'])
                 except Exception as ex:
                     logger.info(['cmd_send_message_events', record.id, ex])
