@@ -35,7 +35,7 @@ async def process_tags(message: "Message", state: "FSMContext", session: "Sessio
 
     for tag in new_tags:
         tag = tag.strip()
-        await parse_tag(tag, tags, message)
+        await parse_tag(tag=tag, message=message, session=session, bsn_data=tags)
 
     await state.update_data(tags=jsonpickle.dumps(tags))
     await clear_last_message_id(message.chat.id)
