@@ -159,7 +159,9 @@ async def main():
     engine = create_engine(config.db_dns,
                            pool_pre_ping=True,
                            pool_size=20,
-                           max_overflow=50
+                           max_overflow=50,
+                           pool_timeout=30,
+                           pool_recycle=1800
                            )
     # Creating DB connections pool
     db_pool = sessionmaker(bind=engine)
@@ -175,7 +177,7 @@ async def main():
 
     storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
     dp = Dispatcher(storage=storage)
-    scheduler = AsyncIOScheduler(timezone=str(tzlocal.get_localzone()))
+    scheduler = AsyncIOScheduler(timezone='Europe/Podgorica')  # str(tzlocal.get_localzone())
     scheduler.start()
     time_handlers.scheduler_jobs(scheduler, db_pool, dp)
 
@@ -187,7 +189,6 @@ async def main():
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-
 
 
 if __name__ == "__main__":
