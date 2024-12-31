@@ -1,17 +1,18 @@
 import os
-from typing import Optional
-
+from typing import List
+from environs import Env
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 start_path = os.path.dirname(os.path.dirname(__file__))
 dotenv_path = os.path.join(start_path, '.env')
+env = Env()
+env.read_env(dotenv_path)
 
 horizont_urls = [
     'https://horizon.stellar.org',
     'https://horizon.stellar.lobstr.co',
 ]
-
 
 class Settings(BaseSettings):
     bot_token: SecretStr
@@ -34,15 +35,21 @@ class Settings(BaseSettings):
     wallet_cost: float
     test_mode: bool = False
     fest_menu: dict = {}
+    admins: list = []
 
     # horizon_url_id: Optional[int] = 0
 
-    class Config:
-        env_file = dotenv_path
-        env_file_encoding = 'utf-8'
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='allow',
+        case_sensitive=False
+    )
 
 
 config = Settings()
+config.admins = env.list("ADMIN_LIST", [84131737])
+
 
 if os.getenv('ENVIRONMENT', 'test') == 'production':
     config.test_mode = False

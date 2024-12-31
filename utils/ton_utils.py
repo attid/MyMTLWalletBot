@@ -50,8 +50,6 @@ async def main() -> None:
     print(f"USDT Balance: {to_amount(int(usdt_balance.balance), decimals=6 )}")
 
 
-
-
 import asyncio
 from pytoniq import LiteClient, MessageAny, LiteBalancer, WalletV4R2
 

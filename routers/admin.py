@@ -19,6 +19,7 @@ class ExitState(StatesGroup):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+router.message.filter(F.chat.id.in_(config.admins))
 
 
 @router.message(Command(commands=["exit"]))
