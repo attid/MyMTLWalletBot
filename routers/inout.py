@@ -294,8 +294,10 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     send_sum = data.get("send_sum")
     usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
     usdt_out_fee = round(usdt_out_fee)
-    if await get_account_energy() > 65_000:
+    if await get_account_energy() > 130_000:
         usdt_out_fee = 0
+        if send_sum > 98:
+            usdt_out_fee = 2
 
     send_address = (await stellar_get_user_account(session, 0)).account.account_id
     send_memo = 'For USDT'
