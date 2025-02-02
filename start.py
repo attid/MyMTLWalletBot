@@ -5,6 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from middleware.retry import RetryRequestMiddleware
+from routers.monitoring import register_handlers
 from utils import time_handlers
 import sentry_sdk
 import tzlocal
@@ -65,6 +66,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.include_router(inout.router)
     dp.include_router(mtlap.router)
     dp.include_router(bsn_router)
+    register_handlers(dp, bot)
 
     # always the last
     dp.include_router(common_end.router)
