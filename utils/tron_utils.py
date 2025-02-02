@@ -9,6 +9,9 @@ from tronpy.providers import HTTPProvider, AsyncHTTPProvider
 from utils.config_reader import config
 from utils.aiogram_utils import get_web_request
 from tronpy.keys import to_hex_address
+from dataclasses import dataclass
+
+TRX_TO_SUN = 10 ** 6  # Константа для конвертации TRX в SUN
 
 # api_key from https://www.trongrid.io
 api_key = config.tron_api_key.get_secret_value()
@@ -17,6 +20,31 @@ tron_master_key = config.tron_master_key.get_secret_value()
 usdt_contract = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 usdt_hex_contract = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c'
 transfer_contract = 'TEZ8rh3z7Hxbx6HjS3KzEQQ8wNxHT4sLLJ'
+
+
+
+@dataclass
+class EnergyObject:
+    total_energy_limit: int  # Общий лимит энергии в сети
+    total_energy_weight: int  # Общий вес энергии в сети
+    energy_limit: int
+    energy_used: int
+    need_delegate_energy: int = 65_000
+    energy_delegated: int = 0
+
+    @property
+    def energy_amount(self) -> float:
+        return self.energy_limit - self.energy_used
+
+    @property
+    def energy_per_trx(self) -> float:
+        return self.total_energy_limit / self.total_energy_weight
+
+    def calculate_energy_amount_in_trx(self, energy_amount: int = None) -> int:
+        """Вычисляет количество TRX для указанного или текущего energy_amount."""
+        if energy_amount is None:
+            energy_amount = self.energy_amount
+        return int(energy_amount / self.energy_per_trx) + 1
 
 
 def create_trc_private_key():
@@ -214,13 +242,13 @@ async def send_usdt_async(public_key_to=None, amount=0, private_key_from=tron_ma
 
         result = await txn_ret.wait()
 
-        if result and 'receipt' in result and 'result' in result['receipt'] and result['receipt']['result'] == 'SUCCESS':
+        if result and 'receipt' in result and 'result' in result['receipt'] and result['receipt'][
+            'result'] == 'SUCCESS':
             logger.info("Транзакция успешно выполнена")
             return True, transaction_hash
         else:
             logger.error(f"Транзакция не удалась. Статус: {result}")
             return False, transaction_hash
-
 
 
 async def get_usdt_balance(public_key=None, private_key=None):
@@ -577,67 +605,101 @@ async def get_tron_price_from_coingecko() -> float:
     return float(price_usd)
 
 
-async def delegate_energy(energy_amount: int, public_key_to=None, private_key_to=None,
-                          private_key_from=tron_master_key, undo=False):
+async def delegate_energy(
+    energy_object: EnergyObject,
+    public_key_to: str = None,
+    private_key_to: str = None,
+    private_key_from: str = tron_master_key,
+    undo: bool = False
+):
+    """
+    Делегирует или отменяет делегирование энергии.
+
+    :param energy_object: Объект с информацией об энергии.
+    :param public_key_to: Публичный ключ получателя (опционально, если указан private_key_to).
+    :param private_key_to: Приватный ключ получателя (опционально, если указан public_key_to).
+    :param private_key_from: Приватный ключ отправителя (по умолчанию tron_master_key).
+    :param undo: Если True, отменяет делегирование.
+    :return: Результат транзакции.
+    """
+    # Преобразуем приватный ключ получателя в публичный адрес, если он указан
     if private_key_to:
         public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
     elif not public_key_to:
         raise ValueError("Either public_key_to or private_key_to must be provided")
 
+    # Преобразуем приватный ключ отправителя в публичный адрес
     from_address = PrivateKey(bytes.fromhex(private_key_from)).public_key.to_base58check_address()
 
-    # 1 TRX ~ 11.85 energy
-    energy_amount_in_trx = round((energy_amount / 11.85) * 10 ** 6)
+    # Проверяем, достаточно ли энергии для делегирования (если не отменяем)
+    if energy_object.need_delegate_energy > energy_object.energy_amount and not undo:
+        raise ValueError("Недостаточно энергии для делегирования")
+
+    # Вычисляем количество энергии в TRX
+    energy_amount_in_trx = energy_object.calculate_energy_amount_in_trx(energy_object.need_delegate_energy)
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
-        account_resources = await client.get_account_resource(from_address)
-        available_energy = account_resources.get('EnergyLimit', 0) - account_resources.get('EnergyUsed', 0)
-
-        if energy_amount > available_energy and not undo:
-            raise ValueError("Недостаточно энергии для делегирования")
-
         try:
             if undo:
+                # Отменяем делегирование
+                energy_undo = energy_object.energy_delegated if energy_object.energy_delegated > 0 else energy_amount_in_trx
                 delegate_tx = await client.trx.undelegate_resource(
                     owner=from_address,
                     receiver=public_key_to,
-                    balance=energy_amount_in_trx,
+                    balance=energy_undo * TRX_TO_SUN,
                     resource="ENERGY"
                 ).build()
             else:
+                # Делегируем энергию
                 delegate_tx = await client.trx.delegate_resource(
                     owner=from_address,
                     receiver=public_key_to,
-                    balance=energy_amount_in_trx,
+                    balance=energy_amount_in_trx * TRX_TO_SUN,
                     resource="ENERGY"
                 ).build()
+                energy_object.energy_delegated = energy_amount_in_trx  # Сохраняем количество делегированной энергии
+
+            # Подписываем и отправляем транзакцию
             delegate_tx = delegate_tx.sign(PrivateKey(bytes.fromhex(private_key_from)))
             delegate_result = await delegate_tx.broadcast()
-            await delegate_result.wait()
+            await delegate_result.wait()  # Ожидаем подтверждения транзакции
+
+            # Логируем успешное выполнение
+            action = "undelegated" if undo else "delegated"
+            logger.info(f"Successfully {action} {energy_amount_in_trx} TRX worth of energy to {public_key_to}")
 
             return delegate_result
 
         except Exception as e:
+            # Логируем ошибку и выбрасываем исключение
             logger.error(f"An error occurred: {e}")
             raise
 
 
-async def get_account_energy(address=None, private_key=tron_master_key):
+async def get_account_energy(address=None, private_key=tron_master_key) -> EnergyObject:
     if address is None:
         address = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         account_resources = await client.get_account_resource(address)
-        # print(account_resources)
-        return account_resources.get('EnergyLimit', 0) - account_resources.get('EnergyUsed', 0)
+        # print(account_resources)  # 'TotalEnergyLimit': 180_000_000_000, 'TotalEnergyWeight': 15_972_160_745}
+        # Энергия за 1 TRX = 180000000000 / 15972160745  ≈ 11.2696 энергии
+        return EnergyObject(total_energy_limit=account_resources.get('TotalEnergyLimit', 0),
+                            total_energy_weight=account_resources.get('TotalEnergyWeight', 0),
+                            energy_limit=account_resources.get('EnergyLimit', 0),
+                            energy_used=account_resources.get('EnergyUsed', 0))
+        # account_resources.get('EnergyLimit', 0) - account_resources.get('EnergyUsed', 0)
 
 
 async def run_test():
     # a = await delegate_energy(public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', energy_amount=100, undo=False)
-#    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
- #   print(a)
-    print(await get_account_energy())
-    print(await get_usdt_balance('TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az'))
+    #    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
+    #   print(a)
+    a = await get_account_energy()
+    print(a, a.energy_amount, a.energy_per_trx, a.calculate_energy_amount_in_trx(), a.calculate_energy_amount_in_trx(65000))
+    # print(await get_energy_in_trx_froze())
+    # print(await get_usdt_balance('TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az'))
+    # print(await delegate_energy(public_key_to='TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az', energy_amount=65_000, undo=False))
 
 
 if __name__ == "__main__":
@@ -647,5 +709,3 @@ if __name__ == "__main__":
     # Private test
     # Key is df99b0d90e4b5a457516793924bd678efa1e0ac5a772b14be3cdc0c6969c9969
     # Address is TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY
-
-

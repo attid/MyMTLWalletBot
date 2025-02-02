@@ -698,40 +698,54 @@ async def stellar_get_receive_path(send_asset: Asset, send_sum: str, receive_ass
         return []
 
 
-async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_assets: list) -> list:
+async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_assets: List[Asset]) -> List[str]:
+    """
+    Check possible exchange paths for assets in Stellar network.
+    """
+    BATCH_SIZE = 3
     try:
-        async with ServerAsync(
-                horizon_url=config.horizon_url, client=AiohttpClient()
-        ) as server:
+        async with ServerAsync(horizon_url=config.horizon_url, client=AiohttpClient()) as server:
             records = []
-            while len(receive_assets) > 0:
-                call_result = await server.strict_send_paths(send_asset, send_sum, receive_assets[:3]).call()
+            while receive_assets:
+                current_batch = receive_assets[:BATCH_SIZE]
+                call_result = await server.strict_send_paths(send_asset, send_sum, current_batch).call()
                 records.extend(call_result['_embedded']['records'])
-                if len(receive_assets) > 0:
-                    receive_assets.pop(0)
-                if len(receive_assets) > 0:
-                    receive_assets.pop(0)
-                if len(receive_assets) > 0:
-                    receive_assets.pop(0)
-            result = []
+                receive_assets = receive_assets[BATCH_SIZE:]
+
+            result = set()
             for record in records:
                 asset_code = ''
                 if record['destination_asset_type'] == "native":
                     asset_code = "XLM"
-                elif record['destination_asset_type'][:15] == "credit_alphanum":
+                elif record['destination_asset_type'].startswith("credit_alphanum"):
                     asset_code = record['destination_asset_code']
 
-                if (len(asset_code) > 0) and not (asset_code in result):
-                    result.append(asset_code)
+                if asset_code:
+                    result.add(asset_code)
 
-            return result
+            return list(result)
+
     except BadRequestError as ex:
-        logger.info(
-            ["stellar_check_receive_sum", send_asset.code + ' ' + send_sum + ' ' + str(receive_assets)[:15],
-             ex.message])
+        logger.error(
+            "Bad request error in stellar_check_receive_sum",
+            extra={
+                "send_asset": send_asset.code,
+                "send_sum": send_sum,
+                "receive_assets": str(receive_assets)[:15],
+                "error": ex.message
+            }
+        )
+        return []
     except Exception as ex:
-        logger.info(
-            ["stellar_check_receive_sum", send_asset.code + ' ' + send_sum + ' ' + str(receive_assets)[:15], ex])
+        logger.error(
+            "Unexpected error in stellar_check_receive_sum",
+            extra={
+                "send_asset": send_asset.code,
+                "send_sum": send_sum,
+                "receive_assets": str(receive_assets)[:15],
+                "error": str(ex)
+            }
+        )
         return []
 
 
