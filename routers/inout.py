@@ -294,7 +294,8 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     send_sum = data.get("send_sum")
     usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
     usdt_out_fee = round(usdt_out_fee)
-    if await get_account_energy() > 130_000:
+    account_energy = await get_account_energy()
+    if account_energy.energy_amount > 130_000:
         usdt_out_fee = 0
         if send_sum > 98:
             usdt_out_fee = 2
@@ -527,6 +528,8 @@ async def cmd_balance(message: types.Message, session: Session):
 
             total_balance = sum(amount for _, amount in balances)
             balance_message += f"\nИтого: {total_balance} USDT"
+            account_energy = await get_account_energy()
+            balance_message += f"\n\nЭнергия аккаунта: {account_energy.energy_amount}"
         else:
             balance_message = "У вас нет активных балансов USDT."
         await message.answer(balance_message)
@@ -540,12 +543,13 @@ async def cmd_balance(message: types.Message, session: Session, command: Command
         username = command.args
         usdt_key, balance = db_get_usdt_private_key(session, 0, user_name=username)
         await message.answer(f"Fount USDT: {balance}")
+        account_energy = await get_account_energy()
         if await get_trx_balance(private_key=usdt_key) < 3:
             await send_trx_async(private_key_to=usdt_key, amount=5, private_key_from=tron_master_key)
-        await delegate_energy(private_key_to=usdt_key, energy_amount=65_000)
+        await delegate_energy(private_key_to=usdt_key, energy_object=account_energy)
         if await send_usdt_async(private_key_to=tron_master_key, amount=balance, private_key_from=usdt_key):
             async with new_wallet_lock:
                 db_update_usdt_sum(session, 0, -1 * balance, user_name=username)
-        await delegate_energy(private_key_to=usdt_key, energy_amount=65_000, undo=True)
+        await delegate_energy(private_key_to=usdt_key, energy_object=account_energy, undo=True)
 
         await message.answer("Done!")
