@@ -28,11 +28,10 @@ class DbSessionMiddleware(BaseMiddleware):
                 user_id=fsm_data.get('user_id', event.from_user.id),
                 last_message_id=data.get('last_message_id', 0)
             )
-            with self.session_pool() as session:
+            with self.session_pool.get_session() as session:
                 await fsm.update_data(
                     user_lang=fsm_data.get('user_lang', get_user_lang(session, event.from_user.id))
                 )
-
-        with self.session_pool() as session:
+        with self.session_pool.get_session() as session:
             data["session"] = session
             return await handler(event, data)

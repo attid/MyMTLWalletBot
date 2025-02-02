@@ -166,7 +166,7 @@ async def main():
                            pool_recycle=1800
                            )
     # Creating DB connections pool
-    db_pool = sessionmaker(bind=engine)
+    from db.db_pool import db_pool
 
     default_bot_properties = DefaultBotProperties(parse_mode='HTML')
     session: AiohttpSession = AiohttpSession()
