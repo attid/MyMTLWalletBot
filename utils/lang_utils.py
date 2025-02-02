@@ -43,7 +43,7 @@ def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], tex
         if user_id in global_data.user_lang_dic:
             lang = global_data.user_lang_dic[user_id]
         else:
-            with global_data.db_pool() as session:
+            with global_data.db_pool.get_session() as session:
                 lang = get_user_lang(session, user_id)
             global_data.user_lang_dic[user_id] = lang
 

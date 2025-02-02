@@ -11,7 +11,7 @@ from loguru import logger
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import sessionmaker
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages, TLOperations
-from db.quik_pool import quik_pool
+from db.db_pool import db_pool
 from db.requests import db_delete_wallet
 from routers.start_msg import cmd_info_message
 from utils.global_data import global_data
@@ -118,7 +118,7 @@ def with_timeout(timeout, kill_on_timeout=False):
 @with_timeout(60)
 @safe_catch_async
 async def cmd_send_message_1m(session_pool, dp: Dispatcher):
-    with session_pool() as session:
+    with session_pool.get_session() as session:
         messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
         for message in messages:
             try:
@@ -250,14 +250,14 @@ def scheduler_jobs(scheduler: AsyncIOScheduler, db_pool: sessionmaker, dp: Dispa
 async def events_worker(db_pool: sessionmaker, dp: Dispatcher):
     while True:
         try:
-            await cmd_send_message_events(db_pool, dp)
+            await cmd_send_message_events(db_pool.get_session, dp)
         except Exception as ex:
             logger.info(['events_worker', ex])
         await asyncio.sleep(10)
 
 
 async def test():
-    a = await cmd_send_message_events(quik_pool, None)
+    a = await cmd_send_message_events(db_pool, None)
     print(a)
 
 
