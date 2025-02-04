@@ -6,9 +6,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from middleware.retry import RetryRequestMiddleware
 from routers.monitoring import register_handlers
-from utils import time_handlers
 import sentry_sdk
-import tzlocal
 from contextlib import suppress
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
@@ -16,7 +14,6 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis.asyncio import Redis
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sulguk import AiogramSulgukMiddleware
 from utils.config_reader import config
@@ -31,7 +28,7 @@ from routers.bsn import bsn_router
 from loguru import logger
 from utils.global_data import global_data
 from utils.grist_tools import load_fest_info
-from utils.time_handlers import events_worker
+from utils.time_handlers import events_worker, scheduler_jobs
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -158,13 +155,7 @@ async def main():
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
     )
-    engine = create_engine(config.db_dns,
-                           pool_pre_ping=True,
-                           pool_size=20,
-                           max_overflow=50,
-                           pool_timeout=30,
-                           pool_recycle=1800
-                           )
+
     # Creating DB connections pool
     from db.db_pool import db_pool
 
@@ -181,7 +172,7 @@ async def main():
     dp = Dispatcher(storage=storage)
     scheduler = AsyncIOScheduler(timezone='Europe/Podgorica')  # str(tzlocal.get_localzone())
     scheduler.start()
-    time_handlers.scheduler_jobs(scheduler, db_pool, dp)
+    scheduler_jobs(scheduler, db_pool, dp)
 
     global_data.bot = bot
     global_data.dispatcher = dp
