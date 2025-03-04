@@ -12,11 +12,11 @@ from sqlalchemy.orm import Session
 
 from db.requests import get_wallet_info
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
-from utils.aiogram_utils import send_message, clear_state, clear_last_message_id
-from utils.common_utils import get_user_id
-from utils.global_data import global_data
-from utils.lang_utils import my_gettext
-from utils.stellar_utils import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, \
+from other.aiogram_tools import send_message, clear_state, clear_last_message_id
+from other.common_tools import get_user_id
+from other.global_data import global_data
+from other.lang_tools import my_gettext
+from other.stellar_tools import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, \
     db_is_new_user, \
     db_get_wallets_list
 
@@ -106,6 +106,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
                                               callback_data="ChangeWallet")]]
             await send_message(session, user_id, my_gettext(user_id, 'load_error'),
                                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+            await clear_state(state)
             await state.update_data(last_message_id=0)
 
 

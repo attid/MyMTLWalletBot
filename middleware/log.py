@@ -4,7 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery
 from loguru import logger
 from db.models import MyMtlWalletBotLog
-from utils.global_data import global_data, LogQuery
+from other.global_data import global_data, LogQuery
 
 
 class LogButtonClickCallbackMiddleware(BaseMiddleware):

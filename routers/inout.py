@@ -1,3 +1,4 @@
+import asyncio
 import html
 from asyncio import sleep
 from aiogram import Router, types, F, Bot
@@ -7,13 +8,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, clear_last_message_id
-from utils.common_utils import get_user_id
-from utils.global_data import global_data
-from utils.lang_utils import my_gettext
-from utils.stellar_utils import *
-from utils.thothpay_utils import thoth_create_order, thoth_check_order
-from utils.tron_utils import *
+from other.aiogram_tools import send_message, clear_last_message_id
+from other.common_tools import get_user_id
+from other.global_data import global_data
+from other.lang_tools import my_gettext
+from other.stellar_tools import *
+from other.thothpay_tools import thoth_create_order, thoth_check_order
+from other.tron_tools import *
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -140,7 +141,8 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         #     await send_trx_async(amount=50, private_key_to=user_tron_private_key)
         # if full_usdt_balance > 500:
         #     await send_usdt_async(amount=income_usdt_balance, private_key_to=tron_master_key, private_key_from=user_tron_private_key)
-        db_update_usdt_sum(session, get_user_id(callback), income_usdt_balance)
+        await asyncio.to_thread(db_update_usdt_sum, session=session, user_id=get_user_id(callback),
+                                update_summ=income_usdt_balance)
         url = f'<a href="https://tronscan.org/#/address/{user_tron_key}">{user_tron_key}</a>'
         await bot.send_message(chat_id=global_data.admin_id,
                                text=f"{get_user_id(callback)} send {income_usdt_balance} usdt "

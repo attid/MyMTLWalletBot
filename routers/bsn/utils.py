@@ -4,13 +4,13 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from db.requests import db_get_user_account_by_username
-from utils.config_reader import config
+from other.config_reader import config
 from stellar_sdk import ServerAsync, AiohttpClient, TransactionBuilder, Network
 
 from routers.bsn.exceptions import EmptyTag, LengthError
-from utils.lang_utils import my_gettext
-from utils.mytypes import MyAccount
-from utils.stellar_utils import base_fee, decode_data_value, stellar_get_user_account
+from other.lang_tools import my_gettext
+from other.mytypes import MyAccount
+from other.stellar_tools import base_fee, decode_data_value, stellar_get_user_account
 
 from routers.bsn.constants import DELETE_KEY, BACK_CALLBACK_DATA, SEND_CALLBACK_DATA
 from routers.bsn.enums import ActionType

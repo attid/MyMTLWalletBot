@@ -8,7 +8,7 @@ from tonutils.utils import to_amount
 from tonutils.wallet import (
     WalletV5R1,
 )
-from utils.config_reader import config
+from other.config_reader import config
 
 # API key for accessing the Tonapi (obtainable from https://tonconsole.com)
 API_KEY = config.tonconsole_token

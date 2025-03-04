@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from db.requests import db_get_user_account_by_username
 from routers.send import cmd_send_04, cmd_send_choose_token
 from routers.sign import cmd_check_xdr
-from utils.aiogram_utils import clear_last_message_id
-from utils.gpt import gpt_check_message
-from utils.stellar_utils import find_stellar_addresses, find_stellar_federation_address, stellar_check_account, \
+from other.aiogram_tools import clear_last_message_id
+from other.gpt import gpt_check_message
+from other.stellar_tools import find_stellar_addresses, find_stellar_federation_address, stellar_check_account, \
     extract_url, is_base64, is_valid_stellar_address
 
 router = Router()

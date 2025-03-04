@@ -4,11 +4,11 @@ from typing import Union
 from aiogram import types
 from sqlalchemy.orm import Session
 
-from utils.config_reader import start_path
+from other.config_reader import start_path
 from db.models import MyMtlWalletBotUsers
 from db.requests import get_user_lang
-from utils.common_utils import get_user_id
-from utils.global_data import global_data
+from other.common_tools import get_user_id
+from other.global_data import global_data
 
 for file in listdir(f"{start_path}/langs/"):
     if file.endswith(".json"):

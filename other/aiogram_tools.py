@@ -8,9 +8,9 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from aiogram import types
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
-from utils.common_utils import get_user_id
-from utils.global_data import global_data
-from utils.lang_utils import my_gettext
+from other.common_tools import get_user_id
+from other.global_data import global_data
+from other.lang_tools import my_gettext
 
 
 async def send_message(session: Session, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,

@@ -56,7 +56,7 @@ class MyMtlWalletBot(Base):
 #        if isinstance(instance, MyMtlWalletBot):
 #            instance.last_use_day = datetime.now()  # Update the last_use_day to now
 #            if instance.default_wallet == 1:
-#                # If default_wallet is 1, set default_wallet to 0 for all other records of the same user
+#                # If default_wallet is 1, set default_wallet to 0 for all routers records of the same user
 #                session.query(MyMtlWalletBot).filter(
 #                    MyMtlWalletBot.user_id == instance.user_id,
 #                    MyMtlWalletBot.public_key != instance.public_key

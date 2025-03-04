@@ -7,10 +7,10 @@ from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
-from utils.aiogram_utils import my_gettext, send_message
+from other.aiogram_tools import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
-from utils.mytypes import Balance, MyOffer
-from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers, \
+from other.mytypes import Balance, MyOffer
+from other.stellar_tools import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers, \
     stellar_get_market_link, my_float, float2str, have_free_xlm
 
 
