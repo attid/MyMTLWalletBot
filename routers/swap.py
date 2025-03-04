@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
 from db.requests import db_get_user
-from utils.aiogram_utils import my_gettext, send_message
+from other.aiogram_tools import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_offers_cancel, get_kb_return
-from utils.mytypes import Balance
-from utils.stellar_utils import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
+from other.mytypes import Balance
+from other.stellar_tools import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
     stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float, float2str, \
     stellar_get_selling_offers_sum, my_round
 

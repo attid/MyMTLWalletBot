@@ -11,7 +11,7 @@ from routers.bsn.utils import bsn_stellar_get_data, cmd_gen_data_xdr, get_bsn_kb
 from routers.bsn.value_objects import Address, Key, Value
 from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
-from utils.aiogram_utils import send_message, clear_last_message_id
+from other.aiogram_tools import send_message, clear_last_message_id
 
 if typing.TYPE_CHECKING:
     from aiogram.types import CallbackQuery, Message

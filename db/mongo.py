@@ -1,7 +1,7 @@
 import asyncio
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from utils.config_reader import config
+from other.config_reader import config
 
 client = AsyncIOMotorClient(config.mongodb_url)
 db = client['mtl_tables']
@@ -10,16 +10,16 @@ assets_collection = db['assets']
 accounts_collection = db['accounts']
 
 
-async def mongo_get_asset_issuer(asset_code):
-    asset_data = await assets_collection.find({
-        "issuer": {"$exists": True},
-        "code": asset_code
-    }).to_list(length=None)
-    if asset_data:
-        return asset_data[0].get("issuer")
+# async def mongo_get_asset_issuer(asset_code):
+#     asset_data = await assets_collection.find({
+#         "issuer": {"$exists": True},
+#         "code": asset_code
+#     }).to_list(length=None)
+#     if asset_data:
+#         return asset_data[0].get("issuer")
 
 
-async def mongo_check_multi(public_key: str) -> bool:
+async def check_account_id_from_grist(public_key: str) -> bool:
     """
     Check if a given public key has a 'reserv' signer type in the accounts collection.
 

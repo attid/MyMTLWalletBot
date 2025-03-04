@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from sys import argv
 from typing import Union, List, Optional, Tuple
@@ -281,6 +282,10 @@ def db_delete_wallet(session: Session, user_id: int, public_key: str, erase: boo
         session.commit()
 
 
+async def db_delete_wallet_async(session: Session, user_id: int, public_key: str, erase: bool = False, idx: int = None):
+    await asyncio.to_thread(db_delete_wallet, session, user_id, public_key, erase, idx)
+
+
 def db_update_secret_key(session: Session, user_id: int, new_secret_key: str, password_type: int):
     session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id,
                                          MyMtlWalletBot.default_wallet == 1
@@ -310,7 +315,7 @@ def db_get_deleted_wallets_list(session: Session) -> List[MyMtlWalletBot]:
 
 
 def db_set_default_wallets(session: Session, user_id: int, public_key: str):
-    # Set all other wallets of this user to not default
+    # Set all routers wallets of this user to not default
     session.query(MyMtlWalletBot).filter(
         MyMtlWalletBot.user_id == user_id
     ).update({MyMtlWalletBot.default_wallet: 0}, synchronize_session=False)
@@ -403,7 +408,7 @@ def get_user_lang(session: Session, user_id: int):
         else:
             return 'en'
     except Exception as ex:
-        # print(ex)  # Or handle the exception in some other way
+        # print(ex)  # Or handle the exception in some routers way
         return 'en'
 
 
@@ -434,5 +439,4 @@ def get_wallet_info(session: Session, user_id: int, public_key: str) -> str:
 
 if __name__ == '__main__':
     pass
-    from quik_pool import quik_pool
     print(db_get_usdt_private_key(quik_pool(), 1, user_name='itolstov'))

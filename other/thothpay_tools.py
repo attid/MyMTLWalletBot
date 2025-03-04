@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timedelta
 import asyncio
-from utils.config_reader import config
-from utils.aiogram_utils import get_web_request
+from other.config_reader import config
+from other.aiogram_tools import get_web_request
 
 
 def test():

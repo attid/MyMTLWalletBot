@@ -16,7 +16,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis.asyncio import Redis
 from sqlalchemy.orm import sessionmaker
 from sulguk import AiogramSulgukMiddleware
-from utils.config_reader import config
+from other.config_reader import config
 from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
@@ -26,9 +26,8 @@ from routers import (add_wallet, admin, common_start, common_setting, mtltools, 
 from routers import veche, wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
-from utils.global_data import global_data
-from utils.grist_tools import load_fest_info
-from utils.time_handlers import events_worker, scheduler_jobs
+from other.global_data import global_data
+from other.time_handlers import events_worker, scheduler_jobs
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -139,7 +138,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
             asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
         ]
 
-    config.fest_menu = await load_fest_info()
+    # config.fest_menu = await load_fest_info()
 
 
 async def on_shutdown(bot: Bot):

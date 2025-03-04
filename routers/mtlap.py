@@ -4,8 +4,8 @@ from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
-from utils.aiogram_utils import my_gettext, send_message
-from utils.stellar_utils import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
+from other.aiogram_tools import my_gettext, send_message
+from other.stellar_tools import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
     have_free_xlm
 
 

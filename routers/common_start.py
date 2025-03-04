@@ -14,10 +14,10 @@ from middleware.throttling import rate_limit
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
-from utils.aiogram_utils import send_message, clear_state
-from utils.global_data import global_data
-from utils.lang_utils import my_gettext, check_user_id, check_user_lang
-from utils.stellar_utils import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
+from other.aiogram_tools import send_message, clear_state
+from other.global_data import global_data
+from other.lang_tools import my_gettext, check_user_id, check_user_lang
+from other.stellar_tools import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
                                  )
 
 router = Router()

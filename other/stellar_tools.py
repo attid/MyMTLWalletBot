@@ -11,11 +11,11 @@ from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from utils.config_reader import config
+from other.config_reader import config
 from db.requests import *
-from utils.mytypes import MyOffers, MyAccount, Balance, MyOffer
-from utils.aiogram_utils import get_web_request
-from utils.counting_lock import CountingLock
+from other.mytypes import MyOffers, MyAccount, Balance, MyOffer
+from other.aiogram_tools import get_web_request
+from other.counting_lock import CountingLock
 
 base_fee = config.base_fee
 
@@ -502,62 +502,123 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
 
 async def stellar_get_balances(session, user_id: int, public_key=None,
                                asset_filter: str = None, state=None) -> List[Balance]:
-    user_account = await stellar_get_user_account(session, user_id, public_key)
-    free_wallet = await stellar_is_free_wallet(session, user_id)
-    wallet = db_get_default_wallet(session, user_id)
-    result = []
-    balances = None
-    if public_key is None and user_id > 0 and wallet.balances_event_id == wallet.last_event_id:
-        balances = wallet.balances
-    if balances is None:
-        # получаем балансы
-        async with ServerAsync(
-                horizon_url=config.horizon_url, client=AiohttpClient()
-        ) as server:
-            call = await server.accounts().account_id(user_account.account.account_id).call()
+    try:
+        user_account = await stellar_get_user_account(session, user_id, public_key)
+        free_wallet = await stellar_is_free_wallet(session, user_id)
+        wallet = db_get_default_wallet(session, user_id)
+        result = []
+        balances = None
 
-            lock_sum = 1
-            lock_sum += float(call['num_sponsoring']) * 0.5
-            lock_sum += (len(call['signers']) - 1) * 0.5
-            lock_sum += (len(call['balances']) - 1) * 0.5
-            lock_sum += (len(call['data'])) * 0.5
-            balances = MyAccount.from_dict(call).balances
-            call = await server.offers().for_seller(user_account.account.account_id).limit(200).call()
-            lock_sum += len(call['_embedded']['records']) * 0.5
+        # Try to use cached balances if available and up-to-date
+        if public_key is None and user_id > 0 and wallet.balances_event_id == wallet.last_event_id:
+            try:
+                balances = wallet.balances
+                # Verify the cached data is valid by decoding it
+                if balances:
+                    test_decode = jsonpickle.decode(balances)
+            except Exception as e:
+                logger.error(f"Error decoding cached balances: {e}")
+                balances = None
+                # Invalidate corrupted cache data
+                await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
 
-        for balance in balances:
-            if balance.asset_type == "native":
-                balance.selling_liabilities = float(balance.selling_liabilities) + lock_sum
-                free_xlm = float(balance.balance) - float(balance.selling_liabilities)
-                if state:
-                    await state.update_data(free_xlm=free_xlm)
-                if free_wallet == 0:
-                    result.append(balance)
-            elif balance.asset_type[:15] == "credit_alphanum":
-                result.append(balance)
-        # получаем токены эмитента
-        async with ServerAsync(
-                horizon_url=config.horizon_url, client=AiohttpClient()
-        ) as server:
-            issuer = await server.assets().for_issuer(user_account.account.account_id).call()
-        for record in issuer['_embedded']['records']:
-            result.append(Balance(balance='unlimited', asset_code=record['asset_code'], asset_type=record['asset_type'],
-                                  asset_issuer=user_account.account.account_id))
-        # сохраняем полный список
-        if public_key is None:
-            db_update_mymtlwalletbot_balances(session, jsonpickle.encode(result), user_id)
+        if balances is None:
+            # Fetch balances from the network
+            try:
+                async with ServerAsync(
+                    horizon_url=config.horizon_url, client=AiohttpClient()
+                ) as server:
+                    call = await server.accounts().account_id(user_account.account.account_id).call()
 
-    else:
-        result = jsonpickle.decode(balances)
+                    lock_sum = 1
+                    lock_sum += float(call['num_sponsoring']) * 0.5
+                    lock_sum += (len(call['signers']) - 1) * 0.5
+                    lock_sum += (len(call['balances']) - 1) * 0.5
+                    lock_sum += (len(call['data'])) * 0.5
+                    balances = MyAccount.from_dict(call).balances
+                    offers_call = await server.offers().for_seller(
+                        user_account.account.account_id
+                    ).limit(200).call()
+                    lock_sum += len(offers_call['_embedded']['records']) * 0.5
 
-    if asset_filter:
-        result = [balance for balance in result if balance.asset_code == asset_filter]
+                for balance in balances:
+                    if balance.asset_type == "native":
+                        balance.selling_liabilities = str(
+                            float(balance.selling_liabilities) + lock_sum
+                        )
+                        free_xlm = float(balance.balance) - float(balance.selling_liabilities)
+                        if state:
+                            await state.update_data(free_xlm=free_xlm)
+                        if free_wallet == 0:
+                            result.append(balance)
+                    elif balance.asset_type[:15] == "credit_alphanum":
+                        result.append(balance)
 
-    if state:
-        mtlap_value = any(balance.asset_code == 'MTLAP' for balance in result)
-        await state.update_data(mtlap=mtlap_value)
-    return result
+                # Get issuer tokens
+                try:
+                    async with ServerAsync(
+                        horizon_url=config.horizon_url, client=AiohttpClient()
+                    ) as server:
+                        issuer = await server.assets().for_issuer(
+                            user_account.account.account_id
+                        ).call()
 
+                    for record in issuer['_embedded']['records']:
+                        result.append(
+                            Balance(
+                                balance='unlimited',
+                                asset_code=record['asset_code'],
+                                asset_type=record['asset_type'],
+                                asset_issuer=user_account.account.account_id
+                            )
+                        )
+                except Exception as ex:
+                    logger.error(f"Error fetching issuer tokens: {ex}")
+                    # Continue execution even if this part fails
+
+                # Save the complete list to database cache
+                if public_key is None and result:
+                    try:
+                        encoded_result = jsonpickle.encode(result)
+                        await asyncio.to_thread(
+                            db_update_mymtlwalletbot_balances, session, encoded_result, user_id
+                        )
+                    except Exception as ex:
+                        logger.error(f"Error saving balances to database: {ex}")
+
+            except Exception as ex:
+                logger.error(f"Error fetching balances from network: {ex}")
+                # If we have a database error and no fresh data, return empty list
+                result = []
+                # Invalidate cache on error
+                if public_key is None:
+                    await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
+        else:
+            try:
+                result = jsonpickle.decode(balances)
+            except Exception as ex:
+                logger.error(f"Error decoding balances from database: {ex}")
+                # Invalidate corrupted cache
+                await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
+                result = []
+
+        # Apply asset filter if specified
+        if asset_filter and result:
+            result = [balance for balance in result if balance.asset_code == asset_filter]
+
+        # Update state with MTLAP status if needed
+        if state and result:
+            mtlap_value = any(balance.asset_code == 'MTLAP' for balance in result)
+            await state.update_data(mtlap=mtlap_value)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Unexpected error in stellar_get_balances: {e}")
+        # On any unexpected error, return empty list and invalidate cache
+        if public_key is None and user_id > 0:
+            await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
+        return []
 
 def get_first_balance_from_list(balance_list):
     if balance_list:

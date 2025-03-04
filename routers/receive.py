@@ -5,8 +5,8 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session
 
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import my_gettext
-from utils.stellar_utils import stellar_get_user_account
+from other.aiogram_tools import my_gettext
+from other.stellar_tools import stellar_get_user_account
 
 router = Router()
 router.message.filter(F.chat.type == "private")

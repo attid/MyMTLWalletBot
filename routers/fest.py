@@ -6,10 +6,9 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.send import cmd_send_04
-from utils.aiogram_utils import send_message, long_line
-from utils.grist_tools import load_fest_info
-from utils.lang_utils import my_gettext
-from utils.stellar_utils import *
+from other.aiogram_tools import send_message, long_line
+from other.lang_tools import my_gettext
+from other.stellar_tools import *
 
 router = Router()
 router.message.filter(F.chat.type == "private")

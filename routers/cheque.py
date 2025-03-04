@@ -18,11 +18,11 @@ from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_
 from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
-from utils.aiogram_utils import send_message
-from utils.common_utils import get_user_id
-from utils.global_data import global_data
-from utils.lang_utils import my_gettext
-from utils.stellar_utils import (my_float, float2str, stellar_pay, stellar_get_user_account, eurmtl_asset,
+from other.aiogram_tools import send_message
+from other.common_tools import get_user_id
+from other.global_data import global_data
+from other.lang_tools import my_gettext
+from other.stellar_tools import (my_float, float2str, stellar_pay, stellar_get_user_account, eurmtl_asset,
                                  db_is_new_user,
                                  stellar_create_new, async_stellar_send, stellar_sign, stellar_get_master,
                                  stellar_user_sign, stellar_get_balances, stellar_add_trust, stellar_get_market_link)

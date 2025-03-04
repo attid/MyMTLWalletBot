@@ -9,22 +9,22 @@ from requests import Session
 from stellar_sdk import Asset
 from sulguk import SULGUK_PARSE_MODE
 
-from utils.config_reader import config
-from db.mongo import mongo_get_asset_issuer
+from other.config_reader import config
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
     db_insert_into_address_book, \
     db_get_default_wallet, db_get_user_account_by_username
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
-from utils.mytypes import Balance
+from other.grist_tools import load_asset_from_grist
+from other.mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from utils.aiogram_utils import send_message, my_gettext, clear_state, get_web_request, get_web_decoded_xdr
+from other.aiogram_tools import send_message, my_gettext, clear_state, get_web_request, get_web_decoded_xdr
 from loguru import logger
 
-from utils.global_data import global_data
-from utils.lang_utils import check_user_id
-from utils.stellar_utils import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
+from other.global_data import global_data
+from other.lang_tools import check_user_id
+from other.stellar_tools import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
                                  stellar_is_free_wallet, public_issuer, get_good_asset_list,
                                  stellar_pay, eurmtl_asset, float2str, stellar_get_user_keypair,
                                  stellar_change_password, stellar_unfree_wallet, have_free_xlm)
@@ -271,9 +271,11 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 
     try:
         if asset_issuer == '0':
-            public_key = await mongo_get_asset_issuer(asset_code)
+            grist_answer = await load_asset_from_grist(asset_code)
+            public_key = grist_answer.issuer if grist_answer else None
         else:
             public_key, user_id = db_get_user_account_by_username(session, '@' + asset_issuer)
+
         if public_key is None:
             raise Exception("public_key is None")
     except Exception as ex:

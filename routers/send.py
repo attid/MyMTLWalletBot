@@ -18,13 +18,13 @@ from db.requests import (db_get_user_account_by_username, db_get_book_data, db_g
                          db_get_user)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
-from utils.lang_utils import check_user_id
-from utils.mytypes import Balance
+from other.lang_tools import check_user_id
+from other.mytypes import Balance
 from routers.sign import cmd_check_xdr
-from utils.aiogram_utils import my_gettext, send_message, check_username, clear_state, clear_last_message_id
-from utils.common_utils import get_user_id, decode_qr_code
-from utils.global_data import global_data
-from utils.stellar_utils import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
+from other.aiogram_tools import my_gettext, send_message, check_username, clear_state, clear_last_message_id
+from other.common_tools import get_user_id, decode_qr_code
+from other.global_data import global_data
+from other.stellar_tools import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
     cut_text_to_28_bytes, get_first_balance_from_list, base_fee, is_valid_stellar_address, eurmtl_asset
 

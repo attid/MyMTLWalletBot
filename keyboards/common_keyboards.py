@@ -1,8 +1,8 @@
 from typing import Union
 from aiogram import types
 
-from utils.common_utils import get_user_id
-from utils.lang_utils import my_gettext
+from other.common_tools import get_user_id
+from other.lang_tools import my_gettext
 
 
 def get_return_button(user_id_or_lang: Union[types.CallbackQuery, types.Message, int, str], text=None,
