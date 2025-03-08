@@ -13,6 +13,7 @@ from sulguk import SULGUK_PARSE_MODE
 
 from db.requests import db_reset_balance, db_get_default_wallet
 from other.mytypes import MyResponse
+from other.web_tools import http_session_manager
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from other.aiogram_tools import (my_gettext, send_message, cmd_show_sign, long_line,
                                  get_web_request, get_web_decoded_xdr)
@@ -338,24 +339,44 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
 @router.callback_query(F.data == "SendTools")
 async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
+    callback_url = data.get('callback_url')
     xdr = data.get('xdr')
     try:
         if callback.data == "SendTools":
-            try:
-                status, response_json = await get_web_request('POST', url='https://eurmtl.me/remote/update_signature',
-                                                              json={"xdr": xdr})
-                # { "SUCCESS": true/false, "MESSAGES": ["список", "сообщений", "об", "обработке"] }
-                msgs = '\n'.join(response_json.get('MESSAGES'))
-                if response_json.get('SUCCESS'):
-                    await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
-                else:
-                    await cmd_info_message(session, callback, f'ERROR\n{msgs}')
-                # else:
-                #     await cmd_info_message(session, callback, status)
+            if callback_url:
+                try:
+                    response = await http_session_manager.get_web_request('POST',
+                                                                          url=callback_url,
+                                                                          data={"xdr": xdr})
 
-            except Exception as ex:
-                logger.info(['cmd_show_send_tr', callback, ex])
-                await cmd_info_message(session, callback, my_gettext(callback, 'send_error'))
+                    logger.debug(f"Callback response: {response.data}")
+                    if response.status == 200:
+                        await cmd_info_message(session, callback, f'SUCCESS')
+                    else:
+                        await cmd_info_message(session, callback, f'ERROR')
+                except Exception as ex:
+                    logger.info(['cmd_show_send_tr', callback, ex])
+                    await cmd_info_message(session, callback, my_gettext(callback, 'send_error'))
+            else:
+                try:
+                    response = await http_session_manager.get_web_request('POST',
+                                                                          url='https://eurmtl.me/remote/update_signature',
+                                                                          json={"xdr": xdr})
+
+                    # status, response_json = await get_web_request('POST', url='https://eurmtl.me/remote/update_signature',
+                    #                                               json={"xdr": xdr})
+                    # { "SUCCESS": true/false, "MESSAGES": ["список", "сообщений", "об", "обработке"] }
+                    msgs = '\n'.join(response.data.get('MESSAGES'))
+                    if response.data.get('SUCCESS'):
+                        await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
+                    else:
+                        await cmd_info_message(session, callback, f'ERROR\n{msgs}')
+                    # else:
+                    #     await cmd_info_message(session, callback, status)
+
+                except Exception as ex:
+                    logger.info(['cmd_show_send_tr', callback, ex])
+                    await cmd_info_message(session, callback, my_gettext(callback, 'send_error'))
         else:
             await cmd_info_message(session, callback,
                                    my_gettext(callback, "try_send"),
