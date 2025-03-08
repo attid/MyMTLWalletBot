@@ -458,19 +458,24 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 await cmd_send_04(session, message, state)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
                 data = TransactionStellarUri.from_uri(qr_data, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-                source_account = await stellar_get_user_account(session, message.from_user.id)
-                transaction = TransactionBuilder(
-                    source_account=source_account,
-                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
-                    base_fee=base_fee,
-                )
-                transaction.set_timeout(60 * 60)
+                callback_url = data.callback
+                if data.replace:
+                    source_account = await stellar_get_user_account(session, message.from_user.id)
+                    transaction = TransactionBuilder(
+                        source_account=source_account,
+                        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                        base_fee=base_fee,
+                    )
+                    transaction.set_timeout(60 * 60)
 
-                for operation in data.transaction_envelope.transaction.operations:
-                    transaction.append_operation(operation)
-                envelop = transaction.build()
-                xdr_to_check = envelop.to_xdr()
-                await state.update_data(last_message_id=0)
+                    for operation in data.transaction_envelope.transaction.operations:
+                        transaction.append_operation(operation)
+                    envelop = transaction.build()
+                    xdr_to_check = envelop.to_xdr()
+                else:
+                    xdr_to_check = data.transaction_envelope.to_xdr()
+
+                await state.update_data(last_message_id=0, callback_url=callback_url)
                 await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
                                     user_id=message.from_user.id, state=state)
 

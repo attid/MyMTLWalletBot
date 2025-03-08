@@ -49,6 +49,7 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
     # msg = msg + my_gettext(chat_id, 'send_xdr')
     data = await state.get_data()
     tools = data.get('tools')
+    callback_url = data.get('callback_url')
 
     if not use_send:
         await get_web_request('POST', url="https://vault.lobstr.co/api/transactions/",
@@ -58,6 +59,9 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
         kb = get_kb_send(chat_id)
         if tools:
             kb = get_kb_send(chat_id, with_tools=tools)
+        if callback_url:
+            kb = get_kb_send(chat_id, with_tools=True, tool_name='callback')
+
     elif xdr_uri:
         from urllib.parse import urlencode, quote
         params = {'xdr': xdr_uri}

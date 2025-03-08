@@ -43,7 +43,7 @@
   "kb_resend": "Try sending again",
   "kb_send": "Send",
   "kb_send_tr": "Send to blockchain",
-  "kb_send_tools": "Send to eurmtl.me",
+  "kb_send_tools": "Send to {}",
   "kb_set_password": "Set password",
   "kb_setting": "Settings",
   "kb_sign": "Sign",

@@ -41,7 +41,7 @@
   "kb_resend": "እንደገና በመላክ ይሞክሩ",
   "kb_send": "ይላኩ",
   "kb_send_tr": "ወደ ብሎክቼይን ይላኩ",
-  "kb_send_tools": "ወደ eurmtl.me ይላኩ",
+  "kb_send_tools": "ወደ {} ይላኩ",
   "kb_set_password": "የይለፍ ቃል ይመስርቱ",
   "kb_setting": "ማስተካከያ",
   "kb_sign": "ፈርም",

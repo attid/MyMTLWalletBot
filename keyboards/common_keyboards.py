@@ -57,11 +57,11 @@ def get_kb_yesno_send_xdr(user_id: Union[types.CallbackQuery, types.Message, int
     return keyboard
 
 
-def get_kb_send(user_id: int, with_tools: bool = False) -> types.InlineKeyboardMarkup:
+def get_kb_send(user_id: int, with_tools: bool = False, tool_name: str = 'eurmtl.me') -> types.InlineKeyboardMarkup:
     buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tr'), callback_data="SendTr")]]
 
     if with_tools:
-        buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tools'),
+        buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tools', (tool_name,)),
                                                    callback_data="SendTools")])
     buttons.append([types.InlineKeyboardButton(text='Decode',
                                                callback_data="Decode")])
