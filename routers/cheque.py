@@ -253,7 +253,7 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
     await state.update_data(xdr=xdr, operation='cancel_cheque')
     await async_stellar_send(xdr)
     await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque'))
-    db_reset_balance(session, user_id)
+    await asyncio.to_thread(db_reset_balance,session, user_id)
 
 
 @router.inline_query(F.chat_type != "sender")
@@ -370,7 +370,7 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
     await state.update_data(xdr=xdr, operation='receive_cheque')
     await async_stellar_send(xdr)
     await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque'))
-    db_reset_balance(session, user_id)
+    await asyncio.to_thread(db_reset_balance,session, user_id)
 
     if was_new:
         await asyncio.sleep(2)

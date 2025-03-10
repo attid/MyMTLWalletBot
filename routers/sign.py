@@ -270,7 +270,7 @@ async def sign_xdr(session: Session, state, user_id):
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password"))
-    db_reset_balance(session, user_id)
+    await asyncio.to_thread(db_reset_balance,session, user_id)
     await state.update_data(pin='')
 
 
