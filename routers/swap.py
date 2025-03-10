@@ -75,6 +75,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 asset_list2 = []
                 for token in await stellar_get_balances(session, callback.from_user.id):
                     asset_list2.append(Asset(token.asset_code, token.asset_issuer))
+                asset_list2.sort(key=lambda x: x.code)  # Сортировка по имени токена
                 swap_possible_sum = '1' if float(asset.balance) > 0 else asset.balance # try dont lose path for nfts
                 receive_assets = await stellar_check_receive_asset(Asset(asset.asset_code, asset.asset_issuer), swap_possible_sum,
                                                                    asset_list2)
