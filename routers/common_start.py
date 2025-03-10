@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 import jsonpickle
 from aiogram import Router, types, Bot, F
@@ -239,8 +240,8 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
 
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "Refresh")
-async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    db_reset_balance(session, callback.from_user.id)
+async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    await asyncio.to_thread(db_reset_balance,session, callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
     await callback.answer()
     await check_update_username(
