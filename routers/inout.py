@@ -1,12 +1,15 @@
 import asyncio
 import html
 from asyncio import sleep
+from decimal import Decimal
+
 from aiogram import Router, types, F, Bot
 from aiogram.enums import ContentType
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
+from other.loguru_tools import safe_catch_async
 from routers.start_msg import cmd_info_message
 from other.aiogram_tools import send_message, clear_last_message_id
 from other.common_tools import get_user_id
@@ -296,8 +299,8 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     send_sum = data.get("send_sum")
     usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
     usdt_out_fee = round(usdt_out_fee)
-    account_energy = await get_account_energy()
-    if account_energy.energy_amount > 130_000:
+    master_energy = await get_account_energy()
+    if master_energy.energy_amount > 130_000:
         usdt_out_fee = 0
         if send_sum > 98:
             usdt_out_fee = 2
@@ -522,16 +525,17 @@ async def cmd_process_message_successful_payment(message: types.Message, session
 
 
 @router.message(Command(commands=["balance"]))
+@safe_catch_async
 async def cmd_balance(message: types.Message, session: Session):
     if message.from_user.username == "itolstov":
         balances = db_get_usdt_balances(session)
         if balances:
-            balance_message = "\n".join(f"Адрес: {addr}, USDT: {amount}" for addr, amount in balances)
+            balance_message = "\n".join(f"Адрес: {addr if addr else 'ID:'+str(id)}, USDT: {amount}" for addr, amount, id in balances)
 
-            total_balance = sum(amount for _, amount in balances)
+            total_balance = sum(amount for _, amount, _ in balances)
             balance_message += f"\nИтого: {total_balance} USDT"
-            account_energy = await get_account_energy()
-            balance_message += f"\n\nЭнергия аккаунта: {account_energy.energy_amount}"
+            master_energy = await get_account_energy()
+            balance_message += f"\n\nЭнергия аккаунта: {master_energy.energy_amount}"
         else:
             balance_message = "У вас нет активных балансов USDT."
         await message.answer(balance_message)
@@ -540,18 +544,67 @@ async def cmd_balance(message: types.Message, session: Session):
 
 
 @router.message(Command(commands=["usdt"]))
-async def cmd_balance(message: types.Message, session: Session, command: CommandObject):
+@safe_catch_async
+async def cmd_usdt_home(message: types.Message, session: Session, command: CommandObject):
     if message.from_user.username == "itolstov" and len(command.args) > 0:
-        username = command.args
-        usdt_key, balance = db_get_usdt_private_key(session, 0, user_name=username)
+        user_arg = command.args
+        try:
+            user_id = int(user_arg)
+            usdt_key, balance = db_get_usdt_private_key(session, user_id)
+        except ValueError:
+            usdt_key, balance = db_get_usdt_private_key(session, 0, user_name=user_arg)
         await message.answer(f"Fount USDT: {balance}")
-        account_energy = await get_account_energy()
-        if await get_trx_balance(private_key=usdt_key) < 3:
-            await send_trx_async(private_key_to=usdt_key, amount=5, private_key_from=tron_master_key)
-        await delegate_energy(private_key_to=usdt_key, energy_object=account_energy)
-        if await send_usdt_async(private_key_to=tron_master_key, amount=balance, private_key_from=usdt_key):
-            async with new_wallet_lock:
-                db_update_usdt_sum(session, 0, -1 * balance, user_name=username)
-        await delegate_energy(private_key_to=usdt_key, energy_object=account_energy, undo=True)
+        master_energy = await get_account_energy()
+        if await get_trx_balance(private_key=usdt_key) < Decimal('0.001'):
+            await send_trx_async(private_key_to=usdt_key, amount=0.001, private_key_from=tron_master_key)
+            await message.answer("Send TRX")
+            await asyncio.sleep(3)
+        
+        trx_balance = await get_trx_balance(private_key=usdt_key)
+        if trx_balance > 0.002:
+            await send_trx_async(private_key_to=tron_master_key, amount=float(trx_balance - Decimal('0.001')), private_key_from=usdt_key)
+            await message.answer('Take TRX')
+            await asyncio.sleep(1)
 
-        await message.answer("Done!")
+        account_energy = await get_account_energy(private_key=usdt_key)
+        if account_energy.free_amount < 500:
+            await message.answer(f"Low free energy: {account_energy.free_amount}")
+            return
+
+        usdt_balance = await get_usdt_balance(private_key=usdt_key)
+        await delegate_energy(private_key_to=usdt_key, energy_object=master_energy)
+        if await send_usdt_async(private_key_to=tron_master_key, amount=usdt_balance - 0.001, private_key_from=usdt_key):
+            async with new_wallet_lock:
+                if user_arg.isdigit():
+                    db_update_usdt_sum(session, int(user_arg), -1 * balance)
+                else:
+                    db_update_usdt_sum(session, 0, -1 * balance, user_name=user_arg)
+        await delegate_energy(private_key_to=usdt_key, energy_object=master_energy, undo=True)
+
+        await message.answer(f"Done! db_balance: {balance} usdt_balance: {usdt_balance} trx_balance: {trx_balance}")
+
+
+@safe_catch_async
+async def usdt_worker(bot: Bot):
+    last_energy = 0
+    while True:
+        try:
+            master_energy = await get_account_energy()
+            current_energy = master_energy.energy_amount
+            
+            # Energy filled notification
+            if current_energy > 150_000 >= last_energy:
+                last_energy = current_energy
+                await bot.send_message(
+                    chat_id=global_data.admin_id,
+                    text=f'Energy Full: {current_energy}'
+                )
+
+            # Energy drained notification
+            elif last_energy > 150_000 >= current_energy:
+                last_energy = 0
+
+            await asyncio.sleep(60*60*6) 
+        except Exception as ex:
+            logger.error(['usdt_worker', ex])
+            await asyncio.sleep(60)

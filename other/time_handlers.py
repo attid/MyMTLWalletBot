@@ -163,6 +163,9 @@ async def fetch_addresses(session_pool, dp: Dispatcher):
 @with_timeout(60, kill_on_timeout=False)
 @safe_catch_async
 async def process_addresses(tl_results, session_pool, dp: Dispatcher):
+    if tl_results is None:
+        logger.warning("tl_results is None, skipping processing")
+        return
     messages_to_process = tl_results[:20]  # Ограничиваем до 10 адресов
     tasks = [
         handle_address(tl_result, session_pool, dp)

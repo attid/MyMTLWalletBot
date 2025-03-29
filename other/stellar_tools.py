@@ -393,9 +393,31 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
     logger.info(full_transaction.to_xdr())
     return full_transaction.to_xdr()
 
-
 def stellar_get_user_keypair(session: Session, user_id: int, user_password: str) -> Keypair:
     result = db_get_default_wallet(session, user_id).secret_key
+    return Keypair.from_secret(decrypt(result, user_password))
+
+def stellar_get_user_seed_phrase(session: Session, user_id: int, user_password: str) -> str:
+    """
+    Получает сид-фразу пользователя из базы данных и расшифровывает её приватным ключом.
+    
+    :param session: Сессия базы данных
+    :param user_id: ID пользователя
+    :param user_password: Пароль пользователя
+    :return: Расшифрованная сид-фраза или None, если её нет или не удалось расшифровать
+    """
+    wallet = db_get_default_wallet(session, user_id)
+    if not wallet.seed_key:
+        return None
+    
+    try:
+        # Получаем keypair с помощью пароля пользователя
+        keypair = stellar_get_user_keypair(session, user_id, user_password)
+        # Расшифровываем сид-фразу с помощью приватного ключа
+        decrypted_seed = decrypt(wallet.seed_key, keypair.secret)
+        return decrypted_seed
+    except Exception:
+        return None
     return Keypair.from_secret(decrypt(result, user_password))
 
 
