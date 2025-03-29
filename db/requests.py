@@ -103,11 +103,10 @@ def db_update_usdt_sum(session: Session, user_id: int, update_summ: int, user_na
         raise ValueError(f"No user found with id {user_id}")
 
 
-def db_get_usdt_balances(session: Session) -> List[Tuple[str, int]]:
-    users = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.usdt_amount > 0).order_by(
+def db_get_usdt_balances(session: Session) -> List[Tuple[str, int, int]]:
+    users = session.query(MyMtlWalletBotUsers.user_name, MyMtlWalletBotUsers.usdt_amount, MyMtlWalletBotUsers.user_id).filter(MyMtlWalletBotUsers.usdt_amount > 0).order_by(
         MyMtlWalletBotUsers.usdt_amount.desc()).all()
-    balances = [(user.user_name, user.usdt_amount) for user in users if user.usdt is not None]
-    return balances
+    return [(user_name, amount, user_id) for user_name, amount, user_id in users]
 
 
 def db_get_btc_uuid(session: Session, user_id: int):

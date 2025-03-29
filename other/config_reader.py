@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     bot_token: SecretStr
     test_bot_token: SecretStr
     base_fee: int
-    db_dns: str
+    db_url: str
+    redis_url: str
     tron_api_key: SecretStr
     tron_master_address: str
     tron_master_key: SecretStr
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     tonconsole_token: str
     ton_token: str
     wallet_cost: float
-    test_mode: bool = False
+    test_mode: bool = True
     fest_menu: dict = {}
     admins: list = []
 

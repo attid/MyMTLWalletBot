@@ -1,5 +1,7 @@
 from contextlib import suppress
 import asyncio
+from decimal import Decimal
+
 import base58
 import requests
 from loguru import logger
@@ -31,6 +33,8 @@ class EnergyObject:
     energy_used: int
     need_delegate_energy: int = 65_000
     energy_delegated: int = 0
+    free_net_used: int = 0 # Использованный лимит сети
+    free_net_limit: int = 0 # Лимит сети
 
     @property
     def energy_amount(self) -> float:
@@ -46,6 +50,9 @@ class EnergyObject:
             energy_amount = self.energy_amount
         return int(energy_amount / self.energy_per_trx) + 1
 
+    @property
+    def free_amount(self) -> float:
+        return self.free_net_limit - self.free_net_used
 
 def create_trc_private_key():
     private_key = PrivateKey.random()
@@ -206,7 +213,7 @@ async def send_trx_async(public_key_to=None, amount=0, private_key_from=tron_mas
         public_key_from = private_key.public_key.to_base58check_address()
 
         txb = (
-            client.trx.transfer(public_key_from, public_key_to, amount * 10 ** 6)
+            client.trx.transfer(public_key_from, public_key_to, int(amount * 10 ** 6))
             # .memo("test memo")
             .fee_limit(20_000_000)
         )
@@ -687,7 +694,9 @@ async def get_account_energy(address=None, private_key=tron_master_key) -> Energ
         return EnergyObject(total_energy_limit=account_resources.get('TotalEnergyLimit', 0),
                             total_energy_weight=account_resources.get('TotalEnergyWeight', 0),
                             energy_limit=account_resources.get('EnergyLimit', 0),
-                            energy_used=account_resources.get('EnergyUsed', 0))
+                            energy_used=account_resources.get('EnergyUsed', 0),
+                            free_net_used=account_resources.get('freeNetUsed',0),
+                            free_net_limit=account_resources.get('freeNetLimit',0))
         # account_resources.get('EnergyLimit', 0) - account_resources.get('EnergyUsed', 0)
 
 
@@ -695,11 +704,20 @@ async def run_test():
     # a = await delegate_energy(public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', energy_amount=100, undo=False)
     #    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
     #   print(a)
-    a = await get_account_energy()
-    print(a, a.energy_amount, a.energy_per_trx, a.calculate_energy_amount_in_trx(), a.calculate_energy_amount_in_trx(65000))
+    #a = await get_account_energy()
+    #print(a, a.energy_amount, a.energy_per_trx, a.calculate_energy_amount_in_trx(), a.calculate_energy_amount_in_trx(65000))
     # print(await get_energy_in_trx_froze())
     # print(await get_usdt_balance('TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az'))
     # print(await delegate_energy(public_key_to='TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az', energy_amount=65_000, undo=False))
+    a = await get_account_energy(private_key=tron_master_key)
+    print(a, type(a))
+    # trx_balance = await get_trx_balance(private_key=x)
+    # print(trx_balance, type(trx_balance), float(trx_balance), float(trx_balance - Decimal('0.001')),
+    #       float(trx_balance - Decimal(0.0001)) * 10 ** 6)
+    # if trx_balance > 0.001:
+    #     await send_trx_async(private_key_to=tron_master_key, amount=float(trx_balance - Decimal('0.001')),
+    #                          private_key_from=x)
+    #     print('Take TRX')
 
 
 if __name__ == "__main__":

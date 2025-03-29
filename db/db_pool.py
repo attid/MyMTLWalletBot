@@ -13,7 +13,7 @@ from db.models import MyMtlWalletBot
 
 class DatabasePool:
     def __init__(self):
-        self.engine = create_engine(config.db_dns,
+        self.engine = create_engine(config.db_url,
                                     pool_pre_ping=True,
                                     pool_size=20,
                                     max_overflow=50,

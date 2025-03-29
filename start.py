@@ -5,6 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from middleware.retry import RetryRequestMiddleware
+from routers.inout import usdt_worker
 from routers.monitoring import register_handlers
 import sentry_sdk
 from contextlib import suppress
@@ -136,6 +137,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
             asyncio.create_task(cheque_worker(global_data.db_pool)),
             asyncio.create_task(log_worker(global_data.db_pool)),
             asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
+            asyncio.create_task(usdt_worker(bot))
         ]
 
     # config.fest_menu = await load_fest_info()
@@ -167,7 +169,7 @@ async def main():
     else:
         bot = Bot(token=config.bot_token.get_secret_value(), default=default_bot_properties, session=session)
 
-    storage = RedisStorage(redis=Redis(host='localhost', port=6379, db=5))
+    storage = RedisStorage.from_url(config.redis_url)
     dp = Dispatcher(storage=storage)
     scheduler = AsyncIOScheduler(timezone='Europe/Podgorica')  # str(tzlocal.get_localzone())
     scheduler.start()

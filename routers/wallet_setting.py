@@ -27,7 +27,8 @@ from other.lang_tools import check_user_id
 from other.stellar_tools import (stellar_get_balances, stellar_add_trust, stellar_get_user_account,
                                  stellar_is_free_wallet, public_issuer, get_good_asset_list,
                                  stellar_pay, eurmtl_asset, float2str, stellar_get_user_keypair,
-                                 stellar_change_password, stellar_unfree_wallet, have_free_xlm)
+                                 stellar_change_password, stellar_unfree_wallet, have_free_xlm,
+                                 stellar_get_user_seed_phrase)
 
 
 class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
@@ -355,9 +356,18 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext):
     data = await state.get_data()
     pin = data.get('pin', '')
     keypair = stellar_get_user_keypair(session, user_id, pin)
+    
+    # Пытаемся получить сид-фразу
+    seed_phrase = stellar_get_user_seed_phrase(session, user_id, pin)
+    
+    message = f'Your private key is <code>{keypair.secret}</code>'
+    
+    # Если сид-фраза существует, добавляем её в сообщение
+    if seed_phrase:
+        message += f'\n\nYour seed phrase is <code>{seed_phrase}</code>'
+    
     await state.set_state(None)
-    await send_message(session, user_id, f'Your private key is <code>{keypair.secret}</code>',
-                       reply_markup=get_kb_del_return(user_id))
+    await send_message(session, user_id, message, reply_markup=get_kb_del_return(user_id))
 
 
 @router.callback_query(F.data == "GetPrivateKey")
