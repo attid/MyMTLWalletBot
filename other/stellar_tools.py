@@ -1,6 +1,7 @@
 import asyncio
 import base64
 from contextlib import suppress
+from urllib.parse import urlparse, parse_qs
 
 import jsonpickle
 from aiogram.utils.text_decorations import html_decoration
@@ -36,6 +37,131 @@ usdm_asset = Asset("USDM", 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSU
 
 
 # eurdebt_asset = Asset("EURDEBT", public_issuer)
+
+async def process_uri_with_replace(data, source_account):
+    """Process URI with replace parameter"""
+    transaction = TransactionBuilder(
+        source_account=source_account,
+        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+        base_fee=base_fee,
+    )
+    transaction.set_timeout(60 * 60)
+
+    for operation in data.transaction_envelope.transaction.operations:
+        transaction.append_operation(operation)
+    envelope = transaction.build()
+    return envelope.to_xdr()
+
+
+async def parse_transaction_stellar_uri(uri_data, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE):
+    """
+    Parse a Stellar transaction URI and extract relevant data.
+    
+    Args:
+        uri_data (str): The Stellar URI string
+        network_passphrase (str): The network passphrase
+        
+    Returns:
+        dict: Dictionary containing parsed data (uri_object, callback_url, return_url)
+    """
+    uri_object = stellar_uri.TransactionStellarUri.from_uri(uri_data, network_passphrase=network_passphrase)
+    
+    # Extract callback
+    callback_url = uri_object.callback
+    
+    # Try to extract return_url safely
+    return_url = None
+    
+    # Method 1: Try to access as attribute
+    if hasattr(uri_object, 'return_url'):
+        return_url = uri_object.return_url
+    
+    # Method 2: Try to access from uri_object.operation_attrs if it exists
+    elif hasattr(uri_object, 'operation_attrs') and 'return_url' in uri_object.operation_attrs:
+        return_url = uri_object.operation_attrs['return_url']
+    
+    # Method 3: Try to parse from the original URI
+    else:
+        try:
+            parsed = urlparse(uri_data)
+            query_parameters = parse_qs(parsed.query)
+            if 'return_url' in query_parameters:
+                return_url = query_parameters['return_url'][0]
+        except Exception:
+            # If all methods fail, return_url remains None
+            pass
+    
+    return {
+        'uri_object': uri_object,
+        'callback_url': callback_url,
+        'return_url': return_url
+    }
+
+
+async def process_transaction_stellar_uri(uri_data, session, user_id, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE):
+    """
+    Process a Stellar transaction URI and generate XDR.
+    
+    Args:
+        uri_data (str): The Stellar URI string
+        session (Session): Database session
+        user_id (int): User ID
+        network_passphrase (str): The network passphrase
+        
+    Returns:
+        dict: Dictionary containing processed data (xdr, callback_url, return_url)
+    """
+    # Parse the URI
+    parsed_data = await parse_transaction_stellar_uri(uri_data, network_passphrase)
+    uri_object = parsed_data['uri_object']
+    callback_url = parsed_data['callback_url']
+    return_url = parsed_data['return_url']
+    
+    # Process XDR
+    if uri_object.replace:
+        source_account = await stellar_get_user_account(session, user_id)
+        xdr_to_check = await process_uri_with_replace(uri_object, source_account)
+    else:
+        xdr_to_check = uri_object.transaction_envelope.to_xdr()
+    
+    return {
+        'xdr': xdr_to_check,
+        'callback_url': callback_url,
+        'return_url': return_url
+    }
+
+
+async def parse_pay_stellar_uri(uri_data):
+    """
+    Parse a Stellar payment URI (web+stellar:pay) and extract parameters.
+    
+    Args:
+        uri_data (str): The Stellar payment URI string
+        
+    Returns:
+        dict: Dictionary containing parsed payment parameters
+    """
+    parsed = urlparse(uri_data)
+    query_parameters = parse_qs(parsed.query)
+    
+    # Extract required parameters
+    destination = query_parameters.get("destination")[0]
+    amount = query_parameters.get("amount")[0]
+    asset_code = query_parameters.get("asset_code")[0]
+    asset_issuer = query_parameters.get("asset_issuer")[0]
+    
+    # Extract optional memo
+    memo = query_parameters.get("memo")
+    if memo:
+        memo = memo[0]
+    
+    return {
+        'destination': destination,
+        'amount': amount,
+        'asset_code': asset_code,
+        'asset_issuer': asset_issuer,
+        'memo': memo
+    }
 
 
 def get_good_asset_list() -> List[Balance]:

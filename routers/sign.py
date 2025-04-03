@@ -351,7 +351,21 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
 
                     logger.debug(f"Callback response: {response.data}")
                     if response.status == 200:
-                        await cmd_info_message(session, callback, f'SUCCESS')
+                        # Проверяем, есть ли return_url
+                        return_url = data.get('return_url')
+                        if return_url:
+                            # Создаем клавиатуру с кнопкой "вернуться на сайт"
+                            buttons = [[types.InlineKeyboardButton(
+                                text=my_gettext(callback.from_user.id, 'return_to_site'),
+                                url=return_url
+                            )]]
+                            buttons.append(get_return_button(callback.from_user.id))
+                            keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+                            
+                            # Отправляем сообщение с клавиатурой
+                            await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=keyboard)
+                        else:
+                            await cmd_info_message(session, callback, f'SUCCESS')
                     else:
                         await cmd_info_message(session, callback, f'ERROR')
                 except Exception as ex:

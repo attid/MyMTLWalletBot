@@ -58,14 +58,22 @@ def get_kb_yesno_send_xdr(user_id: Union[types.CallbackQuery, types.Message, int
 
 
 def get_kb_send(user_id: int, with_tools: bool = False, tool_name: str = 'eurmtl.me') -> types.InlineKeyboardMarkup:
-    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tr'), callback_data="SendTr")]]
+    buttons = []
+    
+    # Если есть колбек (tool_name == 'callback'), не показываем кнопку отправки в блокчейн
+    if tool_name != 'callback':
+        buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tr'), callback_data="SendTr")])
 
+    # Добавляем кнопку инструментов, если with_tools == True
     if with_tools:
         buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_tools', (tool_name,)),
-                                                   callback_data="SendTools")])
+                                                  callback_data="SendTools")])
+    
+    # Всегда добавляем кнопку Decode и Return
     buttons.append([types.InlineKeyboardButton(text='Decode',
-                                               callback_data="Decode")])
+                                              callback_data="Decode")])
     buttons.append(get_return_button(user_id))
+    
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 

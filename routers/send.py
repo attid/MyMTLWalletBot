@@ -18,6 +18,10 @@ from db.requests import (db_get_user_account_by_username, db_get_book_data, db_g
                          db_get_user)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
+from other.stellar_tools import (
+    parse_transaction_stellar_uri, process_transaction_stellar_uri,
+    parse_pay_stellar_uri, is_valid_stellar_address
+)
 from other.lang_tools import check_user_id
 from other.mytypes import Balance
 from routers.sign import cmd_check_xdr
@@ -437,47 +441,43 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                                     f'preparations are in progress...')
                 await cmd_send_for(message, state, session)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:pay'):
-                parsed = urlparse(qr_data)
-                query_parameters = parse_qs(parsed.query)
-
-                destination = query_parameters.get("destination")[0]
-                amount = query_parameters.get("amount")[0]
-                asset_code = query_parameters.get("asset_code")[0]
-                asset_issuer = query_parameters.get("asset_issuer")[0]
-                memo = query_parameters.get("memo")
-                if memo:
-                    memo = memo[0]
-
-                await state.update_data(send_sum=amount,
-                                        send_address=destination,
-                                        memo=memo,
-                                        send_asset_code=asset_code,
-                                        send_asset_issuer=asset_issuer,
-                                        last_message_id=0)
+                # Parse payment URI
+                payment_data = await parse_pay_stellar_uri(qr_data)
+                
+                # Update state with payment data
+                await state.update_data(
+                    send_sum=payment_data['amount'],
+                    send_address=payment_data['destination'],
+                    memo=payment_data['memo'],
+                    send_asset_code=payment_data['asset_code'],
+                    send_asset_issuer=payment_data['asset_issuer'],
+                    last_message_id=0
+                )
 
                 await cmd_send_04(session, message, state)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
-                data = TransactionStellarUri.from_uri(qr_data, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-                callback_url = data.callback
-                if data.replace:
-                    source_account = await stellar_get_user_account(session, message.from_user.id)
-                    transaction = TransactionBuilder(
-                        source_account=source_account,
-                        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
-                        base_fee=base_fee,
-                    )
-                    transaction.set_timeout(60 * 60)
-
-                    for operation in data.transaction_envelope.transaction.operations:
-                        transaction.append_operation(operation)
-                    envelop = transaction.build()
-                    xdr_to_check = envelop.to_xdr()
-                else:
-                    xdr_to_check = data.transaction_envelope.to_xdr()
-
-                await state.update_data(last_message_id=0, callback_url=callback_url)
-                await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
-                                    user_id=message.from_user.id, state=state)
+                # Process transaction URI
+                result = await process_transaction_stellar_uri(
+                    qr_data,
+                    session,
+                    message.from_user.id,
+                    Network.PUBLIC_NETWORK_PASSPHRASE
+                )
+                
+                # Update state with transaction data
+                await state.update_data(
+                    last_message_id=0,
+                    callback_url=result['callback_url'],
+                    return_url=result.get('return_url')
+                )
+                
+                # Process XDR
+                await cmd_check_xdr(
+                    session=session,
+                    check_xdr=result['xdr'],
+                    user_id=message.from_user.id,
+                    state=state
+                )
 
             else:
                 await message.reply('Bad QR code =(')
