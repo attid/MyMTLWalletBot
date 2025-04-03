@@ -188,10 +188,11 @@
   "bsn_help_text": "to delete a tag, send `&lt;tag&gt; <code>{}</code>`\n\nmultiple tag usage\n(For example: Employee1, Employee2, Employee100500):\n - if a tag does not have a specified number, the system will automatically assign the next available number\n - to delete or modify a tag, you need to specify the number\n",
   "bsn_empty_message": "BSN tag adding mode\nSend tags and values (one per line) in the format:\n`&lt;tag&gt; &lt;value&gt;`\n\n",
   "bsn_address_part": "The following tags will be changed at the address {}:\n",
-  "bsn_warning": "\n⚠\uFE0F - unknown tags\n",
+  "bsn_warning": "\n⚠️ - unknown tags\n",
   "bsn_last_part": "\nYou can send more\n\n",
   "bsn_error": "Error: {}",
   "bsn_tag_value": "You sent [{tag}], but we expect it in the format `<tag> <value>`",
   "bsn_empty_tag_error": "A tag must contain at least one letter. [{}]",
-  "bsn_length_error": "The length of the string {} exceeds 64 characters. [{}]"
+  "bsn_length_error": "The length of the string {} exceeds 64 characters. [{}]",
+  "return_to_site": "Return to site"
 }
