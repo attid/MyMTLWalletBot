@@ -1227,17 +1227,7 @@ def is_valid_stellar_address(address):
 
 
 async def test():
-    mnemonic_phrase = Keypair.generate_mnemonic_phrase()
-    new_account = Keypair.from_mnemonic_phrase(mnemonic_phrase)
-
-    xdr = await stellar_pay('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI', new_account.public_key,
-                            xlm_asset, 5, create=True, fee=1001001)
-    # stellar_send(stellar_sign(xdr, master.secret))
-
-    xdr = await stellar_add_trust(new_account.public_key, mtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, eurmtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, satsmtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, usdm_asset, xdr=xdr)
+    xdr = await parse_transaction_stellar_uri('web+stellar:tx?xdr=AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAMgAAAAAAAAAZQAAAAEAAAAAAAAAAAAAAABn7gE7AAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAApwbXBobTU5bW1lAAAAAAABAAAAAC6F6mrl0kGQk%2FbzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAA%3D%3D&callback=url%3Ahttps%3A%2F%2Feurmtl.me%2Fremote%2Fsep07%2Fauth%2Fcallback&replace=sourceAccount%3AX%3BX%3Aaccount%20to%20authenticate&origin_domain=eurmtl.me&signature=c5i8LYqq9Ryf5GVcZ2nbUnBLNuSNFQvuuabqfM%2BFuIcYexatf09MGef2gYPxiK73vqNLEcjeMdcFxVbXwsulBQ%3D%3D&return_url=https%3A%2F%2Fbsn.mtla.me')
     print(xdr)
 
 
