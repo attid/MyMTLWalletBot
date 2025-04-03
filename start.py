@@ -48,6 +48,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.include_router(common_start.router)  # first # first
     dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
+    dp.include_router(uri.router) # first
     dp.include_router(wallet_setting.router)  # first
 
     dp.include_router(fest.router)
@@ -62,7 +63,6 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.include_router(swap.router)
     dp.include_router(inout.router)
     dp.include_router(mtlap.router)
-    dp.include_router(uri.router)
     dp.include_router(bsn_router)
     register_handlers(dp, bot)
 
