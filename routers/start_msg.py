@@ -127,8 +127,8 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
 
     if send_file:
         photo = types.FSInputFile(send_file)
-        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_asset'),
-                                                  callback_data="AddAssetMenu")]
+        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg'),
+                                                  callback_data="ManageAssetsMenu")]
         await global_data.bot.send_photo(user_id, photo=photo, caption=msg,
                              reply_markup=get_kb_return(user_id, add_buttons))
         fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)

@@ -194,5 +194,15 @@
   "your_balance": "balance is",
   "your_xdr": "Your transaction for sign:\n\n<code>{}</code>\n\n",
   "your_xdr_sign": "Your signed transaction:\n\n<code>{}</code>\n\n",
-  "zero_sum": "Amount 0 =( \n will not be enough"
+  "zero_sum": "Amount 0 =( \n will not be enough",
+  "kb_strict_receive": "Specify exact amount to receive",
+  "enter_strict_receive_sum": "Enter the amount of {} you want to receive",
+  "kb_manage_assets": "Manage assets",
+  "kb_asset_visibility": "Manage visibility",
+  "asset_visible": "Always visible",
+  "asset_exchange_only": "Exchange only",
+  "asset_hidden": "Hidden",
+  "asset_visibility_msg": "Configure the visibility of your assets. Click the status to change.",
+  "asset_visibility_changed": "Visibility status changed",
+  "manage_assets_msg": "Asset management menu"
 }

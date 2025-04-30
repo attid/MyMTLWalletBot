@@ -194,5 +194,15 @@
   "your_balance": "баланс",
   "your_xdr": "Ваша транзакция для подписания:\n\n<code>{}</code>\n\n",
   "your_xdr_sign": "Ваша транзакция c подписью:\n\n<code>{}</code>\n\n",
-  "zero_sum": "Сумма 0 =( \n маловато будет"
+  "zero_sum": "Сумма 0 =( \n маловато будет",
+  "kb_strict_receive": "Указать точную сумму к получению",
+  "enter_strict_receive_sum": "Введите сумму {} которую хотите получить",
+  "kb_manage_assets": "Управление линиями токенов",
+  "kb_asset_visibility": "Управление видимостью",
+  "asset_visible": "Видно всегда",
+  "asset_exchange_only": "Только в обмене",
+  "asset_hidden": "Скрыт",
+  "asset_visibility_msg": "Настройте видимость ваших ассетов. Нажмите на статус для изменения.",
+  "asset_visibility_changed": "Статус видимости изменён",
+  "manage_assets_msg": "Меню управления ассетами"
 }

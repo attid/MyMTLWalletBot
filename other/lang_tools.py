@@ -13,6 +13,7 @@ from other.global_data import global_data
 for file in listdir(f"{start_path}/langs/"):
     if file.endswith(".json"):
         with open(f"{start_path}/langs/" + file, "r") as fp:
+            #print(f"{start_path}/langs/" + file)
             global_data.lang_dict[file.split('.')[0]] = json.load(fp)
 
 

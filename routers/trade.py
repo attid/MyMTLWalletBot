@@ -12,6 +12,8 @@ from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get
 from other.mytypes import Balance, MyOffer
 from other.stellar_tools import stellar_get_balances, stellar_get_user_account, stellar_sale, stellar_get_offers, \
     stellar_get_market_link, my_float, float2str, have_free_xlm
+from db.requests import db_get_default_wallet
+from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
 
 
 class StateSaleToken(StatesGroup):
@@ -66,6 +68,9 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
 
     msg = my_gettext(callback, 'choose_token_sale')
     asset_list = await stellar_get_balances(session, callback.from_user.id)
+    wallet = db_get_default_wallet(session, callback.from_user.id)
+    vis_str = getattr(wallet, "assets_visibility", None)
+    asset_list = [a for a in asset_list if get_asset_visibility(vis_str, a.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY)]
 
     kb_tmp = []
     for token in asset_list:
