@@ -351,19 +351,11 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
 
                     logger.debug(f"Callback response: {response.data}")
                     if response.status == 200:
-                        # Проверяем, есть ли return_url
                         return_url = data.get('return_url')
                         if return_url:
-                            # Создаем клавиатуру с кнопкой "вернуться на сайт"
-                            buttons = [[types.InlineKeyboardButton(
-                                text=my_gettext(callback.from_user.id, 'return_to_site'),
-                                url=return_url
-                            )]]
-                            buttons.append(get_return_button(callback.from_user.id))
-                            keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-                            
-                            # Отправляем сообщение с клавиатурой
-                            await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=keyboard)
+                            # Если есть return_url, отправляем только SUCCESS с кнопкой возврата
+                            from keyboards.common_keyboards import get_kb_return_url
+                            await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=get_kb_return_url(callback.from_user.id, return_url))
                         else:
                             await cmd_info_message(session, callback, f'SUCCESS')
                     else:
@@ -382,7 +374,13 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                     # { "SUCCESS": true/false, "MESSAGES": ["список", "сообщений", "об", "обработке"] }
                     msgs = '\n'.join(response.data.get('MESSAGES'))
                     if response.data.get('SUCCESS'):
-                        await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
+                        return_url = data.get('return_url')
+                        if return_url:
+                            from keyboards.common_keyboards import get_kb_return_url
+                            await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                            return
+                        else:
+                            await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
                     else:
                         await cmd_info_message(session, callback, f'ERROR\n{msgs}')
                     # else:
@@ -397,10 +395,26 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                                    )
             # save_xdr_to_send(callback.from_user.id, xdr)
             await async_stellar_send(xdr)
-            await cmd_info_message(session, callback, my_gettext(callback, 'send_good'), )
+            return_url = data.get('return_url')
+            if return_url:
+                from keyboards.common_keyboards import get_kb_return_url
+                await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                return
+            else:
+                await cmd_info_message(session, callback, my_gettext(callback, 'send_good'), )
     except BaseHorizonError as ex:
         logger.info(['send BaseHorizonError', ex])
         msg = f"{ex.title}, error {ex.status}"
+        # Try to get human-readable Stellar error
+        error_hint = ""
+        if hasattr(ex, "extras") and ex.extras and ex.extras.get("result_codes"):
+            try:
+                from other.stellar_error_codes import get_stellar_error_message
+                error_hint = get_stellar_error_message(ex.extras["result_codes"])
+            except Exception:
+                error_hint = ""
+        if error_hint:
+            msg = f"{msg}\n<b>{error_hint}</b>"
         await cmd_info_message(session, callback, f"{my_gettext(callback, 'send_error')}\n{msg}",
                                resend_transaction=True)
     except Exception as ex:
@@ -460,6 +474,16 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: 
     except BaseHorizonError as ex:
         logger.info(['ReSend BaseHorizonError', ex])
         msg = f"{ex.title}, error {ex.status}"
+        # Try to get human-readable Stellar error
+        error_hint = ""
+        if hasattr(ex, "extras") and ex.extras and ex.extras.get("result_codes"):
+            try:
+                from other.stellar_error_codes import get_stellar_error_message
+                error_hint = get_stellar_error_message(ex.extras["result_codes"])
+            except Exception:
+                error_hint = ""
+        if error_hint:
+            msg = f"{msg}\n<b>{error_hint}</b>"
         await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error')}\n{msg}", resend_transaction=True)
     except Exception as ex:
         logger.info(['ReSend unknown error', ex])

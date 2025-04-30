@@ -29,6 +29,11 @@ from other.stellar_tools import (stellar_get_balances, stellar_add_trust, stella
                                  stellar_pay, eurmtl_asset, float2str, stellar_get_user_keypair,
                                  stellar_change_password, stellar_unfree_wallet, have_free_xlm,
                                  stellar_get_user_seed_phrase)
+from other.asset_visibility_tools import (
+    get_asset_visibility, set_asset_visibility,
+    ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN
+)
+
 
 
 class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
@@ -57,9 +62,19 @@ class StateAddressBook(StatesGroup):
     sending_new = State()
 
 
+class AssetVisibilityCallbackData(CallbackData, prefix="AssetVisibility"):
+    action: str
+    code: str
+
+
 router = Router()
 router.message.filter(F.chat.type == "private")
 
+ASSET_VISIBILITY_CYCLE = [ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN]
+
+def get_next_visibility(status):
+    idx = ASSET_VISIBILITY_CYCLE.index(status)
+    return ASSET_VISIBILITY_CYCLE[(idx + 1) % len(ASSET_VISIBILITY_CYCLE)]
 
 @router.callback_query(F.data == "WalletSetting")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
@@ -72,7 +87,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
                                                     callback_data="GetPrivateKey")
 
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_asset'), callback_data="AddAssetMenu")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_manage_assets'), callback_data="ManageAssetsMenu")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_address_book'), callback_data="AddressBook")],
         [types.InlineKeyboardButton(text='Manage Data', callback_data="ManageData")],
         [private_button],
@@ -90,18 +105,105 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
     await send_message(session, callback, msg, reply_markup=keyboard)
 
 
-@router.callback_query(F.data == "AddAssetMenu")
-async def cmd_add_asset(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    msg = my_gettext(callback, 'delete_asset')
+@router.callback_query(F.data == "ManageAssetsMenu")
+async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    msg = my_gettext(callback, 'manage_assets_msg')
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete_one'), callback_data="DeleteAsset")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_list'), callback_data="AddAsset")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_expert'), callback_data="AddAssetExpert")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_asset_visibility'), callback_data="AssetVisibilityMenu")],
         get_return_button(callback)
     ]
+    await callback.answer()
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     await send_message(session, callback, msg, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "AssetVisibilityMenu")
+async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    from db.requests import db_get_default_wallet
+    wallet = db_get_default_wallet(session, callback.from_user.id)
+    balances = await stellar_get_balances(session, callback.from_user.id)
+    vis_dict = {}
+    if wallet.assets_visibility:
+        from other.asset_visibility_tools import deserialize_visibility
+        vis_dict = deserialize_visibility(wallet.assets_visibility)
+    kb = []
+    for asset in balances:
+        code = asset.asset_code
+        issuer = asset.asset_issuer
+        status = vis_dict.get(code, ASSET_VISIBLE)
+        if status == ASSET_VISIBLE:
+            status_text = my_gettext(callback, 'asset_visible')
+        elif status == ASSET_EXCHANGE_ONLY:
+            status_text = my_gettext(callback, 'asset_exchange_only')
+        else:
+            status_text = my_gettext(callback, 'asset_hidden')
+        # Asset name as a link to stellar.expert
+        asset_url = f"https://stellar.expert/explorer/public/asset/{code}-{issuer}"
+        asset_button = types.InlineKeyboardButton(
+            text=code,
+            url=asset_url
+        )
+        status_button = types.InlineKeyboardButton(
+            text=status_text,
+            callback_data=AssetVisibilityCallbackData(action="toggle", code=code).pack()
+        )
+        kb.append([asset_button, status_button])
+    kb.append(get_return_button(callback))
+    await send_message(session, callback, my_gettext(callback, 'asset_visibility_msg'),
+                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+@router.callback_query(AssetVisibilityCallbackData.filter())
+async def cmd_toggle_asset_visibility(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: Session):
+    from db.requests import db_get_default_wallet
+    from sqlalchemy.orm import Session as OrmSession
+    wallet = db_get_default_wallet(session, callback.from_user.id)
+    asset_code = callback_data.code
+    vis_dict = {}
+    if wallet.assets_visibility:
+        from other.asset_visibility_tools import deserialize_visibility, serialize_visibility
+        vis_dict = deserialize_visibility(wallet.assets_visibility)
+    else:
+        from other.asset_visibility_tools import serialize_visibility
+    current_status = vis_dict.get(asset_code, ASSET_VISIBLE)
+    next_status = get_next_visibility(current_status)
+    vis_dict[asset_code] = next_status
+    wallet.assets_visibility = serialize_visibility(vis_dict)
+    if isinstance(session, OrmSession):
+        session.commit()
+    # Redraw the menu with updated buttons
+    balances = await stellar_get_balances(session, callback.from_user.id)
+    kb = []
+    for asset in balances:
+        code = asset.asset_code
+        issuer = asset.asset_issuer
+        status = vis_dict.get(code, ASSET_VISIBLE)
+        if status == ASSET_VISIBLE:
+            status_text = my_gettext(callback, 'asset_visible')
+        elif status == ASSET_EXCHANGE_ONLY:
+            status_text = my_gettext(callback, 'asset_exchange_only')
+        else:
+            status_text = my_gettext(callback, 'asset_hidden')
+        asset_url = f"https://stellar.expert/explorer/public/asset/{code}-{issuer}"
+        asset_button = types.InlineKeyboardButton(
+            text=code,
+            url=asset_url
+        )
+        status_button = types.InlineKeyboardButton(
+            text=status_text,
+            callback_data=AssetVisibilityCallbackData(action="toggle", code=code).pack()
+        )
+        kb.append([asset_button, status_button])
+    kb.append(get_return_button(callback))
+    await callback.message.edit_reply_markup(reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+    await callback.answer(my_gettext(callback, 'asset_visibility_changed'))
 
 
 ########################################################################################################################
