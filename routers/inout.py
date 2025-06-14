@@ -166,6 +166,12 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
 
 @router.callback_query(F.data == "USDT_OUT")
 async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    from db.requests import db_get_default_wallet
+    wallet = db_get_default_wallet(session, callback.from_user.id)
+    if wallet and getattr(wallet, 'use_pin', None) == 10:
+        await send_message(session, callback, "Sorry, I can't work in read-only mode", reply_markup=get_kb_return(callback))
+        await callback.answer()
+        return
     asset_list = await stellar_get_balances(session, callback.from_user.id, asset_filter='USDM')
     if not asset_list:
         await send_message(session, callback, my_gettext(callback, 'usdm_need'),
