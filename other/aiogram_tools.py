@@ -1,12 +1,15 @@
 import aiohttp
 from contextlib import suppress
-from typing import Union
+from typing import Union, Any
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
 from aiogram import types
+
+TELEGRAM_API_ERROR: Any = object()
+
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
 from other.common_tools import get_user_id
 from other.global_data import global_data
@@ -81,10 +84,16 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
         await send_message(session, chat_id, msg, reply_markup=kb, parse_mode=parse_mode)
 
 
-async def check_username(user_id: int) -> str:
-    with suppress(TelegramBadRequest):
+async def check_username(user_id: int) -> Union[str, None, object]:
+    try:
         chat = await global_data.bot.get_chat(user_id)
         return chat.username
+    except TelegramBadRequest as e:
+        logger.warning(f"Telegram API error (TelegramBadRequest) when checking username for user_id={user_id}: {e}")
+        return TELEGRAM_API_ERROR
+    except Exception as e:
+        logger.error(f"Unexpected error when checking username for user_id={user_id}: {e}")
+        return TELEGRAM_API_ERROR
 
 
 async def clear_state(state: FSMContext):

@@ -25,7 +25,7 @@ from other.stellar_tools import (
 from other.lang_tools import check_user_id
 from other.mytypes import Balance
 from routers.sign import cmd_check_xdr
-from other.aiogram_tools import my_gettext, send_message, check_username, clear_state, clear_last_message_id
+from other.aiogram_tools import my_gettext, send_message, check_username, clear_state, clear_last_message_id, TELEGRAM_API_ERROR # Импортируем TELEGRAM_API_ERROR
 from other.common_tools import get_user_id, decode_qr_code
 from other.global_data import global_data
 from other.stellar_tools import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
@@ -83,15 +83,42 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
     try:
         if '@' == send_for[0]:
             send_address, user_id = db_get_user_account_by_username(session, send_for)
+            # Получаем текущее имя пользователя из базы данных для сравнения
+            user_in_db = db_get_user(session, user_id)
+            current_username_in_db = user_in_db.user_name if user_in_db else None
+
             tmp_name = await check_username(user_id)
-            if tmp_name is None or tmp_name.lower() != send_for.lower()[1:]:
-                db_update_username(session, user_id, tmp_name)
-                raise Exception("Имя пользователя не совпадает")
+
+            if tmp_name is TELEGRAM_API_ERROR:
+                logger.error(f"cmd_send_token: Telegram API error when checking username for user_id={user_id}. Searched: {send_for}")
+                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error'), # Предполагается, что есть такой ключ в локализации
+                                   reply_markup=get_kb_return(message))
+                return # Прерываем выполнение, так как не можем проверить username
+
+            # Сравниваем tmp_name (фактический username) с send_for (ожидаемый username)
+            # и с current_username_in_db (username в базе)
+            # Обновляем username в базе только если фактический username изменился по сравнению с тем, что в базе
+            # или если в базе username отсутствует, а фактический есть (или наоборот)
+            actual_username_lower = tmp_name.lower() if tmp_name else None
+            send_for_lower = send_for.lower()[1:]
+            current_username_in_db_lower = current_username_in_db.lower() if current_username_in_db else None
+
+            if actual_username_lower != current_username_in_db_lower:
+                logger.warning(f"cmd_send_token: username in DB needs update: searched/expected={send_for}, actual_telegram_username={tmp_name}, in_db={current_username_in_db}, user_id={user_id}")
+                db_update_username(session, user_id, tmp_name) # tmp_name может быть None, если пользователь удалил username
+
+            # Проверяем, совпадает ли актуальный username с тем, на который хотят отправить
+            if actual_username_lower != send_for_lower:
+                logger.warning(f"cmd_send_token: username mismatch for send operation: searched/expected={send_for}, actual_telegram_username={tmp_name}, user_id={user_id}")
+                raise Exception("Имя пользователя не совпадает") # Это исключение будет обработано ниже
+
+            logger.info(f"cmd_send_token: username resolved: searched={send_for}, address={send_address}, user_id={user_id}")
         else:
             send_address = send_for
+            logger.info(f"cmd_send_token: address used directly: {send_address}")
         await stellar_check_account(send_address)
     except Exception as ex:
-        logger.info(["cmd_send_token", send_for, ex])
+        logger.error(f"cmd_send_token: failed to resolve address. Searched: {send_for}, Exception: {ex}")
         await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
                            reply_markup=get_kb_return(message))
         return
@@ -178,21 +205,43 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
 @router.message(StateSendToken.sending_for, F.text)
 async def cmd_send_for(message: Message, state: FSMContext, session: Session):
     data = await state.get_data()
-    if '@' == data.get('qr', message.text)[0]:
+    send_for_input = data.get('qr', message.text) # Используем send_for_input для ясности
+
+    if '@' == send_for_input[0]:
         try:
-            public_key, user_id = db_get_user_account_by_username(session, message.text)
+            public_key, user_id = db_get_user_account_by_username(session, send_for_input)
+            user_in_db = db_get_user(session, user_id)
+            current_username_in_db = user_in_db.user_name if user_in_db else None
+
             tmp_name = await check_username(user_id)
-            if tmp_name is None or tmp_name.lower() != message.text.lower()[1:]:
+
+            if tmp_name is TELEGRAM_API_ERROR:
+                logger.error(f"StateSendFor: Telegram API error when checking username for user_id={user_id}. Searched: {send_for_input}")
+                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error'),
+                                   reply_markup=get_kb_return(message))
+                return
+
+            actual_username_lower = tmp_name.lower() if tmp_name else None
+            send_for_input_lower = send_for_input.lower()[1:]
+            current_username_in_db_lower = current_username_in_db.lower() if current_username_in_db else None
+
+            if actual_username_lower != current_username_in_db_lower:
+                logger.warning(f"StateSendFor: username in DB needs update: searched/expected={send_for_input}, actual_telegram_username={tmp_name}, in_db={current_username_in_db}, user_id={user_id}")
                 db_update_username(session, user_id, tmp_name)
+
+            if actual_username_lower != send_for_input_lower:
+                logger.warning(f"StateSendFor: username mismatch for send operation: searched/expected={send_for_input}, actual_telegram_username={tmp_name}, user_id={user_id}")
                 raise Exception("Имя пользователя не совпадает")
-            logger.info(f"{message.from_user.id}, {message.text}, {message.text[1:]}, {public_key}")
+
+            logger.info(f"StateSendFor: username resolved: searched={send_for_input}, address={public_key}, user_id={user_id}")
         except Exception as ex:
-            logger.info(["StateSendFor", data.get('qr', message.text), ex])
+            logger.error(f"StateSendFor: failed to resolve username. Searched: {send_for_input}, Exception: {ex}")
             await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
                                reply_markup=get_kb_return(message))
             return
     else:
         public_key = data.get('qr', message.text)
+        logger.info(f"StateSendFor: address used directly: {public_key}")
     my_account = await stellar_check_account(public_key)
     if my_account:
         await state.update_data(send_address=my_account.account_id)
@@ -208,12 +257,13 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
             try:
                 address = resolve_stellar_address(address).account_id
             except Exception as ex:
-                logger.info(["StateSendFor", address, ex])
+                logger.error(f"StateSendFor: failed to resolve stellar address. Searched: {address}, Exception: {ex}")
         if (not free_wallet) and (len(address) == 56) and (address[0] == 'G'):  # need activate
             await state.update_data(send_address=address)
             await state.set_state(state=None)
             await cmd_create_account(message.from_user.id, state, session)
         else:
+            logger.error(f"StateSendFor: failed to find or activate wallet. Searched: {address}, free_wallet={free_wallet}")
             msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_address')
             await send_message(session, message, msg, reply_markup=get_kb_return(message))
 

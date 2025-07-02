@@ -202,7 +202,11 @@
   "asset_visible": "Always visible",
   "asset_exchange_only": "Exchange only",
   "asset_hidden": "Hidden",
-  "asset_visibility_msg": "Configure the visibility of your assets. Click the status to change.",
+  "asset_visibility_msg": "Manage asset visibility:\n- <b>Default (No ✅):</b> Fully visible in balances, swap, and trade.\n- <b>✅ Exchange Only:</b> Visible only in swap/trade interfaces.\n- <b>✅ Hidden:</b> Completely hidden from balances and lists.\n\nClick a status button to set it (✅ appears). Click the checked button again to return to Default visibility. Use navigation buttons if assets span multiple pages.",
   "asset_visibility_changed": "Visibility status changed",
-  "manage_assets_msg": "Asset management menu"
+  "manage_assets_msg": "Asset management menu",
+  "prev_page": "Prev.",
+  "next_page": "Next",
+  "page": "Page",
+  "telegram_api_error": "Failed to check username due to a communication error with Telegram. Please try again later."
 }

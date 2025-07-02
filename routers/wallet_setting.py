@@ -62,19 +62,23 @@ class StateAddressBook(StatesGroup):
     sending_new = State()
 
 
-class AssetVisibilityCallbackData(CallbackData, prefix="AssetVisibility"):
-    action: str
-    code: str
+class AssetVisibilityCallbackData(CallbackData, prefix="AVD_"):
+    action: str  # 'set', 'page', 'toggle' (toggle is deprecated but kept for compatibility during transition if needed)
+    code: str = "*"  # Asset code, empty for page actions
+    status: int = -1 # Target status (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN), -1 for page actions
+    page: int = 1 # Page number
 
 
 router = Router()
 router.message.filter(F.chat.type == "private")
 
-ASSET_VISIBILITY_CYCLE = [ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN]
+# ASSET_VISIBILITY_CYCLE = [ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN] # Deprecated cycle logic
 
-def get_next_visibility(status):
-    idx = ASSET_VISIBILITY_CYCLE.index(status)
-    return ASSET_VISIBILITY_CYCLE[(idx + 1) % len(ASSET_VISIBILITY_CYCLE)]
+# def get_next_visibility(status): # Deprecated cycle logic
+#     idx = ASSET_VISIBILITY_CYCLE.index(status)
+#     return ASSET_VISIBILITY_CYCLE[(idx + 1) % len(ASSET_VISIBILITY_CYCLE)]
+
+ASSETS_PER_PAGE = 30 # Max assets per page
 
 @router.callback_query(F.data == "WalletSetting")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
@@ -121,89 +125,188 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
     await send_message(session, callback, msg, reply_markup=keyboard)
 
 
-@router.callback_query(F.data == "AssetVisibilityMenu")
-async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session):
+# Helper function to generate the message text and keyboard markup
+async def _generate_asset_visibility_markup(user_id: int, session: Session, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
+    """Generates the text and keyboard for the asset visibility menu."""
     from db.requests import db_get_default_wallet
-    wallet = db_get_default_wallet(session, callback.from_user.id)
-    balances = await stellar_get_balances(session, callback.from_user.id)
+    wallet = db_get_default_wallet(session, user_id)
+    balances = await stellar_get_balances(session, user_id) # Consider sorting or filtering if needed
+
     vis_dict = {}
     if wallet.assets_visibility:
         from other.asset_visibility_tools import deserialize_visibility
         vis_dict = deserialize_visibility(wallet.assets_visibility)
+
+    # Pagination logic
+    total_assets = len(balances)
+    total_pages = (total_assets + ASSETS_PER_PAGE - 1) // ASSETS_PER_PAGE
+    page = max(1, min(page, total_pages)) # Ensure page is within bounds
+    start_index = (page - 1) * ASSETS_PER_PAGE
+    end_index = start_index + ASSETS_PER_PAGE
+    assets_on_page = balances[start_index:end_index]
+
     kb = []
-    for asset in balances:
+    # Asset buttons
+    for asset in assets_on_page:
         code = asset.asset_code
-        issuer = asset.asset_issuer
-        status = vis_dict.get(code, ASSET_VISIBLE)
-        if status == ASSET_VISIBLE:
-            status_text = my_gettext(callback, 'asset_visible')
-        elif status == ASSET_EXCHANGE_ONLY:
-            status_text = my_gettext(callback, 'asset_exchange_only')
-        else:
-            status_text = my_gettext(callback, 'asset_hidden')
-        # Asset name as a link to stellar.expert
-        asset_url = f"https://stellar.expert/explorer/public/asset/{code}-{issuer}"
-        asset_button = types.InlineKeyboardButton(
+        issuer = asset.asset_issuer # Keep issuer for potential future use (e.g., URL)
+        current_status = vis_dict.get(code, ASSET_VISIBLE)
+
+        # Button texts with status indicators
+        exchange_only_text = my_gettext(user_id, 'asset_exchange_only')
+        hidden_text = my_gettext(user_id, 'asset_hidden')
+        if current_status == ASSET_EXCHANGE_ONLY:
+            exchange_only_text = "✅ " + exchange_only_text
+        elif current_status == ASSET_HIDDEN:
+            hidden_text = "✅ " + hidden_text
+
+        # Create buttons for the row
+        name_button = types.InlineKeyboardButton(
             text=code,
-            url=asset_url
+            callback_data="do_nothing" # Placeholder or specific action if required
         )
-        status_button = types.InlineKeyboardButton(
-            text=status_text,
-            callback_data=AssetVisibilityCallbackData(action="toggle", code=code).pack()
+        exchange_only_button = types.InlineKeyboardButton(
+            text=exchange_only_text,
+            # Pass integer status 1 for exchange_only
+            callback_data=AssetVisibilityCallbackData(action="set", code=code, status=1, page=page).pack()
         )
-        kb.append([asset_button, status_button])
-    kb.append(get_return_button(callback))
-    await send_message(session, callback, my_gettext(callback, 'asset_visibility_msg'),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+        hidden_button = types.InlineKeyboardButton(
+            text=hidden_text,
+            # Pass integer status 2 for hidden
+            callback_data=AssetVisibilityCallbackData(action="set", code=code, status=2, page=page).pack()
+        )
+        kb.append([name_button, exchange_only_button, hidden_button])
+
+    # Navigation buttons
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(types.InlineKeyboardButton(
+            text="◀️ " + my_gettext(user_id, 'prev_page'),
+            callback_data=AssetVisibilityCallbackData(action="page", page=page - 1).pack()
+        ))
+    if page < total_pages:
+        nav_buttons.append(types.InlineKeyboardButton(
+            text=my_gettext(user_id, 'next_page') + " ▶️",
+            callback_data=AssetVisibilityCallbackData(action="page", page=page + 1).pack()
+        ))
+
+    if nav_buttons:
+        kb.append(nav_buttons)
+        logger.info(f"Navigation buttons added: {nav_buttons}")
+        logger.info(f"Total keyboard: {kb}")
+
+    # Back button
+    kb.append(get_return_button(user_id)) # Assuming get_return_button returns a list containing the button
+
+    # Generate message text
+    message_text = my_gettext(user_id, 'asset_visibility_msg')
+    if total_pages > 1:
+         message_text += f"\n{my_gettext(user_id, 'page')} {page}/{total_pages}"
+
+    reply_markup = types.InlineKeyboardMarkup(inline_keyboard=kb)
+    return message_text, reply_markup
+
+
+@router.callback_query(F.data == "AssetVisibilityMenu")
+async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    """Displays the initial asset visibility settings menu."""
+    user_id = callback.from_user.id
+    message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=1)
+
+    await callback.answer()
+    await send_message(session, callback, message_text, reply_markup=reply_markup)
 
 
 ########################################################################################################################
 ########################################################################################################################
 ########################################################################################################################
 @router.callback_query(AssetVisibilityCallbackData.filter())
-async def cmd_toggle_asset_visibility(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: Session):
-    from db.requests import db_get_default_wallet
-    from sqlalchemy.orm import Session as OrmSession
-    wallet = db_get_default_wallet(session, callback.from_user.id)
-    asset_code = callback_data.code
-    vis_dict = {}
-    if wallet.assets_visibility:
+async def handle_asset_visibility_action(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: Session):
+    """Handles actions from the asset visibility menu (setting status or changing page)."""
+    logger.info(f"Entered handle_asset_visibility_action with callback_data: {callback_data!r}") # Log entry point
+    action = callback_data.action
+    page = callback_data.page # Current page when the button was clicked
+    user_id = callback.from_user.id
+
+    if action == "page":
+        # Navigate to the requested page
+        target_page = callback_data.page # The page number is directly in callback_data for 'page' action
+        message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=target_page)
+        try:
+            await callback.message.edit_text(message_text, reply_markup=reply_markup)
+            await callback.answer()
+        except Exception as e:
+            logger.error(f"Error editing message for asset visibility page change: {e}")
+            await callback.answer(my_gettext(callback, 'error_refreshing_menu'), show_alert=True) # Inform user about error
+
+    elif action == "set":
+        # Set the visibility status for an asset
+        from db.requests import db_get_default_wallet
+        from sqlalchemy.orm import Session as OrmSession
         from other.asset_visibility_tools import deserialize_visibility, serialize_visibility
-        vis_dict = deserialize_visibility(wallet.assets_visibility)
-    else:
-        from other.asset_visibility_tools import serialize_visibility
-    current_status = vis_dict.get(asset_code, ASSET_VISIBLE)
-    next_status = get_next_visibility(current_status)
-    vis_dict[asset_code] = next_status
-    wallet.assets_visibility = serialize_visibility(vis_dict)
-    if isinstance(session, OrmSession):
-        session.commit()
-    # Redraw the menu with updated buttons
-    balances = await stellar_get_balances(session, callback.from_user.id)
-    kb = []
-    for asset in balances:
-        code = asset.asset_code
-        issuer = asset.asset_issuer
-        status = vis_dict.get(code, ASSET_VISIBLE)
-        if status == ASSET_VISIBLE:
-            status_text = my_gettext(callback, 'asset_visible')
-        elif status == ASSET_EXCHANGE_ONLY:
-            status_text = my_gettext(callback, 'asset_exchange_only')
+
+        wallet = db_get_default_wallet(session, user_id)
+        asset_code = callback_data.code
+        target_status_int = callback_data.status # The integer status associated with the button pressed (1 or 2)
+
+        # Map integer status from callback to string status used internally
+        STATUS_INT_TO_STR = {
+            1: ASSET_EXCHANGE_ONLY,
+            2: ASSET_HIDDEN,
+        }
+        target_status_str = STATUS_INT_TO_STR.get(target_status_int)
+
+        if target_status_str is None:
+             logger.error(f"Invalid target status integer received: {target_status_int} for asset {asset_code}")
+             await callback.answer(my_gettext(callback, 'error_processing_request'), show_alert=True)
+             return # Stop if status is invalid
+
+        vis_dict = deserialize_visibility(wallet.assets_visibility) if wallet.assets_visibility else {}
+        current_status_str = vis_dict.get(asset_code, ASSET_VISIBLE)
+
+        # Determine the new status based on the click (using string statuses now)
+        if current_status_str == target_status_str:
+            new_status_str = ASSET_VISIBLE # Clicking checked button -> set to VISIBLE
         else:
-            status_text = my_gettext(callback, 'asset_hidden')
-        asset_url = f"https://stellar.expert/explorer/public/asset/{code}-{issuer}"
-        asset_button = types.InlineKeyboardButton(
-            text=code,
-            url=asset_url
-        )
-        status_button = types.InlineKeyboardButton(
-            text=status_text,
-            callback_data=AssetVisibilityCallbackData(action="toggle", code=code).pack()
-        )
-        kb.append([asset_button, status_button])
-    kb.append(get_return_button(callback))
-    await callback.message.edit_reply_markup(reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
-    await callback.answer(my_gettext(callback, 'asset_visibility_changed'))
+            new_status_str = target_status_str # Clicking unchecked button -> set to target
+
+        # Update the dictionary and save to DB (using string statuses)
+        if new_status_str == ASSET_VISIBLE:
+            vis_dict.pop(asset_code, None) # Remove from dict if setting back to default visible
+        else:
+            vis_dict[asset_code] = new_status_str
+
+        wallet.assets_visibility = serialize_visibility(vis_dict)
+        save_error = False
+        if isinstance(session, OrmSession):
+            try:
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                logger.error(f"Error committing asset visibility changes: {e}")
+                await callback.answer(my_gettext(callback, 'error_saving_settings'), show_alert=True)
+                save_error = True
+        else:
+             logger.warning("Asset visibility change in non-ORM session, commit might not be applicable.")
+
+        if not save_error:
+            # Redraw the current page of the menu to reflect the change
+            message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=page)
+            try:
+                await callback.message.edit_text(message_text, reply_markup=reply_markup)
+                await callback.answer(my_gettext(callback, 'asset_visibility_changed'))
+            except Exception as e:
+                logger.error(f"Error editing message after asset visibility change: {e}")
+                # If edit fails after save, at least inform user status was likely saved
+                await callback.answer(my_gettext(callback, 'asset_visibility_changed') + " (UI update failed)", show_alert=True)
+
+    elif action == "toggle":
+        # Handle legacy toggle action if necessary, or log a warning
+        logger.warning(f"Received legacy 'toggle' action for asset visibility from user {user_id}")
+        await callback.answer("Legacy action received.", show_alert=True) # Or implement fallback logic
+    else:
+        logger.warning(f"Unknown asset visibility action: {action} from user {user_id}")
+        await callback.answer("Unknown action.", show_alert=True)
 
 
 ########################################################################################################################
