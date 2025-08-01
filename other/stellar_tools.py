@@ -1285,9 +1285,51 @@ def is_valid_stellar_address(address):
 
 
 async def test():
-    xdr = await parse_transaction_stellar_uri(
-        'web+stellar:tx?xdr=AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAMgAAAAAAAAAZQAAAAEAAAAAAAAAAAAAAABn7gE7AAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAApwbXBobTU5bW1lAAAAAAABAAAAAC6F6mrl0kGQk%2FbzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAA%3D%3D&callback=url%3Ahttps%3A%2F%2Feurmtl.me%2Fremote%2Fsep07%2Fauth%2Fcallback&replace=sourceAccount%3AX%3BX%3Aaccount%20to%20authenticate&origin_domain=eurmtl.me&signature=c5i8LYqq9Ryf5GVcZ2nbUnBLNuSNFQvuuabqfM%2BFuIcYexatf09MGef2gYPxiK73vqNLEcjeMdcFxVbXwsulBQ%3D%3D&return_url=https%3A%2F%2Fbsn.mtla.me')
-    print(xdr)
+    # Тестируем парсинг Stellar URI
+    #xdr = await parse_transaction_stellar_uri(
+    #    'web+stellar:tx?xdr=AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAMgAAAAAAAAAZQAAAAEAAAAAAAAAAAAAAABn7gE7AAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAApwbXBobTU5bW1lAAAAAAABAAAAAC6F6mrl0kGQk%2FbzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA73ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAA%3D%3D&callback=url%3Ahttps%3A%2F%2Feurmtl.me%2Fremote%2Fsep07%2Fauth%2Fcallback&replace=sourceAccount%3AX%3BX%3Aaccount%20to%20authenticate&origin_domain=eurmtl.me&signature=c5i8LYqq9Ryf5GVcZ2nbUnBLNuSNFQvuuabqfM%2BFuIcYexatf09MGef2gYPxiK73vqNLEcjeMdcFxVbXwsulBQ%3D%3D&return_url=https%3A%2F%2Fbsn.mtla.me')
+    #print(f"Parsed URI result: {xdr}")
+
+    # Тестируем работу с адресом GAOLWUW52RYQDJCH2WLHY6BAYWFPRBM57JIORLVI7UPGW2EP7BHKKRUS
+    test_address = "GAOLWUW52RYQDJCH2WLHY6BAYWFPRBM57JIORLVI7UPGW2EP7BHKKRUS"
+
+    print(f"--- Testing with address: {test_address} ---")
+
+    # 1. Проверяем валидность адреса
+    is_valid = is_valid_stellar_address(test_address)
+    print(f"Address is valid: {is_valid}")
+
+    # 2. Получаем данные аккаунта и тестируем их декодирование
+    print("\n--- Fetching and decoding account data ---")
+    try:
+        async with ServerAsync(horizon_url=config.horizon_url, client=AiohttpClient()) as server:
+            account_details = await server.accounts().account_id(test_address).call()
+            account_data = account_details.get('data', {})
+
+        if not account_data:
+            print("No 'data' entries found for this account.")
+        else:
+            print(f"Found {len(account_data)} data entries. Decoding...")
+            decoded_count = 0
+            error_count = 0
+            for name, value in account_data.items():
+                try:
+                    decoded_value = decode_data_value(value)
+                    print(f"  ✅ Decoded '{name}': {decoded_value}")
+                    decoded_count += 1
+                except Exception as e:
+                    print(f"  ❌ FAILED to decode '{name}'. Value: {value}, Error: {e}")
+                    error_count += 1
+
+            if error_count == 0:
+                print("\n✅ All account data decoded successfully!")
+            else:
+                print(f"\n❌ Finished with {error_count} decoding errors.")
+
+    except Exception as e:
+        print(f"❌ An error occurred while fetching account data: {e}")
+
+    print("\n=== Test completed ===")
 
 
 if __name__ == "__main__":

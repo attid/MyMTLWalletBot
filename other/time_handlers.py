@@ -179,21 +179,21 @@ async def process_addresses(tl_results, session_pool, dp: Dispatcher):
 
 @safe_catch_async
 async def handle_address(tl_result, session_pool, dp: Dispatcher):
+    # 1. Получить все данные из БД БЕЗ открытия длительной транзакции
     with session_pool.get_session() as session:
         logger.info(tl_result.account)
         # Получаем информацию о кошельке
         wallet = await asyncio.to_thread(
             session.query(MyMtlWalletBot)
             .filter(MyMtlWalletBot.need_delete == 0,
-                   MyMtlWalletBot.user_id == tl_result.user_id,
-                   MyMtlWalletBot.public_key == tl_result.account)
+                    MyMtlWalletBot.user_id == tl_result.user_id,
+                    MyMtlWalletBot.public_key == tl_result.account)
             .first
         )
         
         if not wallet:
             return
 
-        # Получаем операции
         operations = await asyncio.to_thread(
             session.query(TOperations)
             .filter(or_(TOperations.for_account == tl_result.account,
@@ -206,40 +206,49 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
             .all
         )
 
-        records = operations
-        # logger.info(f"founded records: {records}")
+    # 2. Подготовить сообщения и обновления
+    messages_to_send = []
+    last_event_id_to_update = None
+    wallet_to_delete = None
 
-        for operation in records:
-            # Обновление last_event_id перед проверкой
+    for operation in operations:
+        if operation.code1 == 'XLM' and float(operation.amount1) < 0.1:
+            continue
+
+        last_event_id_to_update = operation.id
+        try:
+            message_text = decode_db_effect(operation, wallet.public_key, wallet.user_id)
+            messages_to_send.append({'user_id': wallet.user_id, 'text': message_text})
+        except Exception as ex:
+            if "Bad Request: chat not found" in str(ex) or isinstance(ex, TelegramForbiddenError):
+                wallet_to_delete = {'user_id': wallet.user_id, 'public_key': wallet.public_key}
+            logger.info(['handle_address', operation.id, ex])
+
+    # 3. Выполнить все операции с БД в одной транзакции
+    with session_pool.get_session() as session:
+        if last_event_id_to_update:
             await asyncio.to_thread(
                 session.query(MyMtlWalletBot)
                 .filter(MyMtlWalletBot.public_key == wallet.public_key)
-                .update, {MyMtlWalletBot.last_event_id: operation.id}
+                .update, {MyMtlWalletBot.last_event_id: last_event_id_to_update}
             )
 
-            try:
-                if operation.code1 == 'XLM' and float(operation.amount1) < 0.1:
-                    continue
-
-                fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=wallet.user_id,
-                                           chat_id=wallet.user_id)
-                await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
-                await cmd_info_message(session, wallet.user_id, decode_db_effect(operation, wallet.public_key, wallet.user_id))
-                await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
-                await asyncio.sleep(0.1)
-            except TelegramBadRequest as ex:
-                if "Bad Request: chat not found" in str(ex):
-                    await db_delete_wallet_async(session=session, user_id=wallet.user_id, public_key=wallet.public_key)
-                    logger.info(['process_addresses', operation.id, 'wallet was deleted'])
-                else:
-                    logger.info(['process_addresses 01', operation.id, ex])
-            except TelegramForbiddenError:
-                await db_delete_wallet_async(session=session, user_id=wallet.user_id, public_key=wallet.public_key)
-                logger.info(['process_addresses', operation.id, 'Forbidden wallet was deleted'])
-            except Exception as ex:
-                logger.info(['process_addresses', operation.id, ex])
+        if wallet_to_delete:
+            await db_delete_wallet_async(session=session, **wallet_to_delete)
 
         session.commit()
+
+    # 4. Отправить сообщения после завершения транзакции
+    for msg in messages_to_send:
+        try:
+            fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=msg['user_id'],
+                                       chat_id=msg['user_id'])
+            await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+            await cmd_info_message(None, msg['user_id'], msg['text'])
+            await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            logger.error(f"Failed to send message to {msg['user_id']}: {e}")
 
 
 def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
@@ -271,7 +280,10 @@ def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
         if operation.for_account == decode_for:
             return f"You added DATA on {account_link}\n\n{op_link}\n\nData:\n\n{operation.code1}\n{operation.code2}"
         if operation.code2 == decode_for:
-            return f"{account_link} set your account on his DATA \n\n{op_link}\n\nData Name:\n\n{operation.code1}"
+            simple_decode_for = decode_for[:4] + '..' + decode_for[-4:]
+            decode_for_link = 'https://stellar.expert/explorer/public/account/' + decode_for
+            decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
+            return f"{account_link} set your account {decode_for_link} on his DATA \n\n{op_link}\n\nData Name:\n\n{operation.code1}"
         logger.info(f"op type: {operation.operation}, from: {operation.for_account}, {operation.code1}/{operation.code2}")
     else:
         return f'new operation for {account_link} \n\n{op_link}'
