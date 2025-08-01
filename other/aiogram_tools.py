@@ -16,7 +16,7 @@ from other.global_data import global_data
 from other.lang_tools import my_gettext
 
 
-async def send_message(session: Session, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
+async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
                        reply_markup=None, need_new_msg=None, parse_mode='HTML'):
     user_id = get_user_id(user_id)
 

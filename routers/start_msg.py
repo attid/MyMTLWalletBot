@@ -121,7 +121,7 @@ async def get_start_text(session, state, user_id):
     return msg
 
 
-async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery, types.Message, int],
+async def cmd_info_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int],
                            msg: str, send_file=None, resend_transaction=None):
     user_id = get_user_id(user_id)
 
@@ -138,9 +138,9 @@ async def cmd_info_message(session: Session, user_id: Union[types.CallbackQuery,
         await clear_last_message_id(user_id)
 
     elif resend_transaction:
-        await send_message(session, user_id, msg, reply_markup=get_kb_resend(user_id))
+        await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id))
     else:
-        await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
+        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id))
 
 
 # user_id = 123456
