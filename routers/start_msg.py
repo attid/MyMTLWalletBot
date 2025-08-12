@@ -10,7 +10,7 @@ from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import get_wallet_info
+from db.requests import get_wallet_info, db_get_default_wallet
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
 from other.aiogram_tools import send_message, clear_state, clear_last_message_id
 from other.common_tools import get_user_id
@@ -18,7 +18,8 @@ from other.global_data import global_data
 from other.lang_tools import my_gettext
 from other.stellar_tools import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, \
     db_is_new_user, \
-    db_get_wallets_list
+    db_get_wallets_list, float2str
+from services.ton_service import TonService
 
 
 class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"):
@@ -28,6 +29,17 @@ class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"
 
 async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> types.InlineKeyboardMarkup:
     data = await state.get_data()
+
+    if data.get('use_ton', False):
+        buttons = [
+            [types.InlineKeyboardButton(text='⤴️ Send TON', callback_data="SendTon")],
+            [types.InlineKeyboardButton(text='⤴️ Send USDt', callback_data="SendTonUSDt")],
+            [types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
+                                        callback_data="ChangeWallet")],
+            [types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'),
+                                        callback_data="Support")]]
+        return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
     buttons = [
         [
             types.InlineKeyboardButton(text='⤵️ ' + my_gettext(chat_id, 'kb_receive'), callback_data="Receive"),
@@ -111,7 +123,23 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
 
 
 async def get_start_text(session, state, user_id):
+    wallet = db_get_default_wallet(session=session, user_id=user_id)
+    if wallet.secret_key == 'TON':
+        ton_service = TonService()
+        ton_service.from_mnemonic(wallet.seed_key)
+        await state.update_data(use_ton=True)
+        ton_balance = await ton_service.get_ton_balance()
+        usdt_balance = await ton_service.get_usdt_balance()
+        warning_message = "⚠️ The TON wallet is in a testing phase. It is not recommended to store amounts that you are not willing to lose."
+        return f"""Address: 
+<code>{ton_service.wallet.address.to_str(is_bounceable=False)}</code>
+TON: {float2str(ton_balance, True)}
+USDT: {float2str(usdt_balance, True)}
+
+{warning_message}"""
+
     user_account = (await stellar_get_user_account(session, user_id)).account.account_id
+
     simple_account = user_account[:4] + '..' + user_account[-4:]
     info = get_wallet_info(session, user_id, user_account)
     link = 'https://stellar.expert/explorer/public/account/' + user_account
@@ -130,7 +158,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg'),
                                                   callback_data="ManageAssetsMenu")]
         await global_data.bot.send_photo(user_id, photo=photo, caption=msg,
-                             reply_markup=get_kb_return(user_id, add_buttons))
+                                         reply_markup=get_kb_return(user_id, add_buttons))
         fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)
         data = await global_data.dispatcher.storage.get_data(key=fsm_storage_key)
         with suppress(TelegramBadRequest):

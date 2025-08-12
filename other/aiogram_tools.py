@@ -107,7 +107,8 @@ async def clear_state(state: FSMContext):
             'user_lang': data.get('user_lang', 'en'),
             'last_message_id': data.get('last_message_id', 0),
             'mtlap': data.get('mtlap', None),
-            'free_xlm': data.get('free_xlm', 0)
+            'free_xlm': data.get('free_xlm', 0),
+            'use_ton': data.get('use_ton', None),
         }
     )
 

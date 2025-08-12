@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
-from db.requests import db_user_can_new_free
+from db.requests import db_user_can_new_free, db_add_wallet
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
@@ -34,6 +34,8 @@ async def cmd_add_new(callback: types.CallbackQuery, session: Session):
                                     callback_data="AddWalletNewKey")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_read_only'),
                                     callback_data="AddWalletReadOnly")],
+        [types.InlineKeyboardButton(text='Create new TON wallet',
+                                    callback_data="AddTonWallet")],
         get_return_button(callback)
     ]
     msg = my_gettext(callback, 'create_msg')
@@ -156,3 +158,19 @@ async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, sess
 async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(pin_type=0)
     await cmd_show_balance(session, callback.from_user.id, state)
+
+
+@router.callback_query(F.data == "AddTonWallet")
+async def cq_add(callback: types.CallbackQuery, session: Session, state: FSMContext):
+    if db_user_can_new_free(session, callback.from_user.id):
+        from services.ton_service import TonService
+
+        ton_service = TonService()
+        ton_service.create_wallet()
+        db_add_wallet(session=session, user_id=callback.from_user.id,
+                      public_key=ton_service.wallet.address.to_str(is_bounceable=False), secret_key='TON', i_free_wallet=1,
+                      seed_key=ton_service.mnemonic)
+
+        await cmd_info_message(session, callback, my_gettext(callback, 'send_good'))
+    else:
+        await callback.answer(my_gettext(callback.message.chat.id, "max_wallets"), show_alert=True)

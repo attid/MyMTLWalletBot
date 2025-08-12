@@ -14,7 +14,6 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from redis.asyncio import Redis
 from sqlalchemy.orm import sessionmaker
 from sulguk import AiogramSulgukMiddleware
 from other.config_reader import config
@@ -23,7 +22,7 @@ from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
-                     cheque, mtlap, fest, uri)
+                     cheque, mtlap, fest, uri, ton)
 from routers import veche, wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
@@ -62,6 +61,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.include_router(send.router)
     dp.include_router(swap.router)
     dp.include_router(inout.router)
+    dp.include_router(ton.router)
     dp.include_router(mtlap.router)
     dp.include_router(bsn_router)
     register_handlers(dp, bot)
