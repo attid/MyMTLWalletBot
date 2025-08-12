@@ -39,7 +39,7 @@
   "confirm_send_mini_xdr": "\n\nНа следующем экране будет возможность просмотреть все операции в транзакции.",
   "confirm_send_success": " \n Вы отправили \n{} <b>{}</b> \nНа адрес {} \nc memo : {}",
   "confirm_swap": " \n Do želite li razmijeniti svoje {} {} \n za {} {}?",
-  "create_msg": "Ako imate novčanik, možete unijeti privatni ključ i koristiti novčanik u ovom botu. Takođe možete odrediti pincode i ključ će biti sačuvan u šifrovanom obliku. Ako izgubite pincode, nećete moći koristiti novčanik. \n \n takođe možete kreirati besplatan novčanik, ali u njemu će biti dostupni samo MTL i EURMTL tokeni. Ako ne koristite besplatan novčanik duže od šest mjeseci, administracija zadržava pravo da izbriše vaš račun.",
+  "create_msg": "Ovdje možete kreirati novčanik za Stellar ili TON.\n Ako imate novčanik, možete unijeti privatni ključ i koristiti novčanik u ovom botu. Takođe možete odrediti pincode i ključ će biti sačuvan u šifrovanom obliku. Ako izgubite pincode, nećete moći koristiti novčanik. \n \n takođe možete kreirati besplatan novčanik, ali u njemu će biti dostupni samo MTL i EURMTL tokeni. Ako ne koristite besplatan novčanik duže od šest mjeseci, administracija zadržava pravo da izbriše vaš račun.\n\nDugme 'Kreiraj TON novčanik' kreira kastodi novčanik u TON blokčejnu.",
   "delegate_add": "Vi ćete delegirati kod {}",
   "delegate_delete": "Želite li ukloniti delegata iz {}?",
   "delegate_ready": "\nЕсли вы хотите быть в Совете то пришлите <code>ready</code>",
