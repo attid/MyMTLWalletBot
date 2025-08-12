@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 from environs import Env
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     test_mode: bool = True
     fest_menu: dict = {}
     admins: list = []
+    toncenter_token: Optional[str] = None
 
     # horizon_url_id: Optional[int] = 0
 
