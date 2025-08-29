@@ -208,5 +208,8 @@
   "prev_page": "Prev.",
   "next_page": "Next",
   "page": "Page",
-  "telegram_api_error": "Failed to check username due to a communication error with Telegram. Please try again later."
+  "telegram_api_error": "Failed to check username due to a communication error with Telegram. Please try again later.",
+  "wc_pairing_initiated": "Connecting to the dApp... You can return to the application to continue.",
+  "wc_pairing_error": "An error occurred while trying to connect. Please try again.",
+  "default_wallet_not_found": "Default wallet not found. Please set a default wallet in the settings."
 }
