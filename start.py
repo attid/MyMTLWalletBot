@@ -26,6 +26,7 @@ from routers import (add_wallet, admin, common_start, common_setting, mtltools, 
 from routers import veche, wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
+from other.faststream_tools import start_broker, stop_broker
 from other.global_data import global_data
 from other.time_handlers import events_worker, scheduler_jobs
 
@@ -123,6 +124,7 @@ async def set_commands(bot: Bot):
 
 
 async def on_startup(bot: Bot, dispatcher: Dispatcher):
+    await start_broker()
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=global_data.admin_id, text='Bot started')
@@ -130,8 +132,8 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     if config.test_mode:
         global_data.task_list = [
             # asyncio.create_task(cheque_worker(global_data.db_pool)),
-            asyncio.create_task(log_worker(global_data.db_pool)),
-            asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
+            # asyncio.create_task(log_worker(global_data.db_pool)),
+            # asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
         ]
     else:
         global_data.task_list = [
@@ -145,6 +147,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
 
 
 async def on_shutdown(bot: Bot):
+    await stop_broker()
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=global_data.admin_id, text='Bot stopped')
     for task in global_data.task_list:

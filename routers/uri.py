@@ -13,11 +13,14 @@ from other.stellar_tools import (
     parse_transaction_stellar_uri, process_transaction_stellar_uri
 )
 from routers.sign import cmd_check_xdr
-from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_send
+from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_send, get_kb_return
 from other.web_tools import http_session_manager
+from db.requests import db_get_default_address, db_get_user
+from other.faststream_tools import publish_pairing_request
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
 
 async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state: FSMContext):
     """Get URI from server and prepare for signing"""
@@ -59,12 +62,14 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
             my_gettext(chat_id, 'remote_uri_error', (str(e),))
         )
 
+
 @router.message(Command(commands=["start"]), F.text.contains("uri_"))
 async def cmd_start_remote(message: types.Message, state: FSMContext, session: Session):
     """Handle Telegram bot start with remote URI"""
     await clear_state(state)
     uri_id = message.text.split()[1][4:]  # Extract ID from "uri_..."
     await process_remote_uri(session, message.from_user.id, uri_id, state)
+
 
 @router.message(F.text.startswith("web+stellar:tx"))
 async def process_stellar_uri(message: types.Message, state: FSMContext, session: Session):
@@ -76,7 +81,7 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
         uri = f"{base}?{unquote(params)}"
     await clear_state(state)
     qr_data = message.text
-    
+
     try:
         # Process the transaction URI
         result = await process_transaction_stellar_uri(
@@ -85,7 +90,7 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
             message.from_user.id,
             Network.PUBLIC_NETWORK_PASSPHRASE
         )
-        
+
         # Save data for state
         await state.update_data(
             xdr=result['xdr'],
@@ -93,7 +98,7 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
             callback_url=result['callback_url'],
             return_url=result.get('return_url')
         )
-        
+
         # Process XDR
         await cmd_check_xdr(
             session=session,
@@ -107,3 +112,43 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
             message.from_user.id,
             my_gettext(message.from_user.id, 'remote_uri_error', (str(e),))
         )
+
+
+async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext):
+    """Helper function to process WalletConnect URI"""
+    await clear_state(state)
+    # Get user's default address
+    address = db_get_default_address(session, user_id)
+
+    if address:
+        try:
+            user_info = {
+                "user_id": user_id,
+                "address": address
+            }
+            await publish_pairing_request(wc_uri, address, user_info)
+            await send_message(
+                session,
+                user_id,
+                my_gettext(user_id, 'wc_pairing_initiated'), reply_markup=get_kb_return(user_id)
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish WC pairing request for user {user_id}: {e}")
+            await send_message(
+                session,
+                user_id,
+                my_gettext(user_id, 'wc_pairing_error'), reply_markup=get_kb_return(user_id)
+            )
+    else:
+        await send_message(
+            session,
+            user_id,
+            my_gettext(user_id, 'default_wallet_not_found'), reply_markup=get_kb_return(user_id)
+        )
+
+
+@router.message(F.text.startswith("wc:"))
+async def process_wc_uri(message: types.Message, state: FSMContext, session: Session):
+    """Handle WalletConnect URI from text message"""
+    await handle_wc_uri(message.text, message.from_user.id, session, state)
+    await message.delete()

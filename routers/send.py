@@ -27,6 +27,7 @@ from other.mytypes import Balance
 from routers.sign import cmd_check_xdr
 from other.aiogram_tools import my_gettext, send_message, check_username, clear_state, clear_last_message_id, TELEGRAM_API_ERROR # Импортируем TELEGRAM_API_ERROR
 from other.common_tools import get_user_id, decode_qr_code
+from routers.uri import handle_wc_uri
 from other.global_data import global_data
 from other.stellar_tools import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
     stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
@@ -528,6 +529,10 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                     user_id=message.from_user.id,
                     state=state
                 )
+
+            elif qr_data.startswith('wc:'):
+                await handle_wc_uri(qr_data, message.from_user.id, session, state)
+                await message.delete()
 
             else:
                 await message.reply('Bad QR code =(')
