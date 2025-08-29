@@ -138,7 +138,9 @@ USDT: {float2str(usdt_balance, True)}
 
 {warning_message}"""
 
+
     user_account = (await stellar_get_user_account(session, user_id)).account.account_id
+    await state.update_data(use_ton=None)
 
     simple_account = user_account[:4] + '..' + user_account[-4:]
     info = get_wallet_info(session, user_id, user_account)
