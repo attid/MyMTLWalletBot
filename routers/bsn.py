@@ -6,6 +6,7 @@ import jsonpickle
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
 
@@ -18,10 +19,10 @@ from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
 from other.aiogram_tools import send_message, clear_last_message_id
 
-if typing.TYPE_CHECKING:
-    from aiogram.types import CallbackQuery, Message
-    from aiogram.fsm.context import FSMContext
-    from sqlalchemy.orm import Session
+#if typing.TYPE_CHECKING:
+#    from aiogram.types import CallbackQuery, Message
+#    from aiogram.fsm.context import FSMContext
+#    from sqlalchemy.orm import Session
 
 bsn_router = Router()
 
