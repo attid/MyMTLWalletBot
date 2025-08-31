@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk import Network, TransactionBuilder
 
-from other.aiogram_tools import my_gettext, send_message, clear_state
+from other.aiogram_tools import my_gettext, send_message, clear_state, clear_last_message_id
 from other.stellar_tools import (
     stellar_user_sign, stellar_get_user_account, process_uri_with_replace,
     parse_transaction_stellar_uri, process_transaction_stellar_uri
@@ -15,7 +15,7 @@ from other.stellar_tools import (
 from routers.sign import cmd_check_xdr
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_send, get_kb_return
 from other.web_tools import http_session_manager
-from db.requests import db_get_default_address, db_get_user
+from db.requests import db_get_default_address, db_get_user, db_get_default_wallet
 from other.faststream_tools import publish_pairing_request
 
 router = Router()
@@ -117,10 +117,12 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
 async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext):
     """Helper function to process WalletConnect URI"""
     await clear_state(state)
+    await clear_last_message_id(user_id)
     # Get user's default address
-    address = db_get_default_address(session, user_id)
+    user_account = await stellar_get_user_account(session, user_id)
 
-    if address:
+    if user_account:
+        address = user_account.account.account_id
         try:
             user_info = {
                 "user_id": user_id,
