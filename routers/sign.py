@@ -57,6 +57,7 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
     data = await state.get_data()
     user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
     simple_account = user_account[:4] + '..' + user_account[-4:]
+    wallet_connect_info = data.get("wallet_connect_info")
     if msg is None:
         msg = data.get('msg')
         if msg is None:
@@ -75,12 +76,16 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
         msg = msg + "\n" + ''.ljust(len(pin), '*') + '\n\n' + long_line()
         if current_state == PinState.sign:
             msg += my_gettext(chat_id, 'confirm_send_mini_xdr')
+        if wallet_connect_info:
+            msg += wallet_connect_info
         await send_message(session, chat_id, msg, reply_markup=get_kb_pin(data))
 
     if pin_type == 2:  # password
         msg = my_gettext(chat_id, "send_password", (simple_account,))
         if current_state == PinState.sign:
             msg += my_gettext(chat_id, 'confirm_send_mini_xdr')
+        if wallet_connect_info:
+            msg += wallet_connect_info
         await state.set_state(PinState.ask_password)
         await send_message(session, chat_id, msg, reply_markup=get_kb_return(chat_id))
 
@@ -89,6 +94,8 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
         msg = my_gettext(chat_id, 'confirm_send_mini', (simple_account,))
         if current_state == PinState.sign:
             msg += my_gettext(chat_id, 'confirm_send_mini_xdr')
+        if wallet_connect_info:
+            msg += wallet_connect_info
         await send_message(session, chat_id, msg,
                            reply_markup=get_kb_nopassword(chat_id))
 
@@ -158,7 +165,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
             await cmd_ask_pin(session, user_id, state, my_gettext(user_id, "resend_password"))
         if current_state == PinState.set_pin2:  # ask pin2 for save
             pin2 = data.get('pin2', '')
-            public_key = data.get('public_key', '')
+            # public_key = data.get('public_key', '')
             await state.set_state(None)
             pin_type = data.get('pin_type', '')
 
@@ -270,7 +277,7 @@ async def sign_xdr(session: Session, state, user_id):
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password"))
-    await asyncio.to_thread(db_reset_balance,session, user_id)
+    await asyncio.to_thread(db_reset_balance, session, user_id)
     await state.update_data(pin='')
 
 
@@ -341,6 +348,8 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
     data = await state.get_data()
     callback_url = data.get('callback_url')
     xdr = data.get('xdr')
+    wallet_connect = data.get('wallet_connect')
+    user_id = callback.from_user.id
     try:
         if callback.data == "SendTools":
             if callback_url:
@@ -355,7 +364,8 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                         if return_url:
                             # Если есть return_url, отправляем только SUCCESS с кнопкой возврата
                             from keyboards.common_keyboards import get_kb_return_url
-                            await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                            await send_message(session, callback.from_user.id, f'SUCCESS',
+                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url))
                         else:
                             await cmd_info_message(session, callback, f'SUCCESS')
                     else:
@@ -363,6 +373,14 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                 except Exception as ex:
                     logger.info(['cmd_show_send_tr', callback, ex])
                     await cmd_info_message(session, callback, my_gettext(callback, 'send_error'))
+            elif wallet_connect:
+                try:
+                    wallet_connect_func = jsonpickle.loads(wallet_connect)
+                    await wallet_connect_func(session, user_id, state)
+
+                except Exception as ex:
+                    logger.info(['cmd_show_send_tr', callback, ex])
+
             else:
                 try:
                     response = await http_session_manager.get_web_request('POST',
@@ -377,7 +395,8 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                         return_url = data.get('return_url')
                         if return_url:
                             from keyboards.common_keyboards import get_kb_return_url
-                            await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                            await send_message(session, callback.from_user.id, f'SUCCESS',
+                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url))
                             return
                         else:
                             await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
@@ -398,7 +417,8 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
             return_url = data.get('return_url')
             if return_url:
                 from keyboards.common_keyboards import get_kb_return_url
-                await send_message(session, callback.from_user.id, f'SUCCESS', reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                await send_message(session, callback.from_user.id, f'SUCCESS',
+                                   reply_markup=get_kb_return_url(callback.from_user.id, return_url))
                 return
             else:
                 await cmd_info_message(session, callback, my_gettext(callback, 'send_good'), )

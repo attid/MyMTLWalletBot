@@ -53,6 +53,7 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
     data = await state.get_data()
     tools = data.get('tools')
     callback_url = data.get('callback_url')
+    wallet_connect = data.get('wallet_connect')
 
     if not use_send:
         await get_web_request('POST', url="https://vault.lobstr.co/api/transactions/",
@@ -63,7 +64,9 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
         if tools:
             kb = get_kb_send(chat_id, with_tools=tools)
         if callback_url:
-            kb = get_kb_send(chat_id, with_tools=True, tool_name='callback')
+            kb = get_kb_send(chat_id, with_tools=True, tool_name='callback', can_send=False)
+        if wallet_connect:
+            kb = get_kb_send(chat_id, with_tools=True, tool_name='wallet_connect', can_send=False)
 
     elif xdr_uri:
         from urllib.parse import urlencode, quote
