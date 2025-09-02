@@ -8,9 +8,12 @@ from faststream.redis import RedisBroker, BinaryMessageFormatV1
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from other.aiogram_tools import send_message
+from keyboards.common_keyboards import get_kb_return
+from other.aiogram_tools import send_message, clear_last_message_id
 from other.config_reader import config
 from faststream import FastStream
+
+from other.lang_tools import my_gettext
 
 # --- Глобальные переменные и объекты брокера ---
 
@@ -38,8 +41,6 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
     Callback, который выполняется вместо стандартной логики подписи.
     """
     logger.info(f"do_wc_sign_and_respond: {user_id}")
-    from other.aiogram_tools import send_message, my_gettext
-    from other.stellar_tools import stellar_user_sign
 
     data = await state.get_data()
     internal_request_id = data.get("internal_request_id")
@@ -63,7 +64,7 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
             status = "success" if submit_result.get("successful") else "pending"
             response_msg["result"] = {"status": status}
             logger.info(f"XDR for request {original_request_id} signed and submitted with status: {status}")
-        else: # По умолчанию или для stellar_signXDR
+        else:  # По умолчанию или для stellar_signXDR
             response_msg["result"] = {"signedXDR": xdr}
             logger.info(f"XDR for request {original_request_id} signed.")
 
@@ -75,7 +76,8 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         logger.info(f"pending_req: {pending_req}")
 
         # 3. Сообщаем пользователю об успехе
-        await send_message(session, user_id, my_gettext(user_id, 'wc_sign_success'))
+        await send_message(session, user_id, my_gettext(user_id, 'wc_sign_success'),
+                           reply_markup=get_kb_return(user_id))
         logger.info(f"pending_req: {pending_req}")
 
     except Exception as e:
@@ -87,14 +89,15 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         if pending_req:
             pending_req['result'] = response_msg
             pending_req['event'].set()
-        await send_message(session, user_id, my_gettext(user_id, 'bad_password'))  # Общее сообщение об ошибке
+        await send_message(session, user_id, my_gettext(user_id, 'bad_password'),
+                           reply_markup=get_kb_return(user_id))  # Общее сообщение об ошибке
 
     finally:
         await state.set_state(None)  # Очищаем состояние в любом случае
 
 
 async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str, original_request_id: str,
-                               method:str, dapp_info:dict[str,Any]):
+                               method: str, dapp_info: dict[str, Any]):
     """
     Функция-"мост", инициирующая процесс подписи у пользователя через FSM.
     """
@@ -122,6 +125,7 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
 
     db_pool = global_data.db_pool
     with db_pool.get_session() as session:
+        await clear_last_message_id(user_id)
         await cmd_check_xdr(session, xdr, user_id, state)
         logger.info(f"cmd_check_xdr: {xdr}")
 
@@ -197,6 +201,7 @@ async def handle_sign_request(msg: dict):
     finally:
         PENDING_SIGN_REQUESTS.pop(internal_request_id, None)
 
+
 @broker.subscriber(list="wc-pairing-events", max_workers=10)
 async def handle_pairing_events(msg: dict):
     """
@@ -231,7 +236,7 @@ async def handle_pairing_events(msg: dict):
 
         db_pool = global_data.db_pool
         with db_pool.get_session() as session:
-            await send_message(session, user_id, message)
+            await send_message(session, user_id, message, reply_markup=get_kb_return(user_id))
 
     except Exception as e:
         logger.exception(f"Ошибка в обработчике событий пейринга: {e}")
