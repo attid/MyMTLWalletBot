@@ -634,12 +634,29 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
 async def stellar_delete_all_deleted(session: Session):
     master = stellar_get_master(session)
     for wallet in db_get_deleted_wallets_list(session):
-        print(vars(wallet))
-        if wallet.free_wallet == 1:
-            with suppress(NotFoundError):
-                await stellar_delete_account(master,
-                                             Keypair.from_secret(decrypt(wallet.secret_key, str(wallet.user_id))))
-        db_delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
+        if wallet.secret_key != 'TON':
+            try:
+                if wallet.free_wallet == 1:
+                    with suppress(NotFoundError):
+                        await stellar_delete_account(master,
+                                                     Keypair.from_secret(decrypt(wallet.secret_key, str(wallet.user_id))))
+                db_delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
+            except Exception as e:
+                print("\n---!!! ОБНАРУЖЕНА ОШИБКА !!!---")
+                print(f"Не удалось обработать кошелек. Ошибка: {e}")
+                print("ДАННЫЕ ПРОБЛЕМНОГО КОШЕЛЬКА:")
+                import json
+                try:
+                    # Попытка красивого вывода через json
+                    wallet_dict = {c.name: getattr(wallet, c.name) for c in wallet.__table__.columns}
+                    print(json.dumps(wallet_dict, indent=4, default=str))
+                except:
+                    # Если не получилось, выводим как есть
+                    print(vars(wallet))
+                print("---!!! КОНЕЦ ИНФОРМАЦИИ ОБ ОШИБКЕ !!!---\\n")
+                # raise
+                # Цикл продолжится, чтобы найти другие проблемные кошельки
+                continue
 
 
 async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
