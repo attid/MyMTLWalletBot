@@ -153,10 +153,47 @@ def get_kb_return_url(user_id: int, return_url: str) -> types.InlineKeyboardMark
     """
     Create a keyboard with a return_url button and a return button.
     """
-    buttons = [[types.InlineKeyboardButton(
-        text=my_gettext(user_id, 'return_to_site'),
-        url=return_url
-    )]]
-    logger.info(f'return_url: {return_url}')
+    buttons = []
+
+    # Validate return_url for Telegram compatibility
+    if return_url and _is_valid_telegram_url(return_url):
+        buttons.append([types.InlineKeyboardButton(
+            text=my_gettext(user_id, 'return_to_site'),
+            url=return_url
+        )])
+        logger.info(f'return_url: {return_url}')
+    else:
+        logger.warning(f'Invalid return_url for Telegram: {return_url}')
+
     buttons.append(get_return_button(user_id))
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _is_valid_telegram_url(url: str) -> bool:
+    """
+    Check if URL is valid for Telegram inline keyboard buttons.
+    Telegram requires HTTPS URLs that are publicly accessible.
+    """
+    if not url:
+        return False
+
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+
+        # Must be HTTPS
+        if parsed.scheme != 'https':
+            return False
+
+        # Must have a valid hostname (not localhost, 127.0.0.1, etc.)
+        hostname = parsed.hostname
+        if not hostname or hostname in ('localhost', '127.0.0.1', '0.0.0.0'):
+            return False
+
+        # Must have a valid domain (not IP addresses in some cases)
+        if hostname.replace('.', '').isdigit():
+            return False
+
+        return True
+    except Exception:
+        return False
