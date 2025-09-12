@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery
 from loguru import logger
 from db.models import MyMtlWalletBotLog
 from other.global_data import global_data, LogQuery
+from other.loguru_tools import safe_catch_async
 
 
 class LogButtonClickCallbackMiddleware(BaseMiddleware):
@@ -25,7 +26,7 @@ class LogButtonClickCallbackMiddleware(BaseMiddleware):
 #
 
 from sqlalchemy.exc import SQLAlchemyError
-
+@safe_catch_async
 async def log_worker(session_pool):
     while True:  # not queue.empty():
         log_item: LogQuery = await global_data.log_queue.get()
@@ -36,10 +37,10 @@ async def log_worker(session_pool):
                 log_operation=log_item.log_operation[:32],
                 log_operation_info=log_item.log_operation_info[:32]
             )
-            with session_pool() as session:
+            with session_pool.get_session() as session:
                 session.add(new_log)
                 session.commit()
-        except SQLAlchemyError as e:
+        except Exception as e:
             logger.warning(f'{log_item.user_id}-{log_item.log_operation} failed {type(e)}')
         global_data.log_queue.task_done()
         await asyncio.sleep(1)
