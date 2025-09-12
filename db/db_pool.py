@@ -25,7 +25,6 @@ class DatabasePool:
 
         @event.listens_for(self.engine, 'connect')
         def connect(dbapi_connection, connection_record):
-            print(dbapi_connection.default_tpb)
             self.pool_connections += 1
             logger.info(f"Новое соединение. Соединений {self.active_connections}/{self.pool_connections}")
 
