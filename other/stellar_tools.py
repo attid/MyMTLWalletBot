@@ -639,7 +639,8 @@ async def stellar_delete_all_deleted(session: Session):
                 if wallet.free_wallet == 1:
                     with suppress(NotFoundError):
                         await stellar_delete_account(master,
-                                                     Keypair.from_secret(decrypt(wallet.secret_key, str(wallet.user_id))))
+                                                     Keypair.from_secret(
+                                                         decrypt(wallet.secret_key, str(wallet.user_id))))
                 db_delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
             except Exception as e:
                 print("\n---!!! ОБНАРУЖЕНА ОШИБКА !!!---")
@@ -1037,11 +1038,15 @@ async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_
 
 
 def decode_data_value(data_value: str):
-    base64_message = data_value
-    base64_bytes = base64_message.encode('ascii')
-    message_bytes = base64.b64decode(base64_bytes)
-    message = message_bytes.decode('ascii')
-    return message
+    try:
+        base64_message = data_value
+        base64_bytes = base64_message.encode('utf-8')
+        message_bytes = base64.b64decode(base64_bytes)
+        message = message_bytes.decode('utf-8')
+        return message
+    except Exception as ex:
+        logger.info(f"decode_data_value error: {ex}")
+        return 'decode error'
 
 
 async def cmd_gen_data_xdr(from_account: str, name: str, value):
@@ -1303,9 +1308,9 @@ def is_valid_stellar_address(address):
 
 async def test():
     # Тестируем парсинг Stellar URI
-    #xdr = await parse_transaction_stellar_uri(
+    # xdr = await parse_transaction_stellar_uri(
     #    'web+stellar:tx?xdr=AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAMgAAAAAAAAAZQAAAAEAAAAAAAAAAAAAAABn7gE7AAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAApwbXBobTU5bW1lAAAAAAABAAAAAC6F6mrl0kGQk%2FbzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA73ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAA%3D%3D&callback=url%3Ahttps%3A%2F%2Feurmtl.me%2Fremote%2Fsep07%2Fauth%2Fcallback&replace=sourceAccount%3AX%3BX%3Aaccount%20to%20authenticate&origin_domain=eurmtl.me&signature=c5i8LYqq9Ryf5GVcZ2nbUnBLNuSNFQvuuabqfM%2BFuIcYexatf09MGef2gYPxiK73vqNLEcjeMdcFxVbXwsulBQ%3D%3D&return_url=https%3A%2F%2Fbsn.mtla.me')
-    #print(f"Parsed URI result: {xdr}")
+    # print(f"Parsed URI result: {xdr}")
 
     # Тестируем работу с адресом GAOLWUW52RYQDJCH2WLHY6BAYWFPRBM57JIORLVI7UPGW2EP7BHKKRUS
     test_address = "GAOLWUW52RYQDJCH2WLHY6BAYWFPRBM57JIORLVI7UPGW2EP7BHKKRUS"
