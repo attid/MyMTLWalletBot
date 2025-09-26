@@ -1,13 +1,18 @@
+
 import os
 from contextlib import suppress
+from datetime import datetime, timedelta
 
 from aiogram import Router, types, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from db.models import MyMtlWalletBotUsers, MyMtlWalletBot, MyMtlWalletBotTransactions, MyMtlWalletBotCheque, \
+    MyMtlWalletBotLog
 from other.config_reader import config, horizont_urls
 from other.global_data import global_data
 from other.stellar_tools import async_stellar_check_fee
@@ -20,6 +25,43 @@ class ExitState(StatesGroup):
 router = Router()
 router.message.filter(F.chat.type == "private")
 router.message.filter(F.chat.id.in_(config.admins))
+
+
+@router.message(Command(commands=["stats"]))
+async def cmd_stats(message: types.Message, session: Session):
+    user_count = session.query(MyMtlWalletBotUsers).count()
+    wallet_count = session.query(MyMtlWalletBot).count()
+    transaction_count = session.query(MyMtlWalletBotTransactions).count()
+    cheque_count = session.query(MyMtlWalletBotCheque).count()
+    log_count = session.query(MyMtlWalletBotLog).count()
+
+    # Активность за последние 24 часа и неделю
+    activity_24h = session.query(MyMtlWalletBotLog).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=1)).count()
+    activity_7d = session.query(MyMtlWalletBotLog).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)).count()
+
+    # Уникальные пользователи за последние 24 часа и неделю
+    unique_users_24h = session.query(MyMtlWalletBotLog.user_id).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=1)).distinct().count()
+    unique_users_7d = session.query(MyMtlWalletBotLog.user_id).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)).distinct().count()
+
+    # Топ 5 операций за неделю
+    top_operations = session.query(MyMtlWalletBotLog.log_operation_info, func.count(MyMtlWalletBotLog.log_operation_info).label('count')).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)).group_by(MyMtlWalletBotLog.log_operation_info).order_by(func.count(MyMtlWalletBotLog.log_operation_info).desc()).limit(5).all()
+    top_operations_str = "\n".join([f"{op}: {count}" for op, count in top_operations])
+
+    stats_message = (
+        f"**Статистика бота**\n\n"
+        f"**Общая статистика:**\n"
+        f"Пользователи: {user_count}\n"
+        f"Кошельки: {wallet_count}\n"
+        f"Транзакции: {transaction_count}\n"
+        f"Чеки: {cheque_count}\n"
+        f"Логи: {log_count}\n\n"
+        f"**Активность:**\n"
+        f"За 24 часа: {activity_24h} действий от {unique_users_24h} уник. пользователей\n"
+        f"За 7 дней: {activity_7d} действий от {unique_users_7d} уник. пользователей\n\n"
+        f"**Топ-5 операций за неделю:**\n{top_operations_str}"
+    )
+
+    await message.answer(stats_message)
 
 
 @router.message(Command(commands=["exit"]))
@@ -121,7 +163,7 @@ async def cmd_fee(message: types.Message):
 #             if i > 140:
 #                 await message.answer(rec[1] + ' ' + str(i))
 #             await stellar_find_claim(rec[1], rec[0])
-#
+# 
 #         await message.answer('done')
 
 
