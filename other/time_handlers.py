@@ -206,16 +206,18 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
             .all
         )
 
+    if not operations:
+        return
+
     # 2. Подготовить сообщения и обновления
     messages_to_send = []
-    last_event_id_to_update = None
+    last_event_id_to_update = operations[-1].id
     wallet_to_delete = None
 
     for operation in operations:
         if operation.code1 == 'XLM' and float(operation.amount1) < 0.1:
             continue
 
-        last_event_id_to_update = operation.id
         try:
             message_text = decode_db_effect(operation, wallet.public_key, wallet.user_id)
             messages_to_send.append({'user_id': wallet.user_id, 'text': message_text})
