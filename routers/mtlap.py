@@ -9,9 +9,32 @@ from other.stellar_tools import stellar_get_data, cmd_gen_data_xdr, stellar_get_
     have_free_xlm
 
 
+RECOMMEND_PREFIX = "RecommendToMTLA"
+
+
+def _collect_recommendations(data):
+    recommendations = []
+    max_index = None
+    for key, value in data.items():
+        if key.startswith(RECOMMEND_PREFIX):
+            suffix = key[len(RECOMMEND_PREFIX):]
+            if not suffix:
+                index = 0
+            elif suffix.isdigit():
+                index = int(suffix)
+            else:
+                continue
+            recommendations.append((index, key, value))
+            if max_index is None or index > max_index:
+                max_index = index
+    recommendations.sort(key=lambda item: item[0])
+    return recommendations, max_index
+
+
 class MTLAPStateTools(StatesGroup):
     delegate_for_a = State()
     delegate_for_c = State()
+    recommend_for = State()
 
 
 router = Router()
@@ -28,10 +51,68 @@ async def cmd_mtlap_tools(callback: types.CallbackQuery, state: FSMContext, sess
                                     callback_data="MTLAPToolsDelegateA")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_mtlap_council'),
                                     callback_data="MTLAPToolsDelegateC")],
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_mtlap_recommend'),
+                                    callback_data="MTLAPToolsRecommend")],
         get_return_button(user_id)
     ]
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
+
+
+########################################################################################################################
+########################################################################################################################
+########################################################################################################################
+
+
+@router.callback_query(F.data == "MTLAPToolsRecommend")
+async def cmd_mtlap_tools_recommend(callback: types.CallbackQuery, state: FSMContext, session: Session):
+    data = await stellar_get_data(session, callback.from_user.id)
+    recommendations, _ = _collect_recommendations(data)
+
+    if recommendations:
+        existing = my_gettext(callback, 'recommend_count', (len(recommendations),))
+    else:
+        existing = my_gettext(callback, 'recommend_none')
+
+    msg = my_gettext(callback, 'recommend_prompt', (existing,))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await state.set_state(MTLAPStateTools.recommend_for)
+    await callback.answer()
+
+
+@router.message(MTLAPStateTools.recommend_for)
+async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, session: Session):
+    public_key = message.text.strip()
+    user_data = await stellar_get_data(session, message.from_user.id)
+    recommendations, max_index = _collect_recommendations(user_data)
+
+    if recommendations:
+        existing = my_gettext(message, 'recommend_count', (len(recommendations),))
+    else:
+        existing = my_gettext(message, 'recommend_none')
+
+    account = await stellar_check_account(public_key)
+    if not account:
+        msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'recommend_prompt', (existing,))
+        await send_message(session, message, msg, reply_markup=get_kb_return(message))
+        await message.delete()
+        return
+
+    if max_index is None:
+        new_key = RECOMMEND_PREFIX
+    else:
+        new_key = f"{RECOMMEND_PREFIX}{max_index + 1}"
+
+    delegate = account.account.account.account_id
+    xdr = await cmd_gen_data_xdr(
+        (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+        new_key,
+        delegate
+    )
+    await state.update_data(xdr=xdr)
+    confirm_msg = my_gettext(message, 'recommend_confirm', (delegate, new_key))
+    await send_message(session, message, confirm_msg, reply_markup=get_kb_yesno_send_xdr(message))
+    await message.delete()
 
 
 ########################################################################################################################
