@@ -2,6 +2,7 @@ import asyncio
 import html
 from asyncio import sleep
 from decimal import Decimal
+from sqlalchemy.orm import sessionmaker
 
 from aiogram import Router, types, F, Bot
 from aiogram.enums import ContentType
@@ -549,49 +550,136 @@ async def cmd_balance(message: types.Message, session: Session):
         await message.answer("У вас нет доступа к этой команде.")
 
 
+async def notify_admin(bot: Bot, text: str):
+    await bot.send_message(chat_id=global_data.admin_id, text=text)
+
+@safe_catch_async
+async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None = None,
+                              username: str | None = None, master_energy: EnergyObject | None = None) -> bool:
+    if user_id is None and username is None:
+        raise ValueError("user_id or username must be provided")
+
+    target_label = f"@{username}" if username else f"id:{user_id}"
+    usdt_key, balance = db_get_usdt_private_key(
+        session,
+        user_id if user_id is not None else 0,
+        create_trc_private_key,
+        user_name=username
+    )
+
+    await notify_admin(bot, f"[USDT] Start processing {target_label}. db_balance={balance}")
+    if balance <= 0:
+        await notify_admin(bot, f"[USDT] {target_label}: zero recorded balance, skipping")
+        return False
+
+    master_energy = master_energy or await get_account_energy()
+    trx_balance = Decimal(str(await get_trx_balance(private_key=usdt_key)))
+    min_trx_needed = Decimal('0.001')
+
+    if trx_balance < min_trx_needed:
+        await send_trx_async(private_key_to=usdt_key, amount=float(min_trx_needed), private_key_from=tron_master_key)
+        await notify_admin(bot, f"[USDT] {target_label}: topped up TRX")
+        await asyncio.sleep(3)
+
+    trx_balance = Decimal(str(await get_trx_balance(private_key=usdt_key)))
+    if trx_balance > Decimal('0.002'):
+        await send_trx_async(
+            private_key_to=tron_master_key,
+            amount=float(trx_balance - min_trx_needed),
+            private_key_from=usdt_key
+        )
+        await notify_admin(bot, f"[USDT] {target_label}: returned extra TRX")
+        await asyncio.sleep(1)
+
+    account_energy = await get_account_energy(private_key=usdt_key)
+    if account_energy.free_amount < 500:
+        await notify_admin(bot, f"[USDT] {target_label}: low free energy {account_energy.free_amount}")
+        return False
+
+    usdt_balance = Decimal(str(await get_usdt_balance(private_key=usdt_key)))
+    transfer_amount = usdt_balance - Decimal('0.001')
+    if transfer_amount <= 0:
+        await notify_admin(bot, f"[USDT] {target_label}: insufficient USDT for transfer ({usdt_balance})")
+        return False
+
+    delegated = False
+    try:
+        await delegate_energy(private_key_to=usdt_key, energy_object=master_energy)
+        delegated = True
+        send_success, tx_hash = await send_usdt_async(
+            private_key_to=tron_master_key,
+            amount=float(transfer_amount),
+            private_key_from=usdt_key
+        )
+        if send_success:
+            async with new_wallet_lock:
+                if user_id is not None:
+                    db_update_usdt_sum(session, user_id, -1 * balance)
+                else:
+                    db_update_usdt_sum(session, 0, -1 * balance, user_name=username)
+            await notify_admin(
+                bot,
+                f"[USDT] {target_label}: sent {transfer_amount} (tx: {tx_hash}) | db_balance={balance} trx_balance={trx_balance}"
+            )
+            return True
+        await notify_admin(bot, f"[USDT] {target_label}: sending failed (tx: {tx_hash})")
+        return False
+    finally:
+        if delegated:
+            await delegate_energy(private_key_to=usdt_key, energy_object=master_energy, undo=True)
+
+@safe_catch_async
+async def process_first_usdt_balance(session: Session, bot: Bot,
+                                     master_energy: EnergyObject | None = None) -> tuple[bool, str]:
+    balances = db_get_usdt_balances(session)
+    if not balances:
+        return False, "Список USDT-балансов пуст."
+
+    master_energy = master_energy or await get_account_energy()
+    if master_energy.energy_amount <= 130_000:
+        return False, f"Недостаточно энергии: {master_energy.energy_amount}"
+
+    username, amount, user_id = balances[0]
+    target_name = username if username else f"id:{user_id}"
+    success = await process_usdt_wallet(session, bot, user_id=user_id, username=username, master_energy=master_energy)
+    if success:
+        return True, f"Обработка {target_name} запущена (учтено {amount} USDT)."
+    return False, f"Не удалось обработать {target_name}."
+
+
 @router.message(Command(commands=["usdt"]))
 @safe_catch_async
-async def cmd_usdt_home(message: types.Message, session: Session, command: CommandObject):
-    if message.from_user.username == "itolstov" and len(command.args) > 0:
-        user_arg = command.args
-        try:
-            user_id = int(user_arg)
-            usdt_key, balance = db_get_usdt_private_key(session, user_id)
-        except ValueError:
-            usdt_key, balance = db_get_usdt_private_key(session, 0, user_name=user_arg)
-        await message.answer(f"Fount USDT: {balance}")
-        master_energy = await get_account_energy()
-        if await get_trx_balance(private_key=usdt_key) < Decimal('0.001'):
-            await send_trx_async(private_key_to=usdt_key, amount=0.001, private_key_from=tron_master_key)
-            await message.answer("Send TRX")
-            await asyncio.sleep(3)
-        
-        trx_balance = await get_trx_balance(private_key=usdt_key)
-        if trx_balance > 0.002:
-            await send_trx_async(private_key_to=tron_master_key, amount=float(trx_balance - Decimal('0.001')), private_key_from=usdt_key)
-            await message.answer('Take TRX')
-            await asyncio.sleep(1)
+async def cmd_usdt_home(message: types.Message, session: Session, command: CommandObject, bot: Bot):
+    if message.from_user.username != "itolstov":
+        await message.answer("У вас нет доступа к этой команде.")
+        return
 
-        account_energy = await get_account_energy(private_key=usdt_key)
-        if account_energy.free_amount < 500:
-            await message.answer(f"Low free energy: {account_energy.free_amount}")
-            return
+    if not command.args:
+        await message.answer("Нужно указать пользователя.")
+        return
 
-        usdt_balance = await get_usdt_balance(private_key=usdt_key)
-        await delegate_energy(private_key_to=usdt_key, energy_object=master_energy)
-        if await send_usdt_async(private_key_to=tron_master_key, amount=usdt_balance - 0.001, private_key_from=usdt_key):
-            async with new_wallet_lock:
-                if user_arg.isdigit():
-                    db_update_usdt_sum(session, int(user_arg), -1 * balance)
-                else:
-                    db_update_usdt_sum(session, 0, -1 * balance, user_name=user_arg)
-        await delegate_energy(private_key_to=usdt_key, energy_object=master_energy, undo=True)
+    user_arg = command.args.strip()
+    await message.answer("Старт обработки. Подробности пришлю в админ-чат.")
+    if user_arg.isdigit():
+        await process_usdt_wallet(session, bot, user_id=int(user_arg))
+    else:
+        await process_usdt_wallet(session, bot, username=user_arg)
 
-        await message.answer(f"Done! db_balance: {balance} usdt_balance: {usdt_balance} trx_balance: {trx_balance}")
+
+@router.message(Command(commands=["usdt1"]))
+@safe_catch_async
+async def cmd_usdt_auto(message: types.Message, session: Session, bot: Bot):
+    if message.from_user.username != "itolstov":
+        await message.answer("У вас нет доступа к этой команде.")
+        return
+
+    success, info = await process_first_usdt_balance(session, bot)
+    prefix = "✅" if success else "⚠️"
+    await message.answer(f"{prefix} {info}")
 
 
 @safe_catch_async
-async def usdt_worker(bot: Bot):
+async def usdt_worker(bot: Bot, session_pool: sessionmaker):
     last_energy = 0
     while True:
         try:
@@ -605,6 +693,8 @@ async def usdt_worker(bot: Bot):
                     chat_id=global_data.admin_id,
                     text=f'Energy Full: {current_energy}'
                 )
+                with session_pool.get_session() as session:
+                    await process_first_usdt_balance(session, bot)
 
             # Energy drained notification
             elif last_energy > 150_000 >= current_energy:
