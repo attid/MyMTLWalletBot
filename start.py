@@ -140,7 +140,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
             asyncio.create_task(cheque_worker(global_data.db_pool)),
             asyncio.create_task(log_worker(global_data.db_pool)),
             asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
-            asyncio.create_task(usdt_worker(bot))
+            asyncio.create_task(usdt_worker(bot,global_data.db_pool))
         ]
 
     # config.fest_menu = await load_fest_info()
