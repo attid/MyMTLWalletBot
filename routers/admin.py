@@ -27,6 +27,18 @@ router.message.filter(F.chat.type == "private")
 router.message.filter(F.chat.id.in_(config.admins))
 
 
+def _pin_label(use_pin: int) -> str:
+    if use_pin == 0:
+        return 'no pin'
+    if use_pin == 1:
+        return 'pin'
+    if use_pin == 2:
+        return 'password'
+    if use_pin == 10:
+        return 'read-only'
+    return 'unknown'
+
+
 @router.message(Command(commands=["stats"]))
 async def cmd_stats(message: types.Message, session: Session):
     user_count = session.query(MyMtlWalletBotUsers).count()
@@ -133,6 +145,111 @@ async def cmd_log(message: types.Message):
 @router.message(Command(commands=["fee"]))
 async def cmd_fee(message: types.Message):
     await message.answer("Комиссия (мин и мах) " + await async_stellar_check_fee())
+
+
+@router.message(Command(commands=["user_wallets"]))
+async def cmd_user_wallets(message: types.Message, session: Session):
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: /user_wallets @username_or_id")
+        return
+
+    target = args[1]
+    user_id = None
+    with suppress(ValueError):
+        user_id = int(target)
+    if user_id is None:
+        user_name = target.lstrip('@').lower()
+        user = session.query(MyMtlWalletBotUsers).filter(
+            MyMtlWalletBotUsers.user_name == user_name
+        ).one_or_none()
+        if user is None:
+            await message.answer("Пользователь не найден")
+            return
+        user_id = user.user_id
+
+    wallets = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id).all()
+    if not wallets:
+        await message.answer("Кошельки не найдены")
+        return
+
+    lines = []
+    for wallet in wallets:
+        labels = []
+        if wallet.default_wallet == 1:
+            labels.append("main")
+        if wallet.free_wallet == 1:
+            labels.append("free")
+        if wallet.need_delete == 1:
+            labels.append("deleted")
+        labels.append(_pin_label(wallet.use_pin or 0))
+        lines.append(f"{wallet.public_key} ({', '.join(labels)})")
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command(commands=["address_info"]))
+async def cmd_address_info(message: types.Message, session: Session):
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: /address_info address")
+        return
+
+    address = args[1]
+    wallet = session.query(MyMtlWalletBot, MyMtlWalletBotUsers).join(
+        MyMtlWalletBotUsers, MyMtlWalletBot.user_id == MyMtlWalletBotUsers.user_id, isouter=True
+    ).filter(MyMtlWalletBot.public_key == address).first()
+
+    if wallet is None:
+        await message.answer("Адрес не найден")
+        return
+
+    wallet_row, user_row = wallet
+    pin_label = _pin_label(wallet_row.use_pin or 0)
+    free_label = "free" if wallet_row.free_wallet == 1 else "paid"
+    delete_label = "deleted" if wallet_row.need_delete == 1 else "active"
+    username = user_row.user_name if user_row else None
+    username_line = f"username: @{username}" if username else "username: -"
+    await message.answer(
+        f"user_id: {wallet_row.user_id}\n"
+        f"{username_line}\n"
+        f"pin: {pin_label}\n"
+        f"wallet: {free_label}, {delete_label}"
+    )
+
+
+@router.message(Command(commands=["delete_address"]))
+async def cmd_delete_address(message: types.Message, session: Session):
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: /delete_address address")
+        return
+
+    address = args[1]
+    wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.public_key == address).one_or_none()
+    if wallet is None:
+        await message.answer("Адрес не найден")
+        return
+
+    if wallet.need_delete == 1:
+        await message.answer("Адрес уже помечен удалённым")
+        return
+
+    wallet.need_delete = 1
+    session.commit()
+    await message.answer("Адрес помечен удалённым")
+
+
+@router.message(Command(commands=["help"]))
+async def cmd_help(message: types.Message):
+    await message.answer(
+        "/stats — общая статистика\n"
+        "/fee — комиссия сети\n"
+        "/log | /err | /clear — логи/очистка\n"
+        "/horizon | /horizon_rw — переключить horizon\n"
+        "/user_wallets @user_or_id — кошельки пользователя\n"
+        "/address_info address — найти владельца адреса\n"
+        "/delete_address address — пометить адрес удалённым"
+    )
 
 
 # @router.message(Command(commands=["update"]))
