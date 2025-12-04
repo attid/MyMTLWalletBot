@@ -290,7 +290,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
     mtlap_stars = '⭐' * mtla_amount
     await state.update_data(mtlap_stars=mtlap_stars)
 
-    link = 'https://stellar.expert/explorer/public/account/' + address
+    link = 'https://viewer.eurmtl.me/account/' + address
 
     link = f'<a href="{link}">{address}</a>{mtlap_stars}'
     msg = my_gettext(message, 'choose_token', (link,))

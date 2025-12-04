@@ -144,7 +144,7 @@ USDT: {float2str(usdt_balance, True)}
 
     simple_account = user_account[:4] + '..' + user_account[-4:]
     info = get_wallet_info(session, user_id, user_account)
-    link = 'https://stellar.expert/explorer/public/account/' + user_account
+    link = 'https://viewer.eurmtl.me/account/' + user_account
     # a = await stellar_get_balance_str(user_id)
     msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
           f'{await stellar_get_balance_str(session, user_id, state=state)}'
