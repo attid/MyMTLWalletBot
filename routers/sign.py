@@ -232,7 +232,7 @@ async def sign_xdr(session: Session, state, user_id):
                     await state.update_data(try_sent_xdr=None)
                     link_msg = ''
                     if resp.paging_token:
-                        link_msg = f'\n(<a href="https://stellar.expert/explorer/public/tx/{resp.paging_token}">expert link</a>)'
+                        link_msg = f'\n(<a href="https://viewer.eurmtl.me/transaction/{resp.hash}">expert link</a>)'
 
                     msg = my_gettext(user_id, "send_good") + link_msg
 

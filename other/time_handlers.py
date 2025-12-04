@@ -262,10 +262,10 @@ def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
         user_id: ID пользователя для локализации сообщений
     """
     simple_account = operation.for_account[:4] + '..' + operation.for_account[-4:]
-    account_link = 'https://stellar.expert/explorer/public/account/' + operation.for_account
+    account_link = 'https://viewer.eurmtl.me/account/' + operation.for_account
     account_link = f'<a href="{account_link}">{simple_account}</a>'
 
-    op_link = f'<a href="https://stellar.expert/explorer/public/op/{operation.id.split("-")[0]}">expert link</a>'
+    op_link = f'<a href="https://viewer.eurmtl.me/operation/{operation.id.split("-")[0]}">expert link</a>'
     if operation.operation == 'trade':
         return my_gettext(user_id, 'info_trade',
                           (account_link, float2str(operation.amount1), operation.code1,
@@ -283,7 +283,7 @@ def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
             return f"You added DATA on {account_link}\n\n{op_link}\n\nData:\n\n{operation.code1}\n{operation.code2}"
         if operation.code2 == decode_for:
             simple_decode_for = decode_for[:4] + '..' + decode_for[-4:]
-            decode_for_link = 'https://stellar.expert/explorer/public/account/' + decode_for
+            decode_for_link = 'https://viewer.eurmtl.me/account/' + decode_for
             decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
             return f"{account_link} set your account {decode_for_link} on his DATA \n\n{op_link}\n\nData Name:\n\n{operation.code1}"
         logger.info(f"op type: {operation.operation}, from: {operation.for_account}, {operation.code1}/{operation.code2}")
