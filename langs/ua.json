@@ -199,5 +199,19 @@
   "your_balance": "баланс",
   "your_xdr": "Ваша транзакція для підпису:\n\n<code>{}</code>\n\n",
   "your_xdr_sign": "Ваша транзакція з підписом:\n\n<code>{}</code>\n\n",
-  "zero_sum": "Сума 0 =( \n буде недостатньо"
+  "zero_sum": "Сума 0 =( \n буде недостатньо",
+  "kb_hide_similar_messages": "Приховати схожі повідомлення",
+  "notification_settings_menu": "Налаштування фільтру сповіщень:",
+  "toggle_token_button": "Токен: {}",
+  "any_token": "Будь-який",
+  "change_amount_button": "Приховати, якщо сума < {}",
+  "toggle_wallets_button": "Для всіх гаманців: {}",
+  "yes": "Так",
+  "no": "Ні",
+  "save_button": "Зберегти",
+  "filter_saved": "Фільтр збережено!",
+  "kb_notification_settings": "Налаштування сповіщень",
+  "notification_settings_info": "У вас {} активних фільтрів сповіщень.",
+  "kb_delete_all_filters": "Видалити всі фільтри",
+  "all_filters_deleted": "Всі фільтри сповіщень було видалено."
 }

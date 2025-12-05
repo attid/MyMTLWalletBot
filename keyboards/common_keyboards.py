@@ -29,6 +29,17 @@ def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int],
     return keyboard
 
 
+def get_hide_notification_keyboard(user_id: int, operation_id: str,
+                                   public_key: str) -> types.InlineKeyboardMarkup:
+    buttons = [
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_hide_similar_messages'),
+                                    callback_data=f"hide_notification:{operation_id}:{public_key}")],
+        get_return_button(user_id)
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
+
 def get_kb_del_return(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 

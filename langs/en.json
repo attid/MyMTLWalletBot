@@ -217,5 +217,19 @@
   "wc_pairing_initiated": "Connecting to the dApp... You can return to the application to continue.",
   "wc_pairing_error": "An error occurred while trying to connect. Please try again.",
   "default_wallet_not_found": "Default wallet not found. Please set a default wallet in the settings.",
-  "wc_sign_success": "Transaction signed successfully and sent to the application."
+  "wc_sign_success": "Transaction signed successfully and sent to the application.",
+  "kb_hide_similar_messages": "Hide similar messages",
+  "notification_settings_menu": "Configure notification filter:",
+  "toggle_token_button": "Token: {}",
+  "any_token": "Any",
+  "change_amount_button": "Hide if amount < {}",
+  "toggle_wallets_button": "For all wallets: {}",
+  "yes": "Yes",
+  "no": "No",
+  "save_button": "Save",
+  "filter_saved": "Filter saved!",
+  "kb_notification_settings": "Notification Settings",
+  "notification_settings_info": "You have {} active notification filters.",
+  "kb_delete_all_filters": "Delete all filters",
+  "all_filters_deleted": "All notification filters have been deleted."
 }
