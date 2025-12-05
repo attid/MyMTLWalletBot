@@ -11,7 +11,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from db.requests import get_wallet_info, db_get_default_wallet
-from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
+from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
 from other.aiogram_tools import send_message, clear_state, clear_last_message_id
 from other.common_tools import get_user_id
 from other.global_data import global_data
@@ -70,6 +70,12 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
                 types.InlineKeyboardButton(text='🏛 ' + my_gettext(chat_id, 'kb_mtl_tools'), callback_data="MTLTools"),
                 types.InlineKeyboardButton(text='⚙️ ' + my_gettext(chat_id, 'kb_setting'),
                                            callback_data="WalletSetting")
+            ]
+        )
+        buttons.append(
+            [
+                types.InlineKeyboardButton(text='🔕 ' + my_gettext(chat_id, 'kb_notification_settings'),
+                                           callback_data="NotificationSettings")
             ]
         )
         buttons.append([types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
@@ -152,7 +158,8 @@ USDT: {float2str(usdt_balance, True)}
 
 
 async def cmd_info_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int],
-                           msg: str, send_file=None, resend_transaction=None):
+                           msg: str, send_file=None, resend_transaction=None, operation_id: str = None,
+                           public_key: str = None):
     user_id = get_user_id(user_id)
 
     if send_file:
@@ -169,6 +176,9 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
 
     elif resend_transaction:
         await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id))
+    elif operation_id:
+        keyboard = get_hide_notification_keyboard(user_id, operation_id, public_key)
+        await send_message(None, user_id, msg, reply_markup=keyboard)
     else:
         await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id))
 

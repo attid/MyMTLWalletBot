@@ -436,6 +436,10 @@ def get_wallet_info(session: Session, user_id: int, public_key: str) -> str:
     return info_text
 
 
+def db_get_operation(session: Session, operation_id: str) -> Optional[TOperations]:
+    return session.query(TOperations).filter(TOperations.id == operation_id).first()
+
+
 if __name__ == '__main__':
     pass
     print(db_get_usdt_private_key(quik_pool(), 1, user_name='itolstov'))
