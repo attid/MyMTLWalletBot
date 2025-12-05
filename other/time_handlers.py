@@ -9,7 +9,7 @@ from aiogram.fsm.storage.base import StorageKey
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 from sqlalchemy import and_, func, or_
-from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages, TLOperations
+from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages, TLOperations, NotificationFilter
 from db.db_pool import db_pool, DatabasePool
 from db.requests import db_delete_wallet, db_delete_wallet_async
 from routers.start_msg import cmd_info_message
@@ -220,7 +220,10 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
 
         try:
             message_text = decode_db_effect(operation, wallet.public_key, wallet.user_id)
-            messages_to_send.append({'user_id': wallet.user_id, 'text': message_text})
+            messages_to_send.append({'user_id': wallet.user_id, 'text': message_text,
+                                     'operation_id': operation.id, 'public_key': wallet.public_key,
+                                     'asset_code': operation.code1, 'amount': float(operation.amount1),
+                                     'operation_type': operation.operation})
         except Exception as ex:
             if "Bad Request: chat not found" in str(ex) or isinstance(ex, TelegramForbiddenError):
                 wallet_to_delete = {'user_id': wallet.user_id, 'public_key': wallet.public_key}
@@ -243,11 +246,29 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
     # 4. Отправить сообщения после завершения транзакции
     for msg in messages_to_send:
         try:
+            # Check for notification filters
+            with session_pool.get_session() as session:
+                user_filters = session.query(NotificationFilter).filter(
+                    NotificationFilter.user_id == msg['user_id']).all()
+
+            should_send = True
+            for f in user_filters:
+                if (f.public_key is None or f.public_key == msg.get('public_key')) and \
+                   (f.asset_code is None or f.asset_code == msg.get('asset_code')) and \
+                   f.min_amount > msg.get('amount') and \
+                   f.operation_type == msg.get('operation_type'):
+                    should_send = False
+                    break
+
+            if not should_send:
+                continue
+
             fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=msg['user_id'],
                                        chat_id=msg['user_id'])
             await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
-            await cmd_info_message(None, msg['user_id'], msg['text'])
-            await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+            await cmd_info_message(None, msg['user_id'], msg['text'],
+                                   operation_id=msg.get('operation_id'),
+                                   public_key=msg.get('public_key'))
             await asyncio.sleep(0.1)
         except Exception as e:
             logger.error(f"Failed to send message to {msg['user_id']}: {e}")
