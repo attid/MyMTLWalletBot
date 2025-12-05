@@ -97,9 +97,24 @@ async def toggle_wallets_callback(callback: types.CallbackQuery, state: FSMConte
 @router.callback_query(F.data == "save_filter")
 async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_data = await state.get_data()
+    user_id = callback.from_user.id
+
+    existing_filter = session.query(NotificationFilter).filter(
+        NotificationFilter.user_id == user_id,
+        NotificationFilter.public_key == (None if user_data.get('for_all_wallets') else user_data.get('public_key')),
+        NotificationFilter.asset_code == user_data.get('asset_code'),
+        NotificationFilter.min_amount == user_data.get('min_amount'),
+        NotificationFilter.operation_type == user_data.get('operation_type')
+    ).first()
+
+    if existing_filter:
+        await send_message(session, callback, my_gettext(user_id, 'filter_already_exists'),
+                           reply_markup=get_return_button(user_id))
+        await callback.answer()
+        return
 
     new_filter = NotificationFilter(
-        user_id=callback.from_user.id,
+        user_id=user_id,
         public_key=None if user_data.get('for_all_wallets') else user_data.get('public_key'),
         asset_code=user_data.get('asset_code'),
         min_amount=user_data.get('min_amount'),
@@ -110,8 +125,8 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
     session.commit()
 
     await state.clear()
-    await send_message(session, callback, my_gettext(callback.from_user.id, 'filter_saved'),
-                       reply_markup=get_return_button(callback.from_user.id))
+    await send_message(session, callback, my_gettext(user_id, 'filter_saved'),
+                       reply_markup=get_return_button(user_id))
     await callback.answer()
 
 

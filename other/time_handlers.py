@@ -248,18 +248,20 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
         try:
             # Check for notification filters
             with session_pool.get_session() as session:
-                filters = session.query(NotificationFilter).filter(
-                    NotificationFilter.user_id == msg['user_id'],
-                    or_(NotificationFilter.public_key == None,
-                        NotificationFilter.public_key == msg.get('public_key')),
-                    or_(NotificationFilter.asset_code == None,
-                        NotificationFilter.asset_code == msg.get('asset_code')),
-                    NotificationFilter.min_amount > msg.get('amount'),
-                    NotificationFilter.operation_type == msg.get('operation_type')
-                ).all()
+                user_filters = session.query(NotificationFilter).filter(
+                    NotificationFilter.user_id == msg['user_id']).all()
 
-                if filters:
-                    continue
+            should_send = True
+            for f in user_filters:
+                if (f.public_key is None or f.public_key == msg.get('public_key')) and \
+                   (f.asset_code is None or f.asset_code == msg.get('asset_code')) and \
+                   f.min_amount > msg.get('amount') and \
+                   f.operation_type == msg.get('operation_type'):
+                    should_send = False
+                    break
+
+            if not should_send:
+                continue
 
             fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=msg['user_id'],
                                        chat_id=msg['user_id'])
@@ -267,7 +269,6 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
             await cmd_info_message(None, msg['user_id'], msg['text'],
                                    operation_id=msg.get('operation_id'),
                                    public_key=msg.get('public_key'))
-            await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             await asyncio.sleep(0.1)
         except Exception as e:
             logger.error(f"Failed to send message to {msg['user_id']}: {e}")

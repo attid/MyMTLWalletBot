@@ -231,5 +231,6 @@
   "kb_notification_settings": "Настройки уведомлений",
   "notification_settings_info": "У вас {} активных фильтров уведомлений.",
   "kb_delete_all_filters": "Удалить все фильтры",
-  "all_filters_deleted": "Все фильтры уведомлений были удалены."
+  "all_filters_deleted": "Все фильтры уведомлений были удалены.",
+  "filter_already_exists": "Фильтр с такими же параметрами уже существует."
 }

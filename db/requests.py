@@ -436,7 +436,7 @@ def get_wallet_info(session: Session, user_id: int, public_key: str) -> str:
     return info_text
 
 
-async def db_get_operation(session: Session, operation_id: str) -> Optional[TOperations]:
+def db_get_operation(session: Session, operation_id: str) -> Optional[TOperations]:
     return session.query(TOperations).filter(TOperations.id == operation_id).first()
 
 

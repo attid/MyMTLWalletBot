@@ -11,7 +11,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from db.requests import get_wallet_info, db_get_default_wallet
-from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button
+from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
 from other.aiogram_tools import send_message, clear_state, clear_last_message_id
 from other.common_tools import get_user_id
 from other.global_data import global_data
@@ -177,7 +177,6 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
     elif resend_transaction:
         await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id))
     elif operation_id:
-        from keyboards.common_keyboards import get_hide_notification_keyboard
         keyboard = get_hide_notification_keyboard(user_id, operation_id, public_key)
         await send_message(None, user_id, msg, reply_markup=keyboard)
     else:
