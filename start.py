@@ -22,7 +22,7 @@ from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
-                     cheque, mtlap, fest, uri, ton)
+                     cheque, mtlap, fest, uri, ton, notification_settings)
 from routers import veche, wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
@@ -50,6 +50,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.include_router(cheque.router)  # first
     dp.include_router(uri.router) # first
     dp.include_router(wallet_setting.router)  # first
+    dp.include_router(notification_settings.router)  # first
 
     dp.include_router(fest.router)
     dp.include_router(sign.router)

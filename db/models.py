@@ -169,6 +169,17 @@ class TMessage(Base):
     button_json = Column(String(4000))
 
 
+class NotificationFilter(Base):
+    __tablename__ = 'NOTIFICATION_FILTERS'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey('MYMTLWALLETBOT_USERS.user_id'), nullable=False)
+    public_key = Column(String(60), nullable=True)
+    asset_code = Column(String(64), nullable=True)
+    min_amount = Column(Float, default=0, nullable=False)
+    operation_type = Column(String(32), nullable=False)
+
+
 def update_db():
     Base.metadata.create_all()
     #metadata.create_all(engine)
