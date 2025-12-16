@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from db.requests import db_get_operation
-from keyboards.common_keyboards import get_return_button, HideNotificationCallbackData
+from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
 from other.aiogram_tools import send_message
 from db.models import NotificationFilter, TOperations, MyMtlWalletBot
 from other.lang_tools import my_gettext
@@ -117,7 +117,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 
     if existing_filter:
         await send_message(session, callback, my_gettext(user_id, 'filter_already_exists'),
-                           reply_markup=get_return_button(user_id))
+                           reply_markup=get_kb_return(user_id))
         await callback.answer()
         return
 
@@ -134,7 +134,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 
     await state.clear()
     await send_message(session, callback, my_gettext(user_id, 'filter_saved'),
-                       reply_markup=get_return_button(user_id))
+                       reply_markup=get_kb_return(user_id))
     await callback.answer()
 
 
@@ -162,5 +162,5 @@ async def delete_all_filters_callback(callback: types.CallbackQuery, session: Se
     session.commit()
 
     await send_message(session, callback, my_gettext(user_id, 'all_filters_deleted'),
-                       reply_markup=get_return_button(user_id))
+                       reply_markup=get_kb_return(user_id))
     await callback.answer()
