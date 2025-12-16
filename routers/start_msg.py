@@ -144,7 +144,6 @@ USDT: {float2str(usdt_balance, True)}
 
 {warning_message}"""
 
-
     user_account = (await stellar_get_user_account(session, user_id)).account.account_id
     await state.update_data(use_ton=None)
 
@@ -159,7 +158,7 @@ USDT: {float2str(usdt_balance, True)}
 
 async def cmd_info_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int],
                            msg: str, send_file=None, resend_transaction=None, operation_id: str = None,
-                           public_key: str = None):
+                           public_key: str = None, wallet_id: int = None):
     user_id = get_user_id(user_id)
 
     if send_file:
@@ -177,7 +176,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
     elif resend_transaction:
         await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id))
     elif operation_id:
-        keyboard = get_hide_notification_keyboard(user_id, operation_id, public_key)
+        keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id)
         await send_message(None, user_id, msg, reply_markup=keyboard)
     else:
         await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id))

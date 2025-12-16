@@ -1,5 +1,6 @@
 from typing import Union
 from aiogram import types
+from aiogram.filters.callback_data import CallbackData
 from loguru import logger
 
 from other.common_tools import get_user_id
@@ -29,11 +30,19 @@ def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int],
     return keyboard
 
 
+class HideNotificationCallbackData(CallbackData, prefix="hide_notification"):
+    operation_id: str
+    wallet_id: int
+
+
 def get_hide_notification_keyboard(user_id: int, operation_id: str,
-                                   public_key: str) -> types.InlineKeyboardMarkup:
+                                   wallet_id: int) -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_hide_similar_messages'),
-                                    callback_data=f"hide_notification:{operation_id}:{public_key}")],
+                                    callback_data=HideNotificationCallbackData(
+                                        operation_id=operation_id,
+                                        wallet_id=wallet_id
+                                    ).pack())],
         get_return_button(user_id)
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -69,7 +78,8 @@ def get_kb_yesno_send_xdr(user_id: Union[types.CallbackQuery, types.Message, int
     return keyboard
 
 
-def get_kb_send(user_id: int, with_tools: bool = False, tool_name: str = 'eurmtl.me', can_send=True) -> types.InlineKeyboardMarkup:
+def get_kb_send(user_id: int, with_tools: bool = False, tool_name: str = 'eurmtl.me',
+                can_send=True) -> types.InlineKeyboardMarkup:
     buttons = []
 
     # Если есть колбек (tool_name == 'callback'), не показываем кнопку отправки в блокчейн
@@ -115,6 +125,7 @@ def get_kb_offers_cancel(user_id: int, data: dict) -> types.InlineKeyboardMarkup
     buttons.append(get_return_button(user_id))
 
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 def get_kb_swap_confirm(user_id: int, data: dict) -> types.InlineKeyboardMarkup:
     """
@@ -208,3 +219,8 @@ def _is_valid_telegram_url(url: str) -> bool:
         return True
     except Exception:
         return False
+
+
+class HideNotificationCallbackData(CallbackData, prefix="hide_notification"):
+    operation_id: str
+    wallet_id: int

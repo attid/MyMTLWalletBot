@@ -4,30 +4,32 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from db.requests import db_get_operation
-from keyboards.common_keyboards import get_return_button
+from keyboards.common_keyboards import get_return_button, HideNotificationCallbackData
 from other.aiogram_tools import send_message
-from db.models import NotificationFilter, TOperations
+from db.models import NotificationFilter, TOperations, MyMtlWalletBot
 from other.lang_tools import my_gettext
-
 
 router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-class NotificationSettings(StatesGroup):
-    settings = State()
-
-
-@router.callback_query(F.data.startswith("hide_notification:"))
+@router.callback_query(HideNotificationCallbackData.filter())
 async def hide_notification_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    _, operation_id, public_key = callback.data.split(":")
+    data = HideNotificationCallbackData.unpack(callback.data)
 
-    operation = await asyncio.to_thread(db_get_operation, session, operation_id)
+    wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.id == data.wallet_id).first()
+    if not wallet or wallet.user_id != callback.from_user.id:
+        await callback.answer("Wallet not found.", show_alert=True)
+        return
+
+    public_key = wallet.public_key
+
+    operation = await asyncio.to_thread(db_get_operation, session, data.operation_id)
     if not operation:
         await callback.answer("Operation details not found.", show_alert=True)
         return
 
-    await state.update_data(operation_id=operation_id, public_key=public_key,
+    await state.update_data(operation_id=data.operation_id, public_key=public_key,
                             asset_code=operation.code1, min_amount=float(operation.amount1),
                             operation_type=operation.operation, for_all_wallets=False)
 
@@ -41,10 +43,15 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
     text = my_gettext(user_id, 'notification_settings_menu')
 
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'toggle_token_button', (user_data.get('asset_code', my_gettext(user_id, 'any_token')),)), callback_data="toggle_token")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'change_amount_button', (user_data.get('min_amount', 0),)), callback_data="change_amount")],
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'toggle_token_button',
+                                                    (user_data.get('asset_code', my_gettext(user_id, 'any_token')),)),
+                                    callback_data="toggle_token")],
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'change_amount_button', (user_data.get('min_amount', 0),)),
+                                    callback_data="change_amount")],
         [types.InlineKeyboardButton(
-            text=my_gettext(user_id, 'toggle_wallets_button', (my_gettext(user_id, 'yes') if user_data.get('for_all_wallets') else my_gettext(user_id, 'no'),)),
+            text=my_gettext(user_id, 'toggle_wallets_button',
+                            (my_gettext(user_id, 'yes') if user_data.get('for_all_wallets') else my_gettext(user_id,
+                                                                                                            'no'),)),
             callback_data="toggle_wallets")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'save_button'), callback_data="save_filter")],
         get_return_button(user_id)
@@ -70,6 +77,7 @@ async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext
 
 
 amounts = [0, 1, 10, 100, 1000, 10000]
+
 
 @router.callback_query(F.data == "change_amount")
 async def change_amount_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
