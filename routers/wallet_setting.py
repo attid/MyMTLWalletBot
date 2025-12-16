@@ -100,6 +100,8 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_default'), callback_data="SetDefault")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_limit'), callback_data="SetLimit")],
+        [types.InlineKeyboardButton(text='🔕 ' + my_gettext(callback, 'kb_notification_settings'),
+                                    callback_data="NotificationSettings")],
         [types.InlineKeyboardButton(text='🌐 ' + my_gettext(callback, 'change_lang'), callback_data="ChangeLang")],
         # last button
         get_return_button(callback)

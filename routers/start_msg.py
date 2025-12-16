@@ -72,12 +72,6 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
                                            callback_data="WalletSetting")
             ]
         )
-        buttons.append(
-            [
-                types.InlineKeyboardButton(text='🔕 ' + my_gettext(chat_id, 'kb_notification_settings'),
-                                           callback_data="NotificationSettings")
-            ]
-        )
         buttons.append([types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
                                                    callback_data="ChangeWallet")])
         buttons.append([types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'),
