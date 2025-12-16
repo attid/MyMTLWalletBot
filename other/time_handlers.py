@@ -18,6 +18,7 @@ from other.lang_tools import my_gettext
 from other.loguru_tools import safe_catch_async
 from other.stellar_tools import float2str
 
+
 class TaskKilled(Exception):
     pass
 
@@ -114,6 +115,7 @@ def with_timeout(timeout, kill_on_timeout=False):
 
     return decorator
 
+
 @with_timeout(60)
 @safe_catch_async
 async def cmd_send_message_1m(session_pool, dp: Dispatcher):
@@ -144,7 +146,8 @@ async def cmd_send_message_1m(session_pool, dp: Dispatcher):
 async def fetch_addresses(session_pool, dp: Dispatcher):
     with session_pool.get_session() as session:
         # Запрос TLOperations для поиска аккаунтов с новыми операциями
-        tl_query = session.query(TLOperations.account, func.max(TLOperations.id).label('max_id'), MyMtlWalletBot.user_id) \
+        tl_query = session.query(TLOperations.account, func.max(TLOperations.id).label('max_id'),
+                                 MyMtlWalletBot.user_id) \
             .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TLOperations.account) \
             .filter(MyMtlWalletBot.need_delete == 0,
                     MyMtlWalletBot.user_id > 0,
@@ -190,15 +193,15 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
                     MyMtlWalletBot.public_key == tl_result.account)
             .first
         )
-        
+
         if not wallet:
             return
 
         operations = await asyncio.to_thread(
             session.query(TOperations)
             .filter(or_(TOperations.for_account == tl_result.account,
-                       TOperations.from_account == tl_result.account,
-                       TOperations.code2 == tl_result.account),
+                        TOperations.from_account == tl_result.account,
+                        TOperations.code2 == tl_result.account),
                     TOperations.id > wallet.last_event_id,
                     TOperations.dt > datetime.utcnow() - timedelta(minutes=30),
                     TOperations.arhived == None)
@@ -222,6 +225,7 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
             message_text = decode_db_effect(operation, wallet.public_key, wallet.user_id)
             messages_to_send.append({'user_id': wallet.user_id, 'text': message_text,
                                      'operation_id': operation.id, 'public_key': wallet.public_key,
+                                     'wallet_id': wallet.id,
                                      'asset_code': operation.code1, 'amount': float(operation.amount1),
                                      'operation_type': operation.operation})
         except Exception as ex:
@@ -254,9 +258,9 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
             should_send = True
             for f in user_filters:
                 if (f.public_key is None or f.public_key == msg.get('public_key')) and \
-                   (f.asset_code is None or f.asset_code == msg.get('asset_code')) and \
-                   f.min_amount > msg.get('amount') and \
-                   f.operation_type == msg.get('operation_type'):
+                        (f.asset_code is None or f.asset_code == msg.get('asset_code')) and \
+                        f.min_amount > msg.get('amount') and \
+                        f.operation_type == msg.get('operation_type'):
                     should_send = False
                     break
 
@@ -264,11 +268,12 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
                 continue
 
             fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=msg['user_id'],
-                                       chat_id=msg['user_id'])
+                                         chat_id=msg['user_id'])
             await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             await cmd_info_message(None, msg['user_id'], msg['text'],
                                    operation_id=msg.get('operation_id'),
-                                   public_key=msg.get('public_key'))
+                                   public_key=msg.get('public_key'),
+                                   wallet_id=msg.get('wallet_id'))
             await asyncio.sleep(0.1)
         except Exception as e:
             logger.error(f"Failed to send message to {msg['user_id']}: {e}")
@@ -307,7 +312,8 @@ def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
             decode_for_link = 'https://viewer.eurmtl.me/account/' + decode_for
             decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
             return f"{account_link} set your account {decode_for_link} on his DATA \n\n{op_link}\n\nData Name:\n\n{operation.code1}"
-        logger.info(f"op type: {operation.operation}, from: {operation.for_account}, {operation.code1}/{operation.code2}")
+        logger.info(
+            f"op type: {operation.operation}, from: {operation.for_account}, {operation.code1}/{operation.code2}")
     else:
         return f'new operation for {account_link} \n\n{op_link}'
 
