@@ -3,6 +3,7 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
+from loguru import logger
 from db.requests import db_get_operation
 from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
 from other.aiogram_tools import send_message
@@ -106,16 +107,36 @@ async def toggle_wallets_callback(callback: types.CallbackQuery, state: FSMConte
 async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_data = await state.get_data()
     user_id = callback.from_user.id
+    public_key = None if user_data.get('for_all_wallets') else user_data.get('public_key')
+
+    logger.info(
+        "save_filter attempt user_id={} public_key={} asset_code={} min_amount={} operation_type={} raw_data={}",
+        user_id,
+        public_key,
+        user_data.get('asset_code'),
+        user_data.get('min_amount'),
+        user_data.get('operation_type'),
+        user_data,
+    )
 
     existing_filter = session.query(NotificationFilter).filter(
         NotificationFilter.user_id == user_id,
-        NotificationFilter.public_key == (None if user_data.get('for_all_wallets') else user_data.get('public_key')),
+        NotificationFilter.public_key == public_key,
         NotificationFilter.asset_code == user_data.get('asset_code'),
         NotificationFilter.min_amount == user_data.get('min_amount'),
         NotificationFilter.operation_type == user_data.get('operation_type')
     ).first()
 
     if existing_filter:
+        logger.info(
+            "save_filter duplicate user_id={} filter_id={} public_key={} asset_code={} min_amount={} operation_type={}",
+            user_id,
+            existing_filter.id,
+            existing_filter.public_key,
+            existing_filter.asset_code,
+            existing_filter.min_amount,
+            existing_filter.operation_type,
+        )
         await send_message(session, callback, my_gettext(user_id, 'filter_already_exists'),
                            reply_markup=get_kb_return(user_id))
         await callback.answer()
@@ -123,7 +144,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 
     new_filter = NotificationFilter(
         user_id=user_id,
-        public_key=None if user_data.get('for_all_wallets') else user_data.get('public_key'),
+        public_key=public_key,
         asset_code=user_data.get('asset_code'),
         min_amount=user_data.get('min_amount'),
         operation_type=user_data.get('operation_type')
