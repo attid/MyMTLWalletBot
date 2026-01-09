@@ -28,7 +28,8 @@ from other.stellar_tools import (stellar_get_balances, stellar_add_trust, stella
                                  stellar_is_free_wallet, public_issuer, get_good_asset_list,
                                  stellar_pay, eurmtl_asset, float2str, stellar_get_user_keypair,
                                  stellar_change_password, stellar_unfree_wallet, have_free_xlm,
-                                 stellar_get_user_seed_phrase)
+                                 stellar_get_user_seed_phrase, stellar_close_asset,
+                                 stellar_has_asset_offers)
 from other.asset_visibility_tools import (
     get_asset_visibility, set_asset_visibility,
     ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN
@@ -343,11 +344,17 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
     if asset:
         await state.update_data(send_asset_code=asset[0].asset_code,
                                 send_asset_issuer=asset[0].asset_issuer)
-        # todo send last coins
-        xdr = await stellar_add_trust(
+        asset_obj = Asset(asset[0].asset_code, asset[0].asset_issuer)
+        if await stellar_has_asset_offers(session, callback.from_user.id, asset_obj):
+            await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers'),
+                               reply_markup=get_kb_return(callback))
+            await callback.answer()
+            return
+
+        xdr = await stellar_close_asset(
             (await stellar_get_user_account(session, callback.from_user.id)).account.account_id,
-            Asset(asset[0].asset_code, asset[0].asset_issuer),
-            delete=True)
+            asset_obj,
+            asset[0].balance)
 
         msg = my_gettext(callback, 'confirm_close_asset', (asset[0].asset_code, asset[0].asset_issuer))
         await state.update_data(xdr=xdr)

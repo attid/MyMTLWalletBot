@@ -263,6 +263,43 @@ async def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete
     return xdr
 
 
+async def stellar_close_asset(user_key: str, asset: Asset, amount, xdr: str = None):
+    if xdr:
+        transaction = stellar_get_transaction_builder(xdr)
+    else:
+        async with ServerAsync(
+                horizon_url=config.horizon_url, client=AiohttpClient()
+        ) as server:
+            source_account = await server.load_account(user_key)
+            transaction = TransactionBuilder(source_account=source_account,
+                                             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
+            transaction.set_timeout(60 * 60)
+
+    amount_value = None
+    if isinstance(amount, str) and amount == 'unlimited':
+        amount_value = None
+    else:
+        try:
+            amount_value = my_float(amount)
+        except Exception:
+            amount_value = None
+
+    if amount_value is not None and amount_value > 0 and asset.issuer:
+        transaction.append_payment_op(
+            destination=asset.issuer,
+            amount=float2str(amount_value),
+            asset=asset,
+            source=user_key
+        )
+
+    transaction.append_change_trust_op(asset, limit='0', source=user_key)
+    transaction = transaction.build()
+
+    xdr = transaction.to_xdr()
+    logger.info(f"new xdr: {xdr}")
+    return xdr
+
+
 def stellar_sign(xdr: str, private_key: str):
     transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     transaction.sign(private_key)
@@ -853,6 +890,16 @@ async def stellar_get_offers(session: Session, user_id: int, public_key=None) ->
                 offer.buying.asset_code = "XLM"
 
         return offers.embedded.records
+
+
+async def stellar_has_asset_offers(session: Session, user_id: int, asset: Asset) -> bool:
+    offers = await stellar_get_offers(session, user_id)
+    for offer in offers:
+        if offer.selling and offer.selling.asset_code == asset.code and offer.selling.asset_issuer == asset.issuer:
+            return True
+        if offer.buying and offer.buying.asset_code == asset.code and offer.buying.asset_issuer == asset.issuer:
+            return True
+    return False
 
 
 def stellar_change_password(session: Session, user_id: int, old_password: str, new_password: str,
