@@ -17,7 +17,7 @@ from other.mytypes import MyAccount
 from other.stellar_tools import base_fee, decode_data_value, stellar_get_user_account
 from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
-from other.aiogram_tools import send_message, clear_last_message_id
+from other.aiogram_tools import send_message, clear_last_message_id, clear_state
 
 #if typing.TYPE_CHECKING:
 #    from aiogram.types import CallbackQuery, Message
@@ -375,6 +375,7 @@ async def process_tags(message: "Message", state: "FSMContext", session: "Sessio
 @bsn_router.message(Command("bsn", ignore_case=True))
 async def bsn_mode_command(message: "Message", state: "FSMContext", command: "CommandObject", session: "Session",
                            **kwargs) -> None:
+    await clear_state(state)
     tags = await bsn_stellar_get_data(session, message.from_user.id)
     if command.args:
         tag = command.args
