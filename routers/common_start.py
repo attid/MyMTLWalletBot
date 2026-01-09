@@ -149,6 +149,7 @@ async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: S
 
 @router.message(Command(commands=["donate"]))
 async def cmd_donate_message(message: types.Message, state: FSMContext, session: Session):
+    await clear_state(state)
     await cmd_donate(session, message.from_user.id, state)
 
 

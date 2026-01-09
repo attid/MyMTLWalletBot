@@ -18,7 +18,7 @@ from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_
 from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
-from other.aiogram_tools import send_message
+from other.aiogram_tools import send_message, clear_state
 from other.common_tools import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
@@ -57,6 +57,7 @@ class ChequeQuery:
 async def cmd_create_cheque(
         update: Union[CallbackQuery, Message], state: FSMContext, session: Session
 ):
+    await clear_state(state)
     if isinstance(update, Message):
         await update.delete()
     msg = my_gettext(update, 'send_cheque_sum')
@@ -299,7 +300,7 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
 @router.message(Command(commands=["start"]), F.text.contains("cheque_"))
 @router.message(Command(commands=["start"]), F.text.contains("invoice_"))
 async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session):
-    # await clear_state(state)
+    await clear_state(state)
 
     # check address
     await state.update_data(last_message_id=0)
@@ -450,6 +451,7 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
 
 @router.message(Command(commands=["cheques"]))
 async def cmd_cheques(message: types.Message, state: FSMContext, session: Session):
+    await clear_state(state)
     # Получение списка доступных чеков
     cheques = db_get_available_cheques(session, message.from_user.id)
 
