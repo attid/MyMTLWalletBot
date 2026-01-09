@@ -33,6 +33,7 @@
   "confirm_asset": " \n Do you want to open trust line to {} {} ?",
   "confirm_cancel_offers": "\nThis operation will also cancel all sale offers for {}",
   "confirm_close_asset": " \n Do you want to close the trust line to {} {} ?",
+  "close_asset_has_offers": "You have open offers for this asset. Close them first.",
   "confirm_sale": " \n Do you want to sell {} {} \n for {} {} ?",
   "confirm_send": " \n You want to send \n{} <b>{}</b> \nto the address \n{} \nwith memo : {}",
   "confirm_send_mini": "Signing the operation from address {}\n\nAll blockchain operations require a signature. At this moment, the transaction is formed, and by pressing the button, you will sign it.",
