@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from db.requests import db_get_user_account_by_username
 from routers.send import cmd_send_04, cmd_send_choose_token
 from routers.sign import cmd_check_xdr
-from other.aiogram_tools import clear_last_message_id
+from other.aiogram_tools import clear_last_message_id, clear_state
 from other.gpt import gpt_check_message
 from other.stellar_tools import find_stellar_addresses, find_stellar_federation_address, stellar_check_account, \
     extract_url, is_base64, is_valid_stellar_address
@@ -28,6 +28,7 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
     # Check for 'eurmtl.me/sign_tools' in text or entities
     has_sign_tools_link = 'eurmtl.me/sign_tools' in text or any('eurmtl.me/sign_tools' in entity.url for entity in entities if entity.type == 'url')
     if has_sign_tools_link or (len(text) > 60 and is_base64(text)):
+        await clear_state(state)
         await clear_last_message_id(message.from_user.id)
         xdr_to_check = extract_url(text) if has_sign_tools_link else text
         await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
