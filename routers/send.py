@@ -507,6 +507,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
 
                 await cmd_send_04(session, message, state)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
+                await clear_state(state)
                 # Process transaction URI
                 result = await process_transaction_stellar_uri(
                     qr_data,
