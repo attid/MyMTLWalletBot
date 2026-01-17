@@ -436,14 +436,24 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
 
     # Step 2: Check if the asset from the cheque is in the balance
     cheque_asset_code, cheque_asset_issuer = cheque.cheque_asset.split(':')
-    asset_list = await stellar_get_balances(session, callback.from_user.id, asset_filter=cheque.cheque_asset)
+    
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config as app_config
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=app_config.horizon_url)
+    balance_use_case = GetWalletBalance(repo, service)
+    all_balances = await balance_use_case.execute(user_id=callback.from_user.id)
+    asset_list = [b for b in all_balances if b.asset_code == cheque_asset_code]
     if not asset_list:
         # If the cheque asset is not in the balance list, add the trust line
         user_key = await stellar_get_user_account(session, callback.from_user.id)
         xdr = await stellar_add_trust(user_key.account.account_id, Asset(cheque_asset_code, cheque_asset_issuer))
-    asset_list = await stellar_get_balances(session, callback.from_user.id, asset_filter=eurmtl_asset.code)
-    if asset_list:
-        max_eurmtl = asset_list[0].balance
+    eurmtl_balances = [b for b in all_balances if b.asset_code == eurmtl_asset.code]
+    if eurmtl_balances:
+        max_eurmtl = eurmtl_balances[0].balance
     else:
         max_eurmtl = 0
 

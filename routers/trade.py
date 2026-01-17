@@ -67,7 +67,18 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
         return
 
     msg = my_gettext(callback, 'choose_token_sale')
-    asset_list = await stellar_get_balances(session, callback.from_user.id)
+    
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+    asset_list = await use_case.execute(user_id=callback.from_user.id)
+    
     wallet = db_get_default_wallet(session, callback.from_user.id)
     vis_str = getattr(wallet, "assets_visibility", None)
     asset_list = [a for a in asset_list if get_asset_visibility(vis_str, a.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY)]
