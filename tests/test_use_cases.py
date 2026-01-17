@@ -12,7 +12,7 @@ async def test_get_wallet_balance_success():
     
     # Mock Data
     user_id = 123
-    wallet = Wallet(id=1, user_id=user_id, public_key="GKEY", is_default=True, is_free=True)
+    wallet = Wallet(id=1, user_id=user_id, public_key="GKEY", is_default=True, is_free=False)
     mock_wallet_repo.get_default_wallet.return_value = wallet
     
     # Mock Account Details

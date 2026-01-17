@@ -14,6 +14,7 @@ from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_bu
 from other.common_tools import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
+from other.web_tools import get_web_request, get_web_decoded_xdr
 
 
 async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
@@ -130,27 +131,4 @@ async def clear_last_message_id(chat_id: int):
     await set_last_message_id(chat_id, 0)
 
 
-async def get_web_request(method, url, json=None, headers=None, data=None, return_type=None):
-    async with aiohttp.ClientSession() as web_session:
-        if method.upper() == 'POST':
-            request_coroutine = web_session.post(url, json=json, headers=headers, data=data)
-        elif method.upper() == 'GET':
-            request_coroutine = web_session.get(url, headers=headers, params=data)
-        else:
-            raise ValueError("Неизвестный метод запроса")
 
-        async with request_coroutine as response:
-            content_type = response.headers.get('Content-Type', '')
-            if 'application/json' in content_type or return_type == 'json':
-                return response.status, await response.json()
-            else:
-                return response.status, await response.text()
-
-
-async def get_web_decoded_xdr(xdr):
-    status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
-    if status == 200:
-        msg = response_json['text']
-    else:
-        msg = "Ошибка запроса"
-    return msg

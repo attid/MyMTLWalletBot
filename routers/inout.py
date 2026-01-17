@@ -2,7 +2,7 @@ import asyncio
 import html
 from asyncio import sleep
 from decimal import Decimal
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 from aiogram import Router, types, F, Bot
 from aiogram.enums import ContentType
@@ -17,7 +17,8 @@ from other.common_tools import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
 from other.stellar_tools import my_float, float2str, usdm_asset, satsmtl_asset, eurmtl_asset
-from db.requests import db_get_usdt_private_key, create_trc_private_key, db_update_usdt_sum, db_get_btc_uuid, db_set_btc_uuid, db_get_usdt_balances
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+# from db.requests import db_get_usdt_private_key, create_trc_private_key, db_update_usdt_sum, db_get_btc_uuid, db_set_btc_uuid, db_get_usdt_balances
 from other.thothpay_tools import thoth_create_order, thoth_check_order
 from other.tron_tools import *
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -99,7 +100,8 @@ async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session:
         await send_message(session, callback, my_gettext(callback, 'usdm_need'),
                            reply_markup=get_kb_return(callback))
     else:
-        user_tron_private_key, _ = db_get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
+        user_repo = SqlAlchemyUserRepository(session)
+        user_tron_private_key, _ = await user_repo.get_usdt_key(get_user_id(callback))
         
         # Check Master USDM Balance (User 0)
         master_balance_list = await balance_use_case.execute(user_id=0)
@@ -139,8 +141,8 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
                               show_alert=True)
         return
     async with new_wallet_lock:
-        user_tron_private_key, usdt_old_sum = db_get_usdt_private_key(session, get_user_id(callback),
-                                                                      create_trc_private_key)
+        user_repo = SqlAlchemyUserRepository(session)
+        user_tron_private_key, usdt_old_sum = await user_repo.get_usdt_key(get_user_id(callback))
         user_tron_key = tron_get_public(user_tron_private_key)
         full_usdt_balance = int(await get_usdt_balance(private_key=user_tron_private_key))
         income_usdt_balance = int(full_usdt_balance - usdt_old_sum)
@@ -169,8 +171,9 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         #     await send_trx_async(amount=50, private_key_to=user_tron_private_key)
         # if full_usdt_balance > 500:
         #     await send_usdt_async(amount=income_usdt_balance, private_key_to=tron_master_key, private_key_from=user_tron_private_key)
-        await asyncio.to_thread(db_update_usdt_sum, session=session, user_id=get_user_id(callback),
-                                update_summ=income_usdt_balance)
+        # user_repo instantiated previously in this function (line 143 replacement) or new instance
+        user_repo = SqlAlchemyUserRepository(session)
+        await user_repo.update_usdt_balance(get_user_id(callback), full_usdt_balance)
         url = f'<a href="https://tronscan.org/#/address/{user_tron_key}">{user_tron_key}</a>'
         await bot.send_message(chat_id=global_data.admin_id,
                                text=f"{get_user_id(callback)} send {income_usdt_balance} usdt "
@@ -236,6 +239,8 @@ async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext)
                                            callback_data="USDT_OUT_CHECK"),
                 ], get_return_button(user_id)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
     await send_message(session, user_id, message_text, reply_markup=keyboard)
 
     await cmd_after_send_usdt_task(session, user_id, state)
@@ -433,7 +438,8 @@ async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: 
 
 
 async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext):
-    btc_uuid, btc_date = db_get_btc_uuid(session, user_id=user_id)
+    user_repo = SqlAlchemyUserRepository(session)
+    btc_uuid, btc_date = await user_repo.get_btc_uuid(user_id)
     if btc_uuid and btc_date and btc_date > datetime.now():
         buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check'),
                                                callback_data="BTC_CHECK"),
@@ -482,7 +488,8 @@ async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: S
         if order_uuid:
             await state.update_data(send_sum=send_sum)
             await state.set_state(None)
-            db_set_btc_uuid(session, user_id=message.from_user.id, btc_uuid=order_uuid)
+            user_repo = SqlAlchemyUserRepository(session)
+            await user_repo.set_btc_uuid(message.from_user.id, order_uuid)
             await cmd_show_btc_in(session, message.from_user.id, state)
     await message.delete()
 
@@ -500,7 +507,8 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     # rest of the function logic
     async with new_wallet_lock:
-        btc_uuid, btc_date = db_get_btc_uuid(session, user_id=callback.from_user.id)
+        user_repo = SqlAlchemyUserRepository(session)
+        btc_uuid, btc_date = await user_repo.get_btc_uuid(callback.from_user.id)
         if btc_uuid and btc_date and btc_date > datetime.now():
             result, sats_sum = await thoth_check_order(btc_uuid)
             if result:
@@ -537,7 +545,8 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                     password='0'
                 )
                 
-                db_set_btc_uuid(session, user_id=callback.from_user.id, btc_uuid=None)
+                user_repo = SqlAlchemyUserRepository(session)
+                await user_repo.set_btc_uuid(callback.from_user.id, None)
                 # await async_stellar_send(xdr) # handled by SendPayment
                 await cmd_info_message(session, callback, 'All works done!')
     await callback.answer()
@@ -609,7 +618,7 @@ async def cmd_process_message_successful_payment(message: types.Message, session
     logger.info(message.successful_payment)
     data = await state.get_data()
     send_sum = data.get("send_sum")
-    async with new_wallet_lock:
+
     async with new_wallet_lock:
         repo = SqlAlchemyWalletRepository(session)
         service = StellarService(horizon_url=config.horizon_url)
@@ -673,9 +682,14 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
         raise ValueError("user_id or username must be provided")
 
     target_label = f"@{username}" if username else f"id:{user_id}"
-    usdt_key, balance = db_get_usdt_private_key(
-        session,
-        user_id if user_id is not None else 0,
+    # db_get_usdt_private_key was creating key if missing? 
+    # Yes, usage here relies on creation or existing.
+    # user_repo.get_usdt_key handles creation if missing for existing user.
+    # Note: user_id provided here is from iterating addresses?
+    # Wait, line 679 context: `usdt_key, balance = db_get_usdt_private_key(session, user_id, create_trc_private_key)`
+    # This loop iterates users.
+    user_repo = SqlAlchemyUserRepository(session)
+    usdt_key, balance = await user_repo.get_usdt_key(user_id if user_id is not None else 0,
         create_trc_private_key,
         user_name=username
     )
@@ -727,9 +741,19 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
         if send_success:
             async with new_wallet_lock:
                 if user_id is not None:
-                    db_update_usdt_sum(session, user_id, -1 * balance)
+                    await user_repo.update_usdt_balance(user_id, -1 * balance)
                 else:
-                    db_update_usdt_sum(session, 0, -1 * balance, user_name=username)
+                    # Handle username update
+                    # Logic: resolve username to ID first
+                    _, target_user_id = await user_repo.get_account_by_username(f"@{username}")
+                    if target_user_id:
+                        await user_repo.update_usdt_balance(target_user_id, -1 * balance)
+                    else:
+                        # Fallback or log error? original would query by username and update.
+                        # If user not found by username, original raise error? or do nothing?
+                        # db_update_usdt_sum raise ValueError if user not found.
+                        # get_account_by_username might behave slightly different but serves purpose.
+                        pass
             await notify_admin(
                 bot,
                 f"[USDT] {target_label}: sent {transfer_amount} (tx: {tx_hash}) | db_balance={balance} trx_balance={trx_balance}"

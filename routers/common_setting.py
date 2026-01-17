@@ -10,8 +10,8 @@ from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSetting
 from other.aiogram_tools import send_message, my_gettext, clear_state
 from other.global_data import global_data
 from other.lang_tools import change_user_lang
-from other.stellar_tools import db_set_default_wallets, \
-    stellar_get_balance_str
+from other.stellar_tools import stellar_get_balance_str
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 
 
 class LangCallbackData(CallbackData, prefix="lang_"):
@@ -78,11 +78,11 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
             await state.update_data(idx=idx)
             await cmd_confirm_delete(session, user_id, state)
         if answer == 'SET_ACTIVE':
-            db_set_default_wallets(session, user_id, wallets[idx])
+            wallet_repo = SqlAlchemyWalletRepository(session)
+            await wallet_repo.set_default_wallet(user_id, wallets[idx])
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'NAME':
             try:
-                from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
                 wallet_repo = SqlAlchemyWalletRepository(session)
                 info = await wallet_repo.get_info(user_id, wallets[idx])
                 msg = f"{wallets[idx]} {info}\n" + my_gettext(callback,

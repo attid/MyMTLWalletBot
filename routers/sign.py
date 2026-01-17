@@ -219,7 +219,7 @@ async def sign_xdr(session: Session, state, user_id):
                 fsm_func = jsonpickle.loads(fsm_func)
                 await fsm_func(session, user_id, state)
             else:
-                xdr = stellar_user_sign(session, xdr, user_id, str(pin))
+                xdr = await stellar_user_sign(session, xdr, user_id, str(pin))
                 await state.set_state(None)
                 await state.update_data(xdr=xdr)
                 if current_state == PinState.sign_and_send:

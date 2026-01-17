@@ -11,7 +11,9 @@ from loguru import logger
 from sqlalchemy import and_, func, or_
 from db.models import TOperations, MyMtlWalletBot, MyMtlWalletBotMessages, TLOperations, NotificationFilter
 from db.db_pool import db_pool, DatabasePool
-from db.requests import db_delete_wallet, db_delete_wallet_async
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.persistence.sqlalchemy_message_repository import SqlAlchemyMessageRepository
+from infrastructure.persistence.sqlalchemy_notification_repository import SqlAlchemyNotificationRepository
 from routers.start_msg import cmd_info_message
 from other.global_data import global_data
 from other.lang_tools import my_gettext
@@ -120,25 +122,21 @@ def with_timeout(timeout, kill_on_timeout=False):
 @safe_catch_async
 async def cmd_send_message_1m(session_pool, dp: Dispatcher):
     with session_pool.get_session() as session:
-        messages = session.query(MyMtlWalletBotMessages).filter(MyMtlWalletBotMessages.was_send == 0).limit(10)
+    with session_pool.get_session() as session:
+        msg_repo = SqlAlchemyMessageRepository(session)
+        # Using repo unsent messages
+        messages = await msg_repo.get_unsent(10)
         for message in messages:
             try:
                 await cmd_info_message(session, message.user_id, message.user_message, None)
             except Exception as ex:
                 if session.query(MyMtlWalletBotMessages).filter_by(message_id=message.message_id).first():
-                    session.query(MyMtlWalletBotMessages).filter(
-                        MyMtlWalletBotMessages.message_id == message.message_id).update(
-                        {MyMtlWalletBotMessages.was_send: 2})
-                session.commit()
+                    await msg_repo.mark_failed(message.message_id)
                 logger.info(['cmd_send_message_1m', ex])
             fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=message.user_id, chat_id=message.user_id)
             await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
-            # await dp.bot.send_message(record[3], record[1], disable_web_page_preview=True)
-
-            session.query(MyMtlWalletBotMessages).filter(
-                and_(MyMtlWalletBotMessages.message_id == message.message_id)).update(
-                {MyMtlWalletBotMessages.was_send: 1})
-            session.commit()
+            
+            await msg_repo.mark_sent(message.message_id)
 
 
 @with_timeout(60)
@@ -243,7 +241,8 @@ async def handle_address(tl_result, session_pool, dp: Dispatcher):
             )
 
         if wallet_to_delete:
-            await db_delete_wallet_async(session=session, **wallet_to_delete)
+            wallet_repo = SqlAlchemyWalletRepository(session)
+            await wallet_repo.delete(user_id=wallet_to_delete['user_id'], public_key=wallet_to_delete['public_key'])
 
         session.commit()
 

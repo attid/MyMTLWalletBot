@@ -170,5 +170,32 @@ async def main():
 #         return 'An error occurred during the request.'
 
 
+
+async def get_web_request(method, url, json=None, headers=None, data=None, return_type=None):
+    async with aiohttp.ClientSession() as web_session:
+        if method.upper() == 'POST':
+            request_coroutine = web_session.post(url, json=json, headers=headers, data=data)
+        elif method.upper() == 'GET':
+            request_coroutine = web_session.get(url, headers=headers, params=data)
+        else:
+            raise ValueError("Неизвестный метод запроса")
+
+        async with request_coroutine as response:
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/json' in content_type or return_type == 'json':
+                return response.status, await response.json()
+            else:
+                return response.status, await response.text()
+
+
+async def get_web_decoded_xdr(xdr):
+    status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
+    if status == 200:
+        msg = response_json['text']
+    else:
+        msg = "Ошибка запроса"
+    return msg
+
+
 if __name__ == "__main__":
     asyncio.run(main())
