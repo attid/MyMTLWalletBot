@@ -28,7 +28,8 @@ from routers.bsn import bsn_router
 from loguru import logger
 from other.faststream_tools import start_broker, stop_broker
 from other.global_data import global_data
-from other.time_handlers import events_worker, scheduler_jobs
+from infrastructure.monitoring.blockchain_monitor import events_worker
+from infrastructure.scheduler.job_scheduler import scheduler_jobs
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html

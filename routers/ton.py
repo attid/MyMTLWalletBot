@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_kb_return
 from middleware.throttling import rate_limit
-from other.aiogram_tools import send_message, clear_state, get_user_id
+from infrastructure.utils.telegram_utils import send_message, clear_state
+from infrastructure.utils.common_utils import get_user_id
 from services.ton_service import TonService
 
 

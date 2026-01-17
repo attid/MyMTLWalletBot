@@ -6,7 +6,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.send import cmd_send_04
-from other.aiogram_tools import send_message, long_line
+from infrastructure.utils.telegram_utils import send_message, long_line
 from other.lang_tools import my_gettext
 from other.stellar_tools import *
 

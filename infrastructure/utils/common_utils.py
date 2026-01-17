@@ -1,6 +1,6 @@
 from typing import Union
 from aiogram import types
-import cv2  # opencv-python
+import cv2
 from pyzbar.pyzbar import decode
 from PIL import Image
 
@@ -12,8 +12,25 @@ def get_user_id(user_id: Union[types.CallbackQuery, types.Message, int]) -> int:
         user_id = user_id.from_user.id
     else:
         user_id = user_id
-
     return user_id
+
+
+def float2str(f, short: bool = False) -> str:
+    if isinstance(f, str):
+        if f == 'unlimited':
+            return f
+        f = float(f)
+    if short and f > 0.01:
+        s = "%.2f" % f
+    else:
+        s = "%.8f" % f
+        s = s[:-1]
+    while len(s) > 1 and s[-1] in ('0', '.'):
+        l = s[-1]
+        s = s[0:-1]
+        if l == '.':
+            break
+    return s
 
 
 def decode_qr_code_cv(image_path):
@@ -46,7 +63,3 @@ def decode_qr_code(image_path):
         return None
     else:
         return result
-
-
-if __name__ == '__main__':
-    pass

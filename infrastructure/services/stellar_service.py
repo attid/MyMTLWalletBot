@@ -308,3 +308,45 @@ class StellarService(IStellarService):
             transaction.append_change_trust_op(asset)
             
         return transaction.build().to_xdr()
+
+    async def find_strict_send_path(
+        self,
+        source_asset: Asset,
+        source_amount: str,
+        destination_asset: Asset
+    ) -> List[Asset]:
+        # Implementation adapted from stellar_tools.py
+        # Logic: find paths, parse them, return the first valid path of assets
+        
+        # Mapping domain Asset to SDK Asset helper
+        def to_sdk_asset(a: Asset):
+            if a.code == "XLM": return SdkAsset.native()
+            return SdkAsset(a.code, a.issuer)
+            
+        from stellar_sdk import Asset as SdkAsset
+        
+        try:
+            async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+                call_result = await server.strict_send_paths(
+                    source_asset=to_sdk_asset(source_asset),
+                    source_amount=source_amount,
+                    destination=[to_sdk_asset(destination_asset)]
+                ).call()
+                
+                records = call_result.get('_embedded', {}).get('records', [])
+                if not records:
+                    return []
+                
+                # Take first path
+                path_record = records[0].get('path', [])
+                result = []
+                for record in path_record:
+                    if record['asset_type'] == 'native':
+                        result.append(Asset("XLM", None))
+                    else:
+                        result.append(Asset(record['asset_code'], record['asset_issuer']))
+                return result
+        except Exception as e:
+            # logger not imported, silent fail or print
+            print(f"Error extracting path: {e}")
+            return []

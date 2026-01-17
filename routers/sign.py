@@ -15,7 +15,7 @@ from sulguk import SULGUK_PARSE_MODE
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from other.aiogram_tools import (my_gettext, send_message, cmd_show_sign, long_line,
+from infrastructure.utils.telegram_utils import (my_gettext, send_message, cmd_show_sign, long_line,
                                  get_web_request, get_web_decoded_xdr)
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from other.global_data import global_data, LogQuery, StateSign

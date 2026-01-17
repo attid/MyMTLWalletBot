@@ -5,7 +5,7 @@ from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from loguru import logger
 from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
-from other.aiogram_tools import send_message
+from infrastructure.utils.telegram_utils import send_message
 from db.models import NotificationFilter
 from other.lang_tools import my_gettext
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository

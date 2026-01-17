@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk import Network, TransactionBuilder
 
-from other.aiogram_tools import my_gettext, send_message, clear_state, clear_last_message_id
+from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_state, clear_last_message_id
 from other.stellar_tools import (
     stellar_user_sign, stellar_get_user_account, process_uri_with_replace,
     parse_transaction_stellar_uri, process_transaction_stellar_uri

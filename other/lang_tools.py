@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from other.config_reader import start_path
 from db.models import MyMtlWalletBotUsers
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-from other.common_tools import get_user_id
+from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 
 for file in listdir(f"{start_path}/langs/"):

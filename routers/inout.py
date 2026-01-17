@@ -12,11 +12,12 @@ from aiogram.fsm.state import StatesGroup, State
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from other.loguru_tools import safe_catch_async
 from routers.start_msg import cmd_info_message
-from other.aiogram_tools import send_message, clear_last_message_id
-from other.common_tools import get_user_id
+from infrastructure.utils.telegram_utils import send_message, clear_last_message_id
+from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.stellar_tools import my_float, float2str, usdm_asset, satsmtl_asset, eurmtl_asset
+from other.stellar_tools import my_float, usdm_asset, satsmtl_asset, eurmtl_asset
+from infrastructure.utils.common_utils import float2str
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 # from db.requests import db_get_usdt_private_key, create_trc_private_key, db_update_usdt_sum, db_get_btc_uuid, db_set_btc_uuid, db_get_usdt_balances
 from other.thothpay_tools import thoth_create_order, thoth_check_order

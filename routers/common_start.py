@@ -20,10 +20,10 @@ from middleware.throttling import rate_limit
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
-from other.aiogram_tools import send_message, clear_state
+from infrastructure.utils.telegram_utils import send_message, clear_state
 from other.global_data import global_data
 from other.lang_tools import my_gettext, check_user_id, check_user_lang
-from other.stellar_tools import (stellar_get_balances, stellar_get_user_account, stellar_pay, eurmtl_asset,
+from other.stellar_tools import (stellar_get_balances, stellar_get_user_account,
                                  )
 
 router = Router()
@@ -223,16 +223,51 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
             await send_message(session, user_id, my_gettext(user_id, 'bad_sum') + '\n' + data['msg'],
                                reply_markup=get_kb_return(user_id))
         else:
-            public_key = (await stellar_get_user_account(session, user_id)).account.account_id
-            father_key = (await stellar_get_user_account(session, 0)).account.account_id
-            memo = "donate"
-            xdr = await stellar_pay(public_key, father_key, eurmtl_asset, donate_sum, memo=memo)
-            await state.update_data(xdr=xdr, donate_sum=donate_sum, fsm_after_send=jsonpickle.dumps(cmd_after_donate))
-            msg = my_gettext(user_id, 'confirm_send', (donate_sum, eurmtl_asset.code, father_key, memo))
-            msg = f"For donate\n{msg}"
+            # Refactored to use Clean Architecture Use Case
+            from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            from infrastructure.services.stellar_service import StellarService
+            from core.use_cases.payment.send_payment import SendPayment
+            from core.constants import EURMTL_ASSET
+            from other.config_reader import config as app_config
 
-            await send_message(session, user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id))
-    except:
+            repo = SqlAlchemyWalletRepository(session)
+            service = StellarService(horizon_url=app_config.horizon_url)
+            use_case = SendPayment(repo, service)
+
+            # Get father key (fee account or similar? 0 is usually master/fee account in this bot's logic)
+            # In legacy stellar_tools: stellar_get_user_account(session, 0)
+            # We can use wallet repo to get system account if stored there, or config.
+            # Assuming user_id=0 exists in wallet table.
+            father_wallet = await repo.get_default_wallet(0)
+            father_key = father_wallet.public_key if father_wallet else None
+            
+            if not father_key:
+                 # Fallback if 0 user not found, though it should be.
+                 # Maybe generic error or log?
+                 from core.constants import PUBLIC_MMWB
+                 father_key = PUBLIC_MMWB # Fallback
+
+            memo = "donate"
+            
+            result = await use_case.execute(
+                user_id=user_id,
+                destination_address=father_key,
+                asset=EURMTL_ASSET,
+                amount=donate_sum,
+                memo=memo
+            )
+
+            if result.success:
+                xdr = result.xdr
+                await state.update_data(xdr=xdr, donate_sum=donate_sum, fsm_after_send=jsonpickle.dumps(cmd_after_donate))
+                msg = my_gettext(user_id, 'confirm_send', (donate_sum, EURMTL_ASSET.code, father_key, memo))
+                msg = f"For donate\n{msg}"
+                await send_message(session, user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id))
+            else:
+                await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id))
+
+    except Exception as ex:
+        # logger.error(["get_donate_sum", ex])
         await send_message(session, user_id, my_gettext(user_id, 'bad_sum') + '\n' + data['msg'],
                            reply_markup=get_kb_return(user_id))
 

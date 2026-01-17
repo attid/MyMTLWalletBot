@@ -3,7 +3,7 @@ from aiogram import types
 from aiogram.filters.callback_data import CallbackData
 from loguru import logger
 
-from other.common_tools import get_user_id
+from infrastructure.utils.common_utils import get_user_id
 from other.lang_tools import my_gettext
 
 

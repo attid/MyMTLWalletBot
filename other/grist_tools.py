@@ -231,7 +231,7 @@ if __name__ == '__main__':
     asyncio.run(main())
 
 # import asyncio
-# from other.aiogram_tools import get_web_request
+# from infrastructure.utils.telegram_utils import get_web_request
 # from other.config_reader import config
 #
 #

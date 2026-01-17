@@ -9,7 +9,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_kb_return
-from other.aiogram_tools import send_message, clear_last_message_id
+from infrastructure.utils.telegram_utils import send_message, clear_last_message_id
 from other.config_reader import config
 from faststream import FastStream
 

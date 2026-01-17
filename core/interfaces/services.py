@@ -110,6 +110,16 @@ class IStellarService(ABC):
         """Build a transaction with multiple operations."""
         pass
 
+    @abstractmethod
+    async def find_strict_send_path(
+        self,
+        source_asset: Asset,
+        source_amount: str,
+        destination_asset: Asset
+    ) -> List[Asset]:
+        """Find a strict send payment path."""
+        pass
+
 
 class IEncryptionService(ABC):
     @abstractmethod

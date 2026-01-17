@@ -13,7 +13,7 @@ from stellar_sdk import Keypair
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
-from other.aiogram_tools import send_message, my_gettext
+from infrastructure.utils.telegram_utils import send_message, my_gettext
 # from other.stellar_tools import stellar_create_new, stellar_save_new, stellar_save_ro, async_stellar_send, new_wallet_lock
 from other.locks import new_wallet_lock
 from other.config_reader import config

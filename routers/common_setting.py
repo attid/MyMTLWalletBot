@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
-from other.aiogram_tools import send_message, my_gettext, clear_state
+from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state
 from other.global_data import global_data
 from other.lang_tools import change_user_lang
 from other.stellar_tools import stellar_get_balance_str
