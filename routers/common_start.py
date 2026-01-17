@@ -8,8 +8,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from db.requests import db_add_donate, \
-    db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
+from sqlalchemy.orm import Session
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from core.use_cases.user.register import RegisterUser
+from core.use_cases.user.update_profile import UpdateUserProfile
+from core.use_cases.user.manage_user import AddDonation 
+# from db.requests import db_add_donate, db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
 from middleware.throttling import rate_limit
 from routers.common_setting import cmd_language
@@ -203,7 +208,10 @@ async def cmd_after_donate(session: Session, user_id: int, state: FSMContext):
     donate_sum = data.get('donate_sum')
     await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
-    await db_add_donate(session, user_id, donate_sum)
+    
+    user_repo = SqlAlchemyUserRepository(session)
+    add_donation = AddDonation(user_repo)
+    await add_donation.execute(user_id, donate_sum)
 
 
 async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContext):
@@ -243,7 +251,8 @@ async def cmd_donate_sum(message: types.Message, state: FSMContext, session: Ses
 
 @router.message(Command(commands=["delete_all"]))
 async def cmd_delete_all(message: types.Message, state: FSMContext, session: Session):
-    # db_delete_all_by_user(session, message.from_user.id)
+    # Legacy delete all commented out
+    # If implemented, use DeleteUser use case
     await send_message(session, message.from_user.id, 'All was delete, restart please')
     await state.clear()
 
@@ -251,7 +260,7 @@ async def cmd_delete_all(message: types.Message, state: FSMContext, session: Ses
 @router.callback_query(F.data == "SetDefault")
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(SettingState.send_default_address)
-    from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+    # user_repo imported at top or here? Imported at top now.
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(callback.from_user.id)
     default_addr = user.default_address if user else None
@@ -263,7 +272,6 @@ async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, sessi
 @router.callback_query(F.data == "SetLimit")
 @router.callback_query(F.data == "OffLimits")
 async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
     user_repo = SqlAlchemyUserRepository(session)
     db_user = await user_repo.get_by_id(callback.from_user.id)
     if callback.data == 'OffLimits' and db_user:
@@ -280,8 +288,6 @@ async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session
 async def cmd_set_default(message: types.Message, state: FSMContext, session: Session):
     address = message.text
     try:
-        # Refactored to use GetWalletBalance Use Case
-        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
         from infrastructure.services.stellar_service import StellarService
         from core.use_cases.wallet.get_balance import GetWalletBalance
         from other.config_reader import config as app_config
@@ -289,22 +295,15 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
         service = StellarService(horizon_url=app_config.horizon_url)
         balance_use_case = GetWalletBalance(repo, service)
         await balance_use_case.execute(user_id=message.from_user.id, public_key=address)
-        # Update default address via user repository
-        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        # Update default address via UpdateUserProfile Use Case
         user_repo = SqlAlchemyUserRepository(session)
-        user = await user_repo.get_by_id(message.from_user.id)
-        if user:
-            user.default_address = address
-            await user_repo.update(user)
+        update_profile = UpdateUserProfile(user_repo)
+        await update_profile.execute(user_id=message.from_user.id, default_address=address)
     except:
-        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
         user_repo = SqlAlchemyUserRepository(session)
-        user = await user_repo.get_by_id(message.from_user.id)
-        if user:
-            user.default_address = ''
-            await user_repo.update(user)
+        update_profile = UpdateUserProfile(user_repo)
+        await update_profile.execute(user_id=message.from_user.id, default_address='')
     
-    from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(message.from_user.id)
     default_addr = user.default_address if user else None
@@ -317,7 +316,6 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "Refresh")
 async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = SqlAlchemyWalletRepository(session)
     await repo.reset_balance_cache(callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
@@ -336,7 +334,9 @@ async def check_update_username(session: Session, user_id: int, user_name: str, 
     data = await state.get_data()
     state_user_name = data.get('user_name', '')
     if user_name != state_user_name:
-        db_update_username(session, user_id, user_name)
+        user_repo = SqlAlchemyUserRepository(session)
+        update_profile = UpdateUserProfile(user_repo)
+        await update_profile.execute(user_id=user_id, username=user_name)
         await state.update_data(user_name=user_name)
 
 

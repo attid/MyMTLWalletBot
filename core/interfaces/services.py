@@ -69,6 +69,22 @@ class IStellarService(ABC):
         """Build a manage offer transaction."""
         pass
 
+    @abstractmethod
+    async def build_change_trust_transaction(
+        self,
+        source_account_id: str,
+        asset_code: str,
+        asset_issuer: str,
+        limit: Optional[str] = None
+    ) -> str:
+        """Build a change trust transaction."""
+        pass
+    
+    @abstractmethod
+    def sign_transaction(self, xdr: str, secret_key: str) -> str:
+        """Sign a transaction XDR with a secret key."""
+        pass
+
 
 class IWalletSecretService(ABC):
     """Interface for secure wallet secret access.

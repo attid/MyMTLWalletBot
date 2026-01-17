@@ -35,6 +35,17 @@ class IUserRepository(ABC):
         """Search users by partial username match. Returns list of usernames."""
         pass
 
+    @abstractmethod
+    async def update_donate_sum(self, user_id: int, amount: float) -> None:
+        """Add to the user's donation sum."""
+        pass
+
+    @abstractmethod
+    async def delete(self, user_id: int) -> None:
+        """Delete a user."""
+        pass
+
+
 class IWalletRepository(ABC):
     @abstractmethod
     async def get_by_user_id(self, user_id: int) -> List[Wallet]:
@@ -44,6 +55,11 @@ class IWalletRepository(ABC):
     @abstractmethod
     async def get_all_active(self, user_id: int) -> List[Wallet]:
         """Retrieve all active (non-deleted) wallets for a user."""
+        pass
+    
+    @abstractmethod
+    async def count_free_wallets(self, user_id: int) -> int:
+        """Count the number of active free wallets for a user."""
         pass
 
     @abstractmethod
@@ -65,10 +81,20 @@ class IWalletRepository(ABC):
     async def update(self, wallet: Wallet) -> Wallet:
         """Update an existing wallet."""
         pass
+    
+    @abstractmethod
+    async def set_default_wallet(self, user_id: int, public_key: str) -> bool:
+        """Set a wallet as default for the user."""
+        pass
 
     @abstractmethod
     async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: int = None) -> None:
         """Delete or soft-delete a wallet."""
+        pass
+    
+    @abstractmethod
+    async def delete_all_by_user(self, user_id: int) -> None:
+        """Delete (soft-delete) all wallets for a user."""
         pass
 
     @abstractmethod

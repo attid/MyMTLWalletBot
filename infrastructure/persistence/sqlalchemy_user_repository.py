@@ -88,6 +88,24 @@ class SqlAlchemyUserRepository(IUserRepository):
         result = self.session.execute(stmt)
         return [row[0] for row in result.all()]
 
+    async def update_donate_sum(self, user_id: int, amount: float) -> None:
+        """Add to the user's donation sum."""
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        db_user = result.scalar_one_or_none()
+        if db_user:
+            db_user.donate_sum += amount
+            self.session.flush()
+
+    async def delete(self, user_id: int) -> None:
+        """Delete a user."""
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        db_user = result.scalar_one_or_none()
+        if db_user:
+            self.session.delete(db_user)
+            self.session.flush()
+
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:
         return User(
             id=db_user.user_id,

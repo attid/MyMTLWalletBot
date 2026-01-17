@@ -242,3 +242,38 @@ class StellarService(IStellarService):
         )
         
         return transaction.build().to_xdr()
+
+    def sign_transaction(self, xdr: str, secret_key: str) -> str:
+        from stellar_sdk import TransactionEnvelope, Network, Keypair
+        transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        kp = Keypair.from_secret(secret_key)
+        transaction.sign(kp)
+        return transaction.to_xdr()
+
+    async def build_change_trust_transaction(
+        self,
+        source_account_id: str,
+        asset_code: str,
+        asset_issuer: str,
+        limit: Optional[str] = None
+    ) -> str:
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+             source_account = await server.load_account(source_account_id)
+        
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
+        
+        transaction = TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=10000
+        )
+        transaction.set_timeout(180)
+
+        asset = SdkAsset(asset_code, asset_issuer)
+        
+        if limit:
+            transaction.append_change_trust_op(asset, limit=limit)
+        else:
+            transaction.append_change_trust_op(asset)
+            
+        return transaction.build().to_xdr()

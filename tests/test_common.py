@@ -68,7 +68,7 @@ async def test_cb_set_limit(mock_session, mock_callback, mock_state):
     mock_user.language = "en"
     mock_user.default_address = None
     
-    with patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockRepo, \
+    with patch("routers.common_start.SqlAlchemyUserRepository") as MockRepo, \
          patch("routers.common_start.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.common_start.my_gettext", return_value="text"), \
          patch("other.lang_tools.global_data") as mock_gd, \
