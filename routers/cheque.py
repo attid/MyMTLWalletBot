@@ -12,8 +12,6 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
 from db.models import ChequeStatus
-from db.requests import db_add_cheque, db_get_cheque, \
-    db_get_available_cheques, db_get_cheque_receive_count, db_add_cheque_history
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
@@ -30,6 +28,63 @@ from other.stellar_tools import (my_float, float2str, stellar_pay, stellar_get_u
 router = Router()
 router.message.filter(F.chat.type == "private")
 cheque_public = 'GCYTGJ4VFRWYULX746TAOF4V6RYCEWG3TJ42JMG3GMJF7BJ44VVX6OUT'
+
+# Wrapper functions for gradual migration to repository pattern
+def _get_cheque_repo(session):
+    from infrastructure.persistence.sqlalchemy_cheque_repository import SqlAlchemyChequeRepository
+    return SqlAlchemyChequeRepository(session)
+
+async def db_get_cheque(session, cheque_uuid, user_id=None):
+    repo = _get_cheque_repo(session)
+    cheque = await repo.get_by_uuid(cheque_uuid, user_id)
+    if cheque:
+        # Return db model for backward compatibility
+        from db.models import MyMtlWalletBotCheque
+        from sqlalchemy.future import select
+        stmt = select(MyMtlWalletBotCheque).where(MyMtlWalletBotCheque.cheque_uuid == cheque_uuid)
+        if user_id:
+            stmt = stmt.where(MyMtlWalletBotCheque.user_id == user_id)
+        result = session.execute(stmt)
+        return result.scalar_one_or_none()
+    return None
+
+async def db_add_cheque(session, send_uuid, send_sum, send_count, user_id, send_comment):
+    repo = _get_cheque_repo(session)
+    await repo.create(send_uuid, send_sum, send_count, user_id, send_comment)
+    # Return db model for backward compatibility
+    return await db_get_cheque(session, send_uuid)
+
+async def db_get_cheque_receive_count(session, cheque_uuid, user_id=None):
+    repo = _get_cheque_repo(session)
+    return await repo.get_receive_count(cheque_uuid, user_id)
+
+async def db_get_available_cheques(session, user_id):
+    repo = _get_cheque_repo(session)
+    cheques = await repo.get_available(user_id)
+    # Return db models for backward compatibility
+    from db.models import MyMtlWalletBotCheque
+    from sqlalchemy.future import select
+    from db.models import ChequeStatus
+    from db.models import MyMtlWalletBotChequeHistory
+    from sqlalchemy import func
+    return session.query(
+        MyMtlWalletBotCheque
+    ).outerjoin(
+        MyMtlWalletBotChequeHistory,
+        MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id
+    ).group_by(
+        MyMtlWalletBotCheque
+    ).having(
+        func.count(MyMtlWalletBotChequeHistory.cheque_id) < MyMtlWalletBotCheque.cheque_count
+    ).filter(
+        MyMtlWalletBotCheque.user_id == user_id,
+        MyMtlWalletBotCheque.cheque_status != ChequeStatus.CANCELED.value
+    ).all()
+
+async def db_add_cheque_history(session, user_id, cheque_id):
+    repo = _get_cheque_repo(session)
+    await repo.add_history(cheque_id, user_id)
+
 
 
 class StateCheque(StatesGroup):
@@ -213,9 +268,9 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext):
     send_count = data.get("send_count", 1)
     send_comment = data.get("send_comment", '')
     send_uuid = data.get("send_uuid", '')
-    cheque = db_get_cheque(session, send_uuid)
+    cheque = await db_get_cheque(session, send_uuid)
     if cheque is None:
-        cheque = db_add_cheque(session, send_uuid, send_sum, send_count, user_id, send_comment)
+        cheque = await db_add_cheque(session, send_uuid, send_sum, send_count, user_id, send_comment)
     await state.update_data(last_message_id=0)
     #  "send_cheque_resend": "You have cheque {} with sum {} EURMTL for {} users, total sum {} with comment \"{}\" you can send link {} or press button to send"
     link = f'https://t.me/{(await global_data.bot.me()).username}?start=cheque_{send_uuid}'
@@ -246,12 +301,12 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
                           session: Session):
     cmd = callback_data.cmd
     cheque_uuid = callback_data.uuid
-    cheque = db_get_cheque(session, cheque_uuid, callback.from_user.id)
+    cheque = await db_get_cheque(session, cheque_uuid, callback.from_user.id)
     if cheque.cheque_status == 1:
         await callback.answer('Cheque was already cancelled', show_alert=True)
         return
     total_count = cheque.cheque_count
-    receive_count = db_get_cheque_receive_count(session, cheque_uuid)
+    receive_count = await db_get_cheque_receive_count(session, cheque_uuid)
     if cmd == 'info':
         await callback.answer(f'Cheque was received {receive_count} from {total_count}', show_alert=True)
     elif cmd == 'cancel':
@@ -264,10 +319,10 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
 
 
 async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, state: FSMContext):
-    cheque = db_get_cheque(session, cheque_uuid, user_id)
+    cheque = await db_get_cheque(session, cheque_uuid, user_id)
     cheque.cheque_status = 1
     total_count = cheque.cheque_count
-    receive_count = db_get_cheque_receive_count(session, cheque_uuid)
+    receive_count = await db_get_cheque_receive_count(session, cheque_uuid)
     cheque_pay = cheque.cheque_amount
     
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -292,7 +347,7 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
 async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
     results = []
     # all exist cheques
-    data = db_get_available_cheques(session, inline_query.from_user.id)
+    data = await db_get_available_cheques(session, inline_query.from_user.id)
 
     bot_name = (await global_data.bot.me()).username
     for record in data:
@@ -341,9 +396,9 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
     await state.update_data(cheque_uuid=cheque_uuid)
     user_id = message.from_user.id
 
-    cheque = db_get_cheque(session, cheque_uuid)
-    if not cheque or db_get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
-            or db_get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
+    cheque = await db_get_cheque(session, cheque_uuid)
+    if not cheque or await db_get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
+            or await db_get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
         await send_message(session, user_id, my_gettext(user_id, 'bad_cheque'), reply_markup=get_kb_return(user_id))
         return
 
@@ -377,13 +432,13 @@ async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: Se
 
 async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMContext, cheque_uuid: str,
                                      username: str):
-    cheque = db_get_cheque(session, cheque_uuid)
-    if not cheque or db_get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
-            or db_get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
+    cheque = await db_get_cheque(session, cheque_uuid)
+    if not cheque or await db_get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
+            or await db_get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
         await send_message(session, user_id, my_gettext(user_id, 'bad_cheque'), reply_markup=get_kb_return(user_id))
         return
 
-    db_add_cheque_history(session, user_id, cheque.cheque_id)
+    await db_add_cheque_history(session, user_id, cheque.cheque_id)
 
     xdr = None
     was_new = db_is_new_user(session, user_id)
@@ -441,9 +496,9 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
     user_id = callback.from_user.id
     xdr = None
 
-    cheque = db_get_cheque(session, cheque_uuid)
-    if not cheque or db_get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
-            or db_get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
+    cheque = await db_get_cheque(session, cheque_uuid)
+    if not cheque or await db_get_cheque_receive_count(session, cheque_uuid, user_id) > 0 \
+            or await db_get_cheque_receive_count(session, cheque_uuid) >= cheque.cheque_count:
         await callback.answer(my_gettext(user_id, 'bad_cheque'))
         return
 
@@ -500,7 +555,7 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
 async def cmd_cheques(message: types.Message, state: FSMContext, session: Session):
     await clear_state(state)
     # Получение списка доступных чеков
-    cheques = db_get_available_cheques(session, message.from_user.id)
+    cheques = await db_get_available_cheques(session, message.from_user.id)
 
     # Перебор чеков и их отправка
     for cheque in cheques:
