@@ -6,7 +6,7 @@ from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_wallet
+
 from keyboards.common_keyboards import get_kb_return
 from middleware.throttling import rate_limit
 from other.aiogram_tools import send_message, clear_state, get_user_id
@@ -86,11 +86,14 @@ async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext,
     amount = data.get('amount')
     user_id = callback.from_user.id
 
-    wallet = db_get_default_wallet(session=session, user_id=user_id)
-    if wallet.secret_key == 'TON':
+    from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
+    secret_service = SqlAlchemyWalletSecretService(session)
+    
+    if await secret_service.is_ton_wallet(user_id):
         try:
+            mnemonic = await secret_service.get_ton_mnemonic(user_id)
             ton_service = TonService()
-            ton_service.from_mnemonic(wallet.seed_key)
+            ton_service.from_mnemonic(mnemonic)
 
             await send_message(session, user_id, "Sending transaction...")
 
@@ -171,11 +174,14 @@ async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMCon
     amount = data.get('amount')
     user_id = callback.from_user.id
 
-    wallet = db_get_default_wallet(session=session, user_id=user_id)
-    if wallet.secret_key == 'TON':
+    from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
+    secret_service = SqlAlchemyWalletSecretService(session)
+    
+    if await secret_service.is_ton_wallet(user_id):
         try:
+            mnemonic = await secret_service.get_ton_mnemonic(user_id)
             ton_service = TonService()
-            ton_service.from_mnemonic(wallet.seed_key)
+            ton_service.from_mnemonic(mnemonic)
 
             await send_message(session, user_id, "Sending transaction...")
 

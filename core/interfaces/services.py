@@ -68,3 +68,32 @@ class IStellarService(ABC):
     ) -> str:
         """Build a manage offer transaction."""
         pass
+
+
+class IWalletSecretService(ABC):
+    """Interface for secure wallet secret access.
+    
+    This service provides access to sensitive wallet data that should not
+    be part of the domain entity for security reasons.
+    """
+    
+    @abstractmethod
+    async def get_wallet_type(self, user_id: int) -> Optional[str]:
+        """
+        Get the wallet type identifier.
+        Returns 'TON' for TON wallets, or the secret_key identifier for Stellar.
+        """
+        pass
+    
+    @abstractmethod
+    async def get_ton_mnemonic(self, user_id: int) -> Optional[str]:
+        """
+        Get the TON wallet mnemonic (seed_key) for the user's default wallet.
+        Returns None if not a TON wallet.
+        """
+        pass
+    
+    @abstractmethod
+    async def is_ton_wallet(self, user_id: int) -> bool:
+        """Check if the user's default wallet is a TON wallet."""
+        pass
