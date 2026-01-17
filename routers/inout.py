@@ -16,9 +16,16 @@ from other.aiogram_tools import send_message, clear_last_message_id
 from other.common_tools import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.stellar_tools import *
+from other.stellar_tools import my_float, float2str, usdm_asset, satsmtl_asset, eurmtl_asset
+from db.requests import db_get_usdt_private_key, create_trc_private_key, db_update_usdt_sum, db_get_btc_uuid, db_set_btc_uuid, db_get_usdt_balances
 from other.thothpay_tools import thoth_create_order, thoth_check_order
 from other.tron_tools import *
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.services.stellar_service import StellarService
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from core.use_cases.payment.send_payment import SendPayment
+from core.domain.value_objects import Asset as DomainAsset
+from other.config_reader import config
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -82,13 +89,22 @@ async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session):
 
 @router.callback_query(F.data == "USDT_IN")
 async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    asset_list = await stellar_get_balances(session, callback.from_user.id, asset_filter='USDM')
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    balance_use_case = GetWalletBalance(repo, service)
+    asset_list = await balance_use_case.execute(user_id=callback.from_user.id)
+    # Filter for USDM
+    asset_list = [b for b in asset_list if b.asset_code == 'USDM']
     if not asset_list:
         await send_message(session, callback, my_gettext(callback, 'usdm_need'),
                            reply_markup=get_kb_return(callback))
     else:
         user_tron_private_key, _ = db_get_usdt_private_key(session, get_user_id(callback), create_trc_private_key)
-        usdm_sum = float((await stellar_get_balances(session, 0, asset_filter='USDM'))[0].balance)
+        
+        # Check Master USDM Balance (User 0)
+        master_balance_list = await balance_use_case.execute(user_id=0)
+        master_usdm = next((b for b in master_balance_list if b.asset_code == 'USDM'), None)
+        usdm_sum = float(master_usdm.balance) if master_usdm else 0.0
 
         show_max_sum = max_usdt_sum if usdm_sum > max_usdt_sum else usdm_sum
 
@@ -114,7 +130,11 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         return
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     # rest of the function logic
-    if len(await stellar_get_balances(session, callback.from_user.id, asset_filter='USDM')) == 0:
+    wallet_repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    balance_use_case = GetWalletBalance(wallet_repo, service)
+    user_balances = await balance_use_case.execute(user_id=callback.from_user.id)
+    if not any(b.asset_code == 'USDM' for b in user_balances):
         await callback.answer(text=f"You don't have a trust line to USDM, continuation is not possible",
                               show_alert=True)
         return
@@ -127,7 +147,11 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         if income_usdt_balance < min_usdt_sum:
             await callback.answer(text=f"USDT account balance unchanged", show_alert=True)
             return
-        usdm_sum = float((await stellar_get_balances(session, 0, asset_filter='USDM'))[0].balance)
+        usdm_sum = 0.0
+        master_balances = await balance_use_case.execute(user_id=0)
+        master_usdm = next((b for b in master_balances if b.asset_code == 'USDM'), None)
+        if master_usdm:
+             usdm_sum = float(master_usdm.balance)
         if income_usdt_balance > max_usdt_sum + min_usdt_sum or income_usdt_balance > usdm_sum:
             await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
                                   show_alert=True)
@@ -151,13 +175,20 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         await bot.send_message(chat_id=global_data.admin_id,
                                text=f"{get_user_id(callback)} send {income_usdt_balance} usdt "
                                     f"(full {full_usdt_balance})\n {url}")
-        master = stellar_get_master(session)
-        xdr = stellar_sign((await stellar_pay((await stellar_get_user_account(session, 0)).account.account_id,
-                                              (await stellar_get_user_account(session,
-                                                                              callback.from_user.id)).account.account_id,
-                                              usdm_asset, amount=income_usdt_balance - usdt_in_fee)), master.secret)
-        logger.info(xdr)
-        await async_stellar_send(xdr)
+        # Payout from Master (User 0) to User
+        # Need user address
+        user_wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+        if not user_wallet:
+             raise Exception("User wallet not found")
+             
+        pay_use_case = SendPayment(wallet_repo, service)
+        await pay_use_case.execute(
+            user_id=0,
+            destination_address=user_wallet.public_key,
+            asset=DomainAsset(code='USDM', issuer=usdm_asset.issuer), # usdm_asset imported from tools
+            amount=income_usdt_balance - usdt_in_fee,
+            password='0'
+        )
         await cmd_info_message(session, callback, 'All works done!')
 
 
@@ -167,15 +198,20 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
 
 @router.callback_query(F.data == "USDT_OUT")
 async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     if wallet and wallet.use_pin == 10:
         await send_message(session, callback, "Sorry, I can't work in read-only mode", reply_markup=get_kb_return(callback))
         await callback.answer()
         return
-    asset_list = await stellar_get_balances(session, callback.from_user.id, asset_filter='USDM')
-    if not asset_list:
+        
+    service = StellarService(horizon_url=config.horizon_url)
+    balance_use_case = GetWalletBalance(repo, service)
+    asset_list = await balance_use_case.execute(user_id=callback.from_user.id)
+    # Check if USDM exists in balances
+    has_usdm = any(b.asset_code == 'USDM' for b in asset_list)
+    
+    if not has_usdm:
         await send_message(session, callback, my_gettext(callback, 'usdm_need'),
                            reply_markup=get_kb_return(callback))
     else:
@@ -263,11 +299,14 @@ async def cmd_send_get_address(message: types.Message, state: FSMContext, sessio
         ##    raise ValueError
         await state.update_data(usdt_address=message.text, fsm_after_send=jsonpickle.dumps(cmd_after_send_usdt))
         await state.set_state(None)
-        usdm_balance = await stellar_get_balances(session, message.from_user.id, asset_filter='USDM')
-        if len(usdm_balance) == 0:
-            usdm_balance = 0
-        else:
-            usdm_balance = usdm_balance[0].balance
+        usdm_balance = 0
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService(horizon_url=config.horizon_url)
+        balances = await GetWalletBalance(repo, service).execute(message.from_user.id)
+        usdm_obj = next((b for b in balances if b.asset_code == 'USDM'), None)
+        if usdm_obj:
+            usdm_balance = usdm_obj.balance
+            
         await send_message(session, message,
                            my_gettext(message, 'send_sum', ('USDM', float(usdm_balance))),
                            reply_markup=get_kb_return(message))
@@ -288,10 +327,12 @@ async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: 
 
     data = await state.get_data()
 
-    if send_sum < 10 or len(await stellar_get_balances(session, message.from_user.id, asset_filter='USDM')) == 0 or \
-            send_sum > float(
-        (await stellar_get_balances(session, message.from_user.id, asset_filter='USDM'))[0].balance) \
-            or send_sum > max_usdt_sum:
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    balances = await GetWalletBalance(repo, service).execute(message.from_user.id)
+    usdm_obj = next((b for b in balances if b.asset_code == 'USDM'), None)
+    
+    if send_sum < 10 or not usdm_obj or send_sum > float(usdm_obj.balance) or send_sum > max_usdt_sum:
         await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}",
                            reply_markup=get_kb_return(message))
     else:
@@ -313,7 +354,12 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
         if send_sum > 98:
             usdt_out_fee = 2
 
-    send_address = (await stellar_get_user_account(session, 0)).account.account_id
+    # send_address = (await stellar_get_user_account(session, 0)).account.account_id
+    # We need public key for user 0
+    repo = SqlAlchemyWalletRepository(session)
+    master_wallet = await repo.get_default_wallet(0)
+    send_address = master_wallet.public_key
+    
     send_memo = 'For USDT'
     usdt_sum = int(send_sum) - usdt_out_fee
     await state.update_data(usdt_sum=usdt_sum, sun_fee=sun_fee)
@@ -321,9 +367,36 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     msg = my_gettext(message, 'confirm_send', (float2str(send_sum), usdm_asset.code, send_address, send_memo))
     msg += f"\n you will receive {usdt_sum} USDT for this address <b>{data.get('usdt_address')}</b>"
 
-    xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                            send_address,
-                            usdm_asset, send_sum, memo=send_memo)
+    service = StellarService(horizon_url=config.horizon_url)
+    pay_use_case = SendPayment(repo, service)
+    # Perform transaction immediately? 
+    # Logic in send.py used cmd_send_04/SendPayment.
+    # Here we are asking for YES/NO confirmation (reply_markup=get_kb_yesno_send_xdr).
+    # Then wait for next step.
+    # Legacy used stellar_pay to generate XDR and save it to state.
+    # Then user clicks YES, handling code sends it?
+    # I should check where "SendXDR" or "YES" callback is handled.
+    # It is usually handled in router. e.g. routers/sign.py cmd_send_xdr?
+    # If so, I need `xdr` in state.
+    # SendPayment executes and returns XDR (if success).
+    
+    result = await pay_use_case.execute(
+        user_id=message.from_user.id,
+        destination_address=send_address,
+        asset=DomainAsset(code='USDM', issuer=usdm_asset.issuer),
+        amount=send_sum,
+        memo=send_memo
+    )
+    
+    if result.success:
+        xdr = result.xdr
+    else:
+        await send_message(session, message, f"Error: {result.error_message}")
+        return
+
+    # xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+    #                         send_address,
+    #                         usdm_asset, send_sum, memo=send_memo)
 
     await state.update_data(xdr=xdr)
 
@@ -371,7 +444,11 @@ async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext):
         await send_message(session, user_id, msg, reply_markup=keyboard)
 
     else:
-        sats_sum = int(float((await stellar_get_balances(session, 0, asset_filter='SATSMTL'))[0].balance))
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService(horizon_url=config.horizon_url)
+        master_balances = await GetWalletBalance(repo, service).execute(0)
+        sats_obj = next((b for b in master_balances if b.asset_code == 'SATSMTL'), None)
+        sats_sum = int(float(sats_obj.balance)) if sats_obj else 0
         show_max_sum = max_btc_sum if sats_sum > max_btc_sum else sats_sum
         msg = my_gettext(user_id, "btc_in", (0, show_max_sum, min_btc_sum))
         await state.set_state(StateInOut.sending_btc_sum_in)
@@ -385,13 +462,19 @@ async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: S
         send_sum = int(message.text)
     except:
         send_sum = 0
-    sats_sum = float((await stellar_get_balances(session, 0, asset_filter='SATSMTL'))[0].balance)
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    master_balances = await GetWalletBalance(repo, service).execute(0)
+    sats_obj = next((b for b in master_balances if b.asset_code == 'SATSMTL'), None)
+    sats_sum = float(sats_obj.balance) if sats_obj else 0.0
     show_max_sum = max_btc_sum if sats_sum > max_btc_sum else sats_sum
 
     data = await state.get_data()
 
-    if send_sum < min_btc_sum or len(
-            await stellar_get_balances(session, message.from_user.id, asset_filter='SATSMTL')) == 0 \
+    user_balances = await GetWalletBalance(repo, service).execute(message.from_user.id)
+    has_sats = any(b.asset_code == 'SATSMTL' for b in user_balances)
+    
+    if send_sum < min_btc_sum or not has_sats \
             or send_sum > show_max_sum:
         await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}")
     else:
@@ -421,11 +504,19 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
         if btc_uuid and btc_date and btc_date > datetime.now():
             result, sats_sum = await thoth_check_order(btc_uuid)
             if result:
-                if len(await stellar_get_balances(session, callback.from_user.id, asset_filter='SATSMTL')) == 0:
+                repo = SqlAlchemyWalletRepository(session)
+                service = StellarService(horizon_url=config.horizon_url)
+                balances = await GetWalletBalance(repo, service).execute(callback.from_user.id)
+                has_sats = any(b.asset_code == 'SATSMTL' for b in balances)
+                if not has_sats:
                     await callback.answer(text=f"You don't have a trust line to SATSMTL, continuation is not possible",
                                           show_alert=True)
                     return
-                btc_balance = float((await stellar_get_balances(session, 0, asset_filter='SATSMTL'))[0].balance)
+                    
+                master_balances = await GetWalletBalance(repo, service).execute(0)
+                sats_obj = next((b for b in master_balances if b.asset_code == 'SATSMTL'), None)
+                btc_balance = float(sats_obj.balance) if sats_obj else 0.0
+                
                 if sats_sum > max_btc_sum or sats_sum > btc_balance:
                     await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
                                           show_alert=True)
@@ -435,14 +526,19 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                                       show_alert=True)
                 await sleep(1)
 
-                master = stellar_get_master(session)
-                xdr = stellar_sign(await stellar_pay((await stellar_get_user_account(session, 0)).account.account_id,
-                                                     (await stellar_get_user_account(session,
-                                                                                     callback.from_user.id)).account.account_id,
-                                                     satsmtl_asset, amount=round(sats_sum)), master.secret)
-                logger.info(xdr)
+                # Payout SATS
+                user_wallet = await repo.get_default_wallet(callback.from_user.id)
+                pay_use_case = SendPayment(repo, service)
+                await pay_use_case.execute(
+                    user_id=0,
+                    destination_address=user_wallet.public_key,
+                    asset=DomainAsset(code='SATSMTL', issuer=satsmtl_asset.issuer),
+                    amount=round(sats_sum),
+                    password='0'
+                )
+                
                 db_set_btc_uuid(session, user_id=callback.from_user.id, btc_uuid=None)
-                await async_stellar_send(xdr)
+                # await async_stellar_send(xdr) # handled by SendPayment
                 await cmd_info_message(session, callback, 'All works done!')
     await callback.answer()
 
@@ -465,7 +561,11 @@ async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, sessio
     await callback.answer()
     await state.set_state(StateInOut.sending_starts_sum_in)
     # await state.update_data(msg=msg)
-    eurmtl_sum = float((await stellar_get_balances(session, 0, asset_filter='EURMTL'))[0].balance)
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    master_balances = await GetWalletBalance(repo, service).execute(0)
+    eurmtl_obj = next((b for b in master_balances if b.asset_code == 'EURMTL'), None)
+    eurmtl_sum = float(eurmtl_obj.balance) if eurmtl_obj else 0.0
     await send_message(session, callback, 'Введи сумму в EURMTL которую вы хотите получить\n 1 EURMTL = 85 STARS\n'
                                           f'максимально в наличии {int(eurmtl_sum)} EURMTL',
                        reply_markup=get_kb_return(callback))
@@ -478,7 +578,11 @@ async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session
     except:
         send_sum = 0
 
-    eurmtl_sum = int(float((await stellar_get_balances(session, 0, asset_filter='EURMTL'))[0].balance))
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    master_balances = await GetWalletBalance(repo, service).execute(0)
+    eurmtl_obj = next((b for b in master_balances if b.asset_code == 'EURMTL'), None)
+    eurmtl_sum = int(float(eurmtl_obj.balance)) if eurmtl_obj else 0
 
     await state.update_data(send_sum=send_sum)
     if 0 < send_sum < eurmtl_sum:
@@ -506,7 +610,13 @@ async def cmd_process_message_successful_payment(message: types.Message, session
     data = await state.get_data()
     send_sum = data.get("send_sum")
     async with new_wallet_lock:
-        if len(await stellar_get_balances(session, message.from_user.id, asset_filter='EURMTL')) == 0:
+    async with new_wallet_lock:
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService(horizon_url=config.horizon_url)
+        user_balances = await GetWalletBalance(repo, service).execute(message.from_user.id)
+        has_eurmtl = any(b.asset_code == 'EURMTL' for b in user_balances)
+        
+        if not has_eurmtl:
             await message.answer(text=f"You don't have a trust line to EURMTL, continuation is not possible",
                                  show_alert=True)
             return
@@ -514,13 +624,15 @@ async def cmd_process_message_successful_payment(message: types.Message, session
                              show_alert=True)
         await sleep(1)
 
-        master = stellar_get_master(session)
-        xdr = stellar_sign(await stellar_pay((await stellar_get_user_account(session, 0)).account.account_id,
-                                             (await stellar_get_user_account(session,
-                                                                             message.from_user.id)).account.account_id,
-                                             eurmtl_asset, amount=round(send_sum)), master.secret)
-        logger.info(xdr)
-        await async_stellar_send(xdr)
+        user_wallet = await repo.get_default_wallet(message.from_user.id)
+        pay_use_case = SendPayment(repo, service)
+        await pay_use_case.execute(
+            user_id=0,
+            destination_address=user_wallet.public_key,
+            asset=DomainAsset(code='EURMTL', issuer=eurmtl_asset.issuer),
+            amount=round(send_sum),
+            password='0'
+        )
         await cmd_info_message(session, message.chat.id, 'All works done!')
         await send_message(session, user_id=global_data.admin_id,
                            msg=html.escape(f'{message.from_user} {message.successful_payment} good'),

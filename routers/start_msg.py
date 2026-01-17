@@ -16,9 +16,9 @@ from other.aiogram_tools import send_message, clear_state, clear_last_message_id
 from other.common_tools import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.stellar_tools import stellar_get_user_account, stellar_get_balance_str, stellar_is_free_wallet, \
-    db_is_new_user, \
-    db_get_wallets_list, float2str
+from other.stellar_tools import float2str
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from services.ton_service import TonService
 
 
@@ -76,7 +76,10 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
                                                    callback_data="ChangeWallet")])
         buttons.append([types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'),
                                                    callback_data="Support")])
-        if not await stellar_is_free_wallet(session, chat_id):
+        wallet_repo = SqlAlchemyWalletRepository(session)
+        default_wallet = await wallet_repo.get_default_wallet(chat_id)
+        is_free = default_wallet.is_free if default_wallet else False 
+        if not is_free:
             buttons.append(
                 [types.InlineKeyboardButton(text='🖌 ' + my_gettext(chat_id, 'kb_sign'), callback_data="Sign")])
         buttons.append([types.InlineKeyboardButton(text='≢ ' + my_gettext(chat_id, 'kb_show_less'),
@@ -89,8 +92,10 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
 
 async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
                            refresh_callback: types.CallbackQuery = None):
+    user_repo = SqlAlchemyUserRepository(session)
+    user = await user_repo.get_by_id(user_id)
     # new user ?
-    if db_is_new_user(session, user_id):
+    if not user:
         await state.update_data(fsm_after_send=jsonpickle.dumps(cmd_show_balance))
         await cmd_change_wallet(user_id, state, session)
     else:
@@ -234,7 +239,8 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     msg = my_gettext(user_id, 'setting_msg')
     buttons = []
-    wallets = db_get_wallets_list(session, user_id)
+    repo = SqlAlchemyWalletRepository(session)
+    wallets = await repo.get_all_active(user_id)
     for wallet in wallets:
         active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
         buttons.append(

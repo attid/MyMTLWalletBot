@@ -1,5 +1,12 @@
 from dataclasses import dataclass
 from typing import Optional
+from enum import Enum
+
+class ChequeStatus(Enum):
+    CHEQUE = 0
+    CANCELED = 1
+    INVOICE = 2
+
 
 @dataclass
 class User:
@@ -21,6 +28,9 @@ class Wallet:
     assets_visibility: Optional[str] = "{}"
     secret_key: Optional[str] = None
     seed_key: Optional[str] = None
+    balances: Optional[list] = None # List[Balance]
+    balances_event_id: int = 0
+    last_event_id: int = 0
 
 @dataclass
 class AddressBookEntry:

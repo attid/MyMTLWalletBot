@@ -163,3 +163,8 @@ class IChequeRepository(ABC):
     async def add_history(self, cheque_id: int, user_id: int) -> None:
         """Record a cheque claim in history."""
         pass
+
+    @abstractmethod
+    async def cancel(self, cheque_uuid: str, user_id: int) -> bool:
+        """Cancel a cheque (set status to CANCELED)."""
+        pass

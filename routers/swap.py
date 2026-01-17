@@ -14,9 +14,17 @@ from other.aiogram_tools import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_offers_cancel, get_kb_return
 from other.mytypes import Balance
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
-from other.stellar_tools import stellar_get_balances, stellar_get_user_account, stellar_check_receive_asset, \
-    stellar_check_receive_sum, stellar_swap, stellar_get_market_link, my_float, float2str, \
-    stellar_get_selling_offers_sum, my_round, stellar_check_send_sum
+from other.stellar_tools import stellar_check_receive_asset, \
+    stellar_check_receive_sum, stellar_get_market_link, my_float, float2str, \
+    my_round, stellar_check_send_sum
+
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.services.stellar_service import StellarService
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from core.use_cases.trade.swap_assets import SwapAssets
+from core.domain.value_objects import Asset as DomainAsset
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from other.config_reader import config
 
 
 class StateSwapToken(StatesGroup):
@@ -73,11 +81,6 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
     msg = my_gettext(callback, 'choose_token_swap')
     
     # Refactored to use GetWalletBalance Use Case
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.wallet.get_balance import GetWalletBalance
-    from other.config_reader import config
-
     repo = SqlAlchemyWalletRepository(session)
     service = StellarService(horizon_url=config.horizon_url)
     use_case = GetWalletBalance(repo, service)
@@ -113,7 +116,17 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
             else:
 
                 # Get summ of tokens, blocked by Sell offers 
-                blocked_token_sum = await stellar_get_selling_offers_sum(session, callback.from_user.id, asset)
+                repo = SqlAlchemyWalletRepository(session)
+                wallet = await repo.get_default_wallet(callback.from_user.id)
+                service = StellarService(horizon_url=config.horizon_url)
+                offers = await service.get_selling_offers(wallet.public_key)
+                blocked_token_sum = 0.0
+                for offer in offers:
+                    selling = offer.get('selling', {})
+                    s_code = selling.get('asset_code')
+                    s_issuer = selling.get('asset_issuer')
+                    if s_code == asset.asset_code and s_issuer == asset.asset_issuer:
+                        blocked_token_sum += float(offer.get('amount', 0))
 
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
                                         send_asset_max_sum=asset.balance, send_asset_blocked_sum=blocked_token_sum)
@@ -124,11 +137,8 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 asset_list2 = []
                 
                 # Initialize repository for wallet lookup
-                from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-                from infrastructure.services.stellar_service import StellarService
-                from core.use_cases.wallet.get_balance import GetWalletBalance
-                from other.config_reader import config
-
+                # Imports moved to top
+                
                 repo = SqlAlchemyWalletRepository(session)
                 wallet = await repo.get_default_wallet(callback.from_user.id)
                 vis_str = wallet.assets_visibility if wallet else None
@@ -260,12 +270,6 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
             receive_sum = float2str(my_round(float(receive_sum), 3))
 
         # Refactored to use Clean Architecture Use Case
-        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-        from infrastructure.services.stellar_service import StellarService
-        from core.use_cases.trade.swap_assets import SwapAssets
-        from core.domain.value_objects import Asset as DomainAsset
-        from other.config_reader import config
-
         repo = SqlAlchemyWalletRepository(session)
         service = StellarService(horizon_url=config.horizon_url)
         use_case = SwapAssets(repo, service)
@@ -364,12 +368,6 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         try:
             # Build XDR with strict receive, using max_send_amount as send_amount
             # Refactored to use Clean Architecture Use Case
-            from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-            from infrastructure.services.stellar_service import StellarService
-            from core.use_cases.trade.swap_assets import SwapAssets
-            from core.domain.value_objects import Asset as DomainAsset
-            from other.config_reader import config
-
             repo = SqlAlchemyWalletRepository(session)
             service = StellarService(horizon_url=config.horizon_url)
             use_case = SwapAssets(repo, service)

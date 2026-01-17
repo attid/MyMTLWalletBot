@@ -243,12 +243,43 @@ class StellarService(IStellarService):
         
         return transaction.build().to_xdr()
 
-    def sign_transaction(self, xdr: str, secret_key: str) -> str:
+    async def sign_transaction(self, transaction_envelope, secret: str) -> str:
+        return transaction_envelope.sign(secret)
+
+    async def sign_xdr(self, xdr: str, secret: str) -> str:
         from stellar_sdk import TransactionEnvelope, Network, Keypair
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-        kp = Keypair.from_secret(secret_key)
+        kp = Keypair.from_secret(secret)
         transaction.sign(kp)
         return transaction.to_xdr()
+
+    def create_payment_op(self, destination: str, asset_code: str, asset_issuer: Optional[str], amount: str, source: Optional[str] = None):
+        asset = Asset(asset_code, asset_issuer) if asset_issuer else Asset.native()
+        return Payment(destination=destination, asset=asset, amount=amount, source=source)
+
+    def create_create_account_op(self, destination: str, starting_balance: str, source: Optional[str] = None):
+        return CreateAccount(destination=destination, starting_balance=starting_balance, source=source)
+
+    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: str = None, source: Optional[str] = None):
+        asset = Asset(asset_code, asset_issuer)
+        return ChangeTrust(asset=asset, limit=limit, source=source)
+
+    async def build_transaction(self, source_public_key: str, operations: list, memo: str = None):
+        account = await self.load_account(source_public_key)
+        
+        tx_builder = TransactionBuilder(
+            source_account=account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=100
+        )
+        for op in operations:
+            tx_builder.append_operation(op)
+            
+        if memo:
+             tx_builder.add_text_memo(memo)
+             
+        tx = tx_builder.set_timeout(30).build()
+        return tx
 
     async def build_change_trust_transaction(
         self,
