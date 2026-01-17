@@ -163,10 +163,20 @@ def get_kb_donate(chat_id: int) -> types.InlineKeyboardMarkup:
 
 
 async def cmd_donate(session: Session, user_id, state: FSMContext):
-    balances = await stellar_get_balances(session, user_id, asset_filter='EURMTL')
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config as app_config
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=app_config.horizon_url)
+    balance_use_case = GetWalletBalance(repo, service)
+    balances = await balance_use_case.execute(user_id=user_id)
+    # Filter for EURMTL
+    eurmtl_balances = [b for b in balances if b.asset_code == 'EURMTL']
     eurmtl_balance = 0
-    if balances:
-        eurmtl_balance = balances[0].balance
+    if eurmtl_balances:
+        eurmtl_balance = eurmtl_balances[0].balance
 
     msg = f'You have {eurmtl_balance} EURMTL\n' \
           f'Choose how much you want to send or send a sum\n' \
@@ -263,7 +273,15 @@ async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session
 async def cmd_set_default(message: types.Message, state: FSMContext, session: Session):
     address = message.text
     try:
-        await stellar_get_balances(session, message.from_user.id, public_key=address)
+        # Refactored to use GetWalletBalance Use Case
+        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+        from infrastructure.services.stellar_service import StellarService
+        from core.use_cases.wallet.get_balance import GetWalletBalance
+        from other.config_reader import config as app_config
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService(horizon_url=app_config.horizon_url)
+        balance_use_case = GetWalletBalance(repo, service)
+        await balance_use_case.execute(user_id=message.from_user.id, public_key=address)
         db_set_default_address(session, message.from_user.id, address)
     except:
         db_set_default_address(session, message.from_user.id, '')

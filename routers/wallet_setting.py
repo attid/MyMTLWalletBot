@@ -133,7 +133,16 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, page
     """Generates the text and keyboard for the asset visibility menu."""
     from db.requests import db_get_default_wallet
     wallet = db_get_default_wallet(session, user_id)
-    balances = await stellar_get_balances(session, user_id) # Consider sorting or filtering if needed
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config as app_config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=app_config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+    balances = await use_case.execute(user_id=user_id)
 
     vis_dict = {}
     if wallet.assets_visibility:
@@ -318,7 +327,16 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 
 @router.callback_query(F.data == "DeleteAsset")
 async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    asset_list = await stellar_get_balances(session, callback.from_user.id)
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config as app_config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=app_config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+    asset_list = await use_case.execute(user_id=callback.from_user.id)
 
     kb_tmp = []
     for token in asset_list:
@@ -374,7 +392,15 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 @router.callback_query(F.data == "AddAsset")
 async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_id = callback.from_user.id
-    if await stellar_is_free_wallet(session, user_id) and (len(await stellar_get_balances(session, user_id)) > 5):
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config as app_config
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=app_config.horizon_url)
+    balance_use_case = GetWalletBalance(repo, service)
+    if await stellar_is_free_wallet(session, user_id) and (len(await balance_use_case.execute(user_id=user_id)) > 5):
         await send_message(session, user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
         return False
 
@@ -383,7 +409,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
         return
 
     good_asset = get_good_asset_list()
-    for item in await stellar_get_balances(session, user_id):
+    for item in await balance_use_case.execute(user_id=user_id):
         found = list(filter(lambda x: x.asset_code == item.asset_code, good_asset))
         if len(found) > 0:
             good_asset.remove(found[0])
@@ -431,7 +457,15 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 @router.callback_query(F.data == "AddAssetExpert")
 async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session):
     user_id = callback.from_user.id
-    if await stellar_is_free_wallet(session, user_id) and (len(await stellar_get_balances(session, user_id)) > 5):
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config as app_config
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=app_config.horizon_url)
+    balance_use_case = GetWalletBalance(repo, service)
+    if await stellar_is_free_wallet(session, user_id) and (len(await balance_use_case.execute(user_id=user_id)) > 5):
         await send_message(session, user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
         return False
 
@@ -615,7 +649,15 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
         public_key = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
         father_key = (await stellar_get_user_account(session, 0)).account.account_id
         await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
-        balances = await stellar_get_balances(session, callback.from_user.id)
+        # Refactored to use GetWalletBalance Use Case
+        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+        from infrastructure.services.stellar_service import StellarService
+        from core.use_cases.wallet.get_balance import GetWalletBalance
+        from other.config_reader import config as app_config
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService(horizon_url=app_config.horizon_url)
+        balance_use_case = GetWalletBalance(repo, service)
+        balances = await balance_use_case.execute(user_id=callback.from_user.id)
         eurmtl_balance = 0
         for balance in balances:
             if balance.asset_code == 'EURMTL':

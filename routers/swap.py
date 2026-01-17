@@ -71,7 +71,18 @@ router.message.filter(F.chat.type == "private")
 @router.callback_query(F.data == "Swap")
 async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'choose_token_swap')
-    asset_list = await stellar_get_balances(session, callback.from_user.id)
+    
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+    asset_list = await use_case.execute(user_id=callback.from_user.id)
+    
     wallet = db_get_default_wallet(session, callback.from_user.id)
     vis_str = getattr(wallet, "assets_visibility", None)
     asset_list = [a for a in asset_list if get_asset_visibility(vis_str, a.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY)]
@@ -113,7 +124,17 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 asset_list2 = []
                 wallet = db_get_default_wallet(session, callback.from_user.id)
                 vis_str = getattr(wallet, "assets_visibility", None)
-                for token in await stellar_get_balances(session, callback.from_user.id):
+                
+                # Reuse use case for second balance fetch
+                from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+                from infrastructure.services.stellar_service import StellarService
+                from core.use_cases.wallet.get_balance import GetWalletBalance
+                from other.config_reader import config
+
+                repo = SqlAlchemyWalletRepository(session)
+                service = StellarService(horizon_url=config.horizon_url)
+                balance_use_case = GetWalletBalance(repo, service)
+                for token in await balance_use_case.execute(user_id=callback.from_user.id):
                     if get_asset_visibility(vis_str, token.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY):
                         asset_list2.append(Asset(token.asset_code, token.asset_issuer))
                 swap_possible_sum = '1' if my_float(asset.balance) > 0 else asset.balance # try dont lose path for nfts
