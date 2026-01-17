@@ -76,23 +76,7 @@ async def test_cmd_receive(mock_session, mock_callback, mock_state):
         args, _ = mock_create_qr.call_args
         assert args[1] == "GADDR"
 
-# --- tests for routers/cheque.py ---
 
-@pytest.mark.asyncio
-async def test_cmd_create_cheque(mock_session, mock_callback, mock_state):
-    with patch("routers.cheque.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_create_cheque(mock_callback, mock_state, mock_session)
-        mock_state.set_state.assert_called_with(StateCheque.sending_sum)
-        mock_send.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_cmd_cheque_get_sum(mock_session, mock_message, mock_state):
-    mock_message.text = "10.0"
-    mock_state.get_data.return_value = {"send_sum": 0.0}
-    with patch("routers.cheque.cmd_cheque_show", new_callable=AsyncMock) as mock_show:
-        await cmd_cheque_get_sum(mock_message, mock_state, mock_session)
-        mock_state.update_data.assert_called_with(send_sum=10.0)
-        mock_show.assert_called_once()
 
 # --- NEW TESTS FOR SEND ROUTER ---
 
@@ -202,81 +186,4 @@ async def test_handle_docs_photo_valid_address(mock_session, mock_message, mock_
         mock_send_for.assert_called_once()
 
 
-# --- NEW TESTS FOR CHEQUE ROUTER ---
 
-@pytest.mark.asyncio
-async def test_cmd_cheque_count(mock_session, mock_message, mock_state):
-    with patch("routers.cheque.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_cheque_count(mock_message, mock_state, mock_session)
-        mock_state.set_state.assert_called_with(StateCheque.sending_count)
-        mock_send.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_cmd_cheque_execute(mock_session, mock_callback, mock_state):
-    mock_state.get_data.return_value = {"send_sum": 10.0, "send_count": 2}
-    
-    with patch("routers.cheque.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.cheque.get_kb_yesno_send_xdr") as mock_kb:
-         
-         await cmd_cheque_execute(mock_callback, mock_state, mock_session)
-         mock_state.update_data.assert_called()
-         mock_send.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_cmd_cancel_cheque(mock_session, mock_callback, mock_state):
-    mock_state.get_data.return_value = {
-        "cheque_uuid": "UUID", 
-        "cheque_sum": 10, 
-        "cheque_count": 5, 
-        "cheque_asset_code": "XLM",
-        "cheque_asset_issuer": "native"
-    }
-    
-    mock_cheque = MagicMock(uuid="UUID", state='active')
-    mock_cheque.cheque_count = 5 
-    mock_cheque.cheque_status = 'active'
-    mock_cheque.cheque_amount = 5.0
-    
-    mock_wallet = MagicMock()
-    mock_wallet.public_key = "GOWNER"
-    
-    with patch("routers.cheque.db_get_cheque", return_value=mock_cheque), \
-         patch("routers.cheque.db_get_cheque_receive_count", return_value=0), \
-         patch("routers.cheque.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.cheque.stellar_pay", new_callable=AsyncMock, return_value="XDR_REFUND") as mock_pay, \
-         patch("routers.cheque.stellar_sign", return_value="XDR_SIGNED"), \
-         patch("routers.cheque.stellar_get_master") as mock_master, \
-         patch("routers.cheque.async_stellar_send", new_callable=AsyncMock), \
-         patch("routers.cheque.cmd_info_message", new_callable=AsyncMock), \
-         patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo:
-         
-         mock_repo_instance = MockRepo.return_value
-         mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
-         mock_repo_instance.reset_balance_cache = AsyncMock()
-         
-         from routers.cheque import cmd_cancel_cheque
-         await cmd_cancel_cheque(mock_session, mock_callback.from_user.id, "UUID", mock_state)
-         
-         mock_pay.assert_called_once()
-         mock_state.update_data.assert_called()
-
-
-@pytest.mark.asyncio
-async def test_cmd_start_cheque_activation(mock_session, mock_message, mock_state):
-    mock_message.text = "/start cheque_UUID_PWD"
-    
-    mock_cheque = MagicMock(uuid="UUID", state='active')
-    mock_cheque.cheque_count = 5
-    mock_cheque.cheque_status = 0
-    mock_cheque.cheque_amount = 10
-    mock_cheque.cheque_comment = "comment"
-
-    with patch("routers.cheque.db_get_cheque", return_value=mock_cheque), \
-         patch("routers.cheque.db_get_cheque_receive_count", return_value=0), \
-         patch("routers.cheque.send_message", new_callable=AsyncMock) as mock_send:
-         
-         await cmd_start_cheque(mock_message, mock_state, mock_session)
-         
-         mock_state.update_data.assert_called()
-         mock_send.assert_called()

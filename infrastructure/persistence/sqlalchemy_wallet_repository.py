@@ -14,7 +14,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.user_id == user_id)
         result = self.session.execute(stmt)
         db_wallets = result.scalars().all()
-        return [self._to_entity(w) for w in result.scalars().all()]
+        return [self._to_entity(w) for w in db_wallets]
 
     async def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.id == wallet_id)

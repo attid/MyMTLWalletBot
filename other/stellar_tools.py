@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from typing import List, Optional, Union, Dict
 
 import jsonpickle
+from loguru import logger
 from sqlalchemy.orm import Session
 from aiogram.utils.text_decorations import html_decoration
 from cryptocode import encrypt, decrypt

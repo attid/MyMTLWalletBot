@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from routers.common_setting import cmd_language, callbacks_lang, cmd_support, LangCallbackData
-from routers.notification_settings import hide_notification_callback, save_filter_callback, HideNotificationCallbackData
+from routers.notification_settings import hide_notification_callback, save_filter_callback
+from keyboards.common_keyboards import HideNotificationCallbackData
 from db.models import MyMtlWalletBot
 
 @pytest.fixture
@@ -89,25 +90,31 @@ async def test_hide_notification_callback(mock_session, mock_callback, mock_stat
     
     # Fix: unpacking inside handler expects string, mock_callback.data is now string.
     
+    # Create mock objects
     mock_wallet = MagicMock()
     mock_wallet.user_id = 123
     mock_wallet.public_key = "GKey"
-    
-    mock_query = mock_session.query.return_value
-    mock_query.filter.return_value.first.return_value = mock_wallet
     
     mock_op = MagicMock()
     mock_op.code1 = "XLM"
     mock_op.amount1 = "10.0"
     mock_op.operation = "payment"
 
-    with patch("routers.notification_settings.db_get_operation", return_value=mock_op), \
+    with patch("routers.notification_settings.SqlAlchemyWalletRepository") as MockWalletRepo, \
+         patch("routers.notification_settings.SqlAlchemyOperationRepository") as MockOpRepo, \
          patch("routers.notification_settings.send_notification_settings_menu", new_callable=AsyncMock) as mock_menu, \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
+        
+        # Setup repo returns
+        mock_wallet_repo = MockWalletRepo.return_value
+        mock_wallet_repo.get_by_id = AsyncMock(return_value=mock_wallet) # Use get_by_id as per implementation
+        
+        mock_op_repo = MockOpRepo.return_value
+        mock_op_repo.get_by_id = AsyncMock(return_value=mock_op) # Use get_by_id
         
         await hide_notification_callback(mock_callback, mock_state, mock_session)
         
@@ -125,18 +132,21 @@ async def test_save_filter_callback(mock_session, mock_callback, mock_state):
     }
     
     # Mocking that no existing filter exists
-    mock_session.query.return_value.filter.return_value.first.return_value = None
     
     with patch("routers.notification_settings.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.notification_settings.SqlAlchemyNotificationRepository") as MockRepo, \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.find_duplicate = AsyncMock(return_value=None)
+        mock_repo_instance.create = AsyncMock()
+
         await save_filter_callback(mock_callback, mock_state, mock_session)
         
-        mock_session.add.assert_called_once()
-        mock_session.commit.assert_called_once()
+        mock_repo_instance.create.assert_called_once()
         mock_state.clear.assert_called_once()
         mock_send.assert_called_once()
