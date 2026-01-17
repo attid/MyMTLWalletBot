@@ -8,44 +8,11 @@ from routers.swap import cmd_swap_01, cq_swap_choose_token_from, SwapAssetFromCa
 from stellar_sdk import Asset
 import jsonpickle
 
-@pytest.fixture
-def mock_session():
-    return MagicMock()
-
-@pytest.fixture
-def mock_state():
-    state = AsyncMock(spec=FSMContext)
-    state.get_data.return_value = {}
-    return state
-
-@pytest.fixture
-def mock_callback():
-    callback = AsyncMock()
-    callback.from_user.id = 123
-    callback.from_user.username = "user"
-    callback.message = AsyncMock()
-    callback.message.chat.id = 123
-    return callback
-
-@pytest.fixture
-def mock_message():
-    message = AsyncMock()
-    message.from_user.id = 123
-    message.chat.id = 123
-    message.text = "test_text"
-    return message
-
 # --- tests for routers/trade.py ---
 
 @pytest.mark.asyncio
 async def test_cmd_market(mock_session, mock_callback):
-    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
-        
+    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
         await cmd_market(mock_callback, mock_session)
         mock_send.assert_called_once()
         mock_callback.answer.assert_called_once()
@@ -59,12 +26,7 @@ async def test_cmd_sale_new_order(mock_session, mock_callback, mock_state):
     with patch("routers.trade.have_free_xlm", return_value=True), \
          patch("routers.trade.stellar_get_balances", return_value=[balance], new_callable=AsyncMock), \
          patch("routers.trade.db_get_default_wallet"), \
-         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
 
         await cmd_sale_new_order(mock_callback, mock_state, mock_session)
         
@@ -82,12 +44,7 @@ async def test_cq_trade_choose_token_sell(mock_session, mock_callback, mock_stat
     callback_data = SaleAssetCallbackData(answer="USD")
     
     with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.trade.jsonpickle.decode", return_value=asset_data), \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
+         patch("routers.trade.jsonpickle.decode", return_value=asset_data):
         
         await cq_trade_choose_token_sell(mock_callback, callback_data, mock_state, mock_session)
         
@@ -107,12 +64,7 @@ async def test_cq_trade_choose_token_buy(mock_session, mock_callback, mock_state
     
     with patch("routers.trade.stellar_get_market_link", return_value="link"), \
          patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.trade.jsonpickle.decode", return_value=asset_data), \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
+         patch("routers.trade.jsonpickle.decode", return_value=asset_data):
         
         await cq_trade_choose_token_buy(mock_callback, callback_data, mock_state, mock_session)
         
@@ -129,12 +81,7 @@ async def test_cmd_swap_01(mock_session, mock_callback, mock_state):
     
     with patch("routers.swap.stellar_get_balances", return_value=[balance], new_callable=AsyncMock), \
          patch("routers.swap.db_get_default_wallet"), \
-         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
         
         await cmd_swap_01(mock_callback, mock_state, mock_session)
         
@@ -153,13 +100,8 @@ async def test_cq_swap_choose_token_from(mock_session, mock_callback, mock_state
          patch("routers.swap.db_get_default_wallet"), \
          patch("routers.swap.stellar_check_receive_asset", return_value=["EUR"], new_callable=AsyncMock), \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.swap.jsonpickle.decode", return_value=asset_data), \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
+         patch("routers.swap.jsonpickle.decode", return_value=asset_data):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
-        
         await cq_swap_choose_token_from(mock_callback, callback_data, mock_state, mock_session)
         
         mock_state.update_data.assert_called()
@@ -177,15 +119,8 @@ async def test_cmd_send_sale_sum(mock_session, mock_message, mock_state):
         "msg": "msg"
     }
     
-    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
-         
+    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
          await cmd_send_sale_sum(mock_message, mock_state, mock_session)
-         
          mock_state.update_data.assert_called()
          mock_send.assert_called_once()
 
@@ -205,12 +140,7 @@ async def test_cmd_show_orders(mock_session, mock_callback, mock_state):
     mock_offers = [MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM"), buying=MagicMock(asset_code="USD"))]
     
     with patch("routers.trade.stellar_get_offers", return_value=mock_offers, new_callable=AsyncMock), \
-         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
          
          await cmd_show_orders(mock_callback, mock_state, mock_session)
          
@@ -228,13 +158,7 @@ async def test_cb_edit_order(mock_session, mock_callback, mock_state):
     
     # Ensure jsonpickle.decode returns a list
     with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
-         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {}}
-        mock_gd.db_pool = MagicMock()
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
 
         await cb_edit_order(mock_callback, callback_data, mock_state, mock_session)
         mock_state.update_data.assert_called()
@@ -261,18 +185,18 @@ async def test_cq_swap_choose_token_for(mock_session, mock_callback, mock_state)
     valid_issuer = "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
     mock_asset = MagicMock(asset_code="USD", asset_issuer=valid_issuer, balance="100.0")
     
-    # FIX: send_asset_issuer is None for native XLM
-    mock_state.get_data.return_value = {"assets": "encoded", "send_asset_blocked_sum": 0, "send_asset_code": "XLM", "send_asset_issuer": None}
+    mock_state.get_data.return_value = {
+        "assets": "encoded", 
+        "send_asset_blocked_sum": 0, 
+        "send_asset_code": "XLM", 
+        "send_asset_issuer": None,
+        "receive_asset_code": "USD",
+        "receive_asset_issuer": valid_issuer
+    }
     
     with patch("routers.swap.jsonpickle.decode", return_value=[mock_asset]), \
          patch("routers.swap.stellar_get_market_link", return_value="link"), \
-         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
-         mock_gd.db_pool = MagicMock()
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
 
          await cq_swap_choose_token_for(mock_callback, callback_data, mock_state, mock_session)
          
@@ -294,12 +218,7 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
          patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.swap.stellar_check_receive_sum", return_value=("9.5", False), new_callable=AsyncMock), \
          patch("routers.swap.stellar_swap", return_value="XDR_SWAP", new_callable=AsyncMock), \
-         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
          
          await cmd_swap_sum(mock_message, mock_state, mock_session)
          
@@ -311,12 +230,7 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
 async def test_cq_swap_strict_receive(mock_session, mock_callback, mock_state):
     mock_state.get_data.return_value = {"receive_asset_code": "USD"}
     
-    with patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
+    with patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
 
          await cq_swap_strict_receive(mock_callback, mock_state, mock_session)
          
@@ -338,12 +252,7 @@ async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
          patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.swap.stellar_check_send_sum", return_value=("11.0", False), new_callable=AsyncMock), \
          patch("routers.swap.stellar_swap", return_value="XDR_SWAP_STRICT", new_callable=AsyncMock) as mock_swap, \
-         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
          
          await cmd_swap_receive_sum(mock_message, mock_state, mock_session)
          

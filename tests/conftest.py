@@ -1,6 +1,6 @@
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import sys
 import os
@@ -370,4 +370,71 @@ async def mock_server():
 
     yield received_requests
 
+
     await runner.cleanup()
+
+
+# --- Common Fixtures ---
+
+@pytest.fixture
+def mock_session():
+    return MagicMock()
+
+@pytest.fixture
+def mock_state():
+    state = AsyncMock()
+    state.get_data.return_value = {}
+    return state
+
+@pytest.fixture
+def mock_callback():
+    callback = AsyncMock()
+    callback.from_user.id = 123
+    callback.from_user.username = "user"
+    callback.message = AsyncMock()
+    callback.message.chat.id = 123
+    return callback
+
+@pytest.fixture
+def mock_message():
+    message = AsyncMock()
+    message.from_user.id = 123
+    message.chat.id = 123
+    message.text = "test_text"
+    return message
+
+@pytest.fixture(autouse=True)
+def mock_global_data_autouse():
+    """Automatically mocks global_data in common locations."""
+    # Create the mock object
+    gd = MagicMock()
+    gd.db_pool = MagicMock()
+    
+    session_mock = MagicMock()
+    gd.db_pool.get_session.return_value.__enter__.return_value = session_mock
+    
+    # Configure default user return from DB
+    user_mock = MagicMock()
+    user_mock.lang = 'en'
+    user_mock.can_5000 = 1 # Default permission
+    
+    # Allow chained query like session.query(User).filter(...).first()
+    session_mock.query.return_value.filter.return_value.first.return_value = user_mock
+    session_mock.query.return_value.get.return_value = user_mock
+    session_mock.scalar.return_value = user_mock
+
+    gd.user_lang_dic = {123: 'en'}
+    gd.lang_dict = {'en': {}}
+    
+    # Patch known locations
+    # We patch 'other.lang_tools.global_data' which is the source of truth for many utils
+    p1 = patch("other.lang_tools.global_data", gd)
+    p2 = patch("other.common_tools.get_user_id", return_value=123)
+    
+    p1.start()
+    p2.start()
+    
+    yield gd
+    
+    p1.stop()
+    p2.stop()
