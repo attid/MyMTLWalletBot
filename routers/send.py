@@ -468,7 +468,7 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session):
 
 
 @router.callback_query(F.data == "Send15xlm")
-async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_send_15_xlm(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(activate_sum=15)
     await cmd_create_account(callback.from_user.id, state, session)
 
