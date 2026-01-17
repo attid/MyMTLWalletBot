@@ -102,7 +102,7 @@ async def cmd_horizon(message: types.Message, state: FSMContext, session: Sessio
 
 
 @router.message(Command(commands=["horizon_rw"]))
-async def cmd_horizon(message: types.Message, state: FSMContext, session: Session):
+async def cmd_horizon_rw(message: types.Message, state: FSMContext, session: Session):
     if message.from_user.username == "itolstov":
         if config.horizon_url_rw in horizont_urls:
             config.horizon_url_rw = horizont_urls[(horizont_urls.index(config.horizon_url_rw) + 1) % len(horizont_urls)]
@@ -130,13 +130,13 @@ async def cmd_log(message: types.Message):
 
 
 @router.message(Command(commands=["err"]))
-async def cmd_log(message: types.Message):
+async def cmd_err(message: types.Message):
     if message.from_user.username == "itolstov":
         await cmd_send_file(message, 'MyMTLWallet_bot.err')
 
 
 @router.message(Command(commands=["clear"]))
-async def cmd_log(message: types.Message):
+async def cmd_clear(message: types.Message):
     if message.from_user.username == "itolstov":
         await cmd_delete_file('MMWB.err')
         await cmd_delete_file('MMWB.log')

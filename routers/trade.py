@@ -85,7 +85,7 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.callback_query(SaleAssetCallbackData.filter())
-async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: SaleAssetCallbackData, state: FSMContext,
+async def cq_trade_choose_token_sell(callback: types.CallbackQuery, callback_data: SaleAssetCallbackData, state: FSMContext,
                                session: Session):
     answer = callback_data.answer
     data = await state.get_data()
@@ -113,7 +113,7 @@ async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: Sal
 
 
 @router.callback_query(BuyAssetCallbackData.filter())
-async def cq_send_choose_token(callback: types.CallbackQuery, callback_data: BuyAssetCallbackData, state: FSMContext,
+async def cq_trade_choose_token_buy(callback: types.CallbackQuery, callback_data: BuyAssetCallbackData, state: FSMContext,
                                session: Session):
     answer = callback_data.answer
     data = await state.get_data()
