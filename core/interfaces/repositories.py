@@ -57,6 +57,16 @@ class IWalletRepository(ABC):
         pass
 
     @abstractmethod
+    async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: int = None) -> None:
+        """Delete or soft-delete a wallet."""
+        pass
+
+    @abstractmethod
+    async def get_info(self, user_id: int, public_key: str) -> str:
+        """Get wallet info string (pin type, free wallet, etc)."""
+        pass
+
+    @abstractmethod
     async def reset_balance_cache(self, user_id: int) -> None:
         """Reset the cached balance for the user's default wallet.
         

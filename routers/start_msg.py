@@ -10,7 +10,7 @@ from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import get_wallet_info
+
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
 from other.aiogram_tools import send_message, clear_state, clear_last_message_id
 from other.common_tools import get_user_id
@@ -150,14 +150,16 @@ USDT: {float2str(usdt_balance, True)}
     await state.update_data(use_ton=None)
 
     simple_account = user_account[:4] + '..' + user_account[-4:]
-    info = get_wallet_info(session, user_id, user_account)
-    link = 'https://viewer.eurmtl.me/account/' + user_account
     
     # Refactored Balance Retrieval via Clean Architecture
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     from infrastructure.services.stellar_service import StellarService
     from core.use_cases.wallet.get_balance import GetWalletBalance
     from other.config_reader import config
+    
+    wallet_repo = SqlAlchemyWalletRepository(session)
+    info = await wallet_repo.get_info(user_id, user_account)
+    link = 'https://viewer.eurmtl.me/account/' + user_account
     from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE
     
     repo = SqlAlchemyWalletRepository(session)
