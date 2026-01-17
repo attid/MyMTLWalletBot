@@ -98,9 +98,33 @@ async def cmd_cheque_show(session: Session, message: Message, state: FSMContext)
     msg = my_gettext(message, 'send_cheque',
                      (float2str(send_sum), send_count, float(send_sum) * send_count, send_comment))
 
-    xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                            cheque_public,
-                            eurmtl_asset, send_sum * send_count, memo=send_uuid[:16])
+    # Refactored to use Clean Architecture Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.cheque.create_cheque import CreateCheque
+    from other.config_reader import config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = CreateCheque(repo, service)
+
+    result = await use_case.execute(
+        user_id=message.from_user.id,
+        amount=send_sum,
+        count=send_count,
+        memo=send_uuid[:16]
+    )
+
+    if result.success:
+        xdr = result.xdr
+    else:
+        logger.error(f"CreateCheque failed: {result.error_message}")
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message))
+        return
+
+    # xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+    #                         cheque_public,
+    #                         eurmtl_asset, send_sum * send_count, memo=send_uuid[:16])
 
     await state.update_data(xdr=xdr, operation='cheque')
 

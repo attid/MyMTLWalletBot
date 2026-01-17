@@ -30,6 +30,93 @@ class StellarService(IStellarService):
             print(f"Error fetching offers {public_key}: {e}")
             return []
 
+    async def check_account_exists(self, account_id: str) -> bool:
+        try:
+            async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+                await server.accounts().account_id(account_id).call()
+                return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            print(f"Error checking account {account_id}: {e}")
+            return False
+
+    async def build_payment_transaction(
+        self, 
+        source_account_id: str, 
+        destination_account_id: str, 
+        asset_code: str, 
+        asset_issuer: Optional[str], 
+        amount: str, 
+        memo: Optional[str] = None,
+        sequence: Optional[int] = None,
+        cancel_offers: bool = False
+    ) -> str:
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+             # Load source account for sequence number
+             source_account = await server.load_account(source_account_id)
+        
+        from stellar_sdk import TransactionBuilder, Asset, Network, Price
+        
+        base_fee = 10000 # Configurable?
+        transaction = TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=base_fee
+        )
+        transaction.set_timeout(180)
+        
+        if asset_code == "XLM" and not asset_issuer:
+            asset = Asset.native()
+        else:
+            asset = Asset(asset_code, asset_issuer)
+            
+        if cancel_offers:
+             # Fetch offers for this asset and cancel them
+             offers = await self.get_selling_offers(source_account_id)
+             # Filter offers that sell this asset
+             for offer in offers:
+                 selling = offer.get('selling', {})
+                 s_code = selling.get('asset_code')
+                 s_issuer = selling.get('asset_issuer')
+                 # Check if match
+                 is_match = False
+                 if asset_code == "XLM":
+                      if selling.get('asset_type') == 'native': is_match = True
+                 else:
+                      if s_code == asset_code and s_issuer == asset_issuer: is_match = True
+                      
+                 if is_match:
+                      # Cancel offer
+                      # ManageSellOffer with amount=0
+                      buying = offer.get('buying', {})
+                      b_code = buying.get('asset_code')
+                      b_issuer = buying.get('asset_issuer')
+                      
+                      buying_asset = Asset.native() if buying.get('asset_type') == 'native' else Asset(b_code, b_issuer)
+                      
+                      transaction.append_manage_sell_offer_op(
+                          selling=asset,
+                          buying=buying_asset,
+                          amount='0',
+                          price=Price.from_raw_price('1'), 
+                          offer_id=int(offer.get('id', 0))
+                      )
+            
+        transaction.append_payment_op(
+            destination=destination_account_id,
+            amount=amount,
+            asset=asset
+        )
+        
+        if memo:
+            transaction.add_text_memo(memo)
+            
+        return transaction.build().to_xdr()
+
     async def submit_transaction(self, xdr: str) -> Dict[str, Any]:
-        # TODO: Implement submit
-        return {"hash": "mock_hash", "successful": True}
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+            from stellar_sdk import TransactionEnvelope, Network
+            transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+            response = await server.submit_transaction(transaction)
+            return response
