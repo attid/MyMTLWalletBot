@@ -186,11 +186,37 @@ async def test_cmd_send_sale_sum(mock_session, mock_message, mock_state):
          
          await cmd_send_sale_sum(mock_message, mock_state, mock_session)
          
-         # Logic: if send_sum > 0: update_data, set_state(None), set_state(selling_receive_sum), send_msg, delete
          mock_state.update_data.assert_called()
-         # The code sets state to None, then to selling_receive_sum
-         # mock_state.set_state.assert_called() might only check the last call or any.
          mock_send.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_cmd_send_sale_cost(mock_session, mock_message, mock_state):
+    mock_message.text = "10.0" # receive total sum
+    
+    with patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
+        await cmd_send_sale_cost(mock_message, mock_state, mock_session)
+        
+        mock_state.update_data.assert_called_with(receive_sum=10.0, msg=None)
+        mock_xdr.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_show_orders(mock_session, mock_callback, mock_state):
+    mock_offers = [MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM"), buying=MagicMock(asset_code="USD"))]
+    
+    with patch("routers.trade.stellar_get_offers", return_value=mock_offers, new_callable=AsyncMock), \
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+         
+         await cmd_show_orders(mock_callback, mock_state, mock_session)
+         
+         mock_send.assert_called_once()
+         args, kwargs = mock_state.update_data.call_args
+         assert "offers" in kwargs
 
 
 @pytest.mark.asyncio
@@ -198,21 +224,27 @@ async def test_cb_edit_order(mock_session, mock_callback, mock_state):
     callback_data = EditOrderCallbackData(answer=1)
     offer = MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM"), buying=MagicMock(asset_code="USD"))
     
+    mock_state.get_data.return_value = {"offers": jsonpickle.encode([offer])}
+    
     # Ensure jsonpickle.decode returns a list
     with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
-         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
-        await cb_edit_order(mock_callback, callback_data, mock_state, mock_session)
-        
-        mock_state.update_data.assert_called_with(edit_offer_id=1) 
-        mock_send.assert_called_once()
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+        mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.lang_dict = {'en': {}}
+        mock_gd.db_pool = MagicMock()
 
+        await cb_edit_order(mock_callback, callback_data, mock_state, mock_session)
+        mock_state.update_data.assert_called()
+        mock_send.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_cmd_delete_order(mock_session, mock_callback, mock_state):
     offer = MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM", asset_issuer=None), buying=MagicMock(asset_code="USD", asset_issuer="GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"))
-    mock_state.get_data.return_value = {"edit_offer_id": 1}
+    mock_state.get_data.return_value = {"edit_offer_id": 1, "offers": jsonpickle.encode([offer])}
 
-    # Ensure jsonpickle.decode returns a list
     with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
          patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
         await cmd_delete_order(mock_callback, mock_state, mock_session)
@@ -226,9 +258,11 @@ async def test_cmd_delete_order(mock_session, mock_callback, mock_state):
 @pytest.mark.asyncio
 async def test_cq_swap_choose_token_for(mock_session, mock_callback, mock_state):
     callback_data = SwapAssetForCallbackData(answer="USD")
-    mock_asset = MagicMock(asset_code="USD", asset_issuer="GUSD", balance="100.0")
-    # jsonpickle decode mock in patch
-    mock_state.get_data.return_value = {"assets": "encoded", "send_asset_blocked_sum": 0, "send_asset_code": "XLM", "send_asset_issuer": "native"}
+    valid_issuer = "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
+    mock_asset = MagicMock(asset_code="USD", asset_issuer=valid_issuer, balance="100.0")
+    
+    # FIX: send_asset_issuer is None for native XLM
+    mock_state.get_data.return_value = {"assets": "encoded", "send_asset_blocked_sum": 0, "send_asset_code": "XLM", "send_asset_issuer": None}
     
     with patch("routers.swap.jsonpickle.decode", return_value=[mock_asset]), \
          patch("routers.swap.stellar_get_market_link", return_value="link"), \
@@ -238,6 +272,7 @@ async def test_cq_swap_choose_token_for(mock_session, mock_callback, mock_state)
 
          mock_gd.user_lang_dic = {123: 'en'}
          mock_gd.lang_dict = {'en': {}}
+         mock_gd.db_pool = MagicMock()
 
          await cq_swap_choose_token_for(mock_callback, callback_data, mock_state, mock_session)
          
@@ -268,8 +303,6 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
          
          await cmd_swap_sum(mock_message, mock_state, mock_session)
          
-         # The code calls state.set_state(None) and then does update_data logic via helper or directly
-         # Actually cmd_swap_sum calls state.set_state(None) then calls update_data(xdr=...)
          mock_state.update_data.assert_called()
          mock_send.assert_called_once()
 
@@ -314,7 +347,6 @@ async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
          
          await cmd_swap_receive_sum(mock_message, mock_state, mock_session)
          
-         # Verify use_strict_receive=True in stellar_swap call
          _, kwargs = mock_swap.call_args
          assert kwargs.get('use_strict_receive') is True
          
