@@ -24,8 +24,21 @@ async def hide_notification_callback(callback: types.CallbackQuery, state: FSMCo
     op_repo = SqlAlchemyOperationRepository(session)
 
     
-    # Let's assume for this step I will mix repo usage and if needed add method.
-    pass
+    wallet = await wallet_repo.get_by_id(data.wallet_id)
+    operation = await op_repo.get_by_id(data.operation_id)
+
+    if wallet and operation:
+        await state.update_data(
+            public_key=wallet.public_key,
+            operation_id=operation.id,
+            asset_code=operation.code1,
+            min_amount=float(operation.amount1 or 0),
+            operation_type=operation.operation, 
+            for_all_wallets=False
+        )
+        await send_notification_settings_menu(callback, state, session)
+    else:
+        await callback.answer(my_gettext(callback.from_user.id, "error"), show_alert=True)
 
 # I need to add get_by_id to IWalletRepository first.
 # Cancelling this tool call to add method first.

@@ -110,13 +110,20 @@ async def test_cmd_last_route(mock_session, mock_message, mock_state):
 
 @pytest.mark.asyncio
 async def test_cmd_show_balance(mock_session, mock_state):
-    with patch("routers.start_msg.db_is_new_user", return_value=False), \
+    # Mock SqlAlchemyUserRepository
+    mock_user = MagicMock()
+    mock_user.id = 123
+    
+    with patch("routers.start_msg.SqlAlchemyUserRepository") as MockRepo, \
          patch("routers.start_msg.clear_state", new_callable=AsyncMock), \
          patch("routers.start_msg.get_start_text", return_value="Start Text", new_callable=AsyncMock), \
          patch("routers.start_msg.get_kb_default", return_value=types.InlineKeyboardMarkup(inline_keyboard=[]), new_callable=AsyncMock), \
          patch("routers.start_msg.send_message", new_callable=AsyncMock) as mock_send, \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
+         
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
         
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
@@ -142,20 +149,31 @@ async def test_cmd_inout(mock_session, mock_callback):
 @pytest.mark.asyncio
 async def test_cmd_usdt_in(mock_session, mock_callback, mock_state):
     asset_balance = MagicMock()
+    asset_balance.asset_code = "USDM"
     asset_balance.balance = "100.0"
     
-    with patch("routers.inout.stellar_get_balances", return_value=[asset_balance], new_callable=AsyncMock), \
-         patch("routers.inout.db_get_usdt_private_key", return_value=("priv_key", 0)), \
+    # Needs config for StellarService
+    with patch("routers.inout.SqlAlchemyWalletRepository"), \
+         patch("routers.inout.SqlAlchemyUserRepository") as MockUserRepo, \
+         patch("routers.inout.StellarService"), \
+         patch("routers.inout.GetWalletBalance") as MockGetBalance, \
          patch("routers.inout.create_trc_private_key"), \
          patch("routers.inout.tron_get_public", return_value="TRON_ADDR"), \
          patch("routers.inout.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.inout.get_user_id", return_value=123), \
          patch("routers.inout.my_gettext", return_value="text"), \
+         patch("routers.inout.config"), \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
+        
+        mock_user_repo = MockUserRepo.return_value
+        mock_user_repo.get_usdt_key = AsyncMock(return_value=("priv_key", 0))
+
+        mock_balance_use_case = MockGetBalance.return_value
+        mock_balance_use_case.execute = AsyncMock(return_value=[asset_balance])
         
         await cmd_usdt_in(mock_callback, mock_state, mock_session)
         mock_send.assert_called_once()
@@ -163,18 +181,26 @@ async def test_cmd_usdt_in(mock_session, mock_callback, mock_state):
 @pytest.mark.asyncio
 async def test_cmd_send_usdt_sum(mock_session, mock_message, mock_state):
     mock_message.text = "20"
+    mock_message.chat.id = 123
     asset_balance = MagicMock()
+    asset_balance.asset_code = "USDM"
     asset_balance.balance = "100.0"
     
     with patch("routers.inout.my_float", return_value=20.0), \
-         patch("routers.inout.stellar_get_balances", return_value=[asset_balance], new_callable=AsyncMock), \
+         patch("routers.inout.SqlAlchemyWalletRepository"), \
+         patch("routers.inout.StellarService"), \
+         patch("routers.inout.GetWalletBalance") as MockGetBalance, \
          patch("routers.inout.cmd_send_usdt", new_callable=AsyncMock) as mock_send_usdt, \
          patch("routers.inout.my_gettext", return_value="text"), \
+         patch("routers.inout.config"), \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
+
+        mock_balance_use_case = MockGetBalance.return_value
+        mock_balance_use_case.execute = AsyncMock(return_value=[asset_balance])
         
         await cmd_send_usdt_sum(mock_message, mock_state, mock_session)
         
