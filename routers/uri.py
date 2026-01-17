@@ -15,7 +15,7 @@ from other.stellar_tools import (
 from routers.sign import cmd_check_xdr
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_send, get_kb_return
 from other.web_tools import http_session_manager
-from db.requests import db_get_default_address, db_get_user, db_get_default_wallet
+from db.requests import db_get_default_address, db_get_user
 from other.faststream_tools import publish_pairing_request
 
 router = Router()

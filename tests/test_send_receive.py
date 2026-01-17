@@ -234,6 +234,9 @@ async def test_cmd_cancel_cheque(mock_session, mock_callback, mock_state):
     mock_cheque.cheque_status = 'active'
     mock_cheque.cheque_amount = 5.0
     
+    mock_wallet = MagicMock()
+    mock_wallet.public_key = "GOWNER"
+    
     with patch("routers.cheque.db_get_cheque", return_value=mock_cheque), \
          patch("routers.cheque.db_get_cheque_receive_count", return_value=0), \
          patch("routers.cheque.send_message", new_callable=AsyncMock) as mock_send, \
@@ -243,9 +246,10 @@ async def test_cmd_cancel_cheque(mock_session, mock_callback, mock_state):
          patch("routers.cheque.async_stellar_send", new_callable=AsyncMock), \
          patch("routers.cheque.cmd_info_message", new_callable=AsyncMock), \
          patch("routers.cheque.db_reset_balance"), \
-         patch("routers.cheque.db_get_default_wallet") as mock_wallet:
+         patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo:
          
-         mock_wallet.return_value.public_key = "GOWNER"
+         mock_repo_instance = MockRepo.return_value
+         mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
          
          from routers.cheque import cmd_cancel_cheque
          await cmd_cancel_cheque(mock_session, mock_callback.from_user.id, "UUID", mock_state)
