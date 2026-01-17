@@ -26,3 +26,20 @@ class AddressBookEntry:
     user_id: int
     address: str
     name: str
+
+@dataclass
+class Cheque:
+    id: int
+    uuid: str
+    user_id: int
+    amount: str
+    count: int
+    comment: Optional[str]
+    status: int
+
+@dataclass
+class ChequeHistory:
+    id: int
+    cheque_id: int
+    user_id: int
+    dt_block: Optional[str]

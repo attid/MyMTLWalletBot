@@ -88,3 +88,32 @@ class IAddressBookRepository(ABC):
     async def delete(self, entry_id: int, user_id: int) -> None:
         """Delete an address book entry."""
         pass
+
+
+class IChequeRepository(ABC):
+    """Interface for cheque operations."""
+    
+    @abstractmethod
+    async def create(self, uuid: str, amount: str, count: int, user_id: int, comment: str) -> 'Cheque':
+        """Create a new cheque."""
+        pass
+    
+    @abstractmethod
+    async def get_by_uuid(self, uuid: str, user_id: int = None) -> Optional['Cheque']:
+        """Get a cheque by UUID."""
+        pass
+    
+    @abstractmethod
+    async def get_receive_count(self, uuid: str, user_id: int = None) -> int:
+        """Get the number of times a cheque has been received."""
+        pass
+    
+    @abstractmethod
+    async def get_available(self, user_id: int) -> List['Cheque']:
+        """Get all available (not fully claimed) cheques for a user."""
+        pass
+    
+    @abstractmethod
+    async def add_history(self, cheque_id: int, user_id: int) -> None:
+        """Record a cheque claim in history."""
+        pass
