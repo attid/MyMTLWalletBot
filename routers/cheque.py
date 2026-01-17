@@ -170,7 +170,7 @@ async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: S
 
 
 @router.callback_query(F.data=="ChequeExecute")
-async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session):
+async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session: Session):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)

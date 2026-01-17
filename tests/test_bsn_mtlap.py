@@ -104,6 +104,7 @@ async def test_cmd_mtlap_tools_delegate_a(mock_session, mock_callback, mock_stat
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
+        from routers.mtlap import cmd_mtlap_tools_delegate_a
         await cmd_mtlap_tools_delegate_a(mock_callback, mock_state, mock_session)
         mock_send.assert_called_once()
 
@@ -157,10 +158,19 @@ async def test_cmd_mtlap_tools_add_delegate_a(mock_session, mock_callback, mock_
         mock_callback.answer.assert_called()
 
     # Test success
+    # Define a custom mock for global_data to allow setting db_pool attr
+    custom_gd = MagicMock()
+    custom_gd.db_pool = MagicMock()
+    custom_gd.user_lang_dic = {123: 'en'}
+    custom_gd.lang_dict = {'en': {}}
+
     with patch("routers.mtlap.have_free_xlm", return_value=True), \
          patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.mtlap.get_kb_return"), \
-         patch("routers.mtlap.my_gettext", return_value="text"):
+         patch("routers.mtlap.global_data", custom_gd), \
+         patch("other.lang_tools.global_data", custom_gd), \
+         patch("other.lang_tools.get_user_id", return_value=123):
+
         await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session)
         mock_state.set_state.assert_called() # MTLAPStateTools.delegate_for_a
         mock_send.assert_called()
@@ -178,14 +188,13 @@ async def test_cmd_mtlap_send_add_delegate_for_a(mock_session, mock_message, moc
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-         mock_gd.user_lang_dic = {123: 'en'}
-         mock_gd.lang_dict = {'en': {}}
-         
-         from routers.mtlap import cmd_mtlap_send_add_delegate_for_a
-         await cmd_mtlap_send_add_delegate_for_a(mock_message, mock_state, mock_session)
-         
-         mock_state.update_data.assert_called_with(xdr="XDR")
-         mock_send.assert_called()
+        mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.lang_dict = {'en': {}}
+        
+        await cmd_mtlap_send_add_delegate_for_a(mock_message, mock_state, mock_session)
+        
+        mock_state.update_data.assert_called_with(xdr="XDR")
+        mock_send.assert_called()
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_recommend(mock_session, mock_callback, mock_state):
@@ -198,7 +207,6 @@ async def test_cmd_mtlap_tools_recommend(mock_session, mock_callback, mock_state
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
 
-        from routers.mtlap import cmd_mtlap_tools_recommend
         await cmd_mtlap_tools_recommend(mock_callback, mock_state, mock_session)
 
         mock_state.set_state.assert_called() # recommend_for
@@ -222,7 +230,6 @@ async def test_cmd_mtlap_send_recommend(mock_session, mock_message, mock_state):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
 
-        from routers.mtlap import cmd_mtlap_send_recommend
         await cmd_mtlap_send_recommend(mock_message, mock_state, mock_session)
         
         mock_state.update_data.assert_called_with(xdr="XDR")
@@ -233,7 +240,6 @@ async def test_cmd_mtlap_send_recommend(mock_session, mock_message, mock_state):
 @pytest.mark.asyncio
 async def test_finish_back_bsn(mock_session, mock_callback, mock_state):
     with patch("routers.bsn.cmd_show_balance", new_callable=AsyncMock) as mock_show:
-        from routers.bsn import finish_back_bsn
         await finish_back_bsn(mock_callback, mock_state, mock_session)
         
         mock_state.set_state.assert_called_with(None)
