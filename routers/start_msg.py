@@ -10,7 +10,7 @@ from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from db.requests import get_wallet_info, db_get_default_wallet
+from db.requests import get_wallet_info
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
 from other.aiogram_tools import send_message, clear_state, clear_last_message_id
 from other.common_tools import get_user_id
@@ -123,10 +123,17 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
 
 
 async def get_start_text(session, state, user_id):
-    wallet = db_get_default_wallet(session=session, user_id=user_id)
-    if wallet.secret_key == 'TON':
+    from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    
+    secret_service = SqlAlchemyWalletSecretService(session)
+    repo = SqlAlchemyWalletRepository(session)
+    
+    wallet = await repo.get_default_wallet(user_id)
+    if await secret_service.is_ton_wallet(user_id):
+        mnemonic = await secret_service.get_ton_mnemonic(user_id)
         ton_service = TonService()
-        ton_service.from_mnemonic(wallet.seed_key)
+        ton_service.from_mnemonic(mnemonic)
         await state.update_data(use_ton=True)
         ton_balance = await ton_service.get_ton_balance()
         usdt_balance = await ton_service.get_usdt_balance()
