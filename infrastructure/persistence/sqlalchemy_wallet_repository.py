@@ -34,6 +34,16 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             return self._to_entity(db_wallet)
         return None
 
+    async def get_all_active(self, user_id: int) -> List[Wallet]:
+        """Retrieve all active (non-deleted) wallets for a user."""
+        stmt = select(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id,
+            MyMtlWalletBot.need_delete == 0
+        )
+        result = self.session.execute(stmt)
+        db_wallets = result.scalars().all()
+        return [self._to_entity(w) for w in db_wallets]
+
     async def create(self, wallet: Wallet) -> Wallet:
         # Note: mapping entity to DB model. 
         # WARNING: Entity 'id' might be None/0 if it's new, but DB needs it or autogenerates it.

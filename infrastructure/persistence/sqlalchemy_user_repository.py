@@ -79,6 +79,15 @@ class SqlAlchemyUserRepository(IUserRepository):
         
         return None, None
 
+    async def search_by_username(self, query: str) -> list[str]:
+        """Search users by partial username match."""
+        stmt = select(MyMtlWalletBotUsers.user_name).where(
+            MyMtlWalletBotUsers.user_name.isnot(None),
+            MyMtlWalletBotUsers.user_name.ilike(f"%{query}%")
+        )
+        result = self.session.execute(stmt)
+        return [row[0] for row in result.all()]
+
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:
         return User(
             id=db_user.user_id,

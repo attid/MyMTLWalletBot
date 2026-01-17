@@ -14,7 +14,7 @@ from stellar_sdk import Asset, Network, TransactionBuilder
 from stellar_sdk.sep.federation import resolve_stellar_address
 from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
-from db.requests import (db_get_user_data, db_get_wallets_list)
+
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from other.stellar_tools import (
@@ -623,10 +623,12 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
     data = [(entry.address, entry.name) for entry in book_entries]
 
     # Query from the wallets
-    wallet_data = db_get_wallets_list(session, inline_query.from_user.id)
-    for record in wallet_data:
-        simple_account = record.public_key[:4] + '..' + record.public_key[-4:]
-        data.append((record.public_key, simple_account))
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    wallet_repo = SqlAlchemyWalletRepository(session)
+    wallets = await wallet_repo.get_all_active(inline_query.from_user.id)
+    for wallet in wallets:
+        simple_account = wallet.public_key[:4] + '..' + wallet.public_key[-4:]
+        data.append((wallet.public_key, simple_account))
 
     if len(inline_query.query) > 2:
         for record in data:
@@ -640,9 +642,11 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
                     ))
 
         # Query from users
-        user_data = db_get_user_data(session, inline_query.query)
-        for record in user_data:
-            user = f'@{record.user_name}'
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        usernames = await user_repo.search_by_username(inline_query.query)
+        for username in usernames:
+            user = f'@{username}'
             if user not in seen_ids:
                 seen_ids.add(user)
                 results.append(types.InlineQueryResultArticle(
