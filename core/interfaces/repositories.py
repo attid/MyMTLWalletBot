@@ -45,6 +45,36 @@ class IUserRepository(ABC):
         """Delete a user."""
         pass
 
+    @abstractmethod
+    async def get_usdt_key(self, user_id: int) -> tuple[Optional[str], int]:
+        """Get USDT address and amount."""
+        pass
+
+    @abstractmethod
+    async def set_usdt_key(self, user_id: int, address: str) -> None:
+        """Set USDT address."""
+        pass
+        
+    @abstractmethod
+    async def update_usdt_balance(self, user_id: int, amount: int) -> str:
+        """Update USDT balance and return address."""
+        pass
+
+    @abstractmethod
+    async def get_btc_uuid(self, user_id: int) -> tuple[Optional[str], Optional[object]]: # datetime
+        """Get BTC UUID and date."""
+        pass
+
+    @abstractmethod
+    async def set_btc_uuid(self, user_id: int, uuid: Optional[str]) -> None:
+        """Set BTC UUID."""
+        pass
+        
+    @abstractmethod
+    async def get_all_with_usdt_balance(self) -> List[tuple[str, int, int]]:
+        """Get all users with +ve USDT balance. Returns [(username, amount, user_id)]."""
+        pass
+
 
 class IWalletRepository(ABC):
     @abstractmethod
@@ -67,6 +97,11 @@ class IWalletRepository(ABC):
         """Retrieve a wallet by its public key."""
         pass
 
+    @abstractmethod
+    async def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
+        """Retrieve a wallet by its ID."""
+        pass
+        
     @abstractmethod
     async def get_default_wallet(self, user_id: int) -> Optional[Wallet]:
         """Retrieve the default wallet for a user."""
@@ -109,6 +144,11 @@ class IWalletRepository(ABC):
         This invalidates the local balance cache, forcing a refresh 
         from the network on next balance request.
         """
+        pass
+        
+    @abstractmethod
+    async def get_all_deleted(self) -> List[Wallet]:
+        """Get all wallets marked for deletion."""
         pass
 
 
@@ -167,4 +207,74 @@ class IChequeRepository(ABC):
     @abstractmethod
     async def cancel(self, cheque_uuid: str, user_id: int) -> bool:
         """Cancel a cheque (set status to CANCELED)."""
+        pass
+
+
+class INotificationRepository(ABC):
+    """Interface for notification filter operations."""
+
+    @abstractmethod
+    async def get_by_user_id(self, user_id: int) -> List['NotificationFilter']:
+        """Get all notification filters for a user."""
+        pass
+
+    @abstractmethod
+    async def create(self, user_id: int, public_key: Optional[str], asset_code: Optional[str], 
+                    min_amount: float, operation_type: str) -> 'NotificationFilter':
+        """Create a new notification filter."""
+        pass
+
+    @abstractmethod
+    async def delete_all_by_user(self, user_id: int) -> None:
+        """Delete all notification filters for a user."""
+        pass
+    
+    @abstractmethod
+    async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str], 
+                           min_amount: float, operation_type: str) -> Optional['NotificationFilter']:
+        """Find a duplicate filter."""
+        pass
+
+
+class IOperationRepository(ABC):
+    """Interface for operation (transaction) retrieval."""
+    
+    @abstractmethod
+    async def get_by_id(self, operation_id: str) -> Optional['TOperations']:
+        """Retrieve an operation by its ID."""
+        pass
+
+    @abstractmethod
+    async def get_recent_for_addresses(self, addresses: List[str], last_event_id: int, 
+                                     minutes: int = 30) -> List['TOperations']:
+        """Get recent operations for a list of addresses efficiently."""
+        pass
+    
+    @abstractmethod
+    async def get_by_account_since_id(self, account: str, last_id: int, minutes: int = 30) -> List['TOperations']:
+        """Get operations for a specific account since a given ID."""
+        pass
+
+
+class IMessageRepository(ABC):
+    """Interface for message queue operations."""
+    
+    @abstractmethod
+    async def enqueue(self, user_id: int, text: str, use_alarm: int = 0, update_id: int = None, button_json: str = None) -> None:
+        """Add a message to the send queue."""
+        pass
+    
+    @abstractmethod
+    async def get_unsent(self, limit: int = 10) -> List['MyMtlWalletBotMessages']:
+        """Get a batch of unsent messages."""
+        pass
+    
+    @abstractmethod
+    async def mark_sent(self, message_id: int) -> None:
+        """Mark a message as sent."""
+        pass
+        
+    @abstractmethod
+    async def mark_failed(self, message_id: int) -> None:
+        """Mark a message as failed (or retry later)."""
         pass

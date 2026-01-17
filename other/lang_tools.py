@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from other.config_reader import start_path
 from db.models import MyMtlWalletBotUsers
-from db.requests import get_user_lang
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from other.common_tools import get_user_id
 from other.global_data import global_data
 
@@ -18,11 +18,20 @@ for file in listdir(f"{start_path}/langs/"):
 
 
 def change_user_lang(session: Session, user_id: int, lang: str):
+
+    # Ideally should use repo.update but we have partial update here
+    # Since we are inside legacy tool, explicit update is fine or use repo.
+    # We used User entity in repo. 
+    # Let's use repo if we have method.
+    # IUserRepository has update(user: User).
+    # But here we just want to update lang.
+    # The existing code queries model directly.
+    # For now, to keep it simple and avoid fetching full user entity overhead if not needed:
     user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
     if user is not None:
         user.lang = lang
         session.commit()
-        global_data.user_lang_dic[user_id] = lang  # assuming user_lang_dic is accessible
+        global_data.user_lang_dic[user_id] = lang
     else:
         raise ValueError(f"No user found with user_id {user_id}")
 
@@ -45,7 +54,12 @@ def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], tex
             lang = global_data.user_lang_dic[user_id]
         else:
             with global_data.db_pool.get_session() as session:
-                lang = get_user_lang(session, user_id)
+
+                try:
+                    user = session.query(MyMtlWalletBotUsers.lang).filter(MyMtlWalletBotUsers.user_id == user_id).first()
+                    lang = user.lang if user else 'en'
+                except Exception:
+                    lang = 'en'
             global_data.user_lang_dic[user_id] = lang
 
     text: str = global_data.lang_dict[lang].get(text, global_data.lang_dict['en'].get(text, f'{text} 0_0'))

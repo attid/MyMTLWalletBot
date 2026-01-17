@@ -14,7 +14,12 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.user_id == user_id)
         result = self.session.execute(stmt)
         db_wallets = result.scalars().all()
-        return [self._to_entity(w) for w in db_wallets]
+        return [self._to_entity(w) for w in result.scalars().all()]
+
+    async def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
+        stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.id == wallet_id)
+        result = self.session.execute(stmt)
+        return self._to_entity(result.scalar_one_or_none())
 
     async def get_by_public_key(self, public_key: str) -> Optional[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.public_key == public_key)
@@ -95,15 +100,17 @@ class SqlAlchemyWalletRepository(IWalletRepository):
 
     async def reset_balance_cache(self, user_id: int) -> None:
         """Reset the cached balance for the user's default wallet."""
-        stmt = select(MyMtlWalletBot).where(
-            MyMtlWalletBot.user_id == user_id,
-            MyMtlWalletBot.default_wallet == 1
-        )
+        stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1)
         result = self.session.execute(stmt)
-        db_wallet = result.scalar_one_or_none()
-        if db_wallet:
-            db_wallet.balances_event_id = '0'
-            self.session.commit()
+        wallet = result.scalar_one_or_none()
+        if wallet:
+            wallet.balances_event_id = '0'
+            self.session.flush()
+
+    async def get_all_deleted(self) -> List[Wallet]:
+        stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.need_delete == 1)
+        result = self.session.execute(stmt)
+        return [self._to_entity(w) for w in result.scalars().all()]
 
     async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: int = None) -> None:
         """Delete or soft-delete a wallet."""

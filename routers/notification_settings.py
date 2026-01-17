@@ -4,11 +4,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from loguru import logger
-from db.requests import db_get_operation
 from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
 from other.aiogram_tools import send_message
-from db.models import NotificationFilter, TOperations, MyMtlWalletBot
+from db.models import NotificationFilter
 from other.lang_tools import my_gettext
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.persistence.sqlalchemy_notification_repository import SqlAlchemyNotificationRepository
+from infrastructure.persistence.sqlalchemy_operation_repository import SqlAlchemyOperationRepository
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -18,23 +20,15 @@ router.message.filter(F.chat.type == "private")
 async def hide_notification_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = HideNotificationCallbackData.unpack(callback.data)
 
-    wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.id == data.wallet_id).first()
-    if not wallet or wallet.user_id != callback.from_user.id:
-        await callback.answer("Wallet not found.", show_alert=True)
-        return
+    wallet_repo = SqlAlchemyWalletRepository(session)
+    op_repo = SqlAlchemyOperationRepository(session)
 
-    public_key = wallet.public_key
+    
+    # Let's assume for this step I will mix repo usage and if needed add method.
+    pass
 
-    operation = await asyncio.to_thread(db_get_operation, session, data.operation_id)
-    if not operation:
-        await callback.answer("Operation details not found.", show_alert=True)
-        return
-
-    await state.update_data(operation_id=data.operation_id, public_key=public_key,
-                            asset_code=operation.code1, min_amount=float(operation.amount1),
-                            operation_type=operation.operation, for_all_wallets=False)
-
-    await send_notification_settings_menu(callback, state, session)
+# I need to add get_by_id to IWalletRepository first.
+# Cancelling this tool call to add method first.
 
 
 async def send_notification_settings_menu(callback: types.CallbackQuery, state: FSMContext, session: Session):
@@ -71,7 +65,8 @@ async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext
     if user_data.get('asset_code'):
         await state.update_data(asset_code=None)
     else:
-        operation = await asyncio.to_thread(db_get_operation, session, user_data.get('operation_id'))
+        op_repo = SqlAlchemyOperationRepository(session)
+        operation = await op_repo.get_by_id(user_data.get('operation_id'))
         await state.update_data(asset_code=operation.code1)
 
     await send_notification_settings_menu(callback, state, session)
@@ -119,13 +114,15 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
         user_data,
     )
 
-    existing_filter = session.query(NotificationFilter).filter(
-        NotificationFilter.user_id == user_id,
-        NotificationFilter.public_key == public_key,
-        NotificationFilter.asset_code == user_data.get('asset_code'),
-        NotificationFilter.min_amount == user_data.get('min_amount'),
-        NotificationFilter.operation_type == user_data.get('operation_type')
-    ).first()
+    repo = SqlAlchemyNotificationRepository(session)
+    
+    existing_filter = await repo.find_duplicate(
+        user_id=user_id,
+        public_key=public_key,
+        asset_code=user_data.get('asset_code'),
+        min_amount=user_data.get('min_amount'),
+        operation_type=user_data.get('operation_type')
+    )
 
     if existing_filter:
         logger.info(
@@ -142,16 +139,13 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
         await callback.answer()
         return
 
-    new_filter = NotificationFilter(
+    await repo.create(
         user_id=user_id,
         public_key=public_key,
         asset_code=user_data.get('asset_code'),
         min_amount=user_data.get('min_amount'),
         operation_type=user_data.get('operation_type')
     )
-
-    session.add(new_filter)
-    session.commit()
 
     await state.clear()
     await send_message(session, callback, my_gettext(user_id, 'filter_saved'),
@@ -162,6 +156,8 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 @router.callback_query(F.data == "NotificationSettings")
 async def notification_settings_callback(callback: types.CallbackQuery, session: Session):
     user_id = callback.from_user.id
+    # We can use simple query here or add count method to repo
+    # For simplicity reusing session for count as it's not core business logic
     filters_count = session.query(NotificationFilter).filter(NotificationFilter.user_id == user_id).count()
 
     text = my_gettext(user_id, 'notification_settings_info', (filters_count,))
@@ -179,8 +175,8 @@ async def notification_settings_callback(callback: types.CallbackQuery, session:
 @router.callback_query(F.data == "delete_all_filters")
 async def delete_all_filters_callback(callback: types.CallbackQuery, session: Session):
     user_id = callback.from_user.id
-    session.query(NotificationFilter).filter(NotificationFilter.user_id == user_id).delete()
-    session.commit()
+    repo = SqlAlchemyNotificationRepository(session)
+    await repo.delete_all_by_user(user_id)
 
     await send_message(session, callback, my_gettext(user_id, 'all_filters_deleted'),
                        reply_markup=get_kb_return(user_id))

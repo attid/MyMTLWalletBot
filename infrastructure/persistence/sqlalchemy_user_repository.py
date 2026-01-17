@@ -1,9 +1,11 @@
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, timedelta
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 from core.domain.entities import User
 from core.interfaces.repositories import IUserRepository
 from db.models import MyMtlWalletBotUsers
+from other.tron_tools import create_trc_private_key
 
 class SqlAlchemyUserRepository(IUserRepository):
     def __init__(self, session: Session):
@@ -101,10 +103,74 @@ class SqlAlchemyUserRepository(IUserRepository):
         """Delete a user."""
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
         result = self.session.execute(stmt)
-        db_user = result.scalar_one_or_none()
         if db_user:
             self.session.delete(db_user)
             self.session.flush()
+
+    async def get_usdt_key(self, user_id: int) -> tuple[Optional[str], int]:
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if user and user.usdt and len(user.usdt) == 64:
+            return user.usdt, user.usdt_amount
+        elif user:
+            # Generate new key if user exists but has no USDT key
+            # Logic from db/requests.py: db_get_usdt_private_key
+            try:
+                addr = create_trc_private_key()
+                user.usdt = addr
+                self.session.flush() # Commit logic usually outside, but here we modify state on read?
+                # db/requests logic did commit.
+                # It's better to avoid side effects on get, but this is legacy behavior migration.
+                return addr, 0
+            except Exception:
+                # If generation fails or import error handling
+                return None, 0
+        return None, 0
+
+    async def set_usdt_key(self, user_id: int, address: str) -> None:
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            user.usdt = address
+            self.session.flush()
+
+    async def update_usdt_balance(self, user_id: int, amount: int) -> str:
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user and user.usdt and len(user.usdt) == 64:
+            user.usdt_amount = user.usdt_amount + amount
+            self.session.flush()
+            return user.usdt
+        else:
+             raise ValueError(f"No user found with id {user_id} or invalid USDT key")
+
+    async def get_btc_uuid(self, user_id: int) -> tuple[Optional[str], Optional[datetime]]:
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user and user.btc and user.btc_date and len(user.btc) > 10:
+            return user.btc, user.btc_date
+        return None, None
+
+    async def set_btc_uuid(self, user_id: int, uuid: Optional[str]) -> None:
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            user.btc = uuid
+            user.btc_date = datetime.now() + timedelta(minutes=30)
+            self.session.flush()
+
+    async def get_all_with_usdt_balance(self) -> List[tuple[str, int, int]]:
+        stmt = select(MyMtlWalletBotUsers.user_name, MyMtlWalletBotUsers.usdt_amount, MyMtlWalletBotUsers.user_id).where(
+            MyMtlWalletBotUsers.usdt_amount > 0
+        ).order_by(MyMtlWalletBotUsers.usdt_amount.desc())
+        result = self.session.execute(stmt)
+        return [(row.user_name, row.usdt_amount, row.user_id) for row in result.all()]
 
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:
         return User(

@@ -2,8 +2,10 @@ import asyncio
 import base64
 from contextlib import suppress
 from urllib.parse import urlparse, parse_qs
+from typing import List, Optional, Union, Dict
 
 import jsonpickle
+from sqlalchemy.orm import Session
 from aiogram.utils.text_decorations import html_decoration
 from cryptocode import encrypt, decrypt
 from stellar_sdk import AiohttpClient, ServerAsync, StrKey, MuxedAccount
@@ -13,7 +15,11 @@ from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
 
 from other.config_reader import config
-from db.requests import *
+
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from infrastructure.services.stellar_service import StellarService
 from other.mytypes import MyOffers, MyAccount, Balance, MyOffer
 from other.aiogram_tools import get_web_request
 from other.counting_lock import CountingLock
@@ -355,8 +361,8 @@ async def stellar_check_xdr(xdr: str, for_free_account=False):
     return result
 
 
-def stellar_user_sign(session: Session, xdr: str, user_id: int, user_password: str):
-    user_key_pair = stellar_get_user_keypair(session, user_id, user_password)
+async def stellar_user_sign(session: Session, xdr: str, user_id: int, user_password: str):
+    user_key_pair = await stellar_get_user_keypair(session, user_id, user_password)
     return stellar_sign(xdr, user_key_pair.secret)
 
 
@@ -368,8 +374,8 @@ def is_base64(s):
         return False
 
 
-def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_password: str) -> str:
-    user_key_pair = stellar_get_user_keypair(session, user_id, user_password)
+async def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_password: str) -> str:
+    user_key_pair = await stellar_get_user_keypair(session, user_id, user_password)
     return base64.b64encode(user_key_pair.sign(msg.encode())).decode()
 
 
@@ -390,56 +396,7 @@ async def async_stellar_check_fee() -> str:
         return fee['min'] + '-' + fee['max']
 
 
-def stellar_save_new(session: Session, user_id: int, user_name: str, secret_key: str, free_wallet: bool,
-                     address: str = None, mnemonic_phrase: str = None):
-    if user_name:
-        user_name = user_name.lower()
-
-    if address:
-        new_account = Keypair.from_secret(secret_key)
-        public_key = address
-    else:
-        new_account = Keypair.from_secret(secret_key)
-        public_key = new_account.public_key
-    i_free_wallet = 1 if free_wallet else 0
-    seed_key = None if mnemonic_phrase is None else encrypt(mnemonic_phrase, new_account.secret)
-    db_add_user_if_not_exists(session, user_id, user_name)
-
-    db_add_wallet(session, user_id, public_key, encrypt(new_account.secret, str(user_id)), i_free_wallet, seed_key)
-
-    return public_key
-
-
-def stellar_save_ro(session: Session, user_id: int, user_name: str, public_key: str):
-    if user_name:
-        user_name = user_name.lower()
-
-    Keypair.from_public_key(public_key)
-
-    i_free_wallet = 0
-    db_add_user_if_not_exists(session, user_id, user_name)
-
-    db_add_wallet(session, user_id, public_key, public_key, i_free_wallet)
-    db_update_secret_key(session=session, user_id=user_id, new_secret_key=public_key, password_type=10)
-
-    return public_key
-
-
-async def stellar_create_new(session: Session, user_id: int, username: str):
-    mnemonic_phrase = Keypair.generate_mnemonic_phrase()
-    new_account = Keypair.from_mnemonic_phrase(mnemonic_phrase)
-    stellar_save_new(session, user_id, username, new_account.secret, free_wallet=True, mnemonic_phrase=mnemonic_phrase)
-
-    master = stellar_get_master(session)
-    xdr = await stellar_pay(master.public_key, new_account.public_key, xlm_asset, 5, create=True, fee=1001001)
-    # stellar_send(stellar_sign(xdr, master.secret))
-
-    xdr = await stellar_add_trust(new_account.public_key, mtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, eurmtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, satsmtl_asset, xdr=xdr)
-    xdr = await stellar_add_trust(new_account.public_key, usdm_asset, xdr=xdr)
-    xdr = stellar_sign(xdr, new_account.secret)
-    return stellar_sign(xdr, master.secret)
+# Deleted stellar_save_new, stellar_save_ro, stellar_create_new as they are unused or refactored to Use Cases.
 
 
 async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount: float, create: bool = False,
@@ -583,12 +540,14 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
     return full_transaction.to_xdr()
 
 
-def stellar_get_user_keypair(session: Session, user_id: int, user_password: str) -> Keypair:
-    result = db_get_default_wallet(session, user_id).secret_key
+async def stellar_get_user_keypair(session: Session, user_id: int, user_password: str) -> Keypair:
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id) # Using async repo
+    result = wallet.secret_key
     return Keypair.from_secret(decrypt(result, user_password))
 
 
-def stellar_get_user_seed_phrase(session: Session, user_id: int, user_password: str) -> str:
+async def stellar_get_user_seed_phrase(session: Session, user_id: int, user_password: str) -> str:
     """
     Получает сид-фразу пользователя из базы данных и расшифровывает её приватным ключом.
     
@@ -597,34 +556,36 @@ def stellar_get_user_seed_phrase(session: Session, user_id: int, user_password: 
     :param user_password: Пароль пользователя
     :return: Расшифрованная сид-фраза или None, если её нет или не удалось расшифровать
     """
-    wallet = db_get_default_wallet(session, user_id)
-    if not wallet.seed_key:
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id)
+    if not wallet or not wallet.seed_key:
         return None
 
     try:
         # Получаем keypair с помощью пароля пользователя
-        keypair = stellar_get_user_keypair(session, user_id, user_password)
+        keypair = await stellar_get_user_keypair(session, user_id, user_password)
         # Расшифровываем сид-фразу с помощью приватного ключа
         decrypted_seed = decrypt(wallet.seed_key, keypair.secret)
         return decrypted_seed
     except Exception:
         return None
-    return Keypair.from_secret(decrypt(result, user_password))
 
 
 async def stellar_get_user_account(session: Session, user_id: int, public_key=None) -> Account:
     if public_key:
         result = public_key
     else:
-        result = db_get_default_wallet(session, user_id).public_key
+        repo = SqlAlchemyWalletRepository(session)
+        wallet = await repo.get_default_wallet(user_id)
+        result = wallet.public_key
     async with ServerAsync(
             horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         return await server.load_account(result)
 
 
-def stellar_get_master(session: Session) -> Keypair:
-    return stellar_get_user_keypair(session, 0, '0')
+async def stellar_get_master(session: Session) -> Keypair:
+    return await stellar_get_user_keypair(session, 0, '0')
 
 
 async def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
@@ -669,47 +630,79 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
 
 
 async def stellar_delete_all_deleted(session: Session):
-    master = stellar_get_master(session)
-    for wallet in db_get_deleted_wallets_list(session):
+    master = await stellar_get_master(session)
+    repo = SqlAlchemyWalletRepository(session)
+    wallets = await repo.get_all_deleted()
+    
+    for wallet in wallets:
         if wallet.secret_key != 'TON':
             try:
-                if wallet.free_wallet == 1:
+                # check free_wallet property? Wallet entity has is_free boolean.
+                # Legacy: if wallet.free_wallet == 1:
+                # Entity: wallet.is_free
+                if wallet.is_free:
                     with suppress(NotFoundError):
                         await stellar_delete_account(master,
                                                      Keypair.from_secret(
                                                          decrypt(wallet.secret_key, str(wallet.user_id))))
-                db_delete_wallet(session, wallet.user_id, wallet.public_key, erase=True)
+                
+                # Delete hard
+                # Checking Repo.delete signature: delete(user_id, public_key, erase=False, wallet_id=None)
+                await repo.delete(wallet.user_id, wallet.public_key, erase=True)
             except Exception as e:
                 print("\n---!!! ОБНАРУЖЕНА ОШИБКА !!!---")
                 print(f"Не удалось обработать кошелек. Ошибка: {e}")
-                print("ДАННЫЕ ПРОБЛЕМНОГО КОШЕЛЬКА:")
-                import json
-                try:
-                    # Попытка красивого вывода через json
-                    wallet_dict = {c.name: getattr(wallet, c.name) for c in wallet.__table__.columns}
-                    print(json.dumps(wallet_dict, indent=4, default=str))
-                except:
-                    # Если не получилось, выводим как есть
-                    print(vars(wallet))
-                print("---!!! КОНЕЦ ИНФОРМАЦИИ ОБ ОШИБКЕ !!!---\\n")
-                # raise
-                # Цикл продолжится, чтобы найти другие проблемные кошельки
+                # print("ДАННЫЕ ПРОБЛЕМНОГО КОШЕЛЬКА:")
+                # import json
+                # try:
+                #     wallet_dict = wallet.__dict__
+                #     print(json.dumps(wallet_dict, indent=4, default=str))
+                # except:
+                #     print(vars(wallet))
+                # print("---!!! КОНЕЦ ИНФОРМАЦИИ ОБ ОШИБКЕ !!!---\\n")
                 continue
 
 
 async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
-    # start_time = datetime.now()
-    asset_filter = None
-    # only_eurmtl
-    if public_key is None and state and (await state.get_data()).get('show_more', False) == False:
-        asset_filter = 'EURMTL'
-    balances = await stellar_get_balances(session, user_id, public_key, state=state, asset_filter=asset_filter)
-    free_wallet = await stellar_is_free_wallet(session, user_id)
-    wallet = db_get_default_wallet(session, user_id)
-    vis_str = getattr(wallet, "assets_visibility", None)
+    # Use Use Case to get balances
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+    
+    # Logic for asset filter using state (ported from legacy)
+    # legacy: only_eurmtl logic if state and !show_more -> asset_filter='EURMTL'
+    # Use Case returns ALL balances. We filter here for string construction.
+    
+    balances = await use_case.execute(user_id, public_key)
+    
+    # Legacy: db_get_default_wallet used to check visibility.
+    # Note: Use Case returns Balance objects.
+    # We need to filter based on visibility string.
+    # We need wallet entity to get visibility string.
+    # If public_key provided, use case fetched it using service, but might not returned wallet entity (it returns List[Balance]).
+    # But for visibility we need wallet settings!
+    # If public_key is NOT None, we might check THEIR wallet settings if in DB?
+    # Legacy line 708: wallet = db_get_default_wallet(session, user_id).
+    # So it ALWAYS used MY default wallet settings? Even if checking another public key?
+    # Yes, legacy line 708.
+    
+    wallet = await repo.get_default_wallet(user_id)
+    vis_str = wallet.assets_visibility if wallet else None
+    
+    # Filter VISIBLE assets
     balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
+    
+    # Filter EURMTL only if needed (legacy logic)
+    if public_key is None and state and (await state.get_data()).get('show_more', False) == False:
+         balances = [b for b in balances if b.asset_code == 'EURMTL']
+
     result = ''
     for balance in balances:
+        # balance is core.domain.value_objects.Balance.
+        # Legacy used dict-like object or specific class? 
+        # Legacy: balance.selling_liabilities.
+        # Domain Balance has selling_liabilities (str).
+        
         if balance.selling_liabilities and float(balance.selling_liabilities) > 0:
             lock = float2str(balance.selling_liabilities, short=True)
             full = float2str(balance.balance, short=True)
@@ -717,19 +710,29 @@ async def stellar_get_balance_str(session: Session, user_id: int, public_key=Non
             result += f"{balance.asset_code} : {free} (+{lock}={full})\n"
         else:
             result += f"{balance.asset_code} : {float2str(balance.balance, short=True)}\n"
-    if free_wallet:
+            
+    if wallet and wallet.is_free:
         result += 'XLM : <a href="https://telegra.ph/XLM-05-28">?</a>\n'
     return result
 
 
 async def stellar_is_free_wallet(session: Session, user_id: int):
-    return db_get_default_wallet(session, user_id).free_wallet == 1
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id)
+    return wallet.is_free if wallet else False
 
 
 async def stellar_unfree_wallet(session: Session, user_id: int):
     try:
-        user_account = await stellar_get_user_account(session, user_id)
-        db_unfree_wallet(session, user_id, user_account.account.account_id)
+        # DB: db_unfree_wallet(session, user_id, user_account.account.account_id)
+        # Usage: update wallet set free_wallet=0 where public_key matches.
+        # Repo does not have explicit unfree_wallet.
+        # But we can get wallet, update is_free=False, and save.
+        repo = SqlAlchemyWalletRepository(session)
+        wallet = await repo.get_default_wallet(user_id)
+        if wallet and wallet.is_free:
+            wallet.is_free = False
+            await repo.update(wallet)
     except:
         return
 
@@ -737,104 +740,26 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
 async def stellar_get_balances(session, user_id: int, public_key=None,
                                asset_filter: str = None, state=None) -> List[Balance]:
     try:
-        user_account = await stellar_get_user_account(session, user_id, public_key)
-        free_wallet = await stellar_is_free_wallet(session, user_id)
-        wallet = db_get_default_wallet(session, user_id)
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService()
+        use_case = GetWalletBalance(repo, service)
+
+        # Get domain balances
+        domain_balances = await use_case.execute(user_id, public_key)
+
+        # Convert to legacy Balance
         result = []
-        balances = None
-
-        # Try to use cached balances if available and up-to-date
-        if public_key is None and user_id > 0 and wallet.balances_event_id == wallet.last_event_id:
-            try:
-                balances = wallet.balances
-                # Verify the cached data is valid by decoding it
-                if balances:
-                    test_decode = jsonpickle.decode(balances)
-            except Exception as e:
-                logger.error(f"Error decoding cached balances: {e}")
-                balances = None
-                # Invalidate corrupted cache data
-                await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
-
-        if balances is None:
-            # Fetch balances from the network
-            try:
-                async with ServerAsync(
-                        horizon_url=config.horizon_url, client=AiohttpClient()
-                ) as server:
-                    call = await server.accounts().account_id(user_account.account.account_id).call()
-
-                    lock_sum = 1
-                    lock_sum += float(call['num_sponsoring']) * 0.5
-                    lock_sum += (len(call['signers']) - 1) * 0.5
-                    lock_sum += (len(call['balances']) - 1) * 0.5
-                    lock_sum += (len(call['data'])) * 0.5
-                    balances = MyAccount.from_dict(call).balances
-                    offers_call = await server.offers().for_seller(
-                        user_account.account.account_id
-                    ).limit(200).call()
-                    lock_sum += len(offers_call['_embedded']['records']) * 0.5
-
-                for balance in balances:
-                    if balance.asset_type == "native":
-                        balance.selling_liabilities = str(
-                            float(balance.selling_liabilities) + lock_sum
-                        )
-                        free_xlm = float(balance.balance) - float(balance.selling_liabilities)
-                        if state:
-                            await state.update_data(free_xlm=free_xlm)
-                        if free_wallet == 0:
-                            result.append(balance)
-                    elif balance.asset_type[:15] == "credit_alphanum":
-                        result.append(balance)
-
-                # Get issuer tokens
-                try:
-                    async with ServerAsync(
-                            horizon_url=config.horizon_url, client=AiohttpClient()
-                    ) as server:
-                        issuer = await server.assets().for_issuer(
-                            user_account.account.account_id
-                        ).call()
-
-                    for record in issuer['_embedded']['records']:
-                        result.append(
-                            Balance(
-                                balance='unlimited',
-                                asset_code=record['asset_code'],
-                                asset_type=record['asset_type'],
-                                asset_issuer=user_account.account.account_id
-                            )
-                        )
-                except Exception as ex:
-                    logger.error(f"Error fetching issuer tokens: {ex}")
-                    # Continue execution even if this part fails
-
-                # Save the complete list to database cache
-                if public_key is None and result:
-                    try:
-                        encoded_result = jsonpickle.encode(result)
-                        await asyncio.to_thread(
-                            db_update_mymtlwalletbot_balances, session, encoded_result, user_id
-                        )
-                    except Exception as ex:
-                        logger.error(f"Error saving balances to database: {ex}")
-
-            except Exception as ex:
-                logger.error(f"Error fetching balances from network: {ex}")
-                # If we have a database error and no fresh data, return empty list
-                result = []
-                # Invalidate cache on error
-                if public_key is None:
-                    await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
-        else:
-            try:
-                result = jsonpickle.decode(balances)
-            except Exception as ex:
-                logger.error(f"Error decoding balances from database: {ex}")
-                # Invalidate corrupted cache
-                await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
-                result = []
+        for db in domain_balances:
+            # Map fields. Note: mytypes.Balance has many optional fields.
+            lb = Balance(
+                balance=db.balance,
+                asset_code=db.asset_code,
+                asset_issuer=db.asset_issuer,
+                asset_type=db.asset_type,
+                buying_liabilities=db.buying_liabilities,
+                selling_liabilities=db.selling_liabilities
+            )
+            result.append(lb)
 
         # Apply asset filter if specified
         if asset_filter and result:
@@ -849,9 +774,6 @@ async def stellar_get_balances(session, user_id: int, public_key=None,
 
     except Exception as e:
         logger.error(f"Unexpected error in stellar_get_balances: {e}")
-        # On any unexpected error, return empty list and invalidate cache
-        if public_key is None and user_id > 0:
-            await asyncio.to_thread(db_update_mymtlwalletbot_balances, session, None, user_id)
         return []
 
 
