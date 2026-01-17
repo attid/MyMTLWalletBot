@@ -70,6 +70,34 @@ async def test_send_payment_dest_not_found():
     assert result.error_message == "Destination account does not exist"
 
 @pytest.mark.asyncio
+async def test_send_payment_create_account():
+    mock_wallet_repo = AsyncMock()
+    mock_stellar_service = AsyncMock()
+    
+    user_id = 123
+    wallet = Wallet(id=1, user_id=user_id, public_key="GSOURCE", is_default=True, is_free=True)
+    mock_wallet_repo.get_default_wallet.return_value = wallet
+    
+    mock_stellar_service.check_account_exists.return_value = False
+    mock_stellar_service.build_payment_transaction.return_value = "AAAA...CREATE"
+    
+    use_case = SendPayment(mock_wallet_repo, mock_stellar_service)
+    result = await use_case.execute(
+        user_id=user_id,
+        destination_address="GNEW",
+        asset=Asset(code="XLM"),
+        amount=10.0,
+        create_account=True
+    )
+    
+    assert result.success is True
+    assert result.xdr == "AAAA...CREATE"
+    
+    mock_stellar_service.build_payment_transaction.assert_called_once()
+    args, kwargs = mock_stellar_service.build_payment_transaction.call_args
+    assert kwargs['create_account'] is True
+
+@pytest.mark.asyncio
 async def test_create_cheque_success():
     from core.use_cases.cheque.create_cheque import CreateCheque
     

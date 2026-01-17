@@ -8,26 +8,27 @@ class GetWalletBalance:
         self.wallet_repository = wallet_repository
         self.stellar_service = stellar_service
 
-    async def execute(self, user_id: int) -> List[Balance]:
+    async def execute(self, user_id: int, public_key: str = None) -> List[Balance]:
         """
-        Retrieves the balance for the user's default wallet, including calculation of locked reserves.
+        Retrieves the balance for the user's default wallet or specified public key, 
+        including calculation of locked reserves.
         """
-        # 1. Get default wallet
-        wallet = await self.wallet_repository.get_default_wallet(user_id)
-        if not wallet:
-            raise ValueError("No default wallet found for user")
+        # 1. Determine target public key
+        target_key = public_key
+        if not target_key:
+            # Get default wallet
+            wallet = await self.wallet_repository.get_default_wallet(user_id)
+            if not wallet:
+                raise ValueError("No default wallet found for user")
+            target_key = wallet.public_key
 
         # 2. Get account details from Stellar
-        # TODO: Parallelize these calls
-        account_details = await self.stellar_service.get_account_details(wallet.public_key)
+        account_details = await self.stellar_service.get_account_details(target_key)
         
         if not account_details:
-             # Inactive account
-             # Return empty list or specific state? 
-             # Existing logic implies empty list or special handling.
              return []
              
-        offers = await self.stellar_service.get_selling_offers(wallet.public_key)
+        offers = await self.stellar_service.get_selling_offers(target_key)
 
         # 3. Calculate Reserves (Business Logic)
         # lock_sum = 1 (base reserve for account entry)

@@ -8,7 +8,7 @@ class SendPayment:
         self.wallet_repository = wallet_repository
         self.stellar_service = stellar_service
 
-    async def execute(self, user_id: int, destination_address: str, asset: Asset, amount: float, memo: Optional[str] = None, cancel_offers: bool = False) -> PaymentResult:
+    async def execute(self, user_id: int, destination_address: str, asset: Asset, amount: float, memo: Optional[str] = None, cancel_offers: bool = False, create_account: bool = False) -> PaymentResult:
         # 1. Validation
         if amount <= 0:
             return PaymentResult(success=False, error_message="Amount must be positive")
@@ -18,22 +18,18 @@ class SendPayment:
         if not source_wallet:
             return PaymentResult(success=False, error_message="User wallet not found")
         
-        # 3. Check Destination Exists (Optional, but good practice before building)
-        # Some flows might require create_account if not exists, but 'SendPayment' usually implies payment to existing.
-        # Router logic: "await stellar_check_account(send_address)" - if not exists, might try to activate/create.
-        # For this primitive Use Case, let's assume strict payment. 
-        # We can implement a separate "ActivateAccount" use case or handle it here.
-        # Let's check existence.
+        # 3. Check Destination Exists
         exists = await self.stellar_service.check_account_exists(destination_address)
-        if not exists:
-             # If destination doesn't exist, we might need to use 'create_account' op.
-             # Clean Architecture: The decision to 'create' vs 'pay' is business logic.
-             # If amount is enough to activate, we could switch op.
-             # For Phase 2 simple migration, let's return error or handle creation if requested.
-             # To match existing router behavior: `stellar_check_account` checks validation.
-             # Then `stellar_pay` uses `create=True` if logic dictates.
-             # Let's stick to standard payment for now, failure if not found.
-             return PaymentResult(success=False, error_message="Destination account does not exist")
+        
+        if create_account:
+             if exists:
+                  # CreateAccount op fails if account exists.
+                  return PaymentResult(success=False, error_message="Destination account already exists")
+             if asset.code != "XLM":
+                  return PaymentResult(success=False, error_message="Can only create account with XLM (native asset)")
+        else:
+             if not exists:
+                  return PaymentResult(success=False, error_message="Destination account does not exist")
 
         # 4. Build XDR
         try:
@@ -44,7 +40,8 @@ class SendPayment:
                 asset_issuer=asset.issuer,
                 amount=str(amount),
                 memo=memo,
-                cancel_offers=cancel_offers
+                cancel_offers=cancel_offers,
+                create_account=create_account
             )
             return PaymentResult(success=True, xdr=xdr)
         except Exception as e:
