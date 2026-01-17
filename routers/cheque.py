@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
 from db.models import ChequeStatus
-from db.requests import db_add_cheque, db_get_cheque, db_reset_balance, \
+from db.requests import db_add_cheque, db_get_cheque, \
     db_get_available_cheques, db_get_cheque_receive_count, db_add_cheque_history
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
@@ -283,7 +283,9 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
     await state.update_data(xdr=xdr, operation='cancel_cheque')
     await async_stellar_send(xdr)
     await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque'))
-    await asyncio.to_thread(db_reset_balance,session, user_id)
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    await repo.reset_balance_cache(user_id)
 
 
 @router.inline_query(F.chat_type != "sender")
@@ -404,7 +406,9 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
     await state.update_data(xdr=xdr, operation='receive_cheque')
     await async_stellar_send(xdr)
     await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque'))
-    await asyncio.to_thread(db_reset_balance,session, user_id)
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    await repo.reset_balance_cache(user_id)
 
     if was_new:
         await asyncio.sleep(2)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 from loguru import logger
 
-from db.requests import db_get_user
+
 from other.aiogram_tools import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_offers_cancel, get_kb_return
 from other.mytypes import Balance
@@ -231,8 +231,10 @@ async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session):
     try:
         send_sum = my_float(message.text)
-        db_user = db_get_user(session, message.from_user.id)
-        if db_user.can_5000 == 0 and send_sum > 5000:
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        db_user = await user_repo.get_by_id(message.from_user.id)
+        if db_user and db_user.can_5000 == 0 and send_sum > 5000:
             data = await state.get_data()
             msg0 = my_gettext(message, 'need_update_limits')
             await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message))
@@ -324,8 +326,10 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
 async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, session: Session):
     try:
         receive_sum = my_float(message.text)
-        db_user = db_get_user(session, message.from_user.id)
-        if db_user.can_5000 == 0 and receive_sum > 5000:
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        db_user = await user_repo.get_by_id(message.from_user.id)
+        if db_user and db_user.can_5000 == 0 and receive_sum > 5000:
             data = await state.get_data()
             msg0 = my_gettext(message, 'need_update_limits')
             await send_message(session, message, msg0, reply_markup=get_kb_return(message))

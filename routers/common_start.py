@@ -8,8 +8,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address, db_set_default_address, db_reset_balance, db_add_donate, \
-    db_delete_all_by_user, db_add_user_if_not_exists, db_update_username, db_get_user
+from db.requests import db_get_default_address, db_set_default_address, db_add_donate, \
+    db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
 from middleware.throttling import rate_limit
 from routers.common_setting import cmd_language
@@ -259,12 +259,15 @@ async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, sessi
 @router.callback_query(F.data == "SetLimit")
 @router.callback_query(F.data == "OffLimits")
 async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    db_user = db_get_user(session, callback.from_user.id)
-    if callback.data == 'OffLimits':
+    from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+    user_repo = SqlAlchemyUserRepository(session)
+    db_user = await user_repo.get_by_id(callback.from_user.id)
+    if callback.data == 'OffLimits' and db_user:
         db_user.can_5000 = 1 if db_user.can_5000 == 0 else 0
+        await user_repo.update(db_user)
 
     msg = my_gettext(callback, 'limits')
-    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000))
+    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000 if db_user else 0))
     await callback.answer()
     session.commit()
 
@@ -295,7 +298,9 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "Refresh")
 async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await asyncio.to_thread(db_reset_balance,session, callback.from_user.id)
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    await repo.reset_balance_cache(callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
     await callback.answer()
     await check_update_username(

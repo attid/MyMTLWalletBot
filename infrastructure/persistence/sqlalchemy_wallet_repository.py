@@ -75,6 +75,18 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             return self._to_entity(db_wallet)
         raise ValueError(f"Wallet with id {wallet.id} not found for update")
 
+    async def reset_balance_cache(self, user_id: int) -> None:
+        """Reset the cached balance for the user's default wallet."""
+        stmt = select(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id,
+            MyMtlWalletBot.default_wallet == 1
+        )
+        result = self.session.execute(stmt)
+        db_wallet = result.scalar_one_or_none()
+        if db_wallet:
+            db_wallet.balances_event_id = '0'
+            self.session.commit()
+
     def _to_entity(self, db_wallet: MyMtlWalletBot) -> Wallet:
         return Wallet(
             id=db_wallet.id,

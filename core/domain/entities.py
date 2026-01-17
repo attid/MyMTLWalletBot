@@ -7,6 +7,7 @@ class User:
     username: Optional[str]
     language: str
     default_address: Optional[str] = None
+    can_5000: int = 0  # 0=limit enabled, 1=limit disabled
 
 @dataclass
 class Wallet:

@@ -39,6 +39,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             db_user.user_name = user.username
             db_user.lang = user.language
             db_user.default_address = user.default_address
+            db_user.can_5000 = user.can_5000
             # session.add(db_user) is not strictly needed if it's already attached, but safe.
             self.session.flush()
             return self._to_entity(db_user)
@@ -52,5 +53,6 @@ class SqlAlchemyUserRepository(IUserRepository):
             id=db_user.user_id,
             username=db_user.user_name,
             language=db_user.lang,
-            default_address=db_user.default_address
+            default_address=db_user.default_address,
+            can_5000=db_user.can_5000 or 0
         )
