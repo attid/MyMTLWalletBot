@@ -250,12 +250,16 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
         "msg": "msg"
     }
     
-    with patch("routers.swap.db_get_user", return_value=MagicMock(can_5000=1)), \
+    mock_user = MagicMock(can_5000=1)
+    
+    with patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockUserRepo, \
          patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.swap.stellar_check_receive_sum", return_value=("9.5", False), new_callable=AsyncMock), \
          patch("core.use_cases.trade.swap_assets.SwapAssets") as MockSwapAssets, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
          
+         mock_user_repo = MockUserRepo.return_value
+         mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
          mock_use_case = MockSwapAssets.return_value
          mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP"))
          
@@ -287,12 +291,16 @@ async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
         "msg": "msg"
     }
     
-    with patch("routers.swap.db_get_user", return_value=MagicMock(can_5000=1)), \
+    mock_user = MagicMock(can_5000=1)
+    
+    with patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockUserRepo, \
          patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.swap.stellar_check_send_sum", return_value=("11.0", False), new_callable=AsyncMock), \
          patch("core.use_cases.trade.swap_assets.SwapAssets") as MockSwapAssets, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
          
+         mock_user_repo = MockUserRepo.return_value
+         mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
          mock_use_case = MockSwapAssets.return_value
          mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP_STRICT"))
          

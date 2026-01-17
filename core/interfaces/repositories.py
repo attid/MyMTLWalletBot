@@ -43,3 +43,12 @@ class IWalletRepository(ABC):
     async def update(self, wallet: Wallet) -> Wallet:
         """Update an existing wallet."""
         pass
+
+    @abstractmethod
+    async def reset_balance_cache(self, user_id: int) -> None:
+        """Reset the cached balance for the user's default wallet.
+        
+        This invalidates the local balance cache, forcing a refresh 
+        from the network on next balance request.
+        """
+        pass

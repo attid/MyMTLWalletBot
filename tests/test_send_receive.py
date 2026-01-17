@@ -101,12 +101,14 @@ async def test_cmd_send_get_sum_valid(mock_session, mock_message, mock_state):
     mock_message.text = "10.5"
     mock_state.get_data.return_value = {"send_asset_code": "XLM", "send_asset_issuer": "GKB..."}
     
+    mock_user = MagicMock()
+    mock_user.can_5000 = 1
+    
     with patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04, \
-         patch("routers.send.db_get_user") as mock_db_get_user:
+         patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockRepo:
         
-        mock_user = MagicMock()
-        mock_user.can_5000 = 1
-        mock_db_get_user.return_value = mock_user
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
 
         await cmd_send_get_sum(mock_message, mock_state, mock_session)
         mock_state.update_data.assert_called_with(send_sum=10.5)
@@ -118,12 +120,14 @@ async def test_cmd_send_get_sum_limit_exceeded(mock_session, mock_message, mock_
     mock_message.text = "6000"
     mock_state.get_data.return_value = {"msg": "previous_msg"}
     
+    mock_user = MagicMock()
+    mock_user.can_5000 = 0
+    
     with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.send.db_get_user") as mock_db_get_user:
+         patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockRepo:
         
-        mock_user = MagicMock()
-        mock_user.can_5000 = 0 
-        mock_db_get_user.return_value = mock_user
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
 
         await cmd_send_get_sum(mock_message, mock_state, mock_session)
         
@@ -245,11 +249,11 @@ async def test_cmd_cancel_cheque(mock_session, mock_callback, mock_state):
          patch("routers.cheque.stellar_get_master") as mock_master, \
          patch("routers.cheque.async_stellar_send", new_callable=AsyncMock), \
          patch("routers.cheque.cmd_info_message", new_callable=AsyncMock), \
-         patch("routers.cheque.db_reset_balance"), \
          patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo:
          
          mock_repo_instance = MockRepo.return_value
          mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
+         mock_repo_instance.reset_balance_cache = AsyncMock()
          
          from routers.cheque import cmd_cancel_cheque
          await cmd_cancel_cheque(mock_session, mock_callback.from_user.id, "UUID", mock_state)

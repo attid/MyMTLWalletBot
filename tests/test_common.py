@@ -61,7 +61,14 @@ async def test_cmd_start(mock_session, mock_message, mock_state, mock_bot):
 
 @pytest.mark.asyncio
 async def test_cb_set_limit(mock_session, mock_callback, mock_state):
-    with patch("routers.common_start.db_get_user") as mock_db_user, \
+    mock_user = MagicMock()
+    mock_user.can_5000 = 0
+    mock_user.id = 123
+    mock_user.username = "user"
+    mock_user.language = "en"
+    mock_user.default_address = None
+    
+    with patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockRepo, \
          patch("routers.common_start.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.common_start.my_gettext", return_value="text"), \
          patch("other.lang_tools.global_data") as mock_gd, \
@@ -69,12 +76,15 @@ async def test_cb_set_limit(mock_session, mock_callback, mock_state):
         
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
-        mock_db_user.return_value.can_5000 = 0
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
+        mock_repo_instance.update = AsyncMock(return_value=mock_user)
         mock_callback.data = "OffLimits"
         
         await cb_set_limit(mock_callback, mock_state, mock_session)
         
-        assert mock_db_user.return_value.can_5000 == 1
+        assert mock_user.can_5000 == 1
+        mock_repo_instance.update.assert_called_once()
         mock_session.commit.assert_called_once()
 
 # --- tests for routers/common_end.py ---

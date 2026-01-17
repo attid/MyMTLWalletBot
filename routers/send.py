@@ -14,8 +14,7 @@ from stellar_sdk import Asset, Network, TransactionBuilder
 from stellar_sdk.sep.federation import resolve_stellar_address
 from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
-from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list,
-                         db_get_user)
+from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from other.stellar_tools import (
@@ -85,8 +84,10 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
         if '@' == send_for[0]:
             send_address, user_id = db_get_user_account_by_username(session, send_for)
             # Получаем текущее имя пользователя из базы данных для сравнения
-            user_in_db = db_get_user(session, user_id)
-            current_username_in_db = user_in_db.user_name if user_in_db else None
+            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = SqlAlchemyUserRepository(session)
+            user_in_db = await user_repo.get_by_id(user_id)
+            current_username_in_db = user_in_db.username if user_in_db else None
 
             tmp_name = await check_username(user_id)
 
@@ -211,8 +212,10 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
     if '@' == send_for_input[0]:
         try:
             public_key, user_id = db_get_user_account_by_username(session, send_for_input)
-            user_in_db = db_get_user(session, user_id)
-            current_username_in_db = user_in_db.user_name if user_in_db else None
+            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = SqlAlchemyUserRepository(session)
+            user_in_db = await user_repo.get_by_id(user_id)
+            current_username_in_db = user_in_db.username if user_in_db else None
 
             tmp_name = await check_username(user_id)
 
@@ -377,8 +380,10 @@ async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session):
     try:
         send_sum = my_float(message.text)
-        db_user = db_get_user(session, message.from_user.id)
-        if db_user.can_5000 == 0 and send_sum > 5000:
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        db_user = await user_repo.get_by_id(message.from_user.id)
+        if db_user and db_user.can_5000 == 0 and send_sum > 5000:
             data = await state.get_data()
             msg0 = my_gettext(message, 'need_update_limits')
             await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message))

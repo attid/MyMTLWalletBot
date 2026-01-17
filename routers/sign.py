@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from sulguk import SULGUK_PARSE_MODE
 
-from db.requests import db_reset_balance
+
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager
 from routers.start_msg import cmd_show_balance, cmd_info_message
@@ -279,7 +279,9 @@ async def sign_xdr(session: Session, state, user_id):
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password"))
-    await asyncio.to_thread(db_reset_balance, session, user_id)
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    await repo.reset_balance_cache(user_id)
     await state.update_data(pin='')
 
 
