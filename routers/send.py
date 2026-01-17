@@ -273,8 +273,19 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
     data = await state.get_data()
     address = data.get('send_address')
 
-    asset_list = await stellar_get_balances(session, message.from_user.id)
-    sender_asset_list = await stellar_get_balances(session, message.from_user.id, address)
+    # Refactored to use GetWalletBalance Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+
+    asset_list = await use_case.execute(user_id=message.from_user.id)
+    sender_asset_list = await use_case.execute(user_id=message.from_user.id, public_key=address)
+    
     if address == 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA':
         mtla_amount = 5
     else:
@@ -476,17 +487,37 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session):
     data = await state.get_data()
 
     send_sum = data.get('activate_sum', 5)
-    asset_list = await stellar_get_balances(session, user_id, asset_filter='XLM')
-    send_asset_code = asset_list[0].asset_code
-    send_asset_issuer = asset_list[0].asset_issuer
     send_address = data.get('send_address', 'None 0_0')
     msg = my_gettext(user_id, 'confirm_activate', (send_address, send_sum))
 
-    xdr = await stellar_pay((await stellar_get_user_account(session, user_id)).account.account_id,
-                            send_address,
-                            Asset(send_asset_code, send_asset_issuer), send_sum, create=True)
+    # Refactored to use SendPayment Use Case with create_account=True
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.payment.send_payment import SendPayment
+    from core.domain.value_objects import Asset as DomainAsset
+    from other.config_reader import config
+    from loguru import logger
 
-    await state.update_data(xdr=xdr, send_asset_code=send_asset_code, send_asset_issuer=send_asset_issuer,
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = SendPayment(repo, service)
+
+    result = await use_case.execute(
+        user_id=user_id,
+        destination_address=send_address,
+        asset=DomainAsset(code="XLM"),
+        amount=float(send_sum),
+        create_account=True
+    )
+    
+    if result.success:
+        xdr = result.xdr
+    else:
+        logger.error(f"cmd_create_account failed: {result.error_message}")
+        await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id))
+        return
+
+    await state.update_data(xdr=xdr, send_asset_code="XLM", send_asset_issuer=None,
                             send_sum=send_sum)
 
     kb = get_kb_yesno_send_xdr(user_id)

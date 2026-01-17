@@ -49,8 +49,11 @@ async def test_cmd_send_choose_token(mock_session, mock_callback, mock_state):
     # Mock state data including send_address
     mock_state.get_data.return_value = {"send_address": "GADDR..."}
     
-    with patch("routers.send.stellar_get_balances", new_callable=AsyncMock, return_value=[mock_bal]), \
+    with patch("core.use_cases.wallet.get_balance.GetWalletBalance") as MockGetBalance, \
          patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
+        
+        mock_use_case = MockGetBalance.return_value
+        mock_use_case.execute = AsyncMock(return_value=[mock_bal])
         
         await cmd_send_choose_token(mock_callback, mock_state, mock_session)
         mock_send.assert_called_once()
@@ -159,25 +162,19 @@ async def test_cmd_send_memo(mock_session, mock_message, mock_state):
 async def test_cmd_create_account(mock_session, mock_state):
     user_id = 123
     mock_state.get_data.return_value = {"activate_sum": 10, "send_address": "GNEW"}
-    
-    mock_balance = MagicMock()
-    mock_balance.asset_code = "USD"
-    mock_balance.asset_issuer = "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
 
-    mock_user_account = MagicMock()
-    mock_user_account.account.account_id = "GSEND"
-
-    with patch("routers.send.stellar_get_balances", new_callable=AsyncMock, return_value=[mock_balance]), \
-         patch("routers.send.stellar_get_user_account", new_callable=AsyncMock, return_value=mock_user_account), \
-         patch("routers.send.stellar_pay", new_callable=AsyncMock, return_value="XDR_STRING") as mock_pay, \
+    with patch("core.use_cases.payment.send_payment.SendPayment") as MockSendPayment, \
          patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
+
+        mock_use_case = MockSendPayment.return_value
+        mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_CREATE"))
 
         await cmd_create_account(user_id, mock_state, mock_session)
         
-        mock_pay.assert_called_once()
-        _, kwargs = mock_pay.call_args
-        assert kwargs.get('create') is True
-        assert mock_pay.call_args[0][3] == 10
+        mock_use_case.execute.assert_called_once()
+        _, kwargs = mock_use_case.execute.call_args
+        assert kwargs.get('create_account') is True
+        assert kwargs.get('amount') == 10.0
         
         mock_state.update_data.assert_called()
         mock_send.assert_called()
