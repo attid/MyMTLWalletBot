@@ -82,5 +82,6 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             public_key=db_wallet.public_key,
             is_default=bool(db_wallet.default_wallet),
             is_free=bool(db_wallet.free_wallet),
+            use_pin=db_wallet.use_pin or 0,
             assets_visibility=db_wallet.assets_visibility
         )

@@ -167,9 +167,10 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
 
 @router.callback_query(F.data == "USDT_OUT")
 async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    from db.requests import db_get_default_wallet
-    wallet = db_get_default_wallet(session, callback.from_user.id)
-    if wallet and getattr(wallet, 'use_pin', None) == 10:
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(callback.from_user.id)
+    if wallet and wallet.use_pin == 10:
         await send_message(session, callback, "Sorry, I can't work in read-only mode", reply_markup=get_kb_return(callback))
         await callback.answer()
         return

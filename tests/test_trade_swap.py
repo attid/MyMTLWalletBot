@@ -23,10 +23,22 @@ async def test_cmd_sale_new_order(mock_session, mock_callback, mock_state):
     balance.asset_code = "XLM"
     balance.balance = "100.0"
     
+    mock_wallet = MagicMock()
+    mock_wallet.assets_visibility = "{}"
+    
     with patch("routers.trade.have_free_xlm", return_value=True), \
-         patch("routers.trade.stellar_get_balances", return_value=[balance], new_callable=AsyncMock), \
-         patch("routers.trade.db_get_default_wallet"), \
+         patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo, \
+         patch("infrastructure.services.stellar_service.StellarService"), \
+         patch("core.use_cases.wallet.get_balance.GetWalletBalance") as MockUseCase, \
          patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
+
+        # Setup mock repository
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
+        
+        # Setup mock use case
+        mock_use_case_instance = MockUseCase.return_value
+        mock_use_case_instance.execute = AsyncMock(return_value=[balance])
 
         await cmd_sale_new_order(mock_callback, mock_state, mock_session)
         
@@ -79,9 +91,21 @@ async def test_cmd_swap_01(mock_session, mock_callback, mock_state):
     balance.asset_code = "XLM"
     balance.balance = "100.0"
     
-    with patch("routers.swap.stellar_get_balances", return_value=[balance], new_callable=AsyncMock), \
-         patch("routers.swap.db_get_default_wallet"), \
+    mock_wallet = MagicMock()
+    mock_wallet.assets_visibility = "{}"
+    
+    with patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo, \
+         patch("infrastructure.services.stellar_service.StellarService"), \
+         patch("core.use_cases.wallet.get_balance.GetWalletBalance") as MockUseCase, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
+        
+        # Setup mock repository
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
+        
+        # Setup mock use case
+        mock_use_case_instance = MockUseCase.return_value
+        mock_use_case_instance.execute = AsyncMock(return_value=[balance])
         
         await cmd_swap_01(mock_callback, mock_state, mock_session)
         
@@ -95,12 +119,24 @@ async def test_cq_swap_choose_token_from(mock_session, mock_callback, mock_state
     mock_state.get_data.return_value = {"assets": "encoded_assets"}
     callback_data = SwapAssetFromCallbackData(answer="USD")
     
+    mock_wallet = MagicMock()
+    mock_wallet.assets_visibility = "{}"
+    
     with patch("routers.swap.stellar_get_selling_offers_sum", return_value=0, new_callable=AsyncMock), \
-         patch("routers.swap.stellar_get_balances", return_value=asset_data, new_callable=AsyncMock), \
-         patch("routers.swap.db_get_default_wallet"), \
+         patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo, \
+         patch("infrastructure.services.stellar_service.StellarService"), \
+         patch("core.use_cases.wallet.get_balance.GetWalletBalance") as MockUseCase, \
          patch("routers.swap.stellar_check_receive_asset", return_value=["EUR"], new_callable=AsyncMock), \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.swap.jsonpickle.decode", return_value=asset_data):
+         
+        # Setup mock repository
+        mock_repo_instance = MockRepo.return_value
+        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
+        
+        # Setup mock use case
+        mock_use_case_instance = MockUseCase.return_value
+        mock_use_case_instance.execute = AsyncMock(return_value=asset_data)
          
         await cq_swap_choose_token_from(mock_callback, callback_data, mock_state, mock_session)
         

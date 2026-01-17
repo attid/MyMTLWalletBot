@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from sulguk import SULGUK_PARSE_MODE
 
-from db.requests import db_reset_balance, db_get_default_wallet
+from db.requests import db_reset_balance
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager
 from routers.start_msg import cmd_show_balance, cmd_info_message
@@ -68,7 +68,10 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
     current_state = await state.get_state()
 
     if pin_type is None:
-        pin_type = db_get_default_wallet(session, chat_id).use_pin
+        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+        repo = SqlAlchemyWalletRepository(session)
+        wallet = await repo.get_default_wallet(chat_id)
+        pin_type = wallet.use_pin if wallet else 0
         await state.update_data(pin_type=pin_type)
 
     if pin_type == 1:  # pin

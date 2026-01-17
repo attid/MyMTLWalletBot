@@ -15,5 +15,6 @@ class Wallet:
     public_key: str
     is_default: bool
     is_free: bool
+    use_pin: int = 0  # 0=no pin, 1=pin, 2=password, 10=read-only
     name: Optional[str] = None
     assets_visibility: Optional[str] = "{}"
