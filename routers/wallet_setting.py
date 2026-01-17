@@ -11,8 +11,7 @@ from sulguk import SULGUK_PARSE_MODE
 
 from other.config_reader import config
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
-    db_insert_into_address_book, \
-    db_get_default_wallet, db_get_user_account_by_username
+    db_insert_into_address_book, db_get_user_account_by_username
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from other.grist_tools import load_asset_from_grist
 from other.mytypes import Balance
@@ -131,15 +130,14 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
 # Helper function to generate the message text and keyboard markup
 async def _generate_asset_visibility_markup(user_id: int, session: Session, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
     """Generates the text and keyboard for the asset visibility menu."""
-    from db.requests import db_get_default_wallet
-    wallet = db_get_default_wallet(session, user_id)
-    # Refactored to use GetWalletBalance Use Case
+    # Refactored to use SqlAlchemyWalletRepository
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     from infrastructure.services.stellar_service import StellarService
     from core.use_cases.wallet.get_balance import GetWalletBalance
     from other.config_reader import config as app_config
 
     repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id)
     service = StellarService(horizon_url=app_config.horizon_url)
     use_case = GetWalletBalance(repo, service)
     balances = await use_case.execute(user_id=user_id)
@@ -253,11 +251,12 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 
     elif action == "set":
         # Set the visibility status for an asset
-        from db.requests import db_get_default_wallet
+        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
         from sqlalchemy.orm import Session as OrmSession
         from other.asset_visibility_tools import deserialize_visibility, serialize_visibility
 
-        wallet = db_get_default_wallet(session, user_id)
+        repo = SqlAlchemyWalletRepository(session)
+        wallet = await repo.get_default_wallet(user_id)
         asset_code = callback_data.code
         target_status_int = callback_data.status # The integer status associated with the button pressed (1 or 2)
 
@@ -570,7 +569,10 @@ async def remove_password(session: Session, user_id: int, state: FSMContext):
 
 @router.callback_query(F.data == "RemovePassword")
 async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(callback.from_user.id)
+    pin_type = wallet.use_pin if wallet else 0
     if pin_type in (1, 2):
         await state.update_data(fsm_func=jsonpickle.dumps(remove_password))
         await state.set_state(PinState.sign)
@@ -584,7 +586,10 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(F.data == "SetPassword")
 async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(callback.from_user.id)
+    pin_type = wallet.use_pin if wallet else 0
     if pin_type in (1, 2):
         await callback.answer('You have password. Remove it first', show_alert=True)
     elif pin_type == 10:
@@ -624,7 +629,10 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
         await cmd_buy_private_key(callback, state, session)
         # await callback.answer('You have free account. Please buy it first.')
     else:
-        pin_type = db_get_default_wallet(session, callback.from_user.id).use_pin
+        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+        repo = SqlAlchemyWalletRepository(session)
+        wallet = await repo.get_default_wallet(callback.from_user.id)
+        pin_type = wallet.use_pin if wallet else 0
 
         if pin_type == 10:
             await callback.answer('You have read only account', show_alert=True)

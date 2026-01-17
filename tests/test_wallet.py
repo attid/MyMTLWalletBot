@@ -85,12 +85,15 @@ async def test_handle_asset_visibility_set(mock_session):
     mock_wallet = MagicMock()
     mock_wallet.assets_visibility = None 
     
-    with patch("db.requests.db_get_default_wallet", return_value=mock_wallet), \
+    with patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepo, \
          patch("other.asset_visibility_tools.serialize_visibility", return_value='{"USD": "hidden"}') as mock_serialize, \
          patch("routers.wallet_setting._generate_asset_visibility_markup", return_value=("msg", "kbd")), \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123), \
          patch("sqlalchemy.orm.Session", MagicMock): 
+         
+         mock_repo_instance = MockRepo.return_value
+         mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
          
          mock_gd.user_lang_dic = {123: 'en'}
          mock_gd.lang_dict = {'en': {}}

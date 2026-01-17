@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 from loguru import logger
 
-from db.requests import db_get_user, db_get_default_wallet
+from db.requests import db_get_user
 from other.aiogram_tools import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_offers_cancel, get_kb_return
 from other.mytypes import Balance
@@ -83,8 +83,8 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
     use_case = GetWalletBalance(repo, service)
     asset_list = await use_case.execute(user_id=callback.from_user.id)
     
-    wallet = db_get_default_wallet(session, callback.from_user.id)
-    vis_str = getattr(wallet, "assets_visibility", None)
+    wallet = await repo.get_default_wallet(callback.from_user.id)
+    vis_str = wallet.assets_visibility if wallet else None
     asset_list = [a for a in asset_list if get_asset_visibility(vis_str, a.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY)]
 
     kb_tmp = []
@@ -122,16 +122,17 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
                 kb_tmp = []
                 asset_list2 = []
-                wallet = db_get_default_wallet(session, callback.from_user.id)
-                vis_str = getattr(wallet, "assets_visibility", None)
                 
-                # Reuse use case for second balance fetch
+                # Initialize repository for wallet lookup
                 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
                 from infrastructure.services.stellar_service import StellarService
                 from core.use_cases.wallet.get_balance import GetWalletBalance
                 from other.config_reader import config
 
                 repo = SqlAlchemyWalletRepository(session)
+                wallet = await repo.get_default_wallet(callback.from_user.id)
+                vis_str = wallet.assets_visibility if wallet else None
+
                 service = StellarService(horizon_url=config.horizon_url)
                 balance_use_case = GetWalletBalance(repo, service)
                 for token in await balance_use_case.execute(user_id=callback.from_user.id):
