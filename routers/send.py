@@ -412,10 +412,38 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     if cancel_offers:
         msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,))
 
-    xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                            send_address,
-                            Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo,
-                            cancel_offers=cancel_offers)
+    # Refactored to use Clean Architecture Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.payment.send_payment import SendPayment
+    from core.domain.value_objects import Asset as DomainAsset
+    from other.config_reader import config
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = SendPayment(repo, service)
+
+    result = await use_case.execute(
+        user_id=message.from_user.id,
+        destination_address=send_address,
+        asset=DomainAsset(code=send_asset_name, issuer=send_asset_issuer),
+        amount=send_sum,
+        memo=send_memo,
+        cancel_offers=cancel_offers
+    )
+
+    if result.success:
+        xdr = result.xdr
+    else:
+        # Fallback or error handling
+        logger.error(f"SendPayment failed: {result.error_message}")
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message))
+        return
+
+    # xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+    #                         send_address,
+    #                         Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo,
+    #                         cancel_offers=cancel_offers)
 
     await state.update_data(xdr=xdr, operation='send', msg=None,
                             success_msg=my_gettext(message, 'confirm_send_success',
