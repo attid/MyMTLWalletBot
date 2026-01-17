@@ -133,3 +133,5 @@ database.db
 qr
 .idea
 mtl-google-doc.json
+.junie/guidelines.md
+.vscode/settings.json
