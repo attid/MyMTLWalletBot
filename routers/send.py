@@ -28,9 +28,15 @@ from other.aiogram_tools import my_gettext, send_message, check_username, clear_
 from other.common_tools import get_user_id, decode_qr_code
 from routers.uri import handle_wc_uri
 from other.global_data import global_data
-from other.stellar_tools import stellar_check_account, stellar_is_free_wallet, stellar_get_balances, stellar_pay, \
-    stellar_get_user_account, my_float, float2str, db_update_username, stellar_get_selling_offers_sum, \
-    cut_text_to_28_bytes, get_first_balance_from_list, base_fee, is_valid_stellar_address, eurmtl_asset
+from other.stellar_tools import (
+    parse_transaction_stellar_uri, process_transaction_stellar_uri,
+    parse_pay_stellar_uri, is_valid_stellar_address, stellar_check_account,
+    my_float, float2str, cut_text_to_28_bytes, get_first_balance_from_list, base_fee, eurmtl_asset
+)
+from core.use_cases.user.update_profile import UpdateUserProfile
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.services.stellar_service import StellarService
+from other.config_reader import config
 
 
 class StateSendToken(StatesGroup):
@@ -107,7 +113,8 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
 
             if actual_username_lower != current_username_in_db_lower:
                 logger.warning(f"cmd_send_token: username in DB needs update: searched/expected={send_for}, actual_telegram_username={tmp_name}, in_db={current_username_in_db}, user_id={user_id}")
-                db_update_username(session, user_id, tmp_name) # tmp_name может быть None, если пользователь удалил username
+                update_profile = UpdateUserProfile(user_repo)
+                await update_profile.execute(user_id=user_id, username=tmp_name)
 
             # Проверяем, совпадает ли актуальный username с тем, на который хотят отправить
             if actual_username_lower != send_for_lower:
@@ -233,7 +240,8 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
 
             if actual_username_lower != current_username_in_db_lower:
                 logger.warning(f"StateSendFor: username in DB needs update: searched/expected={send_for_input}, actual_telegram_username={tmp_name}, in_db={current_username_in_db}, user_id={user_id}")
-                db_update_username(session, user_id, tmp_name)
+                update_profile = UpdateUserProfile(user_repo)
+                await update_profile.execute(user_id=user_id, username=tmp_name)
 
             if actual_username_lower != send_for_input_lower:
                 logger.warning(f"StateSendFor: username mismatch for send operation: searched/expected={send_for_input}, actual_telegram_username={tmp_name}, user_id={user_id}")
@@ -257,7 +265,9 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
         await state.set_state(None)
         await cmd_send_choose_token(message, state, session)
     else:
-        free_wallet = await stellar_is_free_wallet(session, message.from_user.id)
+        wallet_repo = SqlAlchemyWalletRepository(session)
+        wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+        free_wallet = wallet.is_free if wallet else False
         address = data.get('qr', message.text)
         if address.find('*') > 0:
             try:
@@ -341,7 +351,18 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
                                                         asset.balance))
 
                 # Get summ of tokens, blocked by Sell offers 
-                blocked_token_sum = await stellar_get_selling_offers_sum(session, callback.from_user.id, asset)
+                repo = SqlAlchemyWalletRepository(session)
+                wallet = await repo.get_default_wallet(callback.from_user.id)
+                service = StellarService(horizon_url=config.horizon_url)
+                offers = await service.get_selling_offers(wallet.public_key)
+                
+                blocked_token_sum = 0.0
+                for offer in offers:
+                    selling = offer.get('selling', {})
+                    s_code = selling.get('asset_code')
+                    s_issuer = selling.get('asset_issuer')
+                    if s_code == asset.asset_code and s_issuer == asset.asset_issuer:
+                        blocked_token_sum += float(offer.get('amount', 0))
 
                 # If user has some assets that are blocked by offers, remind him\her about it.
                 if blocked_token_sum > 0:

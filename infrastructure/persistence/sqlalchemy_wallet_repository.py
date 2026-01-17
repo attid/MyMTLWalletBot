@@ -53,7 +53,10 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             free_wallet=1 if wallet.is_free else 0,
             assets_visibility=wallet.assets_visibility,
             secret_key=wallet.secret_key,
-            seed_key=wallet.seed_key
+            seed_key=wallet.seed_key,
+            balances=None, # New wallets have no cache
+            balances_event_id=0,
+            last_event_id=0
         )
         self.session.add(db_wallet)
         self.session.flush()
@@ -66,7 +69,26 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         if db_wallet:
             db_wallet.default_wallet = 1 if wallet.is_default else 0
             db_wallet.assets_visibility = wallet.assets_visibility
-            # Other fields update...
+            
+            # Serialize balances
+            if wallet.balances is not None:
+                import jsonpickle
+                db_wallet.balances = jsonpickle.encode(wallet.balances)
+                
+            db_wallet.balances_event_id = wallet.balances_event_id
+            # last_event_id should probably be managed by DB or specific logic, but we map it back
+            # Usually last_event_id increments on events. 
+            # If we are updating cache, we likely set balances_event_id = last_event_id
+            
+            if wallet.last_event_id:
+                db_wallet.last_event_id = wallet.last_event_id
+
+            # Update sensitive fields
+            db_wallet.secret_key = wallet.secret_key
+            db_wallet.seed_key = wallet.seed_key
+            db_wallet.use_pin = wallet.use_pin
+            db_wallet.free_wallet = 1 if wallet.is_free else 0
+                
             self.session.flush()
             return self._to_entity(db_wallet)
         raise ValueError(f"Wallet with id {wallet.id} not found for update")
@@ -168,6 +190,14 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             return '(?)'
 
     def _to_entity(self, db_wallet: MyMtlWalletBot) -> Wallet:
+        balances = None
+        if db_wallet.balances:
+            try:
+                import jsonpickle
+                balances = jsonpickle.decode(db_wallet.balances)
+            except Exception:
+                balances = []
+                
         return Wallet(
             id=db_wallet.id,
             user_id=db_wallet.user_id,
@@ -177,5 +207,8 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             use_pin=db_wallet.use_pin or 0,
             assets_visibility=db_wallet.assets_visibility,
             secret_key=db_wallet.secret_key,
-            seed_key=db_wallet.seed_key
+            seed_key=db_wallet.seed_key,
+            balances=balances,
+            balances_event_id=db_wallet.balances_event_id or 0,
+            last_event_id=db_wallet.last_event_id or 0
         )

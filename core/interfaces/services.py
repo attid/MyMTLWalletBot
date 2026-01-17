@@ -81,8 +81,45 @@ class IStellarService(ABC):
         pass
     
     @abstractmethod
-    def sign_transaction(self, xdr: str, secret_key: str) -> str:
+    async def sign_transaction(self, transaction_envelope, secret: str) -> str:
+        """Sign a transaction envelope with a secret key."""
+        pass
+
+    @abstractmethod
+    async def sign_xdr(self, xdr: str, secret: str) -> str:
         """Sign a transaction XDR with a secret key."""
+        pass
+        
+    @abstractmethod
+    def create_payment_op(self, destination: str, asset_code: str, asset_issuer: Optional[str], amount: str, source: Optional[str] = None):
+        """Create a payment operation."""
+        pass
+
+    @abstractmethod
+    def create_create_account_op(self, destination: str, starting_balance: str, source: Optional[str] = None):
+        """Create a create account operation."""
+        pass
+
+    @abstractmethod
+    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: str = None, source: Optional[str] = None):
+        """Create a change trust operation."""
+        pass
+
+    @abstractmethod
+    async def build_transaction(self, source_public_key: str, operations: list, memo: str = None):
+        """Build a transaction with multiple operations."""
+        pass
+
+
+class IEncryptionService(ABC):
+    @abstractmethod
+    def encrypt(self, data: str, key: str) -> str:
+        """Encrypt data using a key."""
+        pass
+
+    @abstractmethod
+    def decrypt(self, encrypted_data: str, key: str) -> Optional[str]:
+        """Decrypt data using a key. Returns None if decryption fails."""
         pass
 
 

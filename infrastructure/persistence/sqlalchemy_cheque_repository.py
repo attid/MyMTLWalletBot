@@ -81,6 +81,21 @@ class SqlAlchemyChequeRepository(IChequeRepository):
         self.session.add(new_history)
         self.session.commit()
     
+    async def cancel(self, cheque_uuid: str, user_id: int) -> bool:
+        """Cancel a cheque (set status to CANCELED)."""
+        stmt = select(MyMtlWalletBotCheque).where(
+             MyMtlWalletBotCheque.cheque_uuid == cheque_uuid,
+             MyMtlWalletBotCheque.user_id == user_id
+        )
+        result = self.session.execute(stmt)
+        db_cheque = result.scalar_one_or_none()
+        if db_cheque:
+            db_cheque.cheque_status = ChequeStatus.CANCELED.value
+            self.session.commit()
+            return True
+        return False
+
+    
     def _to_entity(self, db_cheque: MyMtlWalletBotCheque) -> Cheque:
         return Cheque(
             id=db_cheque.cheque_id,
