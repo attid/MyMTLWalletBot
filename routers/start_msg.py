@@ -12,11 +12,11 @@ from sqlalchemy.orm import Session
 
 
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
-from other.aiogram_tools import send_message, clear_state, clear_last_message_id
-from other.common_tools import get_user_id
+from infrastructure.utils.telegram_utils import send_message, clear_state, clear_last_message_id
+from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.stellar_tools import float2str
+from infrastructure.utils.common_utils import float2str
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from services.ton_service import TonService

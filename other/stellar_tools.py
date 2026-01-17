@@ -22,7 +22,7 @@ from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUser
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from infrastructure.services.stellar_service import StellarService
 from other.mytypes import MyOffers, MyAccount, Balance, MyOffer
-from other.aiogram_tools import get_web_request
+from infrastructure.utils.telegram_utils import get_web_request
 from other.counting_lock import CountingLock
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, \
     ASSET_EXCHANGE_ONLY  # Import for asset visibility tools
@@ -47,98 +47,10 @@ usdm_asset = Asset("USDM", 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSU
 
 # eurdebt_asset = Asset("EURDEBT", public_issuer)
 
-async def process_uri_with_replace(data, source_account):
-    """Process URI with replace parameter"""
-    transaction = TransactionBuilder(
-        source_account=source_account,
-        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
-        base_fee=base_fee,
-    )
-    transaction.set_timeout(60 * 60)
-
-    for operation in data.transaction_envelope.transaction.operations:
-        transaction.append_operation(operation)
-    envelope = transaction.build()
-    return envelope.to_xdr()
 
 
-async def parse_transaction_stellar_uri(uri_data, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE):
-    """
-    Parse a Stellar transaction URI and extract relevant data.
-    
-    Args:
-        uri_data (str): The Stellar URI string
-        network_passphrase (str): The network passphrase
-        
-    Returns:
-        dict: Dictionary containing parsed data (uri_object, callback_url, return_url)
-    """
-    uri_object = stellar_uri.TransactionStellarUri.from_uri(uri_data, network_passphrase=network_passphrase)
-
-    # Extract callback
-    callback_url = uri_object.callback
-
-    # Try to extract return_url safely
-    return_url = None
-
-    # Method 1: Try to access as attribute
-    if hasattr(uri_object, 'return_url'):
-        return_url = uri_object.return_url
-
-    # Method 2: Try to access from uri_object.operation_attrs if it exists
-    elif hasattr(uri_object, 'operation_attrs') and 'return_url' in uri_object.operation_attrs:
-        return_url = uri_object.operation_attrs['return_url']
-
-    # Method 3: Try to parse from the original URI
-    else:
-        try:
-            parsed = urlparse(uri_data)
-            query_parameters = parse_qs(parsed.query)
-            if 'return_url' in query_parameters:
-                return_url = query_parameters['return_url'][0]
-        except Exception:
-            # If all methods fail, return_url remains None
-            pass
-
-    return {
-        'uri_object': uri_object,
-        'callback_url': callback_url,
-        'return_url': return_url
-    }
 
 
-async def process_transaction_stellar_uri(uri_data, session, user_id,
-                                          network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE):
-    """
-    Process a Stellar transaction URI and generate XDR.
-    
-    Args:
-        uri_data (str): The Stellar URI string
-        session (Session): Database session
-        user_id (int): User ID
-        network_passphrase (str): The network passphrase
-        
-    Returns:
-        dict: Dictionary containing processed data (xdr, callback_url, return_url)
-    """
-    # Parse the URI
-    parsed_data = await parse_transaction_stellar_uri(uri_data, network_passphrase)
-    uri_object = parsed_data['uri_object']
-    callback_url = parsed_data['callback_url']
-    return_url = parsed_data['return_url']
-
-    # Process XDR
-    if uri_object.replace:
-        source_account = await stellar_get_user_account(session, user_id)
-        xdr_to_check = await process_uri_with_replace(uri_object, source_account)
-    else:
-        xdr_to_check = uri_object.transaction_envelope.to_xdr()
-
-    return {
-        'xdr': xdr_to_check,
-        'callback_url': callback_url,
-        'return_url': return_url
-    }
 
 
 async def parse_pay_stellar_uri(uri_data):
@@ -400,37 +312,7 @@ async def async_stellar_check_fee() -> str:
 # Deleted stellar_save_new, stellar_save_ro, stellar_create_new as they are unused or refactored to Use Cases.
 
 
-async def stellar_pay(from_account: str, for_account: str, asset: Asset, amount: float, create: bool = False,
-                      memo: str = None, xdr: str = None, fee=base_fee, cancel_offers=False):
-    if xdr:
-        transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    else:
-        async with ServerAsync(
-                horizon_url=config.horizon_url, client=AiohttpClient()
-        ) as server:
-            source_account = await server.load_account(from_account)
-        transaction = TransactionBuilder(source_account=source_account,
-                                         network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=fee)
-        transaction.set_timeout(60 * 60)
 
-    # If 'cancel offers' option is checked, add to transaction operations of deleting all related offers 
-    if cancel_offers:
-        await stellar_del_selling_offers(transaction, source_account.account.account_id, asset)
-
-    if create:
-        transaction.append_create_account_op(destination=for_account, starting_balance=float2str(amount))
-        transaction.add_text_memo('New account MyMTLWalletbot')
-    else:
-        if xdr:
-            transaction.append_payment_op(destination=for_account, amount=float2str(amount), asset=asset,
-                                          source=from_account)
-        else:
-            transaction.append_payment_op(destination=for_account, amount=float2str(amount), asset=asset)
-        if memo:
-            transaction.add_text_memo(memo)
-    full_transaction = transaction.build()
-    logger.info(full_transaction.to_xdr())
-    return full_transaction.to_xdr()
 
 
 async def stellar_get_selling_offers_sum(session: Session, user_id: int, sell_asset_filter: Asset):
@@ -468,54 +350,7 @@ async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id
         )
 
 
-async def stellar_swap(from_account: str, send_asset: Asset, send_amount: str, receive_asset: Asset,
-                       receive_amount: str, xdr: str = None, cancel_offers: bool = False,
-                       use_strict_receive: bool = False,
-                       ):
-    """
-    Swap operation. If strict_receive_amount is provided, use path_payment_strict_receive (guaranteed receive amount).
-    Otherwise, use path_payment_strict_send (guaranteed send amount).
-    """
-    if xdr:
-        transaction = TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    else:
-        async with ServerAsync(
-                horizon_url=config.horizon_url, client=AiohttpClient()
-        ) as server:
-            source_account = await server.load_account(from_account)
 
-        transaction = TransactionBuilder(source_account=source_account,
-                                         network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
-        transaction.set_timeout(60 * 60)
-
-    # If 'cancel offers' option is checked, add to transaction operations of deleting all related offers
-    if cancel_offers:
-        await stellar_del_selling_offers(transaction, source_account.account.account_id, send_asset)
-
-    path = await stellar_get_receive_path(send_asset, send_amount, receive_asset)
-    if use_strict_receive:
-        # Use path_payment_strict_receive (guaranteed receive)
-        transaction.append_path_payment_strict_receive_op(
-            destination=from_account,
-            send_asset=send_asset,
-            send_max=send_amount,
-            dest_asset=receive_asset,
-            dest_amount=receive_amount,
-            path=path
-        )
-    else:
-        # Use path_payment_strict_send (guaranteed send)
-        transaction.append_path_payment_strict_send_op(
-            destination=from_account,
-            send_asset=send_asset,
-            send_amount=send_amount,
-            dest_asset=receive_asset,
-            dest_min=receive_amount,
-            path=path
-        )
-    full_transaction = transaction.build()
-    logger.info(full_transaction.to_xdr())
-    return full_transaction.to_xdr()
 
 
 async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, receive_asset: Asset,
@@ -922,33 +757,7 @@ async def stellar_check_send_sum(send_asset: Asset, receive_sum: str, receive_as
         return send_amount, False
 
 
-async def stellar_get_receive_path(send_asset: Asset, send_sum: str, receive_asset: Asset) -> list:
-    try:
-        async with ServerAsync(
-                horizon_url=config.horizon_url, client=AiohttpClient()
-        ) as server:
-            call_result = await server.strict_send_paths(send_asset, send_sum, [receive_asset]).call()
-            if len(call_result['_embedded']['records']) > 0:
-                # [{'asset_type': 'credit_alphanum12', 'asset_code': 'EURMTL',
-                #  'asset_issuer': 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'},
-                # {'asset_type': 'credit_alphanum12', 'asset_code': 'BTCMTL',
-                #  'asset_issuer': 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}]
-                if len(call_result['_embedded']['records'][0]['path']) == 0:
-                    return []
-                else:
-                    result = []
-                    for record in call_result['_embedded']['records'][0]['path']:
-                        if record['asset_type'] == 'native':
-                            result.append(xlm_asset)
-                        else:
-                            result.append(Asset(record['asset_code'],
-                                                record['asset_issuer']))
-                    return result
-            else:
-                return []
-    except Exception as ex:
-        logger.info(["stellar_check_receive_sum", send_asset.code + ' ' + send_sum + ' ' + receive_asset.code, ex])
-        return []
+
 
 
 async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_assets: List[Asset]) -> List[str]:

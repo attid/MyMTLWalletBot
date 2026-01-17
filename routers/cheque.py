@@ -16,10 +16,11 @@ from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_
 from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
-from other.common_tools import get_user_id
+from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.stellar_tools import my_float, float2str, stellar_get_market_link
+from other.stellar_tools import my_float, stellar_get_market_link
+from infrastructure.utils.common_utils import float2str
 from core.constants import CHEQUE_PUBLIC_KEY
 from core.use_cases.cheque.create_cheque import CreateCheque
 from core.use_cases.cheque.claim_cheque import ClaimCheque

@@ -17,21 +17,21 @@ from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
-from other.stellar_tools import (
-    parse_transaction_stellar_uri, process_transaction_stellar_uri,
-    parse_pay_stellar_uri, is_valid_stellar_address
-)
+
+
+
 from other.lang_tools import check_user_id
 from other.mytypes import Balance
 from routers.sign import cmd_check_xdr
-from other.aiogram_tools import my_gettext, send_message, check_username, clear_state, clear_last_message_id, TELEGRAM_API_ERROR # Импортируем TELEGRAM_API_ERROR
-from other.common_tools import get_user_id, decode_qr_code
+from infrastructure.utils.telegram_utils import my_gettext, send_message, check_username, clear_state, clear_last_message_id, TELEGRAM_API_ERROR # Импортируем TELEGRAM_API_ERROR
+from infrastructure.utils.common_utils import get_user_id
+from infrastructure.utils.common_utils import decode_qr_code
 from routers.uri import handle_wc_uri
 from other.global_data import global_data
+from infrastructure.utils.common_utils import float2str
 from other.stellar_tools import (
-    parse_transaction_stellar_uri, process_transaction_stellar_uri,
     parse_pay_stellar_uri, is_valid_stellar_address, stellar_check_account,
-    my_float, float2str, cut_text_to_28_bytes, get_first_balance_from_list, base_fee, eurmtl_asset
+    my_float, cut_text_to_28_bytes, get_first_balance_from_list, base_fee, eurmtl_asset
 )
 from core.use_cases.user.update_profile import UpdateUserProfile
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -595,25 +595,33 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 await cmd_send_04(session, message, state)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
                 await clear_state(state)
-                # Process transaction URI
-                result = await process_transaction_stellar_uri(
-                    qr_data,
-                    session,
-                    message.from_user.id,
-                    Network.PUBLIC_NETWORK_PASSPHRASE
-                )
+                # Process transaction URI with Clean Architecture Use Case
+                from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+                from infrastructure.services.stellar_service import StellarService
+                from core.use_cases.stellar.process_uri import ProcessStellarUri
+                from other.config_reader import config as app_config
+
+                repo = SqlAlchemyWalletRepository(session)
+                service = StellarService(horizon_url=app_config.horizon_url)
+                use_case = ProcessStellarUri(repo, service)
+
+                result = await use_case.execute(qr_data, message.from_user.id)
                 
+                if not result.success:
+                    await send_message(session, message.from_user.id, f'Error: {result.error_message}')
+                    return
+
                 # Update state with transaction data
                 await state.update_data(
                     last_message_id=0,
-                    callback_url=result['callback_url'],
-                    return_url=result.get('return_url')
+                    callback_url=result.callback_url,
+                    return_url=result.return_url
                 )
                 
                 # Process XDR
                 await cmd_check_xdr(
                     session=session,
-                    check_xdr=result['xdr'],
+                    check_xdr=result.xdr,
                     user_id=message.from_user.id,
                     state=state
                 )

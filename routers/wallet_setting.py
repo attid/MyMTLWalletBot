@@ -17,13 +17,14 @@ from other.mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from other.aiogram_tools import send_message, my_gettext, clear_state, get_web_request, get_web_decoded_xdr
+from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state, get_web_request, get_web_decoded_xdr
 from loguru import logger
 
 from other.global_data import global_data
 from other.lang_tools import check_user_id
+from infrastructure.utils.common_utils import float2str
 from other.stellar_tools import (public_issuer, get_good_asset_list,
-                                 eurmtl_asset, float2str)
+                                 eurmtl_asset)
 # Legacy imports removed: stellar_get_balances, stellar_add_trust, stellar_get_user_account,
 # stellar_is_free_wallet, stellar_pay, stellar_get_user_keypair,
 # stellar_change_password, stellar_unfree_wallet, have_free_xlm,

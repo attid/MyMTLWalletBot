@@ -1,20 +1,20 @@
-import aiohttp
 from contextlib import suppress
 from typing import Union, Any
+from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 from sqlalchemy.orm import Session
-from aiogram import types
-
-TELEGRAM_API_ERROR: Any = object()
 
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
-from other.common_tools import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.web_tools import get_web_request, get_web_decoded_xdr
+from other.web_tools import get_web_request
+
+from infrastructure.utils.common_utils import get_user_id
+
+TELEGRAM_API_ERROR: Any = object()
 
 
 async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
@@ -129,6 +129,3 @@ async def set_last_message_id(chat_id: int, msg_id: int):
 
 async def clear_last_message_id(chat_id: int):
     await set_last_message_id(chat_id, 0)
-
-
-
