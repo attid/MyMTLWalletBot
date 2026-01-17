@@ -138,15 +138,55 @@ USDT: {float2str(usdt_balance, True)}
 
 {warning_message}"""
 
-    user_account = (await stellar_get_user_account(session, user_id)).account.account_id
+    # user_account = (await stellar_get_user_account(session, user_id)).account.account_id
+    user_account = wallet.public_key
     await state.update_data(use_ton=None)
 
     simple_account = user_account[:4] + '..' + user_account[-4:]
     info = get_wallet_info(session, user_id, user_account)
     link = 'https://viewer.eurmtl.me/account/' + user_account
-    # a = await stellar_get_balance_str(user_id)
+    
+    # Refactored Balance Retrieval via Clean Architecture
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.wallet.get_balance import GetWalletBalance
+    from other.config_reader import config
+    from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE
+    
+    repo = SqlAlchemyWalletRepository(session)
+    # Using real horizon from config
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = GetWalletBalance(repo, service)
+    
+    balances = await use_case.execute(user_id)
+    
+    # Formatting Logic (Presenter layer in Router)
+    vis_str = getattr(wallet, "assets_visibility", None)
+    
+    # Filter visible
+    balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
+    
+    balance_str = ''
+    for balance in balances:
+        b_val = float(balance.balance)
+        s_liab = float(balance.selling_liabilities)
+        
+        if s_liab > 0:
+            lock = float2str(s_liab, short=True)
+            full = float2str(b_val, short=True)
+            free = float2str(b_val - s_liab, short=True)
+            balance_str += f"{balance.asset_code} : {free} (+{lock}={full})\n"
+        else:
+            balance_str += f"{balance.asset_code} : {float2str(b_val, short=True)}\n"
+            
+    if wallet.free_wallet == 1:
+        balance_str += 'XLM : <a href="https://telegra.ph/XLM-05-28">?</a>\n'
+
+    # msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
+    #       f'{await stellar_get_balance_str(session, user_id, state=state)}'
+    
     msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
-          f'{await stellar_get_balance_str(session, user_id, state=state)}'
+          f'{balance_str}'
     return msg
 
 

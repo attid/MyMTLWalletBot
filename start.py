@@ -23,7 +23,7 @@ from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
 from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
                      cheque, mtlap, fest, uri, ton, notification_settings)
-from routers import veche, wallet_setting, common_end
+from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
 from other.faststream_tools import start_broker, stop_broker
@@ -46,7 +46,6 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
     dp.inline_query.middleware(DbSessionMiddleware(db_pool))
 
     dp.include_router(common_start.router)  # first # first
-    dp.include_router(veche.router)  # first
     dp.include_router(cheque.router)  # first
     dp.include_router(uri.router) # first
     dp.include_router(wallet_setting.router)  # first

@@ -43,7 +43,6 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Se
     msg = my_gettext(user_id, 'mtl_tools_msg')
 
     buttons = [
-        [types.InlineKeyboardButton(text='💬 ' + my_gettext(user_id, 'kb_tools_veche'), callback_data="MTLToolsVeche")],
         [types.InlineKeyboardButton(text='🪙 ' + my_gettext(user_id, 'kb_tools_donate'),
                                     callback_data="MTLToolsDonate")],
         [types.InlineKeyboardButton(text='📜 ' + my_gettext(user_id, 'kb_tools_delegate'),
