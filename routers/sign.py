@@ -27,7 +27,6 @@ from other.stellar_tools import (stellar_change_password, stellar_user_sign, ste
 class PinState(StatesGroup):
     sign = State()
     sign_and_send = State()
-    sign_veche = State()
     set_pin = State()
     set_pin2 = State()
     ask_password = State()
