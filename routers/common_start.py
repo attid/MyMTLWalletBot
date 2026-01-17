@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_default_address, db_set_default_address, db_add_donate, \
+from db.requests import db_add_donate, \
     db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
 from middleware.throttling import rate_limit
@@ -251,7 +251,11 @@ async def cmd_delete_all(message: types.Message, state: FSMContext, session: Ses
 @router.callback_query(F.data == "SetDefault")
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(SettingState.send_default_address)
-    msg = my_gettext(callback, 'set_default', (db_get_default_address(session, callback.from_user.id),))
+    from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+    user_repo = SqlAlchemyUserRepository(session)
+    user = await user_repo.get_by_id(callback.from_user.id)
+    default_addr = user.default_address if user else None
+    msg = my_gettext(callback, 'set_default', (default_addr,))
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
     await callback.answer()
 
@@ -285,11 +289,26 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
         service = StellarService(horizon_url=app_config.horizon_url)
         balance_use_case = GetWalletBalance(repo, service)
         await balance_use_case.execute(user_id=message.from_user.id, public_key=address)
-        db_set_default_address(session, message.from_user.id, address)
+        # Update default address via user repository
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        user = await user_repo.get_by_id(message.from_user.id)
+        if user:
+            user.default_address = address
+            await user_repo.update(user)
     except:
-        db_set_default_address(session, message.from_user.id, '')
-        # await state.set_state(None)
-    msg = my_gettext(message, 'set_default', (db_get_default_address(session, message.from_user.id),))
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        user = await user_repo.get_by_id(message.from_user.id)
+        if user:
+            user.default_address = ''
+            await user_repo.update(user)
+    
+    from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+    user_repo = SqlAlchemyUserRepository(session)
+    user = await user_repo.get_by_id(message.from_user.id)
+    default_addr = user.default_address if user else None
+    msg = my_gettext(message, 'set_default', (default_addr,))
     await send_message(session, message, msg, reply_markup=get_kb_return(message))
 
     await message.delete()
