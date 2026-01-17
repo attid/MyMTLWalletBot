@@ -4,8 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.types import TelegramObject
 
-from db.requests import get_user_lang
-
+from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 
 class DbSessionMiddleware(BaseMiddleware):
     def __init__(self, session_pool):
@@ -29,8 +28,12 @@ class DbSessionMiddleware(BaseMiddleware):
                 last_message_id=data.get('last_message_id', 0)
             )
             with self.session_pool.get_session() as session:
+                user_repo = SqlAlchemyUserRepository(session)
+                user = await user_repo.get_by_id(event.from_user.id)
+                lang = user.language if user else 'en'
+                
                 await fsm.update_data(
-                    user_lang=fsm_data.get('user_lang', get_user_lang(session, event.from_user.id))
+                    user_lang=fsm_data.get('user_lang', lang)
                 )
         with self.session_pool.get_session() as session:
             data["session"] = session

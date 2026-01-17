@@ -1,4 +1,5 @@
 from typing import List, Optional
+from sqlalchemy import update, func
 from sqlalchemy.future import select
 from sqlalchemy.orm import Session
 from core.domain.entities import Wallet
@@ -45,29 +46,14 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         return [self._to_entity(w) for w in db_wallets]
 
     async def create(self, wallet: Wallet) -> Wallet:
-        # Note: mapping entity to DB model. 
-        # WARNING: Entity 'id' might be None/0 if it's new, but DB needs it or autogenerates it.
-        # entities.Wallet has 'id', which maps to MyMtlWalletBot.id (Integer primary key)
-        
         db_wallet = MyMtlWalletBot(
             user_id=wallet.user_id,
             public_key=wallet.public_key,
             default_wallet=1 if wallet.is_default else 0,
             free_wallet=1 if wallet.is_free else 0,
-            assets_visibility=wallet.assets_visibility
-            # secret_key is not in Entity Wallet currently as per rules (no secrets in domain entities ideally)
-            # We might need to handle secret key differently or add it to entity but carefully.
-            # For this phase/task, let's assume we are migrating existing logic where secrets are likely managed elsewhere or passed in?
-            # Creating a wallet usually requires generating keys. 
-            # The Use Case logic will likely handle key generation and pass public key here.
-            # But the DB expects a secret key probably?
-            # Checking models.py: secret_key = Column(String(160))
-            # It's nullable? No 'nullable=False' specified, so it is nullable by default in SQLAlchemy unless specified.
-            # However, logic likely relies on it.
-            # For now, I will omit writing secret_key if it's not in the entity. 
-            # This might be an issue for creating NEW wallets if the DB requires it.
-            # But for "Foundation & Identity Context" migration, we might just be reading mostly?
-            # The plan says "RegisterUser" use case.
+            assets_visibility=wallet.assets_visibility,
+            secret_key=wallet.secret_key,
+            seed_key=wallet.seed_key
         )
         self.session.add(db_wallet)
         self.session.flush()
@@ -116,6 +102,47 @@ class SqlAlchemyWalletRepository(IWalletRepository):
                 db_wallet.need_delete = 1
             self.session.commit()
 
+    async def count_free_wallets(self, user_id: int) -> int:
+        """Count the number of active free wallets for a user."""
+        stmt = select(func.count(MyMtlWalletBot.user_id)).where(
+            MyMtlWalletBot.user_id == user_id,
+            MyMtlWalletBot.free_wallet == 1,
+            MyMtlWalletBot.need_delete == 0
+        )
+        result = self.session.execute(stmt)
+        return result.scalar() or 0
+
+    async def set_default_wallet(self, user_id: int, public_key: str) -> bool:
+        """Set a wallet as default for the user."""
+        # Unset all default wallets
+        stmt_unset = update(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id
+        ).values(default_wallet=0)
+        self.session.execute(stmt_unset)
+        
+        # Set new default
+        stmt_set = update(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id,
+            MyMtlWalletBot.public_key == public_key,
+            MyMtlWalletBot.need_delete == 0
+        ).values(default_wallet=1)
+        result = self.session.execute(stmt_set)
+        # We usually let the service layer commit, but here we might need flush to ensure updates are ready?
+        # db/requests.py committed immediately. 
+        self.session.flush()
+        return result.rowcount > 0
+
+    async def delete_all_by_user(self, user_id: int) -> None:
+        """Delete (soft-delete) all wallets for a user."""
+        if user_id < 1:
+            return
+        
+        stmt = update(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id
+        ).values(need_delete=1)
+        self.session.execute(stmt)
+        self.session.flush()
+
     async def get_info(self, user_id: int, public_key: str) -> str:
         """Get wallet info string."""
         stmt = select(MyMtlWalletBot).where(
@@ -148,5 +175,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             is_default=bool(db_wallet.default_wallet),
             is_free=bool(db_wallet.free_wallet),
             use_pin=db_wallet.use_pin or 0,
-            assets_visibility=db_wallet.assets_visibility
+            assets_visibility=db_wallet.assets_visibility,
+            secret_key=db_wallet.secret_key,
+            seed_key=db_wallet.seed_key
         )
