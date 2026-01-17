@@ -35,3 +35,11 @@ class PaymentResult:
     xdr: Optional[str] = None
     transaction_hash: Optional[str] = None
     error_message: Optional[str] = None
+
+@dataclass(frozen=True)
+class Order:
+    id: int
+    selling: Asset
+    buying: Asset
+    amount: str
+    price: str

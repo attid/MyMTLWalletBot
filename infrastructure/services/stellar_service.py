@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, List
 from stellar_sdk import AiohttpClient, ServerAsync
 from stellar_sdk.exceptions import NotFoundError
 from core.interfaces.services import IStellarService
+from core.domain.value_objects import Asset
 
 class StellarService(IStellarService):
     def __init__(self, horizon_url: str = "https://horizon-testnet.stellar.org"):
@@ -120,3 +121,117 @@ class StellarService(IStellarService):
             transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
             response = await server.submit_transaction(transaction)
             return response
+
+    async def swap_assets(
+        self,
+        source_account_id: str,
+        send_asset: Asset,
+        send_amount: str,
+        receive_asset: Asset,
+        receive_amount: str,
+        path: List[Asset] = [],
+        strict_receive: bool = False, # if True, use destination amount, else source amount
+        cancel_offers: bool = False
+    ) -> str:
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+             source_account = await server.load_account(source_account_id)
+        
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network, Price
+        
+        base_fee = 10000 
+        transaction = TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=base_fee
+        )
+        transaction.set_timeout(180)
+
+        # Helper to convert domain Asset to SDK Asset
+        def to_sdk_asset(a: Asset) -> SdkAsset:
+            if a.code == "XLM": return SdkAsset.native()
+            return SdkAsset(a.code, a.issuer)
+
+        if cancel_offers:
+             # Reuse logic from build_payment
+             offers = await self.get_selling_offers(source_account_id)
+             for offer in offers:
+                 selling = offer.get('selling', {})
+                 s_code = selling.get('asset_code')
+                 s_issuer = selling.get('asset_issuer')
+                 is_match = False
+                 if send_asset.code == "XLM":
+                      if selling.get('asset_type') == 'native': is_match = True
+                 else:
+                      if s_code == send_asset.code and s_issuer == send_asset.issuer: is_match = True
+                      
+                 if is_match:
+                      buying = offer.get('buying', {})
+                      b_code = buying.get('asset_code')
+                      b_issuer = buying.get('asset_issuer')
+                      buying_asset = SdkAsset.native() if buying.get('asset_type') == 'native' else SdkAsset(b_code, b_issuer)
+                      
+                      transaction.append_manage_sell_offer_op(
+                          selling=to_sdk_asset(send_asset),
+                          buying=buying_asset,
+                          amount='0',
+                          price=Price.from_raw_price('1'), 
+                          offer_id=int(offer.get('id', 0))
+                      )
+
+        path_assets = [to_sdk_asset(a) for a in path]
+        
+        if strict_receive:
+            transaction.append_path_payment_strict_receive_op(
+                destination=source_account_id, # sending to self
+                send_asset=to_sdk_asset(send_asset),
+                send_max=send_amount,
+                dest_asset=to_sdk_asset(receive_asset),
+                dest_amount=receive_amount,
+                path=path_assets
+            )
+        else:
+             transaction.append_path_payment_strict_send_op(
+                destination=source_account_id,
+                send_asset=to_sdk_asset(send_asset),
+                send_amount=send_amount,
+                dest_asset=to_sdk_asset(receive_asset),
+                dest_min=receive_amount,
+                path=path_assets
+            )
+            
+        return transaction.build().to_xdr()
+
+    async def manage_offer(
+        self,
+        source_account_id: str,
+        selling: Asset,
+        buying: Asset,
+        amount: str,
+        price: str,
+        offer_id: int = 0
+    ) -> str:
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+             source_account = await server.load_account(source_account_id)
+        
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network, Price
+        
+        transaction = TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=10000
+        )
+        transaction.set_timeout(180)
+
+        def to_sdk_asset(a: Asset) -> SdkAsset:
+            if a.code == "XLM": return SdkAsset.native()
+            return SdkAsset(a.code, a.issuer)
+            
+        transaction.append_manage_sell_offer_op(
+            selling=to_sdk_asset(selling),
+            buying=to_sdk_asset(buying),
+            amount=amount,
+            price=Price.from_raw_price(price),
+            offer_id=offer_id
+        )
+        
+        return transaction.build().to_xdr()

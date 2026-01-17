@@ -217,8 +217,11 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
     with patch("routers.swap.db_get_user", return_value=MagicMock(can_5000=1)), \
          patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.swap.stellar_check_receive_sum", return_value=("9.5", False), new_callable=AsyncMock), \
-         patch("routers.swap.stellar_swap", return_value="XDR_SWAP", new_callable=AsyncMock), \
+         patch("core.use_cases.trade.swap_assets.SwapAssets") as MockSwapAssets, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
+         
+         mock_use_case = MockSwapAssets.return_value
+         mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP"))
          
          await cmd_swap_sum(mock_message, mock_state, mock_session)
          
@@ -251,13 +254,16 @@ async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
     with patch("routers.swap.db_get_user", return_value=MagicMock(can_5000=1)), \
          patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.swap.stellar_check_send_sum", return_value=("11.0", False), new_callable=AsyncMock), \
-         patch("routers.swap.stellar_swap", return_value="XDR_SWAP_STRICT", new_callable=AsyncMock) as mock_swap, \
+         patch("core.use_cases.trade.swap_assets.SwapAssets") as MockSwapAssets, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
+         
+         mock_use_case = MockSwapAssets.return_value
+         mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP_STRICT"))
          
          await cmd_swap_receive_sum(mock_message, mock_state, mock_session)
          
-         _, kwargs = mock_swap.call_args
-         assert kwargs.get('use_strict_receive') is True
+         _, kwargs = mock_use_case.execute.call_args
+         assert kwargs.get('strict_receive') is True
          
          mock_state.update_data.assert_called()
          mock_send.assert_called_once()

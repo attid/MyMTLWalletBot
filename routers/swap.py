@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 from stellar_sdk import Asset
+from loguru import logger
 
 from db.requests import db_get_user, db_get_default_wallet
 from other.aiogram_tools import my_gettext, send_message
@@ -234,16 +235,47 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         if float(receive_sum) > 10:
             receive_sum = float2str(my_round(float(receive_sum), 3))
 
-        xdr = await stellar_swap(
-            from_account=(await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-            send_asset=Asset(send_asset, send_asset_code),
-            send_amount=float2str(send_sum),
-            receive_asset=Asset(receive_asset, receive_asset_code),
-            receive_amount=receive_sum,
-            xdr=xdr,
-            cancel_offers=cancel_offers,
-            use_strict_receive=False
+        # Refactored to use Clean Architecture Use Case
+        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+        from infrastructure.services.stellar_service import StellarService
+        from core.use_cases.trade.swap_assets import SwapAssets
+        from core.domain.value_objects import Asset as DomainAsset
+        from other.config_reader import config
+
+        repo = SqlAlchemyWalletRepository(session)
+        service = StellarService(horizon_url=config.horizon_url)
+        use_case = SwapAssets(repo, service)
+
+        result = await use_case.execute(
+            user_id=message.from_user.id,
+            send_asset=DomainAsset(code=send_asset, issuer=send_asset_code),
+            send_amount=send_sum,
+            receive_asset=DomainAsset(code=receive_asset, issuer=receive_asset_code),
+            receive_amount=my_float(receive_sum),
+            strict_receive=False,
+            cancel_offers=cancel_offers
         )
+
+        if result.success:
+            xdr = result.xdr
+        else:
+             # Fallback
+             logger.error(f"SwapAssets failed: {result.error_message}")
+             keyboard = get_kb_offers_cancel(message.from_user.id, data)
+             await send_message(session, message, my_gettext(message, 'bad_sum') + f"\n{result.error_message}", reply_markup=keyboard)
+             await message.delete()
+             return
+
+        # xdr = await stellar_swap(
+        #     from_account=(await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+        #     send_asset=Asset(send_asset, send_asset_code),
+        #     send_amount=float2str(send_sum),
+        #     receive_asset=Asset(receive_asset, receive_asset_code),
+        #     receive_amount=receive_sum,
+        #     xdr=xdr,
+        #     cancel_offers=cancel_offers,
+        #     use_strict_receive=False
+        # )
 
         # Add msg about cancelling offers to the confirmation request
         msg = my_gettext(
@@ -305,16 +337,42 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
 
         try:
             # Build XDR with strict receive, using max_send_amount as send_amount
-            xdr = await stellar_swap(
-                from_account=(await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                send_asset=Asset(send_asset, send_asset_code),
-                send_amount=float2str(max_send_amount),
-                receive_asset=Asset(receive_asset, receive_asset_code),
-                receive_amount=float2str(receive_sum),
-                xdr=xdr,
-                cancel_offers=cancel_offers,
-                use_strict_receive=True
+            # Refactored to use Clean Architecture Use Case
+            from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            from infrastructure.services.stellar_service import StellarService
+            from core.use_cases.trade.swap_assets import SwapAssets
+            from core.domain.value_objects import Asset as DomainAsset
+            from other.config_reader import config
+
+            repo = SqlAlchemyWalletRepository(session)
+            service = StellarService(horizon_url=config.horizon_url)
+            use_case = SwapAssets(repo, service)
+
+            result = await use_case.execute(
+                user_id=message.from_user.id,
+                send_asset=DomainAsset(code=send_asset, issuer=send_asset_code),
+                send_amount=max_send_amount,
+                receive_asset=DomainAsset(code=receive_asset, issuer=receive_asset_code),
+                receive_amount=receive_sum,
+                strict_receive=True,
+                cancel_offers=cancel_offers
             )
+
+            if result.success:
+                xdr = result.xdr
+            else:
+                 raise Exception(result.error_message)
+
+            # xdr = await stellar_swap(
+            #     from_account=(await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+            #     send_asset=Asset(send_asset, send_asset_code),
+            #     send_amount=float2str(max_send_amount),
+            #     receive_asset=Asset(receive_asset, receive_asset_code),
+            #     receive_amount=float2str(receive_sum),
+            #     xdr=xdr,
+            #     cancel_offers=cancel_offers,
+            #     use_strict_receive=True
+            # )
             scenario = "receive"
             need_alert = False
         except Exception as ex:
