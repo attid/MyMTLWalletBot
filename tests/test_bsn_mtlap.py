@@ -3,8 +3,8 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram import types, Bot
 from aiogram.fsm.context import FSMContext
-from routers.bsn import bsn_mode_command, process_tags, finish_send_bsn, BSNStates
-from routers.mtlap import cmd_mtlap_tools, cmd_mtlap_tools_delegate_a, cmd_mtlap_tools_delegate_c
+from routers.bsn import bsn_mode_command, process_tags, finish_send_bsn, BSNStates, finish_back_bsn
+from routers.mtlap import cmd_mtlap_tools, cmd_mtlap_tools_delegate_a, cmd_mtlap_tools_delegate_c, cmd_mtlap_tools_add_delegate_a, cmd_mtlap_send_add_delegate_for_a, cmd_mtlap_tools_recommend, cmd_mtlap_send_recommend
 import jsonpickle
 
 @pytest.fixture
@@ -145,3 +145,97 @@ async def test_process_tags(mock_session, mock_message, mock_state):
         mock_parse.assert_called()
         mock_state.update_data.assert_called_with(tags="dumps")
         mock_send.assert_called_once()
+
+# --- NEW TESTS FOR MTLAP ROUTER ---
+
+@pytest.mark.asyncio
+async def test_cmd_mtlap_tools_add_delegate_a(mock_session, mock_callback, mock_state):
+    # Test low xlm
+    with patch("routers.mtlap.have_free_xlm", return_value=False), \
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
+        await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session)
+        mock_callback.answer.assert_called()
+
+    # Test success
+    with patch("routers.mtlap.have_free_xlm", return_value=True), \
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap.get_kb_return"), \
+         patch("routers.mtlap.my_gettext", return_value="text"):
+        await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session)
+        mock_state.set_state.assert_called() # MTLAPStateTools.delegate_for_a
+        mock_send.assert_called()
+
+@pytest.mark.asyncio
+async def test_cmd_mtlap_send_add_delegate_for_a(mock_session, mock_message, mock_state):
+    mock_message.text = "GDELEGATE"
+    mock_account = MagicMock()
+    mock_account.account.account.account_id = "GDELEGATE"
+    
+    with patch("routers.mtlap.stellar_check_account", return_value=mock_account, new_callable=AsyncMock), \
+         patch("routers.mtlap.stellar_get_user_account", new_callable=AsyncMock), \
+         patch("routers.mtlap.cmd_gen_data_xdr", return_value="XDR", new_callable=AsyncMock), \
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+         
+         from routers.mtlap import cmd_mtlap_send_add_delegate_for_a
+         await cmd_mtlap_send_add_delegate_for_a(mock_message, mock_state, mock_session)
+         
+         mock_state.update_data.assert_called_with(xdr="XDR")
+         mock_send.assert_called()
+
+@pytest.mark.asyncio
+async def test_cmd_mtlap_tools_recommend(mock_session, mock_callback, mock_state):
+    with patch("routers.mtlap.stellar_get_data", return_value={}, new_callable=AsyncMock), \
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap._collect_recommendations", return_value=([], None)), \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+        
+        mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.lang_dict = {'en': {}}
+
+        from routers.mtlap import cmd_mtlap_tools_recommend
+        await cmd_mtlap_tools_recommend(mock_callback, mock_state, mock_session)
+
+        mock_state.set_state.assert_called() # recommend_for
+        mock_send.assert_called()
+
+@pytest.mark.asyncio
+async def test_cmd_mtlap_send_recommend(mock_session, mock_message, mock_state):
+    mock_message.text = "GRECOMMEND"
+    mock_account = MagicMock()
+    mock_account.account.account.account_id = "GRECOMMEND"
+    
+    with patch("routers.mtlap.stellar_get_data", return_value={}, new_callable=AsyncMock), \
+         patch("routers.mtlap._collect_recommendations", return_value=([], None)), \
+         patch("routers.mtlap.stellar_check_account", return_value=mock_account, new_callable=AsyncMock), \
+         patch("routers.mtlap.stellar_get_user_account", new_callable=AsyncMock), \
+         patch("routers.mtlap.cmd_gen_data_xdr", return_value="XDR", new_callable=AsyncMock), \
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+        
+        mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.lang_dict = {'en': {}}
+
+        from routers.mtlap import cmd_mtlap_send_recommend
+        await cmd_mtlap_send_recommend(mock_message, mock_state, mock_session)
+        
+        mock_state.update_data.assert_called_with(xdr="XDR")
+        mock_send.assert_called()
+
+# --- NEW TESTS FOR BSN ROUTER ---
+
+@pytest.mark.asyncio
+async def test_finish_back_bsn(mock_session, mock_callback, mock_state):
+    with patch("routers.bsn.cmd_show_balance", new_callable=AsyncMock) as mock_show:
+        from routers.bsn import finish_back_bsn
+        await finish_back_bsn(mock_callback, mock_state, mock_session)
+        
+        mock_state.set_state.assert_called_with(None)
+        mock_state.update_data.assert_called_with(tags=None)
+        mock_show.assert_called_once()

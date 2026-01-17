@@ -3,8 +3,8 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram import types
 from aiogram.fsm.context import FSMContext
-from routers.trade import cmd_market, cmd_sale_new_order, cq_trade_choose_token_sell, cq_trade_choose_token_buy, StateSaleToken, SaleAssetCallbackData, BuyAssetCallbackData
-from routers.swap import cmd_swap_01, cq_swap_choose_token_from, SwapAssetFromCallbackData
+from routers.trade import cmd_market, cmd_sale_new_order, cq_trade_choose_token_sell, cq_trade_choose_token_buy, StateSaleToken, SaleAssetCallbackData, BuyAssetCallbackData, cmd_send_sale_sum, cmd_send_sale_cost, cmd_show_orders, cb_edit_order, EditOrderCallbackData, cmd_delete_order, cmd_edit_sale_sum, cmd_edit_sale_cost
+from routers.swap import cmd_swap_01, cq_swap_choose_token_from, SwapAssetFromCallbackData, cq_swap_choose_token_for, SwapAssetForCallbackData, cmd_swap_sum, StateSwapToken, cq_swap_strict_receive, cmd_swap_receive_sum
 from stellar_sdk import Asset
 import jsonpickle
 
@@ -164,3 +164,159 @@ async def test_cq_swap_choose_token_from(mock_session, mock_callback, mock_state
         
         mock_state.update_data.assert_called()
         mock_send.assert_called_once()
+
+# --- NEW TESTS FOR TRADE ROUTER ---
+
+@pytest.mark.asyncio
+async def test_cmd_send_sale_sum(mock_session, mock_message, mock_state):
+    mock_message.text = "10.0"
+    mock_state.get_data.return_value = {
+        "receive_asset_code": "USD",
+        "send_asset_code": "XLM",
+        "market_link": "link",
+        "msg": "msg"
+    }
+    
+    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+         
+         await cmd_send_sale_sum(mock_message, mock_state, mock_session)
+         
+         # Logic: if send_sum > 0: update_data, set_state(None), set_state(selling_receive_sum), send_msg, delete
+         mock_state.update_data.assert_called()
+         # The code sets state to None, then to selling_receive_sum
+         # mock_state.set_state.assert_called() might only check the last call or any.
+         mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cb_edit_order(mock_session, mock_callback, mock_state):
+    callback_data = EditOrderCallbackData(answer=1)
+    offer = MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM"), buying=MagicMock(asset_code="USD"))
+    
+    # Ensure jsonpickle.decode returns a list
+    with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
+        await cb_edit_order(mock_callback, callback_data, mock_state, mock_session)
+        
+        mock_state.update_data.assert_called_with(edit_offer_id=1) 
+        mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_delete_order(mock_session, mock_callback, mock_state):
+    offer = MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM", asset_issuer=None), buying=MagicMock(asset_code="USD", asset_issuer="GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"))
+    mock_state.get_data.return_value = {"edit_offer_id": 1}
+
+    # Ensure jsonpickle.decode returns a list
+    with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
+         patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
+        await cmd_delete_order(mock_callback, mock_state, mock_session)
+        
+        args, kwargs = mock_state.update_data.call_args
+        assert kwargs.get('delete_order') is True
+        mock_xdr.assert_called_once()
+
+# --- NEW TESTS FOR SWAP ROUTER ---
+
+@pytest.mark.asyncio
+async def test_cq_swap_choose_token_for(mock_session, mock_callback, mock_state):
+    callback_data = SwapAssetForCallbackData(answer="USD")
+    mock_asset = MagicMock(asset_code="USD", asset_issuer="GUSD", balance="100.0")
+    # jsonpickle decode mock in patch
+    mock_state.get_data.return_value = {"assets": "encoded", "send_asset_blocked_sum": 0, "send_asset_code": "XLM", "send_asset_issuer": "native"}
+    
+    with patch("routers.swap.jsonpickle.decode", return_value=[mock_asset]), \
+         patch("routers.swap.stellar_get_market_link", return_value="link"), \
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+
+         await cq_swap_choose_token_for(mock_callback, callback_data, mock_state, mock_session)
+         
+         mock_state.set_state.assert_called_with(StateSwapToken.swap_sum)
+         mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
+    mock_message.text = "10.0"
+    mock_state.get_data.return_value = {
+        "send_asset_code": "XLM", "send_asset_issuer": None, # Native
+        "receive_asset_code": "USD", "receive_asset_issuer": "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA",
+        "cancel_offers": False, "xdr": None,
+        "msg": "msg"
+    }
+    
+    with patch("routers.swap.db_get_user", return_value=MagicMock(can_5000=1)), \
+         patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
+         patch("routers.swap.stellar_check_receive_sum", return_value=("9.5", False), new_callable=AsyncMock), \
+         patch("routers.swap.stellar_swap", return_value="XDR_SWAP", new_callable=AsyncMock), \
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+         
+         await cmd_swap_sum(mock_message, mock_state, mock_session)
+         
+         # The code calls state.set_state(None) and then does update_data logic via helper or directly
+         # Actually cmd_swap_sum calls state.set_state(None) then calls update_data(xdr=...)
+         mock_state.update_data.assert_called()
+         mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cq_swap_strict_receive(mock_session, mock_callback, mock_state):
+    mock_state.get_data.return_value = {"receive_asset_code": "USD"}
+    
+    with patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+
+         await cq_swap_strict_receive(mock_callback, mock_state, mock_session)
+         
+         mock_state.set_state.assert_called_with(StateSwapToken.swap_receive_sum)
+         mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
+    mock_message.text = "10.0"
+    mock_state.get_data.return_value = {
+        "send_asset_code": "XLM", "send_asset_issuer": None,
+        "receive_asset_code": "USD", "receive_asset_issuer": "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA",
+        "cancel_offers": False,
+        "msg": "msg"
+    }
+    
+    with patch("routers.swap.db_get_user", return_value=MagicMock(can_5000=1)), \
+         patch("routers.swap.stellar_get_user_account", new_callable=AsyncMock), \
+         patch("routers.swap.stellar_check_send_sum", return_value=("11.0", False), new_callable=AsyncMock), \
+         patch("routers.swap.stellar_swap", return_value="XDR_SWAP_STRICT", new_callable=AsyncMock) as mock_swap, \
+         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("other.lang_tools.global_data") as mock_gd, \
+         patch("other.lang_tools.get_user_id", return_value=123):
+         
+         mock_gd.user_lang_dic = {123: 'en'}
+         mock_gd.lang_dict = {'en': {}}
+         
+         await cmd_swap_receive_sum(mock_message, mock_state, mock_session)
+         
+         # Verify use_strict_receive=True in stellar_swap call
+         _, kwargs = mock_swap.call_args
+         assert kwargs.get('use_strict_receive') is True
+         
+         mock_state.update_data.assert_called()
+         mock_send.assert_called_once()
