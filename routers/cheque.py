@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from stellar_sdk import Asset
 
 from db.models import ChequeStatus
-from db.requests import db_add_cheque, db_get_cheque, db_get_default_wallet, db_reset_balance, \
+from db.requests import db_add_cheque, db_get_cheque, db_reset_balance, \
     db_get_available_cheques, db_get_cheque_receive_count, db_add_cheque_history
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
 from routers.common_setting import cmd_language
@@ -269,8 +269,13 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
     total_count = cheque.cheque_count
     receive_count = db_get_cheque_receive_count(session, cheque_uuid)
     cheque_pay = cheque.cheque_amount
+    
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id)
+    
     xdr = await stellar_pay(cheque_public,
-                            db_get_default_wallet(session, user_id).public_key,
+                            wallet.public_key,
                             eurmtl_asset, (total_count - receive_count) * float(cheque_pay), memo=cheque_uuid[:16])
     xdr = stellar_sign(xdr, stellar_get_master(session).secret)
 
@@ -383,8 +388,12 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
     if was_new:
         xdr = await stellar_create_new(session, user_id, username)
 
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id)
+    
     xdr = await stellar_pay(cheque_public,
-                            db_get_default_wallet(session, user_id).public_key,
+                            wallet.public_key,
                             eurmtl_asset, float(cheque.cheque_amount), memo=cheque.cheque_uuid[:16], xdr=xdr)
     if was_new:
         xdr = stellar_user_sign(session, xdr, user_id, str(user_id))
