@@ -14,7 +14,7 @@ from stellar_sdk import Asset, Network, TransactionBuilder
 from stellar_sdk.sep.federation import resolve_stellar_address
 from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
-from db.requests import (db_get_user_account_by_username, db_get_book_data, db_get_user_data, db_get_wallets_list)
+from db.requests import (db_get_book_data, db_get_user_data, db_get_wallets_list)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from other.stellar_tools import (
@@ -82,10 +82,10 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
                          send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, ):
     try:
         if '@' == send_for[0]:
-            send_address, user_id = db_get_user_account_by_username(session, send_for)
-            # Получаем текущее имя пользователя из базы данных для сравнения
             from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
             user_repo = SqlAlchemyUserRepository(session)
+            send_address, user_id = await user_repo.get_account_by_username(send_for)
+            # Получаем текущее имя пользователя из базы данных для сравнения
             user_in_db = await user_repo.get_by_id(user_id)
             current_username_in_db = user_in_db.username if user_in_db else None
 
@@ -195,7 +195,9 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
     # Convert username to Stellar address
     try:
         send_for = '@' + username
-        stellar_address, _ = db_get_user_account_by_username(session, send_for)
+        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = SqlAlchemyUserRepository(session)
+        stellar_address, _ = await user_repo.get_account_by_username(send_for)
     except Exception as ex:
         await send_message(session, message.from_user.id, f'Error: {str(ex)}')
         return
@@ -211,9 +213,9 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
 
     if '@' == send_for_input[0]:
         try:
-            public_key, user_id = db_get_user_account_by_username(session, send_for_input)
             from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
             user_repo = SqlAlchemyUserRepository(session)
+            public_key, user_id = await user_repo.get_account_by_username(send_for_input)
             user_in_db = await user_repo.get_by_id(user_id)
             current_username_in_db = user_in_db.username if user_in_db else None
 

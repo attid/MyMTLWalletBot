@@ -5,7 +5,7 @@ import json
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.orm import Session
 
-from db.requests import db_get_user_account_by_username
+
 from routers.send import cmd_send_04, cmd_send_choose_token
 from routers.sign import cmd_check_xdr
 from other.aiogram_tools import clear_last_message_id, clear_state
@@ -54,7 +54,9 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                 public_key = find_stellar_federation_address(message.caption.lower())
 
         if message.forward_from and public_key is None:
-            public_key, user_id = db_get_user_account_by_username(session, '@' + message.forward_from.username)
+            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = SqlAlchemyUserRepository(session)
+            public_key, user_id = await user_repo.get_account_by_username('@' + message.forward_from.username)
 
         if public_key:
             my_account = await stellar_check_account(public_key)

@@ -44,9 +44,40 @@ class SqlAlchemyUserRepository(IUserRepository):
             self.session.flush()
             return self._to_entity(db_user)
         else:
-             # Fallback to create if not exists? Or raise error? Repository pattern usually implies update updates existing.
-             # For now, let's treat this strictly as update.
-             raise ValueError(f"User with id {user.id} not found for update")
+            # Fallback to create if not exists? Or raise error? Repository pattern usually implies update updates existing.
+            # For now, let's treat this strictly as update.
+            raise ValueError(f"User with id {user.id} not found for update")
+
+    async def get_account_by_username(self, username: str) -> tuple[Optional[str], Optional[int]]:
+        """Get wallet public key and user_id by Telegram username."""
+        from db.models import MyMtlWalletBot
+        
+        # Remove @ prefix and convert to lowercase
+        clean_username = username.lower()[1:] if username.startswith('@') else username.lower()
+        
+        # First query to check the default_address
+        stmt = select(MyMtlWalletBotUsers.user_id, MyMtlWalletBotUsers.default_address).where(
+            MyMtlWalletBotUsers.user_name == clean_username
+        )
+        result = self.session.execute(stmt)
+        user = result.one_or_none()
+        
+        if user is not None:
+            user_id, default_address = user
+            if default_address and len(default_address) == 56:
+                return default_address, user_id
+            else:
+                # Second query if default_address is not available or invalid
+                wallet_stmt = select(MyMtlWalletBot.public_key).where(
+                    MyMtlWalletBot.user_id == user_id,
+                    MyMtlWalletBot.default_wallet == 1
+                )
+                wallet_result = self.session.execute(wallet_stmt)
+                wallet = wallet_result.scalar_one_or_none()
+                if wallet is not None:
+                    return wallet, user_id
+        
+        return None, None
 
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:
         return User(
