@@ -30,10 +30,20 @@ class IUserRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    async def search_by_username(self, query: str) -> List[str]:
+        """Search users by partial username match. Returns list of usernames."""
+        pass
+
 class IWalletRepository(ABC):
     @abstractmethod
     async def get_by_user_id(self, user_id: int) -> List[Wallet]:
         """Retrieve all wallets belonging to a user."""
+        pass
+
+    @abstractmethod
+    async def get_all_active(self, user_id: int) -> List[Wallet]:
+        """Retrieve all active (non-deleted) wallets for a user."""
         pass
 
     @abstractmethod
