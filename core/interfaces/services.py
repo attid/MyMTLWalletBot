@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
+from core.domain.value_objects import Asset
 
 class IStellarService(ABC):
     @abstractmethod
@@ -36,6 +37,34 @@ class IStellarService(ABC):
         pass
     
     @abstractmethod
-    async def check_account_exists(self, account_id: str) -> bool:
+    def check_account_exists(self, account_id: str) -> bool:
         """Check if an account exists on the network."""
+        pass
+
+    @abstractmethod
+    async def swap_assets(
+        self,
+        source_account_id: str,
+        send_asset: Asset,
+        send_amount: str,
+        receive_asset: Asset,
+        receive_amount: str,
+        path: List[Asset] = [],
+        strict_receive: bool = False,
+        cancel_offers: bool = False
+    ) -> str:
+        """Build a path payment transaction (strict send or strict receive)."""
+        pass
+
+    @abstractmethod
+    async def manage_offer(
+        self,
+        source_account_id: str,
+        selling: Asset,
+        buying: Asset,
+        amount: str,
+        price: str,
+        offer_id: int = 0
+    ) -> str:
+        """Build a manage offer transaction."""
         pass

@@ -195,14 +195,80 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext):
     receive_asset_code = data.get('receive_asset_issuer')
     offer_id = int(data.get('edit_offer_id', 0))
     delete_order = data.get('delete_order', False)
+    price = 0.0
+    amount = 0.0
     if delete_order:
-        xdr = await stellar_sale((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                                 Asset(send_asset, send_asset_code),
-                                 '0', Asset(receive_asset, receive_asset_code), str(receive_sum), offer_id)
+        amount = 0.0
+        price = 1.0 # Price 1 means nothing when amount is 0, but required by op
     else:
-        xdr = await stellar_sale((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                                 Asset(send_asset, send_asset_code),
-                                 str(send_sum), Asset(receive_asset, receive_asset_code), str(receive_sum), offer_id)
+        # Calculate price based on inputs? 
+        # Existing logic: stellar_sale takes send_sum and receive_sum
+        # send_asset -> receive_asset
+        # amount = send_sum
+        # price = receive_sum / send_sum (roughly, but stellar_sale handles it via Price object or direct)
+        
+        # Checking implementation of manage_offer in new service: it takes amount and price.
+        # stellar_sale from old code took (selling, buying, amount, price_numerator, price_denominator_or_id?)
+        # Wait, let's check stellar_sale signature in other/stellar_tools or usages.
+        # Usage: stellar_sale(..., amount, ..., price, offer_id)
+        # where price is receive_sum. Wait, receive_sum is amount of buying asset?
+        # Standard ManageSellOffer: selling amount, price=buying/selling.
+        
+        # Let's see existing calls:
+        # stellar_sale(..., selling, send_sum, buying, receive_sum, offer_id)
+        # It seems stellar_sale signature is (..., selling, amount, buying, price, offer_id) 
+        # where price might be interpreted as "price" or "amount of buying"?
+        # Actually line 205: stellar_sale(..., selling, str(send_sum), buying, str(receive_sum), offer_id)
+        # It seems it passes receive_sum as 'price'. This is odd if 'stellar_sale' expects price.
+        # Let's inspect 'stellar_sale' to be sure, or rely on logic:
+        # If I want to sell X amount of A for Y amount of B.
+        # Price = Y / X.
+        
+        # Clean Architecture Use Case 'ManageOffer' expects (selling, buying, amount, price, offer_id).
+        # We need to calculate price.
+        if float(send_sum) > 0:
+            price = float(receive_sum) / float(send_sum)
+        else:
+            price = 0 # Should not happen unless delete
+            
+        amount = float(send_sum)
+
+    # Refactored to use Clean Architecture Use Case
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    from infrastructure.services.stellar_service import StellarService
+    from core.use_cases.trade.manage_offer import ManageOffer
+    from core.domain.value_objects import Asset as DomainAsset
+    from other.config_reader import config
+    from loguru import logger
+
+    repo = SqlAlchemyWalletRepository(session)
+    service = StellarService(horizon_url=config.horizon_url)
+    use_case = ManageOffer(repo, service)
+
+    result = await use_case.execute(
+        user_id=message.from_user.id,
+        selling=DomainAsset(code=send_asset, issuer=send_asset_code),
+        buying=DomainAsset(code=receive_asset, issuer=receive_asset_code),
+        amount=amount,
+        price=price,
+        offer_id=offer_id
+    )
+    
+    if result.success:
+        xdr = result.xdr
+    else:
+        logger.error(f"ManageOffer failed: {result.error_message}")
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message))
+        return
+
+    # if delete_order:
+    #     xdr = await stellar_sale((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+    #                              Asset(send_asset, send_asset_code),
+    #                              '0', Asset(receive_asset, receive_asset_code), str(receive_sum), offer_id)
+    # else:
+    #     xdr = await stellar_sale((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
+    #                              Asset(send_asset, send_asset_code),
+    #                              str(send_sum), Asset(receive_asset, receive_asset_code), str(receive_sum), offer_id)
 
     if delete_order:
         msg = my_gettext(message, 'delete_sale', (send_sum, send_asset, receive_sum, receive_asset))
