@@ -64,3 +64,27 @@ class IWalletRepository(ABC):
         from the network on next balance request.
         """
         pass
+
+
+class IAddressBookRepository(ABC):
+    """Interface for address book operations."""
+    
+    @abstractmethod
+    async def get_all(self, user_id: int) -> List['AddressBookEntry']:
+        """Get all address book entries for a user."""
+        pass
+    
+    @abstractmethod
+    async def get_by_id(self, entry_id: int, user_id: int) -> Optional['AddressBookEntry']:
+        """Get a specific address book entry."""
+        pass
+    
+    @abstractmethod
+    async def create(self, user_id: int, address: str, name: str) -> 'AddressBookEntry':
+        """Create a new address book entry."""
+        pass
+    
+    @abstractmethod
+    async def delete(self, entry_id: int, user_id: int) -> None:
+        """Delete an address book entry."""
+        pass

@@ -14,7 +14,7 @@ from stellar_sdk import Asset, Network, TransactionBuilder
 from stellar_sdk.sep.federation import resolve_stellar_address
 from stellar_sdk.sep.stellar_uri import TransactionStellarUri
 
-from db.requests import (db_get_book_data, db_get_user_data, db_get_wallets_list)
+from db.requests import (db_get_user_data, db_get_wallets_list)
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
     get_kb_offers_cancel
 from other.stellar_tools import (
@@ -617,8 +617,10 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
     seen_ids = set()  # Для отслеживания уникальных идентификаторов
 
     # Query from the address book
-    book_data = db_get_book_data(session, inline_query.from_user.id)
-    data = [(record.address, record.name) for record in book_data]
+    from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+    addressbook_repo = SqlAlchemyAddressBookRepository(session)
+    book_entries = await addressbook_repo.get_all(inline_query.from_user.id)
+    data = [(entry.address, entry.name) for entry in book_entries]
 
     # Query from the wallets
     wallet_data = db_get_wallets_list(session, inline_query.from_user.id)

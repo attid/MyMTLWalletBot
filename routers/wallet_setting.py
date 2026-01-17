@@ -10,8 +10,7 @@ from stellar_sdk import Asset
 from sulguk import SULGUK_PARSE_MODE
 
 from other.config_reader import config
-from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
-    db_insert_into_address_book
+
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from other.grist_tools import load_asset_from_grist
 from other.mytypes import Balance
@@ -691,23 +690,25 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
 
 
 async def cmd_edit_address_book(session: Session, user_id: int):
-    data = db_get_book_data(session, user_id)
+    from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+    addressbook_repo = SqlAlchemyAddressBookRepository(session)
+    entries = await addressbook_repo.get_all(user_id)
 
     buttons = []
-    for row in data:
+    for entry in entries:
         buttons.append(
             [
-                types.InlineKeyboardButton(text=row.address,
+                types.InlineKeyboardButton(text=entry.address,
                                            callback_data=AddressBookCallbackData(
-                                               action='Show', idx=row.id).pack()
+                                               action='Show', idx=entry.id).pack()
                                            ),
-                types.InlineKeyboardButton(text=row.name,
+                types.InlineKeyboardButton(text=entry.name,
                                            callback_data=AddressBookCallbackData(
-                                               action='Show', idx=row.id).pack()
+                                               action='Show', idx=entry.id).pack()
                                            ),
                 types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_delete'),
                                            callback_data=AddressBookCallbackData(
-                                               action='Delete', idx=row.id).pack()
+                                               action='Delete', idx=entry.id).pack()
                                            )
             ]
         )
@@ -729,24 +730,28 @@ async def cmd_send_for(message: types.Message, state: FSMContext, session: Sessi
     await message.delete()
     if len(message.text) > 5 and message.text.find(' ') != -1:
         arr = message.text.split(' ')
-        db_insert_into_address_book(session, arr[0], ' '.join(arr[1:]), message.from_user.id)
+        from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+        addressbook_repo = SqlAlchemyAddressBookRepository(session)
+        await addressbook_repo.create(message.from_user.id, arr[0], ' '.join(arr[1:]))
     await cmd_edit_address_book(session, message.from_user.id)
 
 
 @router.callback_query(AddressBookCallbackData.filter())
 async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCallbackData,
                      state: FSMContext, session: Session):
+    from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+    addressbook_repo = SqlAlchemyAddressBookRepository(session)
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
 
     if answer == 'Show':
-        book = db_get_address_book_by_id(session, idx, user_id)
+        book = await addressbook_repo.get_by_id(idx, user_id)
         if book is not None:
             await callback.answer(f"{book.address}\n{book.name}"[:200], show_alert=True)
 
     if answer == 'Delete':
-        db_delete_address_book_by_id(session, idx, user_id)
+        await addressbook_repo.delete(idx, user_id)
         await cmd_edit_address_book(session, user_id)
 
     await callback.answer()
