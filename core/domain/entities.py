@@ -19,3 +19,10 @@ class Wallet:
     use_pin: int = 0  # 0=no pin, 1=pin, 2=password, 10=read-only
     name: Optional[str] = None
     assets_visibility: Optional[str] = "{}"
+
+@dataclass
+class AddressBookEntry:
+    id: int
+    user_id: int
+    address: str
+    name: str
