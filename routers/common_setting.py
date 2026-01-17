@@ -120,5 +120,5 @@ async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, sessi
 
 
 @router.callback_query(F.data == "Support")
-async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_support(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await send_message(session, callback, my_gettext(callback, "support_bot"), reply_markup=get_kb_return(callback))

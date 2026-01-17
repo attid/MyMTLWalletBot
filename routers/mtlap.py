@@ -120,7 +120,7 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
 ########################################################################################################################
 
 @router.callback_query(F.data == "MTLAPToolsDelegateA")
-async def cmd_mtlap_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_mtlap_tools_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -142,7 +142,7 @@ async def cmd_mtlap_tools_delegate(callback: types.CallbackQuery, state: FSMCont
 
 
 @router.callback_query(F.data == "MTLAPToolsDelDelegateA")
-async def cmd_mtlap_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_mtlap_tools_del_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -163,7 +163,7 @@ async def cmd_mtlap_tools_del_delegate(callback: types.CallbackQuery, state: FSM
 
 
 @router.callback_query(F.data == "MTLAPToolsAddDelegateA")
-async def cmd_mtlap_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_mtlap_tools_add_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: Session):
     if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
         return
@@ -174,7 +174,7 @@ async def cmd_mtlap_tools_add_delegate(callback: types.CallbackQuery, state: FSM
 
 
 @router.message(MTLAPStateTools.delegate_for_a)
-async def cmd_mtlap_send_add_delegate_for(message: types.Message, state: FSMContext, session: Session):
+async def cmd_mtlap_send_add_delegate_for_a(message: types.Message, state: FSMContext, session: Session):
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
@@ -196,7 +196,7 @@ async def cmd_mtlap_send_add_delegate_for(message: types.Message, state: FSMCont
 ########################################################################################################################
 
 @router.callback_query(F.data == "MTLAPToolsDelegateC")
-async def cmd_mtlap_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_mtlap_tools_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -218,7 +218,7 @@ async def cmd_mtlap_tools_delegate(callback: types.CallbackQuery, state: FSMCont
 
 
 @router.callback_query(F.data == "MTLAPToolsDelDelegateC")
-async def cmd_mtlap_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_mtlap_tools_del_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: Session):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -239,7 +239,7 @@ async def cmd_mtlap_tools_del_delegate(callback: types.CallbackQuery, state: FSM
 
 
 @router.callback_query(F.data == "MTLAPToolsAddDelegateC")
-async def cmd_mtlap_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_mtlap_tools_add_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: Session):
     if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
         return
@@ -252,7 +252,7 @@ async def cmd_mtlap_tools_add_delegate(callback: types.CallbackQuery, state: FSM
 
 
 @router.message(MTLAPStateTools.delegate_for_c)
-async def cmd_mtlap_send_add_delegate_for(message: types.Message, state: FSMContext, session: Session):
+async def cmd_mtlap_send_add_delegate_for_c(message: types.Message, state: FSMContext, session: Session):
     public_key = message.text
     delegate = 'ready' if message.text.lower() == 'ready' else None
     my_account = await stellar_check_account(public_key)

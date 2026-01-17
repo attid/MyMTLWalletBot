@@ -387,22 +387,6 @@ async def bsn_mode_command(message: "Message", state: "FSMContext", command: "Co
     await state.update_data(tags=jsonpickle.dumps(tags))
 
 
-@bsn_router.message(BSNStates.waiting_for_tags)
-async def process_tags(message: "Message", state: "FSMContext", session: "Session", **kwargs):
-    data = await state.get_data()
-    tags = data.get('tags')
-    new_tags: list[str] = message.text.split('\n')
-    for tag in new_tags:
-        tag = tag.strip()
-        await parse_tag(tag=tag, bsn_data=tags, message=message, session=session)
-
-    await state.update_data({'tags': tags})
-    await message.answer(
-        make_tag_message(tags, message.from_user.id),
-        reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty()),
-    )
-
-
 @bsn_router.callback_query(BSNStates.waiting_for_tags, F.data == SEND_CALLBACK_DATA)
 async def finish_send_bsn(callback_query: "CallbackQuery", state: "FSMContext", session: "Session", **kwargs) -> None:
     await state.set_state(None)

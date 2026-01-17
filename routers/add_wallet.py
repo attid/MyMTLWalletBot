@@ -43,7 +43,7 @@ async def cmd_add_new(callback: types.CallbackQuery, session: Session):
 
 
 @router.callback_query(F.data == "AddWalletHaveKey")
-async def cq_add(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_add_have_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
     msg = my_gettext(callback, 'send_key')
     await state.update_data(msg=msg)
     await state.set_state(StateAddWallet.sending_private)
@@ -72,7 +72,7 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
 
 
 @router.callback_query(F.data == "AddWalletNewKey")
-async def cq_add(callback: types.CallbackQuery, session: Session, state: FSMContext):
+async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state: FSMContext):
     if db_user_can_new_free(session, callback.from_user.id):
         msg = my_gettext(callback, "try_send")
         waiting_count = new_wallet_lock.waiting_count()
@@ -140,7 +140,7 @@ async def cmd_sending_public(message: types.Message, state: FSMContext, session:
 
 
 @router.callback_query(F.data == "PIN")
-async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_add_read_only_pin(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.set_state(PinState.set_pin)
     await state.update_data(pin_type=1)
     await cmd_ask_pin(session, callback.message.chat.id, state)
@@ -155,13 +155,13 @@ async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, sess
 
 
 @router.callback_query(F.data == "NoPassword")
-async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_add_read_only_no_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
     await state.update_data(pin_type=0)
     await cmd_show_balance(session, callback.from_user.id, state)
 
 
 @router.callback_query(F.data == "AddTonWallet")
-async def cq_add(callback: types.CallbackQuery, session: Session, state: FSMContext):
+async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSMContext):
     if db_user_can_new_free(session, callback.from_user.id):
         from services.ton_service import TonService
 

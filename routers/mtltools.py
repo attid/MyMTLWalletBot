@@ -138,7 +138,7 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, s
 ########################################################################################################################
 
 @router.callback_query(F.data=="MTLToolsDonate")
-async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, session:Session):
     data = await stellar_get_data(session,callback.from_user.id)
     donates = {}
     idx = 0
@@ -178,7 +178,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.callback_query(F.data=="AddDonate")
-async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext, session:Session):
     if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
         return
@@ -205,7 +205,7 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext,
 
 
 @router.message(StateTools.donate_name)
-async def cmd_send_add_donate_address(message: types.Message, state: FSMContext, session:Session):
+async def cmd_send_add_donate_name(message: types.Message, state: FSMContext, session:Session):
     name = message.text
     if name:
         name = name.replace('=', '_').replace(':', '_')
@@ -221,7 +221,7 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext,
 
 
 @router.message(StateTools.donate_persent)
-async def cmd_send_add_donate_address(message: types.Message, state: FSMContext, session:Session):
+async def cmd_send_add_donate_percent(message: types.Message, state: FSMContext, session:Session):
     if my_float(message.text):
         persent = my_float(message.text)
         data = await state.get_data()
@@ -263,7 +263,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: DonateCallbac
 ########################################################################################################################
 
 @router.callback_query(F.data=="MTLToolsAddBIM")
-async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, session:Session):
     data = await stellar_get_data(session,callback.from_user.id)
     bod_dict = {}
     idx = 0
@@ -299,7 +299,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.callback_query(F.data=="AddBIM")
-async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session):
+async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, session:Session):
     if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
         return

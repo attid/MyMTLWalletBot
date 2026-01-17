@@ -279,7 +279,7 @@ async def cmd_send_get_address(message: types.Message, state: FSMContext, sessio
 
 
 @router.message(StateInOut.sending_usdt_sum)
-async def cmd_send_get_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: Session):
     try:
         send_sum = my_float(message.text)
     except:
@@ -379,7 +379,7 @@ async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext):
 
 
 @router.message(StateInOut.sending_btc_sum_in)
-async def cmd_send_get_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: Session):
     try:
         send_sum = int(message.text)
     except:
@@ -471,7 +471,7 @@ async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, sessio
 
 
 @router.message(StateInOut.sending_starts_sum_in)
-async def cmd_send_get_sum(message: types.Message, state: FSMContext, session: Session, bot: Bot):
+async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session: Session, bot: Bot):
     try:
         send_sum = int(message.text)
     except:

@@ -213,7 +213,7 @@ async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, sessi
 
 @router.callback_query(F.data == "SetLimit")
 @router.callback_query(F.data == "OffLimits")
-async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session: Session):
     db_user = db_get_user(session, callback.from_user.id)
     if callback.data == 'OffLimits':
         db_user.can_5000 = 1 if db_user.can_5000 == 0 else 0
