@@ -4,7 +4,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 from sqlalchemy.orm import Session
-from db.requests import db_delete_wallet, get_wallet_info
+
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
 from other.aiogram_tools import send_message, my_gettext, clear_state
@@ -82,7 +82,9 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
             await cmd_change_wallet(callback.message.chat.id, state, session)
         if answer == 'NAME':
             try:
-                info = get_wallet_info(session, user_id, wallets[idx])
+                from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+                wallet_repo = SqlAlchemyWalletRepository(session)
+                info = await wallet_repo.get_info(user_id, wallets[idx])
                 msg = f"{wallets[idx]} {info}\n" + my_gettext(callback,
                                                               'your_balance') + '\n' + await stellar_get_balance_str(
                     session, user_id, wallets[idx])
@@ -114,7 +116,9 @@ async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, sessi
     data = await state.get_data()
     idx = data.get('idx')
     wallets = data['wallets']
-    db_delete_wallet(session, callback.from_user.id, wallets[idx], idx=int(idx))
+    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    wallet_repo = SqlAlchemyWalletRepository(session)
+    await wallet_repo.delete(callback.from_user.id, wallets[idx], wallet_id=int(idx))
     await callback.answer()
     await cmd_change_wallet(callback.message.chat.id, state, session)
 

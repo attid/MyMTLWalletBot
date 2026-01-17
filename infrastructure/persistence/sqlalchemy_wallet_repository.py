@@ -87,6 +87,49 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             db_wallet.balances_event_id = '0'
             self.session.commit()
 
+    async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: int = None) -> None:
+        """Delete or soft-delete a wallet."""
+        if user_id < 1:
+            return
+        stmt = select(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id,
+            MyMtlWalletBot.public_key == public_key
+        )
+        if wallet_id is not None:
+            stmt = stmt.where(MyMtlWalletBot.id == wallet_id)
+        result = self.session.execute(stmt)
+        db_wallet = result.scalar_one_or_none()
+        if db_wallet:
+            if erase:
+                self.session.delete(db_wallet)
+            else:
+                db_wallet.need_delete = 1
+            self.session.commit()
+
+    async def get_info(self, user_id: int, public_key: str) -> str:
+        """Get wallet info string."""
+        stmt = select(MyMtlWalletBot).where(
+            MyMtlWalletBot.user_id == user_id,
+            MyMtlWalletBot.public_key == public_key,
+            MyMtlWalletBot.need_delete == 0
+        )
+        result = self.session.execute(stmt)
+        db_wallet = result.scalar_one_or_none()
+        if db_wallet is None:
+            return "(нет данных)"
+        if db_wallet.free_wallet == 1:
+            return '(free)'
+        elif db_wallet.use_pin == 0:
+            return '(no pin)'
+        elif db_wallet.use_pin == 1:
+            return '(pin)'
+        elif db_wallet.use_pin == 2:
+            return '(pass)'
+        elif db_wallet.use_pin == 10:
+            return '(r/o)'
+        else:
+            return '(?)'
+
     def _to_entity(self, db_wallet: MyMtlWalletBot) -> Wallet:
         return Wallet(
             id=db_wallet.id,
