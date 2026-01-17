@@ -51,7 +51,8 @@ class StellarService(IStellarService):
         amount: str, 
         memo: Optional[str] = None,
         sequence: Optional[int] = None,
-        cancel_offers: bool = False
+        cancel_offers: bool = False,
+        create_account: bool = False
     ) -> str:
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              # Load source account for sequence number
@@ -103,12 +104,18 @@ class StellarService(IStellarService):
                           price=Price.from_raw_price('1'), 
                           offer_id=int(offer.get('id', 0))
                       )
-            
-        transaction.append_payment_op(
-            destination=destination_account_id,
-            amount=amount,
-            asset=asset
-        )
+        
+        if create_account:
+            transaction.append_create_account_op(
+                destination=destination_account_id,
+                starting_balance=amount
+            )
+        else:
+            transaction.append_payment_op(
+                destination=destination_account_id,
+                amount=amount,
+                asset=asset
+            )
         
         if memo:
             transaction.add_text_memo(memo)
