@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
 
-from db.requests import db_get_user_account_by_username
+
 from other.config_reader import config
 from other.lang_tools import my_gettext
 from other.mytypes import MyAccount
@@ -294,7 +294,9 @@ async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session:
                 else:
                     key, value = tag_value
                     if value.startswith('@'):
-                        public_key, user_id = db_get_user_account_by_username(session, value)
+                        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+                        user_repo = SqlAlchemyUserRepository(session)
+                        public_key, user_id = await user_repo.get_account_by_username(value)
                         if public_key:
                             value = public_key
                     bsn_data.add_new_data_row(key=Key(key), value=Value(value))

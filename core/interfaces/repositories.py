@@ -18,6 +18,18 @@ class IUserRepository(ABC):
         """Update an existing user."""
         pass
 
+    @abstractmethod
+    async def get_account_by_username(self, username: str) -> tuple[Optional[str], Optional[int]]:
+        """Get wallet public key and user_id by Telegram username.
+        
+        Args:
+            username: Telegram username starting with '@'
+            
+        Returns:
+            Tuple of (public_key, user_id) or (None, None) if not found
+        """
+        pass
+
 class IWalletRepository(ABC):
     @abstractmethod
     async def get_by_user_id(self, user_id: int) -> List[Wallet]:

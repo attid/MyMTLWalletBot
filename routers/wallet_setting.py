@@ -11,7 +11,7 @@ from sulguk import SULGUK_PARSE_MODE
 
 from other.config_reader import config
 from db.requests import db_get_book_data, db_get_address_book_by_id, db_delete_address_book_by_id, \
-    db_insert_into_address_book, db_get_user_account_by_username
+    db_insert_into_address_book
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return, get_kb_del_return
 from other.grist_tools import load_asset_from_grist
 from other.mytypes import Balance
@@ -522,7 +522,9 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
             grist_answer = await load_asset_from_grist(asset_code)
             public_key = grist_answer.issuer if grist_answer else None
         else:
-            public_key, user_id = db_get_user_account_by_username(session, '@' + asset_issuer)
+            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = SqlAlchemyUserRepository(session)
+            public_key, user_id = await user_repo.get_account_by_username('@' + asset_issuer)
 
         if public_key is None:
             raise Exception("public_key is None")
