@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Any
 from core.domain.entities import User, Wallet
 
 class IUserRepository(ABC):
@@ -277,4 +277,36 @@ class IMessageRepository(ABC):
     @abstractmethod
     async def mark_failed(self, message_id: int) -> None:
         """Mark a message as failed (or retry later)."""
+        pass
+
+
+class IRepositoryFactory(ABC):
+    """Abstract Factory for creating repositories."""
+
+    @abstractmethod
+    def get_wallet_repository(self, session: Any) -> IWalletRepository:
+        pass
+
+    @abstractmethod
+    def get_user_repository(self, session: Any) -> IUserRepository:
+        pass
+
+    @abstractmethod
+    def get_addressbook_repository(self, session: Any) -> IAddressBookRepository:
+        pass
+
+    @abstractmethod
+    def get_cheque_repository(self, session: Any) -> IChequeRepository:
+        pass
+    
+    @abstractmethod
+    def get_notification_repository(self, session: Any) -> INotificationRepository:
+        pass
+
+    @abstractmethod
+    def get_operation_repository(self, session: Any) -> IOperationRepository:
+        pass
+
+    @abstractmethod
+    def get_message_repository(self, session: Any) -> IMessageRepository:
         pass

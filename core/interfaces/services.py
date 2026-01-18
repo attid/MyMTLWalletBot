@@ -79,6 +79,20 @@ class IStellarService(ABC):
     ) -> str:
         """Build a change trust transaction."""
         pass
+
+    @abstractmethod
+    async def build_manage_data_transaction(
+        self,
+        source_account_id: str,
+        data: Dict[str, Optional[str]]
+    ) -> str:
+        """Build a transaction to manage data entries.
+        
+        Args:
+            source_account_id: The source account ID.
+            data: Dictionary of key-value pairs. Value=None means delete the data entry.
+        """
+        pass
     
     @abstractmethod
     async def sign_transaction(self, transaction_envelope, secret: str) -> str:
