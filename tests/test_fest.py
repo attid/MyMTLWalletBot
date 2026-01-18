@@ -45,6 +45,7 @@ async def test_cmd_fest_menu(mock_server, dp):
          patch("other.lang_tools.global_data") as mock_gd:
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         mock_config.fest_menu = mock_fest_menu
@@ -93,6 +94,7 @@ async def test_fest_level_24_selection(mock_server, dp):
          patch("other.lang_tools.global_data") as mock_gd:
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
 
         # Construct callback data using the class from routers.fest if possible, 
@@ -151,6 +153,7 @@ async def test_fest_sending_sum(mock_server, dp):
          patch("other.lang_tools.global_data") as mock_gd:
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         mock_config.fest_menu = mock_fest_menu

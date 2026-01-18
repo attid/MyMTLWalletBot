@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
 from other.global_data import global_data
 from other.lang_tools import my_gettext
+from other.lang_tools import my_gettext
 from other.web_tools import get_web_request
+from infrastructure.services.app_context import AppContext
 
 from infrastructure.utils.common_utils import get_user_id
 
@@ -18,7 +20,7 @@ TELEGRAM_API_ERROR: Any = object()
 
 
 async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
-                       reply_markup=None, need_new_msg=None, parse_mode='HTML'):
+                       reply_markup=None, need_new_msg=None, parse_mode='HTML', app_context: AppContext = None):
     user_id = get_user_id(user_id)
 
     fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)
@@ -49,8 +51,8 @@ async def send_message(session: Session | None, user_id: Union[types.CallbackQue
 
 
 async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,
-                        parse_mode='HTML'):
-    # msg = msg + my_gettext(chat_id, 'send_xdr')
+                        parse_mode='HTML', app_context: AppContext = None):
+    # msg = msg + my_gettext(chat_id, 'send_xdr', app_context=app_context)
     data = await state.get_data()
     tools = data.get('tools')
     callback_url = data.get('callback_url')
@@ -61,31 +63,31 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
                               json={"xdr": xdr_uri})
 
     if use_send:
-        kb = get_kb_send(chat_id)
+        kb = get_kb_send(chat_id, app_context=app_context)
         if tools:
-            kb = get_kb_send(chat_id, with_tools=tools)
+            kb = get_kb_send(chat_id, with_tools=tools, app_context=app_context)
         if callback_url:
-            kb = get_kb_send(chat_id, with_tools=True, tool_name='callback', can_send=False)
+            kb = get_kb_send(chat_id, with_tools=True, tool_name='callback', can_send=False, app_context=app_context)
         if wallet_connect:
-            kb = get_kb_send(chat_id, with_tools=True, tool_name='wallet_connect', can_send=False)
+            kb = get_kb_send(chat_id, with_tools=True, tool_name='wallet_connect', can_send=False, app_context=app_context)
 
     elif xdr_uri:
         from urllib.parse import urlencode, quote
         params = {'xdr': xdr_uri}
         url = 'https://eurmtl.me/uri?' + urlencode(params, quote_via=quote)
 
-        buttons = [get_return_button(chat_id),
+        buttons = [get_return_button(chat_id, app_context=app_context),
                    [types.InlineKeyboardButton(text='Sign Tools', url=url)]
                    ]
         kb = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     else:
-        kb = get_kb_return(chat_id)
+        kb = get_kb_return(chat_id, app_context=app_context)
 
     if len(msg) > 4000:
-        await send_message(session, chat_id, my_gettext(chat_id, 'big_xdr'), reply_markup=kb,
-                           parse_mode=parse_mode)
+        await send_message(session, chat_id, my_gettext(chat_id, 'big_xdr', app_context=app_context), reply_markup=kb,
+                           parse_mode=parse_mode, app_context=app_context)
     else:
-        await send_message(session, chat_id, msg, reply_markup=kb, parse_mode=parse_mode)
+        await send_message(session, chat_id, msg, reply_markup=kb, parse_mode=parse_mode, app_context=app_context)
 
 
 async def check_username(user_id: int) -> Union[str, None, object]:

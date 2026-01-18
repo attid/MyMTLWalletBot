@@ -16,6 +16,7 @@ class GlobalData:
     admin_id = 84131737
     cheque_queue: asyncio.Queue
     log_queue: asyncio.Queue
+    localization_service = None
 
 
 global_data = GlobalData()

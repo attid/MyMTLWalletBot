@@ -39,6 +39,7 @@ async def test_cmd_wallet_setting(mock_session, mock_callback, mock_state):
         
         app_context = MagicMock()
         l10n = MagicMock()
+        l10n.get_text.return_value = 'text'
         await cmd_wallet_setting(mock_callback, mock_state, mock_session, app_context, l10n)
         
         mock_send.assert_called_once()

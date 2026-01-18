@@ -217,6 +217,8 @@ async def main():
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
     
+    global_data.localization_service = localization_service
+    
     app_context = AppContext(
         bot=bot,
         db_pool=db_pool,

@@ -47,6 +47,7 @@ async def test_cmd_tools(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         app_context = MagicMock()
@@ -63,6 +64,7 @@ async def test_cmd_tools_donate__no_donates(mock_session, mock_callback, mock_st
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         app_context = MagicMock()
@@ -103,9 +105,12 @@ async def test_cmd_send_ton_start(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
 
-        await cmd_send_ton_start(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+        await cmd_send_ton_start(mock_callback, mock_state, mock_session, app_context=app_context)
         
         mock_clear.assert_called_once()
         mock_send.assert_called_once()
@@ -149,9 +154,12 @@ async def test_process_remote_uri(mock_session, mock_state):
         mock_process_uri_class.return_value = mock_process_uri_instance
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
-        await process_remote_uri(mock_session, 123, "uri_id", mock_state)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+        await process_remote_uri(mock_session, 123, "uri_id", mock_state, app_context=app_context)
         
         mock_state.update_data.assert_called()
         mock_check.assert_called_once()

@@ -52,6 +52,7 @@ async def test_cmd_start(mock_session, mock_message, mock_state, mock_bot):
          patch("other.lang_tools.global_data") as mock_gd:
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         
         app_context = MagicMock()
         l10n = MagicMock()
@@ -77,6 +78,7 @@ async def test_cb_set_limit(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         mock_repo_instance = MockRepo.return_value
         mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
@@ -128,6 +130,7 @@ async def test_cmd_show_balance(mock_session, mock_state):
         mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         await cmd_show_balance(mock_session, 123, mock_state)
@@ -143,6 +146,7 @@ async def test_cmd_inout(mock_session, mock_callback):
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         app_context = MagicMock()
@@ -170,6 +174,7 @@ async def test_cmd_usdt_in(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         mock_user_repo = MockUserRepo.return_value
@@ -201,6 +206,7 @@ async def test_cmd_send_usdt_sum(mock_session, mock_message, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
 
         mock_balance_use_case = MockGetBalance.return_value
