@@ -11,8 +11,8 @@ from aiogram.types import Message
 from loguru import logger
 from sqlalchemy.orm import Session
 from stellar_sdk import Asset, Network, TransactionBuilder
-from stellar_sdk.sep.federation import resolve_stellar_address
-from stellar_sdk.sep.stellar_uri import TransactionStellarUri
+from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService
 
 
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
@@ -65,7 +65,7 @@ def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int]) -> type
     return keyboard
 
 
-async def cmd_send_start(user_id: int, state: FSMContext, session: Session):
+async def cmd_send_start(user_id: int, state: FSMContext, session: Session, app_context: AppContext = None):
     msg = my_gettext(user_id, 'send_address')
     await clear_state(state)
     # keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True,
@@ -76,19 +76,19 @@ async def cmd_send_start(user_id: int, state: FSMContext, session: Session):
 
 
 @router.callback_query(F.data == "Send")
-async def cmd_send_callback(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await cmd_send_start(callback.from_user.id, state, session)
+async def cmd_send_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    await cmd_send_start(callback.from_user.id, state, session, app_context)
     await callback.answer()
 
 
 @router.message(Command(commands=["send"]))
-async def cmd_send_message(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_message(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await message.delete()
-    await cmd_send_start(message.from_user.id, state, session)
+    await cmd_send_start(message.from_user.id, state, session, app_context)
 
 
 async def cmd_send_token(message: types.Message, state: FSMContext, session: Session,
-                         send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, ):
+                         send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, app_context: AppContext = None):
     try:
         if '@' == send_for[0]:
             from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -145,11 +145,11 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
     if send_memo:
         await state.update_data(memo=send_memo, federal_memo=True)
 
-    await cmd_send_04(session, message, state)
+    await cmd_send_04(session, message, state, app_context=app_context)
 
 
 @router.message(Command(commands=["eurmtl"]))
-async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session):
+async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
     await clear_last_message_id(message.chat.id)
 
@@ -170,11 +170,11 @@ async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session
 
     # Call the cmd_send_token function with provided details
     await cmd_send_token(message=message, state=state, session=session, send_for=send_for,
-                         send_asset=eurmtl_asset, send_sum=amount, send_memo=memo)
+                         send_asset=eurmtl_asset, send_sum=amount, send_memo=memo, app_context=app_context)
 
 
 @router.message(Command(commands=["start"]), F.text.contains("eurmtl_"))
-async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: Session):
+async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await message.delete()
     await clear_state(state)
 
@@ -213,11 +213,11 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
         return
 
     # Call the cmd_send_token function
-    await cmd_send_token(message, state, session, stellar_address, eurmtl_asset, amount, memo)
+    await cmd_send_token(message, state, session, stellar_address, eurmtl_asset, amount, memo, app_context)
 
 
 @router.message(StateSendToken.sending_for, F.text)
-async def cmd_send_for(message: Message, state: FSMContext, session: Session):
+async def cmd_send_for(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     send_for_input = data.get('qr', message.text) # Используем send_for_input для ясности
 
@@ -266,7 +266,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
             await state.update_data(memo=my_account.memo, federal_memo=True)
 
         await state.set_state(None)
-        await cmd_send_choose_token(message, state, session)
+        await cmd_send_choose_token(message, state, session, app_context)
     else:
         wallet_repo = SqlAlchemyWalletRepository(session)
         wallet = await wallet_repo.get_default_wallet(message.from_user.id)
@@ -280,14 +280,14 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session):
         if (not free_wallet) and (len(address) == 56) and (address[0] == 'G'):  # need activate
             await state.update_data(send_address=address)
             await state.set_state(state=None)
-            await cmd_create_account(message.from_user.id, state, session)
+            await cmd_create_account(message.from_user.id, state, session, app_context)
         else:
             logger.error(f"StateSendFor: failed to find or activate wallet. Searched: {address}, free_wallet={free_wallet}")
             msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_address')
             await send_message(session, message, msg, reply_markup=get_kb_return(message))
 
 
-async def cmd_send_choose_token(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_choose_token(message: types.Message, state: FSMContext, session: Session, app_context: AppContext = None):
     data = await state.get_data()
     address = data.get('send_address')
 
@@ -340,7 +340,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
 
 @router.callback_query(SendAssetCallbackData.filter())
 async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: SendAssetCallbackData, state: FSMContext,
-                               session: Session):
+                               session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -387,7 +387,7 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
 
 
 @router.callback_query(StateSendToken.sending_sum, F.data == "CancelOffers")
-async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     """
         Handle callback event 'CancelOffers_send' in state 'sending_sum'.
         Invert state of 'cancel offers' flag by clicking on button.
@@ -403,7 +403,7 @@ async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 
 
 @router.message(StateSendToken.sending_sum)
-async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session):
+async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
         from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -425,7 +425,7 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session
         await state.update_data(send_sum=send_sum)
         await state.set_state(None)
 
-        await cmd_send_04(session, message, state)
+        await cmd_send_04(session, message, state, app_context=app_context)
         await message.delete()
     else:
         keyboard = get_kb_offers_cancel(message.from_user.id, data)
@@ -433,7 +433,7 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session
                            reply_markup=keyboard)
 
 
-async def cmd_send_04(session: Session, message: types.Message, state: FSMContext, need_new_msg=None):
+async def cmd_send_04(session: Session, message: types.Message, state: FSMContext, need_new_msg=None, app_context: AppContext = None):
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
@@ -499,22 +499,22 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
 
 
 @router.callback_query(F.data == "Memo")
-async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     msg = my_gettext(callback, 'send_memo')
     await state.set_state(StateSendToken.sending_memo)
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
 
 
 @router.message(StateSendToken.sending_memo)
-async def cmd_send_memo(message: Message, state: FSMContext, session: Session):
+async def cmd_send_memo(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     send_memo = cut_text_to_28_bytes(message.text)
 
     if len(send_memo) > 0:
         await state.update_data(memo=send_memo)
-    await cmd_send_04(session, message, state, need_new_msg=True)
+    await cmd_send_04(session, message, state, need_new_msg=True, app_context=app_context)
 
 
-async def cmd_create_account(user_id: int, state: FSMContext, session: Session):
+async def cmd_create_account(user_id: int, state: FSMContext, session: Session, app_context: AppContext = None):
     data = await state.get_data()
 
     send_sum = data.get('activate_sum', 5)
@@ -558,18 +558,19 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session):
 
 
 @router.callback_query(F.data == "Send15xlm")
-async def cmd_send_15_xlm(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_send_15_xlm(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(activate_sum=15)
-    await cmd_create_account(callback.from_user.id, state, session)
+    await cmd_create_account(callback.from_user.id, state, session, app_context)
 
 
 @router.message(StateSendToken.sending_for, F.photo)
 @router.message(F.photo)
-async def handle_docs_photo(message: types.Message, state: FSMContext, session: Session):
+async def handle_docs_photo(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     logger.info(f'{message.from_user.id}')
     if message.photo:
         await message.reply('is being recognized')
-        await global_data.bot.download(message.photo[-1], destination=f'qr/{message.from_user.id}.jpg')
+        bot = app_context.bot if app_context else global_data.bot
+        await bot.download(message.photo[-1], destination=f'qr/{message.from_user.id}.jpg')
 
         qr_data = decode_qr_code(f'qr/{message.from_user.id}.jpg')
         # decode(Image.open(f"qr/{message.from_user.id}.jpg"))
@@ -580,7 +581,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 await state.update_data(qr=qr_data, last_message_id=0)
                 await message.reply(f'QR code: <code>{qr_data}</code>\n'
                                     f'preparations are in progress...')
-                await cmd_send_for(message, state, session)
+                await cmd_send_for(message, state, session, app_context)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:pay'):
                 # Parse payment URI
                 payment_data = await parse_pay_stellar_uri(qr_data)
@@ -595,7 +596,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                     last_message_id=0
                 )
 
-                await cmd_send_04(session, message, state)
+                await cmd_send_04(session, message, state, app_context=app_context)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
                 await clear_state(state)
                 # Process transaction URI with Clean Architecture Use Case
@@ -626,11 +627,12 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                     session=session,
                     check_xdr=result.xdr,
                     user_id=message.from_user.id,
-                    state=state
+                    state=state,
+                    app_context=app_context
                 )
 
             elif qr_data.startswith('wc:'):
-                await handle_wc_uri(qr_data, message.from_user.id, session, state)
+                await handle_wc_uri(qr_data, message.from_user.id, session, state, app_context=app_context)
                 await message.delete()
 
             else:
@@ -640,7 +642,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
 
 
 @router.inline_query(F.chat_type == "sender")
-async def cmd_inline_query(inline_query: types.InlineQuery, session: Session):
+async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, app_context: AppContext):
     if inline_query.chat_type != "sender":
         await inline_query.answer([], is_personal=True, cache_time=100)
         return

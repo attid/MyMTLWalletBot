@@ -12,14 +12,16 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
+from infrastructure.services.app_context import AppContext
+
 @router.callback_query(F.data == "Receive")
-async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
     msg = my_gettext(callback, "my_address", (account_id,))
     send_file = f'qr/{account_id}.png'
     create_beautiful_code(send_file, account_id)
 
-    await cmd_info_message(session, callback, msg, send_file=send_file)
+    await cmd_info_message(session, callback, msg, send_file=send_file, app_context=app_context)
     # await cmd_show_balance(session, callback.from_user.id, state, need_new_msg=True)
     await callback.answer()
 

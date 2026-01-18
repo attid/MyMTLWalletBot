@@ -145,7 +145,8 @@ async def test_cmd_inout(mock_session, mock_callback):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
-        await cmd_inout(mock_callback, mock_session)
+        app_context = MagicMock()
+        await cmd_inout(mock_callback, mock_session, app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
@@ -177,7 +178,8 @@ async def test_cmd_usdt_in(mock_session, mock_callback, mock_state):
         mock_balance_use_case = MockGetBalance.return_value
         mock_balance_use_case.execute = AsyncMock(return_value=[asset_balance])
         
-        await cmd_usdt_in(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_usdt_in(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
@@ -204,7 +206,8 @@ async def test_cmd_send_usdt_sum(mock_session, mock_message, mock_state):
         mock_balance_use_case = MockGetBalance.return_value
         mock_balance_use_case.execute = AsyncMock(return_value=[asset_balance])
         
-        await cmd_send_usdt_sum(mock_message, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_send_usdt_sum(mock_message, mock_state, mock_session, app_context)
         
         mock_state.update_data.assert_called_with(send_sum=20.0)
         mock_state.set_state.assert_called_with(None)
