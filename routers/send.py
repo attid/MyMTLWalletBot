@@ -37,8 +37,8 @@ from other.stellar_tools import (
     stellar_check_account, get_first_balance_from_list
 )
 from core.use_cases.user.update_profile import UpdateUserProfile
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
+# from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository 
+# from infrastructure.services.stellar_service import StellarService
 from other.config_reader import config
 
 
@@ -91,8 +91,8 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
                          send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, app_context: AppContext = None):
     try:
         if '@' == send_for[0]:
-            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-            user_repo = SqlAlchemyUserRepository(session)
+            # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = app_context.repository_factory.get_user_repository(session)
             send_address, user_id = await user_repo.get_account_by_username(send_for)
             # Получаем текущее имя пользователя из базы данных для сравнения
             user_in_db = await user_repo.get_by_id(user_id)
@@ -205,8 +205,8 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
     # Convert username to Stellar address
     try:
         send_for = '@' + username
-        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-        user_repo = SqlAlchemyUserRepository(session)
+        # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = app_context.repository_factory.get_user_repository(session)
         stellar_address, _ = await user_repo.get_account_by_username(send_for)
     except Exception as ex:
         await send_message(session, message.from_user.id, f'Error: {str(ex)}')
@@ -223,8 +223,8 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
 
     if '@' == send_for_input[0]:
         try:
-            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-            user_repo = SqlAlchemyUserRepository(session)
+            # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = app_context.repository_factory.get_user_repository(session)
             public_key, user_id = await user_repo.get_account_by_username(send_for_input)
             user_in_db = await user_repo.get_by_id(user_id)
             current_username_in_db = user_in_db.username if user_in_db else None
@@ -268,7 +268,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
         await state.set_state(None)
         await cmd_send_choose_token(message, state, session, app_context)
     else:
-        wallet_repo = SqlAlchemyWalletRepository(session)
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await wallet_repo.get_default_wallet(message.from_user.id)
         free_wallet = wallet.is_free if wallet else False
         address = data.get('qr', message.text)
@@ -292,13 +292,13 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
     address = data.get('send_address')
 
     # Refactored to use GetWalletBalance Use Case
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    # from infrastructure.services.stellar_service import StellarService
     from core.use_cases.wallet.get_balance import GetWalletBalance
     from other.config_reader import config
 
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=config.horizon_url)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
     use_case = GetWalletBalance(repo, service)
 
     asset_list = await use_case.execute(user_id=message.from_user.id)
@@ -354,9 +354,9 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
                                                         asset.balance))
 
                 # Get summ of tokens, blocked by Sell offers 
-                repo = SqlAlchemyWalletRepository(session)
+                repo = app_context.repository_factory.get_wallet_repository(session)
                 wallet = await repo.get_default_wallet(callback.from_user.id)
-                service = StellarService(horizon_url=config.horizon_url)
+                service = app_context.stellar_service
                 offers = await service.get_selling_offers(wallet.public_key)
                 
                 blocked_token_sum = 0.0
@@ -406,8 +406,8 @@ async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
-        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-        user_repo = SqlAlchemyUserRepository(session)
+        # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = app_context.repository_factory.get_user_repository(session)
         db_user = await user_repo.get_by_id(message.from_user.id)
         if db_user and db_user.can_5000 == 0 and send_sum > 5000:
             data = await state.get_data()
@@ -455,14 +455,14 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
         msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,))
 
     # Refactored to use Clean Architecture Use Case
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    # from infrastructure.services.stellar_service import StellarService
     from core.use_cases.payment.send_payment import SendPayment
     from core.domain.value_objects import Asset as DomainAsset
     from other.config_reader import config
 
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=config.horizon_url)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
     use_case = SendPayment(repo, service)
 
     result = await use_case.execute(
@@ -522,15 +522,15 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session, 
     msg = my_gettext(user_id, 'confirm_activate', (send_address, send_sum))
 
     # Refactored to use SendPayment Use Case with create_account=True
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    # from infrastructure.services.stellar_service import StellarService
     from core.use_cases.payment.send_payment import SendPayment
     from core.domain.value_objects import Asset as DomainAsset
     from other.config_reader import config
     from loguru import logger
 
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=config.horizon_url)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
     use_case = SendPayment(repo, service)
 
     result = await use_case.execute(
@@ -600,13 +600,13 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
                 await clear_state(state)
                 # Process transaction URI with Clean Architecture Use Case
-                from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-                from infrastructure.services.stellar_service import StellarService
+                # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+                # from infrastructure.services.stellar_service import StellarService
                 from core.use_cases.stellar.process_uri import ProcessStellarUri
                 from other.config_reader import config as app_config
 
-                repo = SqlAlchemyWalletRepository(session)
-                service = StellarService(horizon_url=app_config.horizon_url)
+                repo = app_context.repository_factory.get_wallet_repository(session)
+                service = app_context.stellar_service
                 use_case = ProcessStellarUri(repo, service)
 
                 result = await use_case.execute(qr_data, message.from_user.id)
@@ -651,14 +651,14 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ap
     seen_ids = set()  # Для отслеживания уникальных идентификаторов
 
     # Query from the address book
-    from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
-    addressbook_repo = SqlAlchemyAddressBookRepository(session)
+    # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+    addressbook_repo = app_context.repository_factory.get_addressbook_repository(session)
     book_entries = await addressbook_repo.get_all(inline_query.from_user.id)
     data = [(entry.address, entry.name) for entry in book_entries]
 
     # Query from the wallets
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    wallet_repo = SqlAlchemyWalletRepository(session)
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     wallets = await wallet_repo.get_all_active(inline_query.from_user.id)
     for wallet in wallets:
         simple_account = wallet.public_key[:4] + '..' + wallet.public_key[-4:]
@@ -676,8 +676,8 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ap
                     ))
 
         # Query from users
-        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-        user_repo = SqlAlchemyUserRepository(session)
+        # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+        user_repo = app_context.repository_factory.get_user_repository(session)
         usernames = await user_repo.search_by_username(inline_query.query)
         for username in usernames:
             user = f'@{username}'

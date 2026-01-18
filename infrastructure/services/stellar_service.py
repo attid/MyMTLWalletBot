@@ -309,6 +309,28 @@ class StellarService(IStellarService):
             
         return transaction.build().to_xdr()
 
+    async def build_manage_data_transaction(
+        self,
+        source_account_id: str,
+        data: Dict[str, Optional[str]]
+    ) -> str:
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+             source_account = await server.load_account(source_account_id)
+        
+        from stellar_sdk import TransactionBuilder, Network
+
+        transaction = TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=10000
+        )
+        transaction.set_timeout(180)
+        
+        for key, value in data.items():
+            transaction.append_manage_data_op(data_name=key, data_value=value)
+            
+        return transaction.build().to_xdr()
+
     async def find_strict_send_path(
         self,
         source_asset: Asset,

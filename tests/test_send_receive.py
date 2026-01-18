@@ -43,6 +43,12 @@ async def test_cmd_send_for(mock_session, mock_message, mock_state):
     with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
+        
+        # Mock repository factory
+        mock_wallet_repo = MagicMock()
+        mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(is_free=False))
+        app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+        
         await cmd_send_for(mock_message, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
@@ -98,16 +104,15 @@ async def test_cmd_send_get_sum_valid(mock_session, mock_message, mock_state):
     mock_user = MagicMock()
     mock_user.can_5000 = 1
     
-    with patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04, \
-         patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockRepo:
-        
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
+    with patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04:
 
-        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
-        
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
+        
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
+        app_context.repository_factory.get_user_repository.return_value = mock_repo_instance
+
         await cmd_send_get_sum(mock_message, mock_state, mock_session, app_context)
         mock_state.update_data.assert_called_with(send_sum=10.5)
         mock_send_04.assert_called_once()
@@ -121,16 +126,15 @@ async def test_cmd_send_get_sum_limit_exceeded(mock_session, mock_message, mock_
     mock_user = MagicMock()
     mock_user.can_5000 = 0
     
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("infrastructure.persistence.sqlalchemy_user_repository.SqlAlchemyUserRepository") as MockRepo:
+    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
         
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
-
-        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
-
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
+
+        mock_repo_instance = MagicMock()
+        mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
+        app_context.repository_factory.get_user_repository.return_value = mock_repo_instance
+
         await cmd_send_get_sum(mock_message, mock_state, mock_session, app_context)
         
         mock_send.assert_called_once()

@@ -8,14 +8,13 @@ from aiogram.filters import Command, CommandObject
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
-
+# from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
 
 from other.config_reader import config
 from other.lang_tools import my_gettext
-from other.mytypes import MyAccount
+# from other.mytypes import MyAccount
 from infrastructure.utils.stellar_utils import base_fee, decode_data_value
-from other.stellar_tools import stellar_get_user_account
+# from other.stellar_tools import stellar_get_user_account
 from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id, clear_state
@@ -300,8 +299,8 @@ async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session:
                 else:
                     key, value = tag_value
                     if value.startswith('@'):
-                        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-                        user_repo = SqlAlchemyUserRepository(session)
+                        # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+                        user_repo = app_context.repository_factory.get_user_repository(session)
                         public_key, user_id = await user_repo.get_account_by_username(value)
                         if public_key:
                             value = public_key
@@ -319,41 +318,40 @@ def parse_exception(exc: Exception, user_id: typing.Union[CallbackQuery, Message
         return my_gettext(user_id, 'bsn_length_error', (len(exc.value), exc.value), app_context=app_context)
 
 
-async def cmd_gen_data_xdr(bsn_data: BSNData) -> str:
-    async with ServerAsync(
-            horizon_url=config.horizon_url, client=AiohttpClient()
-    ) as server:
-        source_account = await server.load_account(bsn_data.address)
-        transaction = TransactionBuilder(
-            source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
-            base_fee=base_fee,
-        )
-        for bsn_row in bsn_data.changed_items():
-            if bsn_row.is_remove():
-                value = None
-            else:
-                value = bsn_row.value
-            transaction.append_manage_data_op(data_name=str(bsn_row.tag), data_value=value)
-        transaction.set_timeout(60 * 60)
-        full_transaction = transaction.build()
-        return full_transaction.to_xdr()
+async def cmd_gen_data_xdr(bsn_data: BSNData, app_context: AppContext) -> str:
+    data = {}
+    for bsn_row in bsn_data.changed_items():
+        if bsn_row.is_remove():
+            data[str(bsn_row.tag)] = None
+        else:
+            data[str(bsn_row.tag)] = str(bsn_row.value)
+    
+    return await app_context.stellar_service.build_manage_data_transaction(
+        source_account_id=bsn_data.address,
+        data=data
+    )
 
 
-async def bsn_stellar_get_data(session: "Session", user_id: int, public_key=None) -> BSNData:
-    user_account = await stellar_get_user_account(session, user_id, public_key)
-    async with ServerAsync(
-            horizon_url=config.horizon_url, client=AiohttpClient()
-    ) as server:
-        data = MyAccount.from_dict(await server.accounts().account_id(
-            user_account.account.account_id).call()).data
+async def bsn_stellar_get_data(session: "Session", user_id: int, app_context: AppContext, public_key=None) -> BSNData:
+    if public_key:
+        pk = public_key
+    else:
+         repo = app_context.repository_factory.get_wallet_repository(session)
+         wallet = await repo.get_default_wallet(user_id)
+         pk = wallet.public_key
 
-    for data_name in list(data):
-        data[data_name] = decode_data_value(data[data_name])
+    account_details = await app_context.stellar_service.get_account_details(pk)
+    if not account_details:
+         data_dict = {}
+    else:
+         data_dict = account_details.get('data', {})
+
+    for data_name in list(data_dict):
+        data_dict[data_name] = decode_data_value(data_dict[data_name])
 
     return BSNData(
-        address=Address(user_account.account.account_id),
-        data=[BSNRow.from_str(key, value) for key, value in data.items()]
+        address=Address(pk),
+        data=[BSNRow.from_str(key, value) for key, value in data_dict.items()]
     )
 
 
@@ -384,7 +382,7 @@ async def process_tags(message: "Message", state: "FSMContext", session: "Sessio
 async def bsn_mode_command(message: "Message", state: "FSMContext", command: "CommandObject", session: "Session", app_context: AppContext,
                            **kwargs) -> None:
     await clear_state(state)
-    tags = await bsn_stellar_get_data(session, message.from_user.id)
+    tags = await bsn_stellar_get_data(session, message.from_user.id, app_context=app_context)
     if command.args:
         tag = command.args
         await parse_tag(tag=tag, bsn_data=tags, message=message, session=session, app_context=app_context)
@@ -400,7 +398,7 @@ async def finish_send_bsn(callback_query: "CallbackQuery", state: "FSMContext", 
     await state.set_state(None)
     data = await state.get_data()
     bsn_data: BSNData = jsonpickle.loads(data.get('tags'))
-    xdr = await cmd_gen_data_xdr(bsn_data)
+    xdr = await cmd_gen_data_xdr(bsn_data, app_context=app_context)
     await state.update_data(tags=None)
     await state.update_data(xdr=xdr)
 

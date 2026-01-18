@@ -30,8 +30,9 @@ from other.stellar_tools import eurmtl_asset
 # stellar_change_password, stellar_unfree_wallet, have_free_xlm,
 # stellar_get_user_seed_phrase, stellar_close_asset, stellar_has_asset_offers
 
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
+# Legacy imports removed
+# from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+# from infrastructure.services.stellar_service import StellarService
 from infrastructure.services.encryption_service import EncryptionService
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.wallet.change_password import ChangeWalletPassword
@@ -95,7 +96,7 @@ ASSETS_PER_PAGE = 30 # Max assets per page
 @router.callback_query(F.data == "WalletSetting")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext, l10n: LocalizationService):
     msg = my_gettext(callback, 'wallet_setting_msg')
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     free_wallet = wallet.is_free if wallet else False
     if free_wallet:
@@ -142,11 +143,11 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
 
 
 # Helper function to generate the message text and keyboard markup
-async def _generate_asset_visibility_markup(user_id: int, session: Session, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
+async def _generate_asset_visibility_markup(user_id: int, session: Session, app_context: AppContext, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
     """Generates the text and keyboard for the asset visibility menu."""
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(user_id)
-    service = StellarService(horizon_url=app_config.horizon_url)
+    service = app_context.stellar_service
     use_case = GetWalletBalance(repo, service)
     balances = await use_case.execute(user_id=user_id)
 
@@ -229,7 +230,7 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, page
 async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     """Displays the initial asset visibility settings menu."""
     user_id = callback.from_user.id
-    message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=1)
+    message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=1)
 
     await callback.answer()
     await send_message(session, callback, message_text, reply_markup=reply_markup)
@@ -249,7 +250,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
     if action == "page":
         # Navigate to the requested page
         target_page = callback_data.page # The page number is directly in callback_data for 'page' action
-        message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=target_page)
+        message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=target_page)
         try:
             await callback.message.edit_text(message_text, reply_markup=reply_markup)
             await callback.answer()
@@ -259,11 +260,11 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 
     elif action == "set":
         # Set the visibility status for an asset
-        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+        # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
         from sqlalchemy.orm import Session as OrmSession
         from other.asset_visibility_tools import deserialize_visibility, serialize_visibility
 
-        repo = SqlAlchemyWalletRepository(session)
+        repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await repo.get_default_wallet(user_id)
         asset_code = callback_data.code
         target_status_int = callback_data.status # The integer status associated with the button pressed (1 or 2)
@@ -309,8 +310,9 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
              logger.warning("Asset visibility change in non-ORM session, commit might not be applicable.")
 
         if not save_error:
+        if not save_error:
             # Redraw the current page of the menu to reflect the change
-            message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=page)
+            message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=page)
             try:
                 await callback.message.edit_text(message_text, reply_markup=reply_markup)
                 await callback.answer(my_gettext(callback, 'asset_visibility_changed'))
@@ -335,8 +337,8 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 @router.callback_query(F.data == "DeleteAsset")
 async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     # Refactored to use GetWalletBalance Use Case
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=app_config.horizon_url)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
     use_case = GetWalletBalance(repo, service)
     asset_list = await use_case.execute(user_id=callback.from_user.id)
 
@@ -368,8 +370,8 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
         if await stellar_has_asset_offers(session, callback.from_user.id, asset_obj):
      # NOTE: stellar_has_asset_offers logic should be refactored too, but leaving import for now if failed to move above?
      # Wait, I removed the import. I need to fix logic here.
-            repo = SqlAlchemyWalletRepository(session)
-            service = StellarService(horizon_url=config.horizon_url)
+            repo = app_context.repository_factory.get_wallet_repository(session)
+            service = app_context.stellar_service
             wallet = await repo.get_default_wallet(callback.from_user.id)
             offers = await service.get_selling_offers(wallet.public_key)
             has_offers = any(o['selling']['asset_code'] == asset[0].asset_code and o['selling']['asset_issuer'] == asset[0].asset_issuer for o in offers)
@@ -381,8 +383,8 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 return
 
         # Refactored: Close asset = Change Trust (Limit 0)
-        repo = SqlAlchemyWalletRepository(session)
-        service = StellarService(horizon_url=config.horizon_url)
+        repo = app_context.repository_factory.get_wallet_repository(session)
+        service = app_context.stellar_service
         pay_use_case = SendPayment(repo, service)
         
         # We need to build trust transaction. Since SendPayment creates PAYMENT, this is not appropriate.
@@ -424,8 +426,8 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
     # Refactored to use GetWalletBalance Use Case
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=app_config.horizon_url)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
     balance_use_case = GetWalletBalance(repo, service)
     
     wallet = await repo.get_default_wallet(user_id)
@@ -491,8 +493,8 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 @router.callback_query(F.data == "AddAssetExpert")
 async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=app_config.horizon_url)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
     balance_use_case = GetWalletBalance(repo, service)
     wallet = await repo.get_default_wallet(user_id)
     is_free = wallet.is_free if wallet else False
@@ -558,8 +560,8 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
             grist_answer = await load_asset_from_grist(asset_code)
             public_key = grist_answer.issuer if grist_answer else None
         else:
-            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-            user_repo = SqlAlchemyUserRepository(session)
+            # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            user_repo = app_context.repository_factory.get_user_repository(session)
             public_key, user_id = await user_repo.get_account_by_username('@' + asset_issuer)
 
         if public_key is None:
@@ -584,6 +586,8 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session):
     asset_code = data.get('send_asset_code', 'XLM')
     asset_issuer = data.get('send_asset_issuer', '')
 
+    asset_issuer = data.get('send_asset_issuer', '')
+
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(chat_id)
     service = StellarService(horizon_url=config.horizon_url)
@@ -605,10 +609,10 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session):
 ########################################################################################################################
 ########################################################################################################################
 
-async def remove_password(session: Session, user_id: int, state: FSMContext):
+async def remove_password(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     crypto_service = EncryptionService()
     change_pw_use_case = ChangeWalletPassword(repo, crypto_service)
     # user_id is passed as pin here? No, check signature
@@ -637,8 +641,8 @@ async def remove_password(session: Session, user_id: int, state: FSMContext):
 
 @router.callback_query(F.data == "RemovePassword")
 async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    repo = SqlAlchemyWalletRepository(session)
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     pin_type = wallet.use_pin if wallet else 0
     if pin_type in (1, 2):
@@ -654,8 +658,8 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(F.data == "SetPassword")
 async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    repo = SqlAlchemyWalletRepository(session)
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     pin_type = wallet.use_pin if wallet else 0
     if pin_type in (1, 2):
@@ -673,10 +677,10 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
             await callback.answer()
 
 
-async def send_private_key(session: Session, user_id: int, state: FSMContext):
+async def send_private_key(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     crypto_service = EncryptionService()
     secrets_use_case = GetWalletSecrets(repo, crypto_service)
     
@@ -697,7 +701,7 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext):
 
 @router.callback_query(F.data == "GetPrivateKey")
 async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     is_free = wallet.is_free if wallet else False
     if is_free:
@@ -723,8 +727,8 @@ async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, app_c
     await send_message(session, user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
     
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    repo = SqlAlchemyWalletRepository(session)
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(user_id)
     if wallet:
         wallet.is_free = False
@@ -735,7 +739,7 @@ async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, app_c
 @router.callback_query(F.data == "BuyAddress")
 async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     # Check free wallet using Repo (already done?)
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     is_free = wallet.is_free if wallet else False
     
@@ -746,7 +750,7 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
         await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
         # Refactored to use GetWalletBalance Use Case
         # Imports already global
-        service = StellarService(horizon_url=app_config.horizon_url)
+        service = app_context.stellar_service
         balance_use_case = GetWalletBalance(repo, service)
         balances = await balance_use_case.execute(user_id=callback.from_user.id)
         eurmtl_balance = 0
@@ -781,9 +785,9 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
         await callback.answer('You can`t buy. You have you oun account. But you can donate /donate', show_alert=True)
 
 
-async def cmd_edit_address_book(session: Session, user_id: int):
-    from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
-    addressbook_repo = SqlAlchemyAddressBookRepository(session)
+async def cmd_edit_address_book(session: Session, user_id: int, app_context: AppContext):
+    # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+    addressbook_repo = app_context.repository_factory.get_addressbook_repository(session)
     entries = await addressbook_repo.get_all(user_id)
 
     buttons = []

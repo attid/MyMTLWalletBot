@@ -225,10 +225,14 @@ async def main():
     # Initialize Services
     from infrastructure.services.app_context import AppContext
     from infrastructure.services.localization_service import LocalizationService
+    from infrastructure.persistence.repository_factory import SqlAlchemyRepositoryFactory
+    from infrastructure.services.stellar_service import StellarService
 
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
     
+    repository_factory = SqlAlchemyRepositoryFactory()
+    stellar_service = StellarService(horizon_url=config.horizon_url)
     
     app_context = AppContext(
         bot=bot,
@@ -236,6 +240,8 @@ async def main():
         admin_id=config.admin_ids[0],
         cheque_queue=cheque_queue,
         log_queue=log_queue,
+        repository_factory=repository_factory,
+        stellar_service=stellar_service,
         localization_service=localization_service,
         dispatcher=dp
     )
