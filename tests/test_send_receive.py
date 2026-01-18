@@ -14,6 +14,7 @@ from stellar_sdk import Asset
 async def test_cmd_send_start(mock_session, mock_callback, mock_state):
     with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_start(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
         # mock_callback.answer.assert_called_once() # Answer not called in cmd_send_start
@@ -30,6 +31,7 @@ async def test_cmd_send_token(mock_session, mock_message, mock_state):
          patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04:
          
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_token(mock_message, mock_state, mock_session, 
                              send_for="GAR...", send_asset=send_asset, send_sum=10.0, send_memo="memo", app_context=app_context)
         
@@ -40,6 +42,7 @@ async def test_cmd_send_token(mock_session, mock_message, mock_state):
 async def test_cmd_send_for(mock_session, mock_message, mock_state):
     with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_for(mock_message, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
@@ -59,6 +62,7 @@ async def test_cmd_send_choose_token(mock_session, mock_callback, mock_state):
         mock_use_case.execute = AsyncMock(return_value=[mock_bal])
         
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_choose_token(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
@@ -75,6 +79,7 @@ async def test_cmd_receive(mock_session, mock_callback, mock_state):
         mock_get_acc.return_value = mock_acc
         
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_receive(mock_callback, mock_state, mock_session, app_context)
         
         mock_create_qr.assert_called_once()
@@ -102,6 +107,7 @@ async def test_cmd_send_get_sum_valid(mock_session, mock_message, mock_state):
         mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
         
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_get_sum(mock_message, mock_state, mock_session, app_context)
         mock_state.update_data.assert_called_with(send_sum=10.5)
         mock_send_04.assert_called_once()
@@ -124,6 +130,7 @@ async def test_cmd_send_get_sum_limit_exceeded(mock_session, mock_message, mock_
         mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
 
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_get_sum(mock_message, mock_state, mock_session, app_context)
         
         mock_send.assert_called_once()
@@ -137,6 +144,7 @@ async def test_cmd_get_memo(mock_session, mock_callback, mock_state):
 
         from routers.send import cmd_get_memo
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_get_memo(mock_callback, mock_state, mock_session, app_context)
         
         mock_state.set_state.assert_called_with(StateSendToken.sending_memo)
@@ -152,6 +160,7 @@ async def test_cmd_send_memo(mock_session, mock_message, mock_state):
         
         from routers.send import cmd_send_memo
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_memo(mock_message, mock_state, mock_session, app_context)
         
         mock_cut.assert_called_with("A"*30)
@@ -171,6 +180,7 @@ async def test_cmd_create_account(mock_session, mock_state):
         mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_CREATE"))
 
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_create_account(user_id, mock_state, mock_session, app_context)
         
         mock_use_case.execute.assert_called_once()
@@ -196,6 +206,7 @@ async def test_handle_docs_photo_valid_address(mock_session, mock_message, mock_
         
         mock_gd_module.bot = mock_bot
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
         app_context.bot = mock_bot
         
         await handle_docs_photo(mock_message, mock_state, mock_session, app_context)

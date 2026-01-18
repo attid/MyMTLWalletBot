@@ -46,6 +46,7 @@ async def test_cmd_language(mock_session, mock_callback):
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         # mock_gd.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}} 
         
         l10n = MagicMock()
@@ -64,6 +65,7 @@ async def test_callbacks_lang(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}, 'ru': {}}
         
         l10n = MagicMock()
@@ -82,6 +84,7 @@ async def test_cmd_support(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         await cmd_support(mock_callback, mock_state, mock_session)
@@ -114,6 +117,7 @@ async def test_hide_notification_callback(mock_session, mock_callback, mock_stat
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         # Setup repo returns
@@ -149,6 +153,7 @@ async def test_save_filter_callback(mock_session, mock_callback, mock_state):
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_gd.user_lang_dic = {123: 'en'}
+        mock_gd.localization_service.get_text.return_value = 'text'
         mock_gd.lang_dict = {'en': {}}
         
         mock_repo_instance = MockRepo.return_value

@@ -424,6 +424,7 @@ def mock_global_data_autouse():
     session_mock.scalar.return_value = user_mock
 
     gd.user_lang_dic = {123: 'en'}
+    gd.localization_service.get_text.return_value = 'text'
     gd.lang_dict = {'en': {}}
     
     # Patch known locations
