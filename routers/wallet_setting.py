@@ -17,7 +17,8 @@ from other.mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state, get_web_request, get_web_decoded_xdr
+from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state
+from other.web_tools import get_web_request, get_web_decoded_xdr
 from loguru import logger
 
 from other.global_data import global_data
