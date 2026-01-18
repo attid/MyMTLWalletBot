@@ -12,10 +12,11 @@ from db.db_pool import DatabasePool
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.utils.async_utils import with_timeout
 from infrastructure.utils.common_utils import float2str
-from other.global_data import global_data
+# from other.global_data import global_data
 from other.lang_tools import my_gettext
 from other.loguru_tools import safe_catch_async
 from routers.start_msg import cmd_info_message
+from infrastructure.services.app_context import AppContext
 
 
 def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
@@ -59,7 +60,7 @@ def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
 
 @with_timeout(60)
 @safe_catch_async
-async def fetch_addresses(session_pool: DatabasePool, dp: Dispatcher):
+async def fetch_addresses(session_pool: DatabasePool, app_context: AppContext):
     with session_pool.get_session() as session:
         # Request TLOperations to find accounts with new operations
         tl_query = session.query(TLOperations.account, func.max(TLOperations.id).label('max_id'),
@@ -80,7 +81,7 @@ async def fetch_addresses(session_pool: DatabasePool, dp: Dispatcher):
 
 
 @safe_catch_async
-async def handle_address(tl_result, session_pool: DatabasePool, dp: Dispatcher):
+async def handle_address(tl_result, session_pool: DatabasePool, app_context: AppContext):
     # 1. Get all data from DB WITHOUT opening long transaction
     with session_pool.get_session() as session:
         logger.info(tl_result.account)
@@ -167,13 +168,14 @@ async def handle_address(tl_result, session_pool: DatabasePool, dp: Dispatcher):
             if not should_send:
                 continue
 
-            fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=msg['user_id'],
+            fsm_storage_key = StorageKey(bot_id=app_context.bot.id, user_id=msg['user_id'],
                                          chat_id=msg['user_id'])
-            await dp.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
+            await app_context.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': 0})
             await cmd_info_message(None, msg['user_id'], msg['text'],
                                    operation_id=msg.get('operation_id'),
                                    public_key=msg.get('public_key'),
-                                   wallet_id=msg.get('wallet_id'))
+                                   wallet_id=msg.get('wallet_id'),
+                                   app_context=app_context)
             await asyncio.sleep(0.1)
         except Exception as e:
             logger.error(f"Failed to send message to {msg['user_id']}: {e}")
@@ -181,13 +183,13 @@ async def handle_address(tl_result, session_pool: DatabasePool, dp: Dispatcher):
 
 @with_timeout(60, kill_on_timeout=False)
 @safe_catch_async
-async def process_addresses(tl_results, session_pool: DatabasePool, dp: Dispatcher):
+async def process_addresses(tl_results, session_pool: DatabasePool, app_context: AppContext):
     if tl_results is None:
         logger.warning("tl_results is None, skipping processing")
         return
     messages_to_process = tl_results[:20]  # Limit to 10-20 addresses
     tasks = [
-        handle_address(tl_result, session_pool, dp)
+        handle_address(tl_result, session_pool, app_context)
         for tl_result in messages_to_process
     ]
     await asyncio.gather(*tasks)
@@ -197,11 +199,11 @@ async def process_addresses(tl_results, session_pool: DatabasePool, dp: Dispatch
 
 
 @safe_catch_async
-async def events_worker(db_pool: DatabasePool, dp: Dispatcher):
+async def events_worker(db_pool: DatabasePool, app_context: AppContext):
     while True:
         try:
-            tl_results = await fetch_addresses(db_pool, dp)
-            await process_addresses(tl_results, db_pool, dp)
+            tl_results = await fetch_addresses(db_pool, app_context)
+            await process_addresses(tl_results, db_pool, app_context)
         except Exception as ex:
             logger.error(['events_worker', ex])
         await asyncio.sleep(10)

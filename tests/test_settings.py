@@ -42,11 +42,8 @@ def mock_message():
 async def test_cmd_language(mock_session, mock_callback):
     with patch("routers.common_setting.send_message", new_callable=AsyncMock) as mock_send, \
          patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
         # mock_gd.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}} 
         
         l10n = MagicMock()
@@ -61,17 +58,16 @@ async def test_callbacks_lang(mock_session, mock_callback, mock_state):
     
     with patch("routers.common_setting.change_user_lang") as mock_change, \
          patch("routers.common_setting.cmd_show_balance", new_callable=AsyncMock) as mock_balance, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}, 'ru': {}}
+
         
         l10n = MagicMock()
         l10n.lang_dict = {'en': {}, 'ru': {}}
+        
+        app_context = MagicMock()
 
-        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session, l10n)
+        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session, l10n, app_context)
         
         mock_change.assert_called_once_with(mock_session, 123, "ru")
         mock_state.update_data.assert_called_with(user_lang="ru")
@@ -80,14 +76,13 @@ async def test_callbacks_lang(mock_session, mock_callback, mock_state):
 @pytest.mark.asyncio
 async def test_cmd_support(mock_session, mock_callback, mock_state):
     with patch("routers.common_setting.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
         
-        await cmd_support(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+        await cmd_support(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
 # --- tests for routers/notification_settings.py ---
@@ -113,12 +108,9 @@ async def test_hide_notification_callback(mock_session, mock_callback, mock_stat
     with patch("routers.notification_settings.SqlAlchemyWalletRepository") as MockWalletRepo, \
          patch("routers.notification_settings.SqlAlchemyOperationRepository") as MockOpRepo, \
          patch("routers.notification_settings.send_notification_settings_menu", new_callable=AsyncMock) as mock_menu, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
         
         # Setup repo returns
         mock_wallet_repo = MockWalletRepo.return_value
@@ -149,12 +141,9 @@ async def test_save_filter_callback(mock_session, mock_callback, mock_state):
     
     with patch("routers.notification_settings.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.notification_settings.SqlAlchemyNotificationRepository") as MockRepo, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
         
         mock_repo_instance = MockRepo.return_value
         mock_repo_instance.find_duplicate = AsyncMock(return_value=None)

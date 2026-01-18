@@ -197,14 +197,9 @@ async def test_handle_docs_photo_valid_address(mock_session, mock_message, mock_
     mock_message.photo = [MagicMock()]
     mock_bot = AsyncMock()
     
-    with patch("routers.send.global_data") as mock_gd_module, \
-         patch("routers.send.decode_qr_code", return_value="GVALIDADDRESS"), \
+    with patch("routers.send.decode_qr_code", return_value="GVALIDADDRESS"), \
          patch("routers.send.is_valid_stellar_address", return_value=True), \
          patch("routers.send.cmd_send_for", new_callable=AsyncMock) as mock_send_for:
-        
-        mock_gd_module.bot = mock_bot
-        
-        mock_gd_module.bot = mock_bot
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
         app_context.bot = mock_bot

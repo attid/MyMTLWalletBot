@@ -27,7 +27,7 @@ from infrastructure.utils.telegram_utils import my_gettext, send_message, check_
 from infrastructure.utils.common_utils import get_user_id
 from infrastructure.utils.common_utils import decode_qr_code
 from routers.uri import handle_wc_uri
-from other.global_data import global_data
+
 from infrastructure.utils.common_utils import float2str
 from infrastructure.utils.stellar_utils import (
     parse_pay_stellar_uri, is_valid_stellar_address, my_float, 
@@ -98,7 +98,7 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
             user_in_db = await user_repo.get_by_id(user_id)
             current_username_in_db = user_in_db.username if user_in_db else None
 
-            tmp_name = await check_username(user_id)
+            tmp_name = await check_username(user_id, app_context=app_context)
 
             if tmp_name is TELEGRAM_API_ERROR:
                 logger.error(f"cmd_send_token: Telegram API error when checking username for user_id={user_id}. Searched: {send_for}")
@@ -151,7 +151,7 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
 @router.message(Command(commands=["eurmtl"]))
 async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
-    await clear_last_message_id(message.chat.id)
+    await clear_last_message_id(message.chat.id, app_context=app_context)
 
     parts = message.text.split()
     if len(parts) < 3:
@@ -229,7 +229,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
             user_in_db = await user_repo.get_by_id(user_id)
             current_username_in_db = user_in_db.username if user_in_db else None
 
-            tmp_name = await check_username(user_id)
+            tmp_name = await check_username(user_id, app_context=app_context)
 
             if tmp_name is TELEGRAM_API_ERROR:
                 logger.error(f"StateSendFor: Telegram API error when checking username for user_id={user_id}. Searched: {send_for_input}")
@@ -569,7 +569,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
     logger.info(f'{message.from_user.id}')
     if message.photo:
         await message.reply('is being recognized')
-        bot = app_context.bot if app_context else global_data.bot
+        bot = app_context.bot
         await bot.download(message.photo[-1], destination=f'qr/{message.from_user.id}.jpg')
 
         qr_data = decode_qr_code(f'qr/{message.from_user.id}.jpg')

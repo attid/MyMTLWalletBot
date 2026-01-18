@@ -118,10 +118,10 @@ async def test_cmd_mtlap_tools_add_delegate_a(mock_session, mock_callback, mock_
 
     # Test success
     # Define a custom mock for global_data to allow setting db_pool attr
-    custom_gd = MagicMock()
-    custom_gd.db_pool = MagicMock()
-    custom_gd.user_lang_dic = {123: 'en'}
-    custom_gd.lang_dict = {'en': {}}
+    # Define a custom mock for global_data to allow setting db_pool attr
+    # custom_gd = MagicMock()
+    
+
 
     app_context = MagicMock()
     with patch("routers.mtlap.have_free_xlm", return_value=True), \

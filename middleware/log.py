@@ -8,13 +8,6 @@ from db.models import MyMtlWalletBotLog
 # LogQuery should be moved, but for now assuming it's still there or imported from new location if moved.
 # The plan said "Move LogQuery to infrastructure/models.py". I haven't done that yet.
 # I will keep importing from global_data for now but will prepare for removal.
-from other.global_data import global_data 
-from infrastructure.log_models import LogQuery 
-from other.loguru_tools import safe_catch_async
-from infrastructure.services.app_context import AppContext
-
-
-class LogButtonClickCallbackMiddleware(BaseMiddleware):
     async def __call__(
             self,
             handler: Callable[[CallbackQuery, Dict[str, Any]], Awaitable[Any]],
@@ -28,13 +21,8 @@ class LogButtonClickCallbackMiddleware(BaseMiddleware):
                 log_operation='callback',
                 log_operation_info=event.data.split(':')[0]
             ))
-        else:
-            # Fallback while migrating or if middleware order is wrong
-            global_data.log_queue.put_nowait(LogQuery(
-                user_id=event.from_user.id,
-                log_operation='callback',
-                log_operation_info=event.data.split(':')[0]
-            ))
+            
+        return await handler(event, data)
             
         return await handler(event, data)
 

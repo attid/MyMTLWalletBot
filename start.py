@@ -27,7 +27,7 @@ from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
 from other.faststream_tools import start_broker, stop_broker
-from other.global_data import global_data
+# from other.global_data import global_data
 from infrastructure.monitoring.blockchain_monitor import events_worker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
@@ -88,7 +88,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker, app_c
     dp.include_router(common_end.router)
 
     dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
+    dp.shutdown.register(on_shutdown_dispatcher)
 
 
 async def set_commands(bot: Bot):
@@ -137,31 +137,33 @@ async def set_commands(bot: Bot):
 
     await bot.set_my_commands(commands=commands_clear, scope=BotCommandScopeDefault())
     await bot.set_my_commands(commands=commands_private, scope=BotCommandScopeAllPrivateChats())
-    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=global_data.admin_id))
+    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admin_ids[0]))
 
 
 async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await start_broker()
     await set_commands(bot)
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=global_data.admin_id, text='Bot started')
+        await bot.send_message(chat_id=config.admin_ids[0], text='Bot started')
     # fest.fest_menu = await gs_update_fest_menu()
     
     app_context: AppContext = dispatcher["app_context"]
     
     if config.test_mode:
-        global_data.task_list = [
+        task_list = [
             # asyncio.create_task(cheque_worker(app_context)),
             # asyncio.create_task(log_worker(app_context)),
             # asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
         ]
     else:
-        global_data.task_list = [
+        # Import db_pool here? accessing from app_context.db_pool
+        task_list = [
             asyncio.create_task(cheque_worker(app_context)),
             asyncio.create_task(log_worker(app_context)),
-            asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
-            asyncio.create_task(usdt_worker(bot,global_data.db_pool))
+            asyncio.create_task(events_worker(app_context.db_pool, app_context)),
+            asyncio.create_task(usdt_worker(bot, app_context.db_pool, app_context))
         ]
+    dispatcher["task_list"] = task_list
 
     # config.fest_menu = await load_fest_info()
 
@@ -169,8 +171,25 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
 async def on_shutdown(bot: Bot):
     await stop_broker()
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=global_data.admin_id, text='Bot stopped')
-    for task in global_data.task_list:
+        await bot.send_message(chat_id=config.admin_ids[0], text='Bot stopped')
+    
+    # Retrieve dispatcher somehow? or assume task_list is somewhere
+    # on_shutdown sends bot only? 
+    # Ah, I don't have access to dispatcher here easily unless I use bot.context... but bot doesn't have it.
+    # But usually on_shutdown has (dispatcher: Dispatcher) if registered properly?
+    # Aiogram 3: startup/shutdown handlers can accept arguments. Dispatcher is available via DI if requested?
+    # Let's check signature. `dp.shutdown.register(on_shutdown)`
+    # It injects dependencies. I can ask for dispatcher.
+    pass 
+    # Logic moved to on_shutdown_dispatcher below
+    
+async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
+    await stop_broker()
+    with suppress(TelegramBadRequest):
+        await bot.send_message(chat_id=config.admin_ids[0], text='Bot stopped')
+    
+    task_list = dispatcher.get("task_list", [])
+    for task in task_list:
         task.cancel()
 
 
@@ -199,17 +218,9 @@ async def main():
     scheduler.start()
     # scheduler_jobs moved after app_context init
 
-    global_data.bot = bot
-    global_data.dispatcher = dp
-    global_data.db_pool = db_pool
-    
     # Create Queues
     cheque_queue = asyncio.Queue()
     log_queue = asyncio.Queue()
-    
-    # Also assign to global_data for backward compatibility
-    global_data.cheque_queue = cheque_queue
-    global_data.log_queue = log_queue
     
     # Initialize Services
     from infrastructure.services.app_context import AppContext
@@ -218,12 +229,11 @@ async def main():
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
     
-    global_data.localization_service = localization_service
     
     app_context = AppContext(
         bot=bot,
         db_pool=db_pool,
-        admin_id=global_data.admin_id,
+        admin_id=config.admin_ids[0],
         cheque_queue=cheque_queue,
         log_queue=log_queue,
         localization_service=localization_service,
@@ -232,7 +242,7 @@ async def main():
     
     dp["app_context"] = app_context
 
-    setup_async_utils(bot, global_data.admin_id)
+    setup_async_utils(bot, config.admin_ids[0])
     scheduler_jobs(scheduler, db_pool, dp, app_context)
 
     await bot_add_routers(bot, dp, db_pool, app_context, localization_service)

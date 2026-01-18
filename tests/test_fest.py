@@ -42,11 +42,8 @@ async def test_cmd_fest_menu(mock_server, dp):
          patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.fest.my_gettext", return_value="text"), \
          patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
-         patch("other.lang_tools.global_data") as mock_gd:
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
+
         
         mock_config.fest_menu = mock_fest_menu
         
@@ -91,11 +88,8 @@ async def test_fest_level_24_selection(mock_server, dp):
     with patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.fest.my_gettext", return_value="text"), \
          patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
-         patch("other.lang_tools.global_data") as mock_gd:
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
+
 
         # Construct callback data using the class from routers.fest if possible, 
         # or just raw string if we knew packed format. 
@@ -150,11 +144,8 @@ async def test_fest_sending_sum(mock_server, dp):
          patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.fest.my_gettext", return_value="text"), \
          patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
-         patch("other.lang_tools.global_data") as mock_gd:
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
+
         
         mock_config.fest_menu = mock_fest_menu
         

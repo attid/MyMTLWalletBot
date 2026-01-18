@@ -21,7 +21,7 @@ from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_
 from other.web_tools import get_web_request, get_web_decoded_xdr
 from loguru import logger
 
-from other.global_data import global_data
+# from other.global_data import global_data
 from other.lang_tools import check_user_id
 from infrastructure.utils.stellar_utils import public_issuer, get_good_asset_list
 from other.stellar_tools import eurmtl_asset
@@ -719,7 +719,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
 async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
     data = await state.get_data()
     buy_address = data.get('buy_address')
-    admin_id = app_context.admin_id if app_context else global_data.admin_id
+    admin_id = app_context.admin_id
     await send_message(session, user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
     

@@ -33,7 +33,7 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
         )
 
         if response.status != 200:
-            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context))
+            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
             return
 
         # Process the URI
@@ -68,7 +68,8 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
         await send_message(
             session,
             chat_id,
-            my_gettext(chat_id, 'remote_uri_error', (str(e),), app_context=app_context)
+            my_gettext(chat_id, 'remote_uri_error', (str(e),), app_context=app_context),
+            app_context=app_context
         )
 
 
@@ -120,14 +121,16 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
         await send_message(
             session,
             message.from_user.id,
-            my_gettext(message.from_user.id, 'remote_uri_error', (str(e),), app_context=app_context)
+            my_gettext(message.from_user.id, 'remote_uri_error', (str(e),), app_context=app_context),
+            app_context=app_context
         )
 
 
 async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext, app_context: AppContext):
     """Helper function to process WalletConnect URI"""
     await clear_state(state)
-    await clear_last_message_id(user_id)
+    await clear_state(state)
+    await clear_last_message_id(user_id, app_context=app_context)
     # Get user's default address
     user_account = await stellar_get_user_account(session, user_id)
 
@@ -142,20 +145,20 @@ async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMC
             await send_message(
                 session,
                 user_id,
-                my_gettext(user_id, 'wc_pairing_initiated', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context)
+                my_gettext(user_id, 'wc_pairing_initiated', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
             )
         except Exception as e:
             logger.error(f"Failed to publish WC pairing request for user {user_id}: {e}")
             await send_message(
                 session,
                 user_id,
-                my_gettext(user_id, 'wc_pairing_error', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context)
+                my_gettext(user_id, 'wc_pairing_error', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
             )
     else:
         await send_message(
             session,
             user_id,
-            my_gettext(user_id, 'default_wallet_not_found', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context)
+            my_gettext(user_id, 'default_wallet_not_found', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
         )
 
 

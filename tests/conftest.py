@@ -429,13 +429,16 @@ def mock_global_data_autouse():
     
     # Patch known locations
     # We patch 'other.lang_tools.global_data' which is the source of truth for many utils
-    p1 = patch("other.lang_tools.global_data", gd)
+    # p1 = patch("other.lang_tools.global_data", gd)
+    p3 = patch("other.lang_tools.my_gettext", return_value="text")
     p2 = patch("infrastructure.utils.common_utils.get_user_id", return_value=123)
     
-    p1.start()
+    # p1.start()
+    p3.start()
     p2.start()
     
     yield gd
     
-    p1.stop()
+    # p1.stop()
+    p3.stop()
     p2.stop()
