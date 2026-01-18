@@ -10,8 +10,7 @@ from stellar_sdk import Asset
 from infrastructure.utils.telegram_utils import my_gettext, send_message
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from other.mytypes import Balance, MyOffer
-from infrastructure.utils.stellar_utils import my_float
-from other.stellar_tools import stellar_get_market_link
+from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
 from infrastructure.utils.common_utils import float2str
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository

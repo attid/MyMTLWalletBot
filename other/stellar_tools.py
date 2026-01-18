@@ -499,6 +499,9 @@ async def stellar_delete_all_deleted(session: Session):
                 continue
 
 
+# LEGACY: Use GetWalletBalance Use Case instead
+# This function is kept for backward compatibility with routers
+# TODO: Remove after routers are refactored
 async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
     # Use Use Case to get balances
     repo = SqlAlchemyWalletRepository(session)
@@ -573,6 +576,9 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
         return
 
 
+# LEGACY: Use GetWalletBalance Use Case instead
+# This function is kept for backward compatibility with existing routers
+# TODO: Remove after all routers are refactored to use GetWalletBalance directly
 async def stellar_get_balances(session, user_id: int, public_key=None,
                                asset_filter: str = None, state=None) -> List[Balance]:
     try:
@@ -716,6 +722,8 @@ async def stellar_check_receive_sum_one(send_asset: Asset, send_sum: str, receiv
         return '0'
 
 
+# LEGACY: Use StellarService path finding methods instead
+# TODO: Remove after routers/swap.py is refactored
 async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_asset: Asset) -> (str, bool):
     check_sum = float2str(float(send_sum) / 100)
 
@@ -733,6 +741,8 @@ async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_as
     return actual_receive, False
 
 
+# LEGACY: Use StellarService path finding methods instead
+# TODO: Remove after routers/swap.py is refactored
 async def stellar_check_send_sum(send_asset: Asset, receive_sum: str, receive_asset: Asset) -> (str, bool):
     """
     Calculate the required send amount to receive a given amount of receive_asset.
@@ -760,6 +770,9 @@ async def stellar_check_send_sum(send_asset: Asset, receive_sum: str, receive_as
 
 
 
+# LEGACY: Use StellarService.find_strict_send_path instead
+# This function is kept for backward compatibility
+# TODO: Remove after routers/swap.py is refactored
 async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_assets: List[Asset]) -> List[str]:
     """
     Check possible exchange paths for assets in Stellar network.
