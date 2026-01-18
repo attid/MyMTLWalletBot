@@ -8,10 +8,10 @@ from stellar_sdk.sep import stellar_uri
 from stellar_sdk import Network, TransactionBuilder
 
 from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_state, clear_last_message_id
-from other.stellar_tools import (
-    stellar_user_sign, stellar_get_user_account, process_uri_with_replace,
-    parse_transaction_stellar_uri, process_transaction_stellar_uri
-)
+from other.stellar_tools import stellar_user_sign, stellar_get_user_account
+from core.use_cases.stellar.process_uri import ProcessStellarUri
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.services.stellar_service import StellarService
 from routers.sign import cmd_check_xdr
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_send, get_kb_return
 from other.web_tools import http_session_manager
@@ -37,21 +37,28 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
 
         # Process the URI
         uri_data = response.data['uri']
-        result = await process_transaction_stellar_uri(uri_data, session, chat_id)
+        
+        # Initialize repositories and services
+        wallet_repo = SqlAlchemyWalletRepository(session)
+        stellar_service = StellarService()
+        process_uri_uc = ProcessStellarUri(wallet_repo, stellar_service)
+        
+        # Process the URI
+        result = await process_uri_uc.execute(uri_data, chat_id)
 
         # Save data for state
         await state.update_data(
-            xdr=result['xdr'],
+            xdr=result.xdr,
             uri_id=uri_id,
             last_message_id=0,
-            callback_url=result['callback_url'],
-            return_url=result.get('return_url')
+            callback_url=result.callback_url,
+            return_url=result.return_url
         )
 
         # Process XDR
         await cmd_check_xdr(
             session=session,
-            check_xdr=result['xdr'],
+            check_xdr=result.xdr,
             user_id=chat_id,
             state=state
         )
@@ -83,26 +90,26 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
     qr_data = message.text
 
     try:
+        # Initialize repositories and services
+        wallet_repo = SqlAlchemyWalletRepository(session)
+        stellar_service = StellarService()
+        process_uri_uc = ProcessStellarUri(wallet_repo, stellar_service)
+        
         # Process the transaction URI
-        result = await process_transaction_stellar_uri(
-            qr_data,
-            session,
-            message.from_user.id,
-            Network.PUBLIC_NETWORK_PASSPHRASE
-        )
+        result = await process_uri_uc.execute(qr_data, message.from_user.id)
 
         # Save data for state
         await state.update_data(
-            xdr=result['xdr'],
+            xdr=result.xdr,
             last_message_id=0,
-            callback_url=result['callback_url'],
-            return_url=result.get('return_url')
+            callback_url=result.callback_url,
+            return_url=result.return_url
         )
 
         # Process XDR
         await cmd_check_xdr(
             session=session,
-            check_xdr=result['xdr'],
+            check_xdr=result.xdr,
             user_id=message.from_user.id,
             state=state
         )
