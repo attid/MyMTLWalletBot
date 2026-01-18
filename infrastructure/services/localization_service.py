@@ -1,7 +1,8 @@
 import json
 import os
 from typing import Dict, Optional, Union, Tuple
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.future import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from infrastructure.utils.common_utils import get_user_id
 from db.models import MyMtlWalletBotUsers
 
@@ -10,7 +11,8 @@ class LocalizationService:
     Service for managing translations and user language preferences.
     Replaces global_data.lang_dict and global_data.user_lang_dic.
     """
-    def __init__(self, db_pool: sessionmaker):
+    def __init__(self, db_pool):
+        # db_pool is expected to be DatabasePool or object with get_session async context manager
         self.lang_dict: Dict[str, Dict] = {}
         self.user_lang_cache: Dict[int, str] = {}
         self.db_pool = db_pool
@@ -28,28 +30,34 @@ class LocalizationService:
                 except Exception as e:
                     print(f"Error loading language file {file}: {e}")
 
-    def get_user_language(self, user_id: int) -> str:
-        """Get user's language (cached or from DB)"""
+    async def get_user_language_async(self, user_id: int) -> str:
+        """Get user's language (cached or from DB asynchronously)"""
         if user_id in self.user_lang_cache:
             return self.user_lang_cache[user_id]
         
         # If not in cache, try to fetch from DB
-        with self.db_pool.get_session() as session:
+        async with self.db_pool.get_session() as session:
             try:
-                user = session.query(MyMtlWalletBotUsers.lang).filter(MyMtlWalletBotUsers.user_id == user_id).first()
-                lang = user.lang if user else 'en'
+                stmt = select(MyMtlWalletBotUsers.lang).where(MyMtlWalletBotUsers.user_id == user_id)
+                result = await session.execute(stmt)
+                lang = result.scalar_one_or_none()
+                lang = lang if lang else 'en'
             except Exception:
                 lang = 'en'
         
         self.user_lang_cache[user_id] = lang
         return lang
 
+    def get_user_language(self, user_id: int) -> str:
+        """Get user's language from CACHE ONLY. Fallback to 'en'."""
+        return self.user_lang_cache.get(user_id, 'en')
+
     def set_user_language(self, user_id: int, lang: str):
-        """Update user's language in cache (and optionally DB if needed via this service, though usually done via repo)"""
+        """Update user's language in cache."""
         self.user_lang_cache[user_id] = lang
 
     def get_text(self, user_id: Union[int, str], key: str, params: Tuple = ()) -> str:
-        """Get localized text for user"""
+        """Get localized text for user (synchronous, cache-based)"""
         if isinstance(user_id, str):
             lang = user_id
         else:

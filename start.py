@@ -58,9 +58,9 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker, app_c
 
     dp.callback_query.middleware(LogButtonClickCallbackMiddleware())
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool))
-    dp.message.middleware(DbSessionMiddleware(db_pool))
-    dp.callback_query.middleware(DbSessionMiddleware(db_pool))
-    dp.inline_query.middleware(DbSessionMiddleware(db_pool))
+    dp.message.middleware(DbSessionMiddleware(db_pool, localization_service))
+    dp.callback_query.middleware(DbSessionMiddleware(db_pool, localization_service))
+    dp.inline_query.middleware(DbSessionMiddleware(db_pool, localization_service))
 
     dp.include_router(common_start.router)  # first # first
     dp.include_router(cheque.router)  # first

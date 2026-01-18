@@ -1,19 +1,19 @@
 from typing import Optional, List
 from datetime import datetime, timedelta
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from core.domain.entities import User
 from core.interfaces.repositories import IUserRepository
 from db.models import MyMtlWalletBotUsers
 from other.tron_tools import create_trc_private_key
 
 class SqlAlchemyUserRepository(IUserRepository):
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         self.session = session
 
     async def get_by_id(self, user_id: int) -> Optional[User]:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_user = result.scalar_one_or_none()
         if db_user:
             return self._to_entity(db_user)
@@ -30,12 +30,12 @@ class SqlAlchemyUserRepository(IUserRepository):
         # Note: Commit is usually handled by the Unit of Work or higher level, 
         # but for now we might rely on auto-flush or manual commit calls in services/tests.
         # We'll assume the session manager handles commits.
-        self.session.flush() 
+        await self.session.flush() 
         return self._to_entity(db_user)
 
     async def update(self, user: User) -> User:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user.id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_user = result.scalar_one_or_none()
         if db_user:
             db_user.user_name = user.username
@@ -43,7 +43,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             db_user.default_address = user.default_address
             db_user.can_5000 = user.can_5000
             # session.add(db_user) is not strictly needed if it's already attached, but safe.
-            self.session.flush()
+            await self.session.flush()
             return self._to_entity(db_user)
         else:
             # Fallback to create if not exists? Or raise error? Repository pattern usually implies update updates existing.
@@ -61,7 +61,7 @@ class SqlAlchemyUserRepository(IUserRepository):
         stmt = select(MyMtlWalletBotUsers.user_id, MyMtlWalletBotUsers.default_address).where(
             MyMtlWalletBotUsers.user_name == clean_username
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         user = result.one_or_none()
         
         if user is not None:
@@ -74,7 +74,7 @@ class SqlAlchemyUserRepository(IUserRepository):
                     MyMtlWalletBot.user_id == user_id,
                     MyMtlWalletBot.default_wallet == 1
                 )
-                wallet_result = self.session.execute(wallet_stmt)
+                wallet_result = await self.session.execute(wallet_stmt)
                 wallet = wallet_result.scalar_one_or_none()
                 if wallet is not None:
                     return wallet, user_id
@@ -87,29 +87,30 @@ class SqlAlchemyUserRepository(IUserRepository):
             MyMtlWalletBotUsers.user_name.isnot(None),
             MyMtlWalletBotUsers.user_name.ilike(f"%{query}%")
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]
 
     async def update_donate_sum(self, user_id: int, amount: float) -> None:
         """Add to the user's donation sum."""
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_user = result.scalar_one_or_none()
         if db_user:
             db_user.donate_sum += amount
-            self.session.flush()
+            await self.session.flush()
 
     async def delete(self, user_id: int) -> None:
         """Delete a user."""
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
+        db_user = result.scalar_one_or_none()
         if db_user:
-            self.session.delete(db_user)
-            self.session.flush()
+            await self.session.delete(db_user)
+            await self.session.flush()
 
     async def get_usdt_key(self, user_id: int) -> tuple[Optional[str], int]:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         
         if user and user.usdt and len(user.usdt) == 64:
@@ -120,7 +121,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             try:
                 addr = create_trc_private_key()
                 user.usdt = addr
-                self.session.flush() # Commit logic usually outside, but here we modify state on read?
+                await self.session.flush() # Commit logic usually outside, but here we modify state on read?
                 # db/requests logic did commit.
                 # It's better to avoid side effects on get, but this is legacy behavior migration.
                 return addr, 0
@@ -131,26 +132,26 @@ class SqlAlchemyUserRepository(IUserRepository):
 
     async def set_usdt_key(self, user_id: int, address: str) -> None:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         if user:
             user.usdt = address
-            self.session.flush()
+            await self.session.flush()
 
     async def update_usdt_balance(self, user_id: int, amount: int) -> str:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         if user and user.usdt and len(user.usdt) == 64:
             user.usdt_amount = user.usdt_amount + amount
-            self.session.flush()
+            await self.session.flush()
             return user.usdt
         else:
              raise ValueError(f"No user found with id {user_id} or invalid USDT key")
 
     async def get_btc_uuid(self, user_id: int) -> tuple[Optional[str], Optional[datetime]]:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         if user and user.btc and user.btc_date and len(user.btc) > 10:
             return user.btc, user.btc_date
@@ -158,18 +159,18 @@ class SqlAlchemyUserRepository(IUserRepository):
 
     async def set_btc_uuid(self, user_id: int, uuid: Optional[str]) -> None:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         if user:
             user.btc = uuid
             user.btc_date = datetime.now() + timedelta(minutes=30)
-            self.session.flush()
+            await self.session.flush()
 
     async def get_all_with_usdt_balance(self) -> List[tuple[str, int, int]]:
         stmt = select(MyMtlWalletBotUsers.user_name, MyMtlWalletBotUsers.usdt_amount, MyMtlWalletBotUsers.user_id).where(
             MyMtlWalletBotUsers.usdt_amount > 0
         ).order_by(MyMtlWalletBotUsers.usdt_amount.desc())
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return [(row.user_name, row.usdt_amount, row.user_id) for row in result.all()]
 
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:

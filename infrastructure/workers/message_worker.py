@@ -2,6 +2,7 @@ from aiogram import Dispatcher
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 
+from sqlalchemy import select
 from db.models import MyMtlWalletBotMessages
 from db.db_pool import DatabasePool
 from infrastructure.persistence.sqlalchemy_message_repository import SqlAlchemyMessageRepository
@@ -13,7 +14,7 @@ from routers.start_msg import cmd_info_message
 @with_timeout(60)
 @safe_catch_async
 async def cmd_send_message_1m(session_pool: DatabasePool, app_context: AppContext):
-    with session_pool.get_session() as session:
+    async with session_pool.get_session() as session:
         msg_repo = SqlAlchemyMessageRepository(session)
         # Using repo unsent messages
         messages = await msg_repo.get_unsent(10)
@@ -21,7 +22,10 @@ async def cmd_send_message_1m(session_pool: DatabasePool, app_context: AppContex
             try:
                 await cmd_info_message(session, message.user_id, message.user_message, None, app_context=app_context)
             except Exception as ex:
-                if session.query(MyMtlWalletBotMessages).filter_by(message_id=message.message_id).first():
+                # Check if message still exists
+                stmt = select(MyMtlWalletBotMessages).where(MyMtlWalletBotMessages.message_id == message.message_id)
+                result = await session.execute(stmt)
+                if result.scalar_one_or_none():
                     await msg_repo.mark_failed(message.message_id)
                 logger.info(['cmd_send_message_1m', ex])
             fsm_storage_key = StorageKey(bot_id=app_context.bot.id, user_id=message.user_id, chat_id=message.user_id)

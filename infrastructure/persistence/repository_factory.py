@@ -1,5 +1,5 @@
 from typing import Any
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.interfaces.repositories import (
     IRepositoryFactory,
@@ -25,36 +25,36 @@ class SqlAlchemyRepositoryFactory(IRepositoryFactory):
     """
 
     def get_wallet_repository(self, session: Any) -> IWalletRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyWalletRepository(session)
 
     def get_user_repository(self, session: Any) -> IUserRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyUserRepository(session)
 
     def get_addressbook_repository(self, session: Any) -> IAddressBookRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyAddressBookRepository(session)
 
     def get_cheque_repository(self, session: Any) -> IChequeRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyChequeRepository(session)
     
     def get_notification_repository(self, session: Any) -> INotificationRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyNotificationRepository(session)
 
     def get_operation_repository(self, session: Any) -> IOperationRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyOperationRepository(session)
 
     def get_message_repository(self, session: Any) -> IMessageRepository:
-        if not isinstance(session, Session):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy Session")
+        if not isinstance(session, AsyncSession):
+            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyMessageRepository(session)
