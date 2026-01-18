@@ -14,7 +14,8 @@ from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
 from other.config_reader import config
 from other.lang_tools import my_gettext
 from other.mytypes import MyAccount
-from other.stellar_tools import base_fee, decode_data_value, stellar_get_user_account
+from infrastructure.utils.stellar_utils import base_fee, decode_data_value
+from other.stellar_tools import stellar_get_user_account
 from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id, clear_state

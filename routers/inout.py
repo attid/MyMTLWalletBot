@@ -16,7 +16,7 @@ from infrastructure.utils.telegram_utils import send_message, clear_last_message
 from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from other.stellar_tools import my_float, usdm_asset, satsmtl_asset, eurmtl_asset
+from infrastructure.utils.stellar_utils import my_float, usdm_asset, satsmtl_asset, eurmtl_asset
 from infrastructure.utils.common_utils import float2str
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 # from db.requests import db_get_usdt_private_key, create_trc_private_key, db_update_usdt_sum, db_get_btc_uuid, db_set_btc_uuid, db_get_usdt_balances

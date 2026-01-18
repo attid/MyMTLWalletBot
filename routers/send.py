@@ -29,9 +29,12 @@ from infrastructure.utils.common_utils import decode_qr_code
 from routers.uri import handle_wc_uri
 from other.global_data import global_data
 from infrastructure.utils.common_utils import float2str
+from infrastructure.utils.stellar_utils import (
+    parse_pay_stellar_uri, is_valid_stellar_address, my_float, 
+    cut_text_to_28_bytes, base_fee, eurmtl_asset
+)
 from other.stellar_tools import (
-    parse_pay_stellar_uri, is_valid_stellar_address, stellar_check_account,
-    my_float, cut_text_to_28_bytes, get_first_balance_from_list, base_fee, eurmtl_asset
+    stellar_check_account, get_first_balance_from_list
 )
 from core.use_cases.user.update_profile import UpdateUserProfile
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
