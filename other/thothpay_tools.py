@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 import asyncio
 from other.config_reader import config
-from infrastructure.utils.telegram_utils import get_web_request
+from other.web_tools import get_web_request
 
 
 def test():

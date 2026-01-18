@@ -22,7 +22,7 @@ from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUser
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from infrastructure.services.stellar_service import StellarService
 from other.mytypes import MyOffers, MyAccount, Balance, MyOffer
-from infrastructure.utils.telegram_utils import get_web_request
+from other.web_tools import get_web_request
 from other.counting_lock import CountingLock
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, \
     ASSET_EXCHANGE_ONLY  # Import for asset visibility tools
