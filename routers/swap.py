@@ -15,9 +15,10 @@ from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button,
 from other.mytypes import Balance
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
 from infrastructure.utils.common_utils import float2str
+from infrastructure.utils.stellar_utils import my_float, my_round
 from other.stellar_tools import stellar_check_receive_asset, \
-    stellar_check_receive_sum, stellar_get_market_link, my_float, \
-    my_round, stellar_check_send_sum
+    stellar_check_receive_sum, stellar_get_market_link, \
+    stellar_check_send_sum
 
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.services.stellar_service import StellarService
