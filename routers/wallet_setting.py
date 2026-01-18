@@ -43,6 +43,8 @@ from other.asset_visibility_tools import (
     get_asset_visibility, set_asset_visibility,
     ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN
 )
+from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService
 
 
 
@@ -91,7 +93,7 @@ router.message.filter(F.chat.type == "private")
 ASSETS_PER_PAGE = 30 # Max assets per page
 
 @router.callback_query(F.data == "WalletSetting")
-async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext, l10n: LocalizationService):
     msg = my_gettext(callback, 'wallet_setting_msg')
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -124,7 +126,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.callback_query(F.data == "ManageAssetsMenu")
-async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     msg = my_gettext(callback, 'manage_assets_msg')
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete_one'), callback_data="DeleteAsset")],
@@ -224,7 +226,7 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, page
 
 
 @router.callback_query(F.data == "AssetVisibilityMenu")
-async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     """Displays the initial asset visibility settings menu."""
     user_id = callback.from_user.id
     message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, page=1)
@@ -237,7 +239,7 @@ async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMCon
 ########################################################################################################################
 ########################################################################################################################
 @router.callback_query(AssetVisibilityCallbackData.filter())
-async def handle_asset_visibility_action(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: Session):
+async def handle_asset_visibility_action(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: Session, app_context: AppContext):
     """Handles actions from the asset visibility menu (setting status or changing page)."""
     logger.info(f"Entered handle_asset_visibility_action with callback_data: {callback_data!r}") # Log entry point
     action = callback_data.action
@@ -331,7 +333,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 ########################################################################################################################
 
 @router.callback_query(F.data == "DeleteAsset")
-async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     # Refactored to use GetWalletBalance Use Case
     repo = SqlAlchemyWalletRepository(session)
     service = StellarService(horizon_url=app_config.horizon_url)
@@ -353,7 +355,7 @@ async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, se
 
 @router.callback_query(DelAssetCallbackData.filter())
 async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data: DelAssetCallbackData,
-                                    state: FSMContext, session: Session):
+                                    state: FSMContext, session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -419,7 +421,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 ########################################################################################################################
 
 @router.callback_query(F.data == "AddAsset")
-async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
     # Refactored to use GetWalletBalance Use Case
     repo = SqlAlchemyWalletRepository(session)
@@ -465,7 +467,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
 
 @router.callback_query(AddAssetCallbackData.filter())
 async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCallbackData,
-                       state: FSMContext, session: Session):
+                       state: FSMContext, session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -487,7 +489,7 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 ########################################################################################################################
 
 @router.callback_query(F.data == "AddAssetExpert")
-async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
     repo = SqlAlchemyWalletRepository(session)
     service = StellarService(horizon_url=app_config.horizon_url)
@@ -513,7 +515,7 @@ async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext,
 
 
 @router.message(StateAddAsset.sending_code)
-async def cmd_sending_code(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_code(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     user_id = message.from_user.id
     asset_code = message.text
     await state.update_data(send_asset_code=asset_code)
@@ -525,7 +527,7 @@ async def cmd_sending_code(message: types.Message, state: FSMContext, session: S
 
 
 @router.message(StateAddAsset.sending_issuer)
-async def cmd_sending_issuer(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_issuer(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(send_asset_issuer=message.text)
     await cmd_add_asset_end(message.chat.id, state, session, )
 
@@ -535,7 +537,7 @@ async def cmd_sending_issuer(message: types.Message, state: FSMContext, session:
 ########################################################################################################################
 
 @router.message(Command(commands=["start"]), F.text.contains("asset_"))
-async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session):
+async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
 
     # check address
@@ -634,7 +636,7 @@ async def remove_password(session: Session, user_id: int, state: FSMContext):
 
 
 @router.callback_query(F.data == "RemovePassword")
-async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -651,7 +653,7 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
 
 
 @router.callback_query(F.data == "SetPassword")
-async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -694,7 +696,7 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext):
 
 
 @router.callback_query(F.data == "GetPrivateKey")
-async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     is_free = wallet.is_free if wallet else False
@@ -714,10 +716,11 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
             await callback.answer()
 
 
-async def cmd_after_buy(session: Session, user_id: int, state: FSMContext):
+async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
     data = await state.get_data()
     buy_address = data.get('buy_address')
-    await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
+    admin_id = app_context.admin_id if app_context else global_data.admin_id
+    await send_message(session, user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
     
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -730,7 +733,7 @@ async def cmd_after_buy(session: Session, user_id: int, state: FSMContext):
 
 
 @router.callback_query(F.data == "BuyAddress")
-async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     # Check free wallet using Repo (already done?)
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -808,14 +811,14 @@ async def cmd_edit_address_book(session: Session, user_id: int):
 
 
 @router.callback_query(F.data == "AddressBook")
-async def cb_edit_address_book(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cb_edit_address_book(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await callback.answer()
     await state.set_state(StateAddressBook.sending_new)
     await cmd_edit_address_book(session, callback.from_user.id)
 
 
 @router.message(StateAddressBook.sending_new, F.text)
-async def cmd_send_for(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_for(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await message.delete()
     if len(message.text) > 5 and message.text.find(' ') != -1:
         arr = message.text.split(' ')
@@ -827,7 +830,7 @@ async def cmd_send_for(message: types.Message, state: FSMContext, session: Sessi
 
 @router.callback_query(AddressBookCallbackData.filter())
 async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCallbackData,
-                     state: FSMContext, session: Session):
+                     state: FSMContext, session: Session, app_context: AppContext):
     from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
     addressbook_repo = SqlAlchemyAddressBookRepository(session)
     answer = callback_data.action
@@ -851,7 +854,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCa
 ########################################################################################################################
 
 @router.callback_query(F.data == "ManageData")
-async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     account_id = wallet.public_key
@@ -868,8 +871,8 @@ async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, 
 
 
 @router.callback_query(MDCallbackData.filter())
-async def cq_add_asset(callback: types.CallbackQuery, callback_data: MDCallbackData,
-                       state: FSMContext, session: Session):
+async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: MDCallbackData,
+                       state: FSMContext, session: Session, app_context: AppContext):
     uuid_callback = callback_data.uuid_callback
     data = await state.get_data()
 

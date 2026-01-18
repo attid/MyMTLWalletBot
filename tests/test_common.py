@@ -53,7 +53,9 @@ async def test_cmd_start(mock_session, mock_message, mock_state, mock_bot):
          
         mock_gd.user_lang_dic = {123: 'en'}
         
-        await cmd_start(mock_message, mock_state, mock_session, mock_bot)
+        app_context = MagicMock()
+        l10n = MagicMock()
+        await cmd_start(mock_message, mock_state, mock_session, mock_bot, app_context, l10n)
         
         mock_clear.assert_called_once()
         mock_balance.assert_called_once()

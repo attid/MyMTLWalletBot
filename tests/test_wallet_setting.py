@@ -37,7 +37,9 @@ async def test_cmd_wallet_setting(mock_session, mock_callback, mock_state):
         mock_repo_instance = MockRepo.return_value
         mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
         
-        await cmd_wallet_setting(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        l10n = MagicMock()
+        await cmd_wallet_setting(mock_callback, mock_state, mock_session, app_context, l10n)
         
         mock_send.assert_called_once()
         # Check that 'Buy' button is present for free wallet
@@ -58,7 +60,8 @@ async def test_cmd_get_private_key(mock_session, mock_callback, mock_state):
         mock_repo_instance = MockRepo.return_value
         mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
         
-        await cmd_get_private_key(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_get_private_key(mock_callback, mock_state, mock_session, app_context)
         
         mock_ask_pin.assert_called_once()
         mock_state.update_data.assert_called()
