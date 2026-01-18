@@ -114,16 +114,32 @@ async def test_handle_monitoring_message(mock_message):
 
 @pytest.mark.asyncio
 async def test_process_remote_uri(mock_session, mock_state):
+    from core.use_cases.stellar.process_uri import ProcessStellarUriResult
+    
     mock_resp = MagicMock()
     mock_resp.status = 200
     mock_resp.data = {'uri': 'web+stellar:tx?xdr=XDR'}
     
+    # Create mock result object
+    mock_result = ProcessStellarUriResult(
+        success=True,
+        xdr='XDR',
+        callback_url='url',
+        return_url=None,
+        error_message=None
+    )
+    
     with patch("routers.uri.http_session_manager.get_web_request", return_value=mock_resp, new_callable=AsyncMock), \
-         patch("routers.uri.process_transaction_stellar_uri", return_value={'xdr': 'XDR', 'callback_url': 'url'}, new_callable=AsyncMock), \
+         patch("routers.uri.ProcessStellarUri") as mock_process_uri_class, \
          patch("routers.uri.cmd_check_xdr", new_callable=AsyncMock) as mock_check, \
          patch("other.lang_tools.global_data") as mock_gd, \
-         patch("other.lang_tools.get_user_id", return_value=123):
+         patch("infrastructure.utils.common_utils.get_user_id", return_value=123):
          
+        # Setup ProcessStellarUri mock
+        mock_process_uri_instance = AsyncMock()
+        mock_process_uri_instance.execute.return_value = mock_result
+        mock_process_uri_class.return_value = mock_process_uri_instance
+        
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
