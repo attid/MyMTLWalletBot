@@ -162,3 +162,55 @@ async def parse_pay_stellar_uri(uri_data: str):
         'asset_issuer': asset_issuer,
         'memo': memo
     }
+
+
+def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset) -> str:
+    """Generate Stellar.Expert market link for an asset pair."""
+    from aiogram.utils.text_decorations import html_decoration
+    
+    sale_asset_str = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
+    buy_asset_str = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
+    market_link = f'https://eurmtl.me/cup/orderbook/{sale_asset_str}/{buy_asset_str}'
+    market_link = html_decoration.link(value='expert', link=market_link)
+    return market_link
+
+
+def get_good_asset_list():
+    """Return list of recommended assets for the bot."""
+    from typing import List
+    from other.mytypes import Balance
+    
+    return [
+        Balance.from_dict(
+            {"asset_code": 'AUMTL', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'EURMTL', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'BTCMTL', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'SATSMTL', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'LABR', "asset_issuer": 'GA7I6SGUHQ26ARNCD376WXV5WSE7VJRX6OEFNFCEGRLFGZWQIV73LABR'}),
+        Balance.from_dict(
+            {"asset_code": 'MTL', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'MTLRECT', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'MTLand', "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'MTLCITY', "asset_issuer": 'GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3'}),
+        Balance.from_dict(
+            {"asset_code": 'MTLDVL', "asset_issuer": 'GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA'}),
+        Balance.from_dict(
+            {"asset_code": 'FCM', "asset_issuer": 'GDIE253MSIYMFUS3VHRGEQPIBG7VAIPSMATWLTBF73UPOLBUH5RV2FCM'}),
+        Balance.from_dict(
+            {"asset_code": 'USDC', "asset_issuer": USDC_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'MMWB', "asset_issuer": PUBLIC_MMWB}),
+        Balance.from_dict(
+            {"asset_code": 'USDM', "asset_issuer": USDM_ISSUER}),
+        Balance.from_dict(
+            {"asset_code": 'MTLFEST', "asset_issuer": 'GCGWAPG6PKBMHEEAHRLTWHFCAGZTQZDOXDMWBUBCXHLQBSBNWFRYFEST'}),
+        Balance.from_dict(
+            {"asset_code": 'MTLAP', "asset_issuer": 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA'}),
+    ]

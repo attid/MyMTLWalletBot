@@ -23,9 +23,8 @@ from loguru import logger
 
 from other.global_data import global_data
 from other.lang_tools import check_user_id
-from infrastructure.utils.stellar_utils import public_issuer
-from other.stellar_tools import (get_good_asset_list,
-                                 eurmtl_asset)
+from infrastructure.utils.stellar_utils import public_issuer, get_good_asset_list
+from other.stellar_tools import eurmtl_asset
 # Legacy imports removed: stellar_get_balances, stellar_add_trust, stellar_get_user_account,
 # stellar_is_free_wallet, stellar_pay, stellar_get_user_keypair,
 # stellar_change_password, stellar_unfree_wallet, have_free_xlm,

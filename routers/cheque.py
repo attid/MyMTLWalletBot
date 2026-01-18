@@ -19,8 +19,7 @@ from routers.swap import StateSwapToken
 from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
-from infrastructure.utils.stellar_utils import my_float
-from other.stellar_tools import stellar_get_market_link
+from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
 from infrastructure.utils.common_utils import float2str
 from core.constants import CHEQUE_PUBLIC_KEY
 from core.use_cases.cheque.create_cheque import CreateCheque
