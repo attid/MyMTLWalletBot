@@ -5,7 +5,7 @@ from time import time
 from typing import Callable, Any
 
 from loguru import logger
-from other.global_data import global_data # Used for sending admin notifications in task_with_timeout
+from aiogram import Bot
 from other.loguru_tools import safe_catch_async
 
 class TaskKilled(Exception):
@@ -15,6 +15,13 @@ class TaskKilled(Exception):
 def kill_task(task):
     task.cancel()
 
+_bot: Bot = None
+_admin_id: int = None
+
+def setup_async_utils(bot: Bot, admin_id: int):
+    global _bot, _admin_id
+    _bot = bot
+    _admin_id = admin_id
 
 @safe_catch_async
 async def task_with_timeout(func: Callable, timeout: int, kill_on_timeout: bool, *args, **kwargs):
@@ -27,13 +34,14 @@ async def task_with_timeout(func: Callable, timeout: int, kill_on_timeout: bool,
         while not task.done():
             await asyncio.sleep(60)  # Wait for 1 minute
             minutes_passed += 1
-            try:
-                await global_data.bot.send_message(
-                    chat_id=global_data.admin_id,
-                    text=f"Task {func.__name__} has been running for {minutes_passed} minute(s)."
-                )
-            except:
-                pass
+            if _bot and _admin_id:
+                try:
+                    await _bot.send_message(
+                        chat_id=_admin_id,
+                        text=f"Task {func.__name__} has been running for {minutes_passed} minute(s)."
+                    )
+                except:
+                    pass
 
     update_task = asyncio.create_task(send_update())
 

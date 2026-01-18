@@ -30,6 +30,7 @@ from other.faststream_tools import start_broker, stop_broker
 from other.global_data import global_data
 from infrastructure.monitoring.blockchain_monitor import events_worker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
+from infrastructure.utils.async_utils import setup_async_utils
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -196,7 +197,7 @@ async def main():
     dp = Dispatcher(storage=storage)
     scheduler = AsyncIOScheduler(timezone='Europe/Podgorica')  # str(tzlocal.get_localzone())
     scheduler.start()
-    scheduler_jobs(scheduler, db_pool, dp)
+    # scheduler_jobs moved after app_context init
 
     global_data.bot = bot
     global_data.dispatcher = dp
@@ -230,6 +231,9 @@ async def main():
     )
     
     dp["app_context"] = app_context
+
+    setup_async_utils(bot, global_data.admin_id)
+    scheduler_jobs(scheduler, db_pool, dp, app_context)
 
     await bot_add_routers(bot, dp, db_pool, app_context, localization_service)
 
