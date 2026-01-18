@@ -137,7 +137,7 @@ async def test_fest_sending_sum(mock_server, dp):
     mock_fest_menu = {"Participant1": "Address1"}
     
     with patch("routers.fest.config") as mock_config, \
-         patch("routers.fest.my_float", return_value=10.0), \
+         patch("infrastructure.utils.stellar_utils.my_float", return_value=10.0), \
          patch("routers.fest.cmd_send_04", new_callable=AsyncMock) as mock_cmd_send_04, \
          patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
          patch("other.lang_tools.global_data") as mock_gd:
@@ -154,7 +154,7 @@ async def test_fest_sending_sum(mock_server, dp):
         # Manually set state? 
         ctx = dp.fsm.get_context(bot=bot, chat_id=123, user_id=123)
         await ctx.set_state(StateFest.sending_sum)
-        await ctx.update_data(level_1="Participant1")
+        await ctx.update_data(level_1="Participant1", msg="Test message")
         
         update = types.Update(
             update_id=3,

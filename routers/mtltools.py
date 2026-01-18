@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from routers.sign import cmd_check_xdr
 from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_last_message_id
+from infrastructure.utils.stellar_utils import my_float
 from other.web_tools import get_web_request
 from other.stellar_tools import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
-    my_float, have_free_xlm, stellar_get_multi_sign_xdr
+    have_free_xlm, stellar_get_multi_sign_xdr
 
 
 class StateTools(StatesGroup):
