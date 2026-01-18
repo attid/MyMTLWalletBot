@@ -28,65 +28,66 @@ class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"
     idx: int
 
 
-async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> types.InlineKeyboardMarkup:
+async def get_kb_default(session: Session, chat_id: int, state: FSMContext, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
     data = await state.get_data()
 
     if data.get('use_ton', False):
         buttons = [
             [types.InlineKeyboardButton(text='⤴️ Send TON', callback_data="SendTon")],
             [types.InlineKeyboardButton(text='⤴️ Send USDt', callback_data="SendTonUSDt")],
-            [types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
+            [types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet', app_context=app_context),
                                         callback_data="ChangeWallet")],
-            [types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'),
+            [types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support', app_context=app_context),
                                         callback_data="Support")]]
         return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
     buttons = [
         [
-            types.InlineKeyboardButton(text='⤵️ ' + my_gettext(chat_id, 'kb_receive'), callback_data="Receive"),
-            types.InlineKeyboardButton(text='🔃 ' + my_gettext(chat_id, 'kb_refresh'), callback_data="Refresh"),
-            types.InlineKeyboardButton(text='⤴️ ' + my_gettext(chat_id, 'kb_send'), callback_data="Send")
+            types.InlineKeyboardButton(text='⤵️ ' + my_gettext(chat_id, 'kb_receive', app_context=app_context), callback_data="Receive"),
+            types.InlineKeyboardButton(text='🔃 ' + my_gettext(chat_id, 'kb_refresh', app_context=app_context), callback_data="Refresh"),
+            types.InlineKeyboardButton(text='⤴️ ' + my_gettext(chat_id, 'kb_send', app_context=app_context), callback_data="Send")
         ],
         [
-            types.InlineKeyboardButton(text='🔄 ' + my_gettext(chat_id, 'kb_swap'), callback_data="Swap"),
-            types.InlineKeyboardButton(text='💸 ' + my_gettext(chat_id, 'kb_inout'), callback_data="InOut"),
-            types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market'), callback_data="Market")
+            types.InlineKeyboardButton(text='🔄 ' + my_gettext(chat_id, 'kb_swap', app_context=app_context), callback_data="Swap"),
+            types.InlineKeyboardButton(text='💸 ' + my_gettext(chat_id, 'kb_inout', app_context=app_context), callback_data="InOut"),
+            types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market', app_context=app_context), callback_data="Market")
         ],
         # [
         #     types.InlineKeyboardButton(text='🥳 ' + "MTLFEST 2024", callback_data="Fest2024")
         # ]
+        # app_context passed to keys if needed? 'MTLFEST 2024' is constant.
     ]
 
     if data.get('show_more', False):
         if data.get('mtlap', False):
             buttons.append(
                 [
-                    types.InlineKeyboardButton(text='🖇 ' + my_gettext(chat_id, 'kb_mtlap_tools'),
+                    types.InlineKeyboardButton(text='🖇 ' + my_gettext(chat_id, 'kb_mtlap_tools', app_context=app_context),
                                                callback_data="MTLAPTools")
                 ]
             )
 
         buttons.append(
             [
-                types.InlineKeyboardButton(text='🏛 ' + my_gettext(chat_id, 'kb_mtl_tools'), callback_data="MTLTools"),
-                types.InlineKeyboardButton(text='⚙️ ' + my_gettext(chat_id, 'kb_setting'),
+                types.InlineKeyboardButton(text='🏛 ' + my_gettext(chat_id, 'kb_mtl_tools', app_context=app_context), callback_data="MTLTools"),
+                types.InlineKeyboardButton(text='⚙️ ' + my_gettext(chat_id, 'kb_setting', app_context=app_context),
                                            callback_data="WalletSetting")
             ]
         )
-        buttons.append([types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet'),
+        buttons.append([types.InlineKeyboardButton(text='↔️ ' + my_gettext(chat_id, 'kb_change_wallet', app_context=app_context),
                                                    callback_data="ChangeWallet")])
-        buttons.append([types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support'),
+        buttons.append([types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support', app_context=app_context),
                                                    callback_data="Support")])
         wallet_repo = SqlAlchemyWalletRepository(session)
         default_wallet = await wallet_repo.get_default_wallet(chat_id)
         is_free = default_wallet.is_free if default_wallet else False 
         if not is_free:
             buttons.append(
-                [types.InlineKeyboardButton(text='🖌 ' + my_gettext(chat_id, 'kb_sign'), callback_data="Sign")])
-        buttons.append([types.InlineKeyboardButton(text='≢ ' + my_gettext(chat_id, 'kb_show_less'),
+                [types.InlineKeyboardButton(text='🖌 ' + my_gettext(chat_id, 'kb_sign', app_context=app_context), callback_data="Sign")])
+        buttons.append([types.InlineKeyboardButton(text='≢ ' + my_gettext(chat_id, 'kb_show_less', app_context=app_context),
                                                    callback_data="ShowMoreToggle")])
     else:
-        buttons.append([types.InlineKeyboardButton(text='≡ ' + my_gettext(chat_id, 'kb_show_more'),
+        buttons.append([types.InlineKeyboardButton(text='≡ ' + my_gettext(chat_id, 'kb_show_more', app_context=app_context),
                                                    callback_data="ShowMoreToggle")])
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -112,7 +113,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
                 await refresh_callback.answer('Nothing to update, the data is up to date.', show_alert=True)
                 await state.update_data(start_msg=msg)
             else:
-                keyboard = await get_kb_default(session, user_id, state)
+                keyboard = await get_kb_default(session, user_id, state, app_context=app_context)
                 await send_message(session, user_id, msg, reply_markup=keyboard,
                                    need_new_msg=need_new_msg,
                                    parse_mode='HTML')

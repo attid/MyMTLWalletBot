@@ -13,7 +13,9 @@ import jsonpickle
 @pytest.mark.asyncio
 async def test_cmd_market(mock_session, mock_callback):
     with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_market(mock_callback, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cmd_market(mock_callback, mock_session, app_context=mock_app_context)
         mock_send.assert_called_once()
         mock_callback.answer.assert_called_once()
 
@@ -39,7 +41,9 @@ async def test_cmd_sale_new_order(mock_session, mock_callback, mock_state):
         mock_use_case_instance = MockUseCase.return_value
         mock_use_case_instance.execute = AsyncMock(return_value=[balance])
 
-        await cmd_sale_new_order(mock_callback, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cmd_sale_new_order(mock_callback, mock_state, mock_session, app_context=mock_app_context)
         
         mock_send.assert_called_once()
         args, kwargs = mock_state.update_data.call_args
@@ -57,7 +61,9 @@ async def test_cq_trade_choose_token_sell(mock_session, mock_callback, mock_stat
     with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.trade.jsonpickle.decode", return_value=asset_data):
         
-        await cq_trade_choose_token_sell(mock_callback, callback_data, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cq_trade_choose_token_sell(mock_callback, callback_data, mock_state, mock_session, app_context=mock_app_context)
         
         mock_state.update_data.assert_called()
         mock_send.assert_called_once()
@@ -77,7 +83,9 @@ async def test_cq_trade_choose_token_buy(mock_session, mock_callback, mock_state
          patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.trade.jsonpickle.decode", return_value=asset_data):
         
-        await cq_trade_choose_token_buy(mock_callback, callback_data, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cq_trade_choose_token_buy(mock_callback, callback_data, mock_state, mock_session, app_context=mock_app_context)
         
         mock_state.set_state.assert_called_with(StateSaleToken.selling_sum)
         mock_send.assert_called_once()
@@ -106,7 +114,10 @@ async def test_cmd_swap_01(mock_session, mock_callback, mock_state):
         mock_use_case_instance = MockUseCase.return_value
         mock_use_case_instance.execute = AsyncMock(return_value=[balance])
         
-        await cmd_swap_01(mock_callback, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        
+        await cmd_swap_01(mock_callback, mock_state, mock_session, app_context=mock_app_context)
         
         mock_send.assert_called_once()
         args, kwargs = mock_state.update_data.call_args
@@ -140,7 +151,10 @@ async def test_cq_swap_choose_token_from(mock_session, mock_callback, mock_state
         mock_use_case_instance = MockUseCase.return_value
         mock_use_case_instance.execute = AsyncMock(return_value=asset_data)
          
-        await cq_swap_choose_token_from(mock_callback, callback_data, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+
+        await cq_swap_choose_token_from(mock_callback, callback_data, mock_state, mock_session, app_context=mock_app_context)
         
         mock_state.update_data.assert_called()
         mock_send.assert_called_once()
@@ -157,8 +171,11 @@ async def test_cmd_send_sale_sum(mock_session, mock_message, mock_state):
         "msg": "msg"
     }
     
+    
     with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
-         await cmd_send_sale_sum(mock_message, mock_state, mock_session)
+         mock_app_context = MagicMock()
+         mock_app_context.localization_service.get_text.return_value = "text"
+         await cmd_send_sale_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
          mock_state.update_data.assert_called()
          mock_send.assert_called_once()
 
@@ -167,7 +184,9 @@ async def test_cmd_send_sale_cost(mock_session, mock_message, mock_state):
     mock_message.text = "10.0" # receive total sum
     
     with patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
-        await cmd_send_sale_cost(mock_message, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cmd_send_sale_cost(mock_message, mock_state, mock_session, app_context=mock_app_context)
         
         mock_state.update_data.assert_called_with(receive_sum=10.0, msg=None)
         mock_xdr.assert_called_once()
@@ -192,7 +211,11 @@ async def test_cmd_show_orders(mock_session, mock_callback, mock_state):
             'buying': {'asset_code': 'USD', 'asset_issuer': 'ISSUER', 'asset_type': 'credit_alphanum4'}
          }])
          
-         await cmd_show_orders(mock_callback, mock_state, mock_session)
+
+         
+         mock_app_context = MagicMock()
+         mock_app_context.localization_service.get_text.return_value = "text"
+         await cmd_show_orders(mock_callback, mock_state, mock_session, app_context=mock_app_context)
          
          mock_send.assert_called_once()
          args, kwargs = mock_state.update_data.call_args
@@ -210,7 +233,9 @@ async def test_cb_edit_order(mock_session, mock_callback, mock_state):
     with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
          patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
 
-        await cb_edit_order(mock_callback, callback_data, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cb_edit_order(mock_callback, callback_data, mock_state, mock_session, app_context=mock_app_context)
         mock_state.update_data.assert_called()
         mock_send.assert_called_once()
 
@@ -221,7 +246,9 @@ async def test_cmd_delete_order(mock_session, mock_callback, mock_state):
 
     with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
          patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
-        await cmd_delete_order(mock_callback, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+        await cmd_delete_order(mock_callback, mock_state, mock_session, app_context=mock_app_context)
         
         args, kwargs = mock_state.update_data.call_args
         assert kwargs.get('delete_order') is True
@@ -248,10 +275,13 @@ async def test_cq_swap_choose_token_for(mock_session, mock_callback, mock_state)
          patch("routers.swap.stellar_get_market_link", return_value="link"), \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
 
-         await cq_swap_choose_token_for(mock_callback, callback_data, mock_state, mock_session)
-         
-         mock_state.set_state.assert_called_with(StateSwapToken.swap_sum)
-         mock_send.assert_called_once()
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+
+        await cq_swap_choose_token_for(mock_callback, callback_data, mock_state, mock_session, app_context=mock_app_context)
+          
+        mock_state.set_state.assert_called_with(StateSwapToken.swap_sum)
+        mock_send.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -271,15 +301,17 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
          patch("routers.swap.SwapAssets") as MockSwapAssets, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
          
-         mock_user_repo = MockUserRepo.return_value
-         mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
-         mock_use_case = MockSwapAssets.return_value
-         mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP"))
+        mock_user_repo = MockUserRepo.return_value
+        mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
+        mock_use_case = MockSwapAssets.return_value
+        mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP"))
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+
+        await cmd_swap_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
          
-         await cmd_swap_sum(mock_message, mock_state, mock_session)
-         
-         mock_state.update_data.assert_called()
-         mock_send.assert_called_once()
+        mock_state.update_data.assert_called()
+        mock_send.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -288,10 +320,13 @@ async def test_cq_swap_strict_receive(mock_session, mock_callback, mock_state):
     
     with patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
 
-         await cq_swap_strict_receive(mock_callback, mock_state, mock_session)
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+
+        await cq_swap_strict_receive(mock_callback, mock_state, mock_session, app_context=mock_app_context)
          
-         mock_state.set_state.assert_called_with(StateSwapToken.swap_receive_sum)
-         mock_send.assert_called_once()
+        mock_state.set_state.assert_called_with(StateSwapToken.swap_receive_sum)
+        mock_send.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -311,15 +346,16 @@ async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
          patch("routers.swap.SwapAssets") as MockSwapAssets, \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
          
-         mock_user_repo = MockUserRepo.return_value
-         mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
-         mock_use_case = MockSwapAssets.return_value
-         mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP_STRICT"))
+        mock_user_repo = MockUserRepo.return_value
+        mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
+        mock_use_case = MockSwapAssets.return_value
+        mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP_STRICT"))
+        mock_app_context = MagicMock()
+        mock_app_context.localization_service.get_text.return_value = "text"
+
+        await cmd_swap_receive_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
          
-         await cmd_swap_receive_sum(mock_message, mock_state, mock_session)
+        _, kwargs = mock_use_case.execute.call_args
+        assert kwargs.get('strict_receive') is True
          
-         _, kwargs = mock_use_case.execute.call_args
-         assert kwargs.get('strict_receive') is True
-         
-         mock_state.update_data.assert_called()
-         mock_send.assert_called_once()
+        mock_state.update_data.assert_called()

@@ -18,6 +18,7 @@ from infrastructure.utils.telegram_utils import send_message, my_gettext
 from other.locks import new_wallet_lock
 from other.config_reader import config
 
+from infrastructure.services.app_context import AppContext
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.services.stellar_service import StellarService
 from core.use_cases.wallet.add_wallet import AddWallet
@@ -33,65 +34,42 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "AddNew")
-async def cmd_add_new(callback: types.CallbackQuery, session: Session):
+@router.callback_query(F.data == "AddNew")
+async def cmd_add_new(callback: types.CallbackQuery, session: Session, app_context: AppContext):
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_have_key'),
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_have_key', app_context=app_context),
                                     callback_data="AddWalletHaveKey")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_free'),
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_free', app_context=app_context),
                                     callback_data="AddWalletNewKey")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_read_only'),
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_read_only', app_context=app_context),
                                     callback_data="AddWalletReadOnly")],
         [types.InlineKeyboardButton(text='Create new TON wallet',
                                     callback_data="AddTonWallet")],
-        get_return_button(callback)
+        get_return_button(callback, app_context=app_context)
     ]
-    msg = my_gettext(callback, 'create_msg')
+    msg = my_gettext(callback, 'create_msg', app_context=app_context)
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 @router.callback_query(F.data == "AddWalletHaveKey")
-async def cq_add_have_key(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    msg = my_gettext(callback, 'send_key')
+async def cq_add_have_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    msg = my_gettext(callback, 'send_key', app_context=app_context)
     await state.update_data(msg=msg)
     await state.set_state(StateAddWallet.sending_private)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
 
 
 @router.message(StateAddWallet.sending_private)
-async def cmd_sending_private(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_private(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         args = message.text.split()
         secret_key = args[0]
         kp = Keypair.from_secret(secret_key)
         public_key = kp.public_key
         
-        # If second arg provided, legacy logic treated it as public key?
-        # But for imported key, public key IS derived from secret.
-        # We ignore second arg or verify it matches? 
-        # Legacy code: public_key = stellar_save_new(..., arg[0], False, arg[1])
-        # If arg[1] provided, it overrides public key? That's dangerous.
-        # We will strictly use derived public_key.
-        
         wallet_repo = SqlAlchemyWalletRepository(session)
         add_wallet = AddWallet(wallet_repo)
         
-        # Encrypt secret before saving?
-        # Legacy: encrypt(secret, str(user_id))
-        # AddWallet use case expects the secret as string. 
-        # If infrastructure layer handles encryption, we pass plain?
-        # MyMtlWalletBot model has secret_key. 
-        # Legacy db_add_wallet expected encrypted secret if calling externally?
-        # In stellar_save_new: db_add_wallet(..., encrypt(new_account.secret, str(user_id)), ...)
-        # So YES, Repo expects ENCRYPTED secret if we follow legacy pattern directly in Repo.create?
-        # Logic in Repo.create:
-        # db_wallet = MyMtlWalletBot(..., secret_key=wallet.secret_key, ...)
-        # It just saves what's passed.
-        # So WE MUST ENCRYPT HERE or in Use Case.
-        # Ideally encryption is an Infrastructure concern (Repo should encrypt).
-        # But `stellar_save_new` (Service/Tool) did it.
-        # `AddWallet` use case is Application layer. It shouldn't know about encryption details (e.g. user_id as key).
-        # This leaks infrastructure details.
-        # However, for this cleanup phase, I'll encrypt here to match existing data format.
         encrypted_secret = encrypt(secret_key, str(message.from_user.id))
         
         await add_wallet.execute(
@@ -99,47 +77,41 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
             public_key=public_key,
             secret_key=encrypted_secret,
             is_free=False,
-            is_default=False # Imported wallets not default by default? AddWallet defaults to True?
-            # Legacy stellar_save_new didn't set default (db_add_wallet defaults to 0).
-            # But db_add_wallet CALLED db_set_default_wallets at the end!
-            # So yes, it sets default.
+            is_default=False 
         )
         
         await state.update_data(public_key=public_key)
         await state.set_state(None)
         await cmd_show_add_wallet_choose_pin(session, message.chat.id, state,
-                                             my_gettext(message, 'for_address', (public_key,)))
+                                             my_gettext(message, 'for_address', (public_key,), app_context=app_context),
+                                             app_context=app_context)
         await message.delete()
     except Exception as ex:
         logger.info(ex)
         data = await state.get_data()
-        await send_message(session, message, my_gettext(message, 'bad_key') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, my_gettext(message, 'bad_key', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(message, app_context=app_context))
 
 
 @router.callback_query(F.data == "AddWalletNewKey")
-async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state: FSMContext):
+async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state: FSMContext, app_context: AppContext):
     # Check if user can add free wallet (via Use Case check/Repo limit)
     wallet_repo = SqlAlchemyWalletRepository(session)
     add_wallet = AddWallet(wallet_repo)
     
     # We can check limit first to fail fast, although execute() does it too.
-    # Legacy checked db_user_can_new_free BEFORE queue lock.
-    # AddWallet throws ValueError if limit reached.
     try:
         # Check limit manually or just try? 
-        # AddWallet check is inside execute. But we need to check BEFORE doing heavy Stellar stuff.
-        # We can call count_free_wallets explicitly.
         count = await wallet_repo.count_free_wallets(callback.from_user.id)
         if count > 2:
-             await callback.answer(my_gettext(callback.message.chat.id, "max_wallets"), show_alert=True)
+             await callback.answer(my_gettext(callback.message.chat.id, "max_wallets", app_context=app_context), show_alert=True)
              return
              
-        msg = my_gettext(callback, "try_send")
+        msg = my_gettext(callback, "try_send", app_context=app_context)
         waiting_count = new_wallet_lock.waiting_count()
         if waiting_count > 0:
             await cmd_info_message(session, callback.message.chat.id,
-                                   f'Please wait, your position in the queue is {waiting_count}.')
+                                   f'Please wait, your position in the queue is {waiting_count}.', app_context=app_context)
 
         async with new_wallet_lock:
              # 1. Generate keys
@@ -163,7 +135,7 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
              )
              
              # 3. Fund and Trust (StellarService)
-             await cmd_info_message(session, callback.message.chat.id, msg)
+             await cmd_info_message(session, callback.message.chat.id, msg, app_context=app_context)
              
              service = StellarService(config.horizon_url_rw)
              master_wallet = await wallet_repo.get_default_wallet(0)
@@ -197,7 +169,7 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
                  signed_trust = service.sign_transaction(trust_xdr, kp.secret)
                  await service.submit_transaction(signed_trust)
 
-        await cmd_info_message(session, callback, my_gettext(callback, 'send_good'))
+        await cmd_info_message(session, callback, my_gettext(callback, 'send_good', app_context=app_context), app_context=app_context)
         with suppress(TelegramBadRequest):
             await callback.answer()
         data = await state.get_data()
@@ -211,32 +183,32 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
         await callback.answer(f"Error: {e}", show_alert=True)
 
 
-async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: FSMContext, msg=''):
+async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: FSMContext, msg='', app_context: AppContext = None):
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_pin'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_pin', app_context=app_context),
                                     callback_data="PIN")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_password'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_password', app_context=app_context),
                                     callback_data="Password")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_no_password'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_no_password', app_context=app_context),
                                     callback_data="NoPassword"),
          ]
     ]
 
-    msg = msg + my_gettext(user_id, 'choose_protect')
+    msg = msg + my_gettext(user_id, 'choose_protect', app_context=app_context)
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
                        parse_mode='HTML')
 
 
 @router.callback_query(F.data == "AddWalletReadOnly")
-async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    msg = my_gettext(callback, 'add_read_only')
+async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    msg = my_gettext(callback, 'add_read_only', app_context=app_context)
     await state.update_data(msg=msg)
     await state.set_state(StateAddWallet.sending_public)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
 
 
 @router.message(StateAddWallet.sending_public)
-async def cmd_sending_public(message: types.Message, state: FSMContext, session: Session):
+async def cmd_sending_public(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         # await stellar_get_balances(session, message.from_user.id, public_key=message.text)
         public_key = message.text
@@ -257,38 +229,38 @@ async def cmd_sending_public(message: types.Message, state: FSMContext, session:
         await state.update_data(public_key=public_key)
         await state.set_state(None)
 
-        await cmd_show_balance(session, message.from_user.id, state)
+        await cmd_show_balance(session, message.from_user.id, state, app_context=app_context)
         await message.delete()
     except Exception as ex:
         logger.info(ex)
         data = await state.get_data()
-        await send_message(session, message, my_gettext(message, 'bad_key') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, my_gettext(message, 'bad_key', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(message, app_context=app_context))
 
 
 @router.callback_query(F.data == "PIN")
-async def cq_add_read_only_pin(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_add_read_only_pin(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.set_state(PinState.set_pin)
     await state.update_data(pin_type=1)
-    await cmd_ask_pin(session, callback.message.chat.id, state)
+    await cmd_ask_pin(session, callback.message.chat.id, state, app_context=app_context)
 
 
 @router.callback_query(F.data == "Password")
-async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(pin_type=2)
     await state.set_state(PinState.ask_password_set)
-    await send_message(session, callback, my_gettext(callback, 'send_password'),
-                       reply_markup=get_kb_return(callback))
+    await send_message(session, callback, my_gettext(callback, 'send_password', app_context=app_context),
+                       reply_markup=get_kb_return(callback, app_context=app_context))
 
 
 @router.callback_query(F.data == "NoPassword")
-async def cq_add_read_only_no_password(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_add_read_only_no_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(pin_type=0)
-    await cmd_show_balance(session, callback.from_user.id, state)
+    await cmd_show_balance(session, callback.from_user.id, state, app_context=app_context)
 
 
 @router.callback_query(F.data == "AddTonWallet")
-async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSMContext):
+async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSMContext, app_context: AppContext):
     try:
         wallet_repo = SqlAlchemyWalletRepository(session)
         add_wallet = AddWallet(wallet_repo)
@@ -298,7 +270,7 @@ async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSM
         # Or check first.
         count = await wallet_repo.count_free_wallets(callback.from_user.id)
         if count > 2:
-             await callback.answer(my_gettext(callback.message.chat.id, "max_wallets"), show_alert=True)
+             await callback.answer(my_gettext(callback.message.chat.id, "max_wallets", app_context=app_context), show_alert=True)
              return
 
         from services.ton_service import TonService
@@ -334,7 +306,7 @@ async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSM
             is_default=False
         )
 
-        await cmd_info_message(session, callback, my_gettext(callback, 'send_good'))
+        await cmd_info_message(session, callback, my_gettext(callback, 'send_good', app_context=app_context), app_context=app_context)
     except Exception as e:
         logger.error(f"Error adding TON wallet: {e}")
         await callback.answer(f"Error: {e}", show_alert=True)

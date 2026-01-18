@@ -25,7 +25,8 @@ async def test_bsn_mode_command(mock_session, mock_message, mock_state):
          patch("routers.bsn.get_bsn_kb"), \
          patch("routers.bsn.clear_last_message_id", new_callable=AsyncMock):
          
-        await bsn_mode_command(mock_message, mock_state, command, mock_session)
+        app_context = MagicMock()
+        await bsn_mode_command(mock_message, mock_state, command, mock_session, app_context)
         
         mock_clear.assert_called_once()
         mock_parse.assert_called_once()
@@ -40,7 +41,8 @@ async def test_finish_send_bsn(mock_session, mock_callback, mock_state):
          patch("routers.bsn.cmd_gen_data_xdr", return_value="XDR", new_callable=AsyncMock), \
          patch("routers.bsn.cmd_ask_pin", new_callable=AsyncMock) as mock_ask_pin:
 
-        await finish_send_bsn(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await finish_send_bsn(mock_callback, mock_state, mock_session, app_context)
         
         mock_state.update_data.assert_called()
         mock_ask_pin.assert_called_once()
@@ -49,25 +51,34 @@ async def test_finish_send_bsn(mock_session, mock_callback, mock_state):
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools(mock_session, mock_callback, mock_state):
-    with patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_mtlap_tools(mock_callback, mock_state, mock_session)
+    app_context = MagicMock()
+    with patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
+        await cmd_mtlap_tools(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_delegate_a(mock_session, mock_callback, mock_state):
     with patch("routers.mtlap.stellar_get_data", return_value={"mtla_a_delegate": "DelegateA"}, new_callable=AsyncMock), \
-         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
          
         from routers.mtlap import cmd_mtlap_tools_delegate_a
-        await cmd_mtlap_tools_delegate_a(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_mtlap_tools_delegate_a(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_delegate_c(mock_session, mock_callback, mock_state):
     with patch("routers.mtlap.stellar_get_data", return_value={"mtla_c_delegate": "DelegateC"}, new_callable=AsyncMock), \
-         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
          
-        await cmd_mtlap_tools_delegate_c(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_mtlap_tools_delegate_c(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
@@ -85,7 +96,8 @@ async def test_process_tags(mock_session, mock_message, mock_state):
          patch("routers.bsn.make_tag_message", return_value="msg"), \
          patch("routers.bsn.get_bsn_kb"):
          
-        await process_tags(mock_message, mock_state, mock_session)
+        app_context = MagicMock()
+        await process_tags(mock_message, mock_state, mock_session, app_context)
         
         mock_parse.assert_called()
         mock_state.update_data.assert_called_with(tags="dumps")
@@ -96,9 +108,12 @@ async def test_process_tags(mock_session, mock_message, mock_state):
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_add_delegate_a(mock_session, mock_callback, mock_state):
     # Test low xlm
+    app_context = MagicMock()
     with patch("routers.mtlap.have_free_xlm", return_value=False), \
-         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session)
+         patch("routers.mtlap.send_message", new_callable=AsyncMock), \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):  # Added mock_send just in case, though might not be called
+        await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session, app_context)
         mock_callback.answer.assert_called()
 
     # Test success
@@ -108,11 +123,14 @@ async def test_cmd_mtlap_tools_add_delegate_a(mock_session, mock_callback, mock_
     custom_gd.user_lang_dic = {123: 'en'}
     custom_gd.lang_dict = {'en': {}}
 
+    app_context = MagicMock()
     with patch("routers.mtlap.have_free_xlm", return_value=True), \
          patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.mtlap.get_kb_return"):
+         patch("routers.mtlap.get_kb_return"), \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
 
-        await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session)
+        await cmd_mtlap_tools_add_delegate_a(mock_callback, mock_state, mock_session, app_context)
         mock_state.set_state.assert_called() # MTLAPStateTools.delegate_for_a
         mock_send.assert_called()
 
@@ -125,20 +143,26 @@ async def test_cmd_mtlap_send_add_delegate_for_a(mock_session, mock_message, moc
     with patch("routers.mtlap.stellar_check_account", return_value=mock_account, new_callable=AsyncMock), \
          patch("routers.mtlap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.mtlap.cmd_gen_data_xdr", return_value="XDR", new_callable=AsyncMock), \
-         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
          
-         await cmd_mtlap_send_add_delegate_for_a(mock_message, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_mtlap_send_add_delegate_for_a(mock_message, mock_state, mock_session, app_context)
          
-         mock_state.update_data.assert_called_with(xdr="XDR")
-         mock_send.assert_called_once()
+        mock_state.update_data.assert_called_with(xdr="XDR")
+        mock_send.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_recommend(mock_session, mock_callback, mock_state):
     with patch("routers.mtlap.stellar_get_data", return_value={}, new_callable=AsyncMock), \
          patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.mtlap._collect_recommendations", return_value=([], None)):
+         patch("routers.mtlap._collect_recommendations", return_value=([], None)), \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
 
-        await cmd_mtlap_tools_recommend(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_mtlap_tools_recommend(mock_callback, mock_state, mock_session, app_context)
 
         mock_state.set_state.assert_called() # recommend_for
         mock_send.assert_called()
@@ -154,9 +178,12 @@ async def test_cmd_mtlap_send_recommend(mock_session, mock_message, mock_state):
          patch("routers.mtlap.stellar_check_account", return_value=mock_account, new_callable=AsyncMock), \
          patch("routers.mtlap.stellar_get_user_account", new_callable=AsyncMock), \
          patch("routers.mtlap.cmd_gen_data_xdr", return_value="XDR", new_callable=AsyncMock), \
-         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.mtlap.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.mtlap.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
 
-        await cmd_mtlap_send_recommend(mock_message, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_mtlap_send_recommend(mock_message, mock_state, mock_session, app_context)
         
         mock_state.update_data.assert_called_with(xdr="XDR")
         mock_send.assert_called_once()
@@ -166,7 +193,8 @@ async def test_cmd_mtlap_send_recommend(mock_session, mock_message, mock_state):
 @pytest.mark.asyncio
 async def test_finish_back_bsn(mock_session, mock_callback, mock_state):
     with patch("routers.bsn.cmd_show_balance", new_callable=AsyncMock) as mock_show:
-        await finish_back_bsn(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await finish_back_bsn(mock_callback, mock_state, mock_session, app_context)
         
         mock_state.set_state.assert_called_with(None)
         mock_state.update_data.assert_called_with(tags=None)
