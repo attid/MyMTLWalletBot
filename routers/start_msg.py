@@ -17,6 +17,7 @@ from infrastructure.utils.common_utils import get_user_id
 from other.global_data import global_data
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
+from infrastructure.services.app_context import AppContext
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from services.ton_service import TonService
@@ -91,7 +92,7 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext) -> t
 
 
 async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
-                           refresh_callback: types.CallbackQuery = None):
+                           refresh_callback: types.CallbackQuery = None, app_context: AppContext = None, **kwargs):
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(user_id)
     # new user ?
@@ -206,19 +207,22 @@ USDT: {float2str(usdt_balance, True)}
 
 async def cmd_info_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int],
                            msg: str, send_file=None, resend_transaction=None, operation_id: str = None,
-                           public_key: str = None, wallet_id: int = None):
+                           public_key: str = None, wallet_id: int = None, app_context: AppContext = None):
     user_id = get_user_id(user_id)
+    
+    bot = app_context.bot if app_context else global_data.bot
+    dispatcher = app_context.dispatcher if app_context else global_data.dispatcher
 
     if send_file:
         photo = types.FSInputFile(send_file)
         add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg'),
                                                   callback_data="ManageAssetsMenu")]
-        await global_data.bot.send_photo(user_id, photo=photo, caption=msg,
+        await bot.send_photo(user_id, photo=photo, caption=msg,
                                          reply_markup=get_kb_return(user_id, add_buttons))
-        fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)
-        data = await global_data.dispatcher.storage.get_data(key=fsm_storage_key)
+        fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
+        data = await dispatcher.storage.get_data(key=fsm_storage_key)
         with suppress(TelegramBadRequest):
-            await global_data.bot.delete_message(user_id, data.get('last_message_id', 0))
+            await bot.delete_message(user_id, data.get('last_message_id', 0))
         await clear_last_message_id(user_id)
 
     elif resend_transaction:

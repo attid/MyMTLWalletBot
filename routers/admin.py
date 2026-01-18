@@ -3,7 +3,7 @@ import os
 from contextlib import suppress
 from datetime import datetime, timedelta
 
-from aiogram import Router, types, F
+from aiogram import Router, types, Bot, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 from db.models import MyMtlWalletBotUsers, MyMtlWalletBot, MyMtlWalletBotTransactions, MyMtlWalletBotCheque, \
     MyMtlWalletBotLog
 from other.config_reader import config, horizont_urls
-from other.global_data import global_data
+# from other.global_data import global_data
 from other.stellar_tools import async_stellar_check_fee
+from infrastructure.services.app_context import AppContext
 
 
 class ExitState(StatesGroup):
@@ -112,9 +113,9 @@ async def cmd_horizon_rw(message: types.Message, state: FSMContext, session: Ses
         await message.reply(f"Horizon url: {config.horizon_url_rw}")
 
 
-async def cmd_send_file(message: types.Message, filename):
+async def cmd_send_file(bot: Bot, message: types.Message, filename):
     if os.path.isfile(filename):
-        await global_data.bot.send_document(message.chat.id, types.FSInputFile(filename))
+        await bot.send_document(message.chat.id, types.FSInputFile(filename))
 
 
 async def cmd_delete_file(filename):
@@ -123,16 +124,16 @@ async def cmd_delete_file(filename):
 
 
 @router.message(Command(commands=["log"]))
-async def cmd_log(message: types.Message):
+async def cmd_log(message: types.Message, app_context: AppContext):
     if message.from_user.username == "itolstov":
-        await cmd_send_file(message, 'mmwb.log')
-        await cmd_send_file(message, 'mmwb_check_transaction.log')
+        await cmd_send_file(app_context.bot, message, 'mmwb.log')
+        await cmd_send_file(app_context.bot, message, 'mmwb_check_transaction.log')
 
 
 @router.message(Command(commands=["err"]))
-async def cmd_err(message: types.Message):
+async def cmd_err(message: types.Message, app_context: AppContext):
     if message.from_user.username == "itolstov":
-        await cmd_send_file(message, 'MyMTLWallet_bot.err')
+        await cmd_send_file(app_context.bot, message, 'MyMTLWallet_bot.err')
 
 
 @router.message(Command(commands=["clear"]))
@@ -295,11 +296,11 @@ async def cmd_help(message: types.Message):
 
 
 @router.message(Command(commands=["test"]))
-async def cmd_test(message: types.Message):
+async def cmd_test(message: types.Message, app_context: AppContext):
     if message.from_user.username == "itolstov":
         with suppress(TelegramBadRequest):
-            chat = await global_data.bot.get_chat(215155653)
+            chat = await app_context.bot.get_chat(215155653)
             await message.answer(chat.json())
         with suppress(TelegramBadRequest):
-            chat = await global_data.bot.get_chat(5687567734)
+            chat = await app_context.bot.get_chat(5687567734)
             await message.answer(chat.json())

@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
 from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state
-from other.global_data import global_data
+# from other.global_data import global_data
 from other.lang_tools import change_user_lang
 from other.stellar_tools import stellar_get_balance_str
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.services.localization_service import LocalizationService
 
 
 class LangCallbackData(CallbackData, prefix="lang_"):
@@ -22,12 +23,12 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-async def cmd_language(session: Session, chat_id: int):
+async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService):
     buttons = []
 
-    for lang in global_data.lang_dict:
+    for lang in l10n.lang_dict:
         buttons.append([
-            types.InlineKeyboardButton(text=global_data.lang_dict[lang].get('1_lang', 'lang name error'),
+            types.InlineKeyboardButton(text=l10n.lang_dict[lang].get('1_lang', 'lang name error'),
                                        callback_data=LangCallbackData(action=lang).pack())
         ])
 
@@ -38,13 +39,13 @@ async def cmd_language(session: Session, chat_id: int):
 
 
 @router.callback_query(F.data == "ChangeLang")
-async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await cmd_language(session, callback.from_user.id)
+async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session, l10n: LocalizationService):
+    await cmd_language(session, callback.from_user.id, l10n)
 
 
 @router.callback_query(LangCallbackData.filter())
 async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallbackData, state: FSMContext,
-                         session: Session):
+                         session: Session, l10n: LocalizationService):
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
     change_user_lang(session, callback.from_user.id, lang)

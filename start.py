@@ -37,9 +37,24 @@ from infrastructure.scheduler.job_scheduler import scheduler_jobs
 # https://surik00.gitbooks.io/aiogram-lessons/content/chapter3.html
 # https://mastergroosha.github.io/aiogram-3-guide/buttons/
 
+from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService
+from middleware.app_context import AppContextMiddleware
+from middleware.localization import LocalizationMiddleware
+
 @logger.catch
-async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker):
+async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker, app_context: AppContext, localization_service: LocalizationService):
     bot.session.middleware(AiogramSulgukMiddleware())
+    
+    # DI Middlewares
+    dp.message.middleware(AppContextMiddleware(app_context))
+    dp.callback_query.middleware(AppContextMiddleware(app_context))
+    dp.inline_query.middleware(AppContextMiddleware(app_context))
+    
+    dp.message.middleware(LocalizationMiddleware(localization_service))
+    dp.callback_query.middleware(LocalizationMiddleware(localization_service))
+    dp.inline_query.middleware(LocalizationMiddleware(localization_service))
+
     dp.callback_query.middleware(LogButtonClickCallbackMiddleware())
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool))
     dp.message.middleware(DbSessionMiddleware(db_pool))
@@ -130,16 +145,19 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=global_data.admin_id, text='Bot started')
     # fest.fest_menu = await gs_update_fest_menu()
+    
+    app_context: AppContext = dispatcher["app_context"]
+    
     if config.test_mode:
         global_data.task_list = [
-            # asyncio.create_task(cheque_worker(global_data.db_pool)),
-            # asyncio.create_task(log_worker(global_data.db_pool)),
+            # asyncio.create_task(cheque_worker(app_context)),
+            # asyncio.create_task(log_worker(app_context)),
             # asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
         ]
     else:
         global_data.task_list = [
-            asyncio.create_task(cheque_worker(global_data.db_pool)),
-            asyncio.create_task(log_worker(global_data.db_pool)),
+            asyncio.create_task(cheque_worker(app_context)),
+            asyncio.create_task(log_worker(app_context)),
             asyncio.create_task(events_worker(global_data.db_pool, dp=dispatcher)),
             asyncio.create_task(usdt_worker(bot,global_data.db_pool))
         ]
@@ -183,8 +201,34 @@ async def main():
     global_data.bot = bot
     global_data.dispatcher = dp
     global_data.db_pool = db_pool
+    
+    # Create Queues
+    cheque_queue = asyncio.Queue()
+    log_queue = asyncio.Queue()
+    
+    # Also assign to global_data for backward compatibility
+    global_data.cheque_queue = cheque_queue
+    global_data.log_queue = log_queue
+    
+    # Initialize Services
+    from infrastructure.services.app_context import AppContext
+    from infrastructure.services.localization_service import LocalizationService
+    
+    app_context = AppContext(
+        bot=bot,
+        db_pool=db_pool,
+        admin_id=global_data.admin_id,
+        cheque_queue=cheque_queue,
+        log_queue=log_queue,
+        dispatcher=dp
+    )
+    
+    localization_service = LocalizationService(db_pool)
+    await localization_service.load_languages(f"{config.start_path}/langs/")
+    
+    dp["app_context"] = app_context
 
-    await bot_add_routers(bot, dp, db_pool)
+    await bot_add_routers(bot, dp, db_pool, app_context, localization_service)
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

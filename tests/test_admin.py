@@ -100,20 +100,20 @@ async def test_cmd_log_err_clear():
     message.from_user.username = "itolstov"
     message.chat.id = 123
     
-    with patch("routers.admin.global_data") as mock_gd, \
-         patch("routers.admin.os.path.isfile", return_value=True), \
+    app_context = MagicMock()
+    app_context.bot.send_document = AsyncMock()
+    
+    with patch("routers.admin.os.path.isfile", return_value=True), \
          patch("routers.admin.os.remove") as mock_remove:
              
-        mock_gd.bot.send_document = AsyncMock()
-        
         # Test /log
-        await cmd_log(message)
-        assert mock_gd.bot.send_document.call_count >= 1
+        await cmd_log(message, app_context)
+        assert app_context.bot.send_document.call_count >= 1
         
         # Test /err
-        mock_gd.bot.send_document.reset_mock()
-        await cmd_err(message)
-        assert mock_gd.bot.send_document.call_count >= 1
+        app_context.bot.send_document.reset_mock()
+        await cmd_err(message, app_context)
+        assert app_context.bot.send_document.call_count >= 1
         
         # Test /clear
         await cmd_clear(message)
@@ -213,7 +213,8 @@ async def test_cmd_test():
     chat_mock = MagicMock()
     chat_mock.json.return_value = "{}"
     
-    with patch("routers.admin.global_data") as mock_gd:
-        mock_gd.bot.get_chat = AsyncMock(return_value=chat_mock)
-        await cmd_test(message)
-        assert message.answer.call_count == 2
+    app_context = MagicMock()
+    app_context.bot.get_chat = AsyncMock(return_value=chat_mock)
+    
+    await cmd_test(message, app_context)
+    assert message.answer.call_count == 2

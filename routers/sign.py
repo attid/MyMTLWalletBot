@@ -10,6 +10,10 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from sulguk import SULGUK_PARSE_MODE
+import inspect
+
+from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService
 
 
 from other.mytypes import MyResponse
@@ -45,14 +49,14 @@ kb_cash = {}
 
 
 @router.callback_query(F.data == "Yes_send_xdr")
-async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.set_state(PinState.sign_and_send)
 
     await cmd_ask_pin(session, callback.from_user.id, state)
     await callback.answer()
 
 
-async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None):
+async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None, app_context: AppContext = None):
     data = await state.get_data()
     user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
     simple_account = user_account[:4] + '..' + user_account[-4:]
@@ -135,7 +139,7 @@ def get_kb_pin(data: dict) -> types.InlineKeyboardMarkup:
 
 
 @router.callback_query(PinCallbackData.filter())
-async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, state: FSMContext, session: Session):
+async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, state: FSMContext, session: Session, app_context: AppContext):
     answer = callback_data.action
     user_id = query.from_user.id
     data = await state.get_data()
@@ -150,7 +154,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
                 stellar_get_user_keypair(session, user_id, pin)  # test pin
-                await sign_xdr(session, state, user_id)
+                await sign_xdr(session, state, user_id, app_context)
             except:
                 pass
 
@@ -164,7 +168,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         if current_state == PinState.set_pin:  # ask for save need pin2
             await state.update_data(pin2=pin, pin='')
             await state.set_state(PinState.set_pin2)
-            await cmd_ask_pin(session, user_id, state, my_gettext(user_id, "resend_password"))
+            await cmd_ask_pin(session, user_id, state, my_gettext(user_id, "resend_password"), app_context=app_context)
         if current_state == PinState.set_pin2:  # ask pin2 for save
             pin2 = data.get('pin2', '')
             # public_key = data.get('public_key', '')
@@ -181,7 +185,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
                 stellar_get_user_keypair(session, user_id, pin)  # test pin
-                await sign_xdr(session, state, user_id)
+                await sign_xdr(session, state, user_id, app_context)
             except:
                 await query.answer(my_gettext(user_id, "bad_password"), show_alert=True)
                 return True
@@ -189,20 +193,20 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
 
 
 @router.message(StateFilter(PinState.sign, PinState.sign_and_send))
-async def cmd_password_from_pin(message: types.Message, state: FSMContext, session: Session):
+async def cmd_password_from_pin(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     pin = message.text.upper()
     user_id = message.from_user.id
     await state.update_data(pin=pin)
     await message.delete()
-    await cmd_ask_pin(session, user_id, state)
+    await cmd_ask_pin(session, user_id, state, app_context=app_context)
     try:
         stellar_get_user_keypair(session, user_id, pin)  # test pin
-        await sign_xdr(session, state, user_id)
+        await sign_xdr(session, state, user_id, app_context)
     except:
         pass
 
 
-async def sign_xdr(session: Session, state, user_id):
+async def sign_xdr(session: Session, state, user_id, app_context: AppContext = None):
     data = await state.get_data()
     current_state = await state.get_state()
     pin = data.get('pin', '')
@@ -217,7 +221,13 @@ async def sign_xdr(session: Session, state, user_id):
         if user_id > 0:
             if fsm_func:
                 fsm_func = jsonpickle.loads(fsm_func)
-                await fsm_func(session, user_id, state)
+                # Safely pass app_context if supported
+                kwargs = {}
+                sig = inspect.signature(fsm_func)
+                if 'app_context' in sig.parameters or any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+                    kwargs['app_context'] = app_context
+                
+                await fsm_func(session, user_id, state, **kwargs)
             else:
                 xdr = await stellar_user_sign(session, xdr, user_id, str(pin))
                 await state.set_state(None)
@@ -248,12 +258,20 @@ async def sign_xdr(session: Session, state, user_id):
 
                     if fsm_after_send:
                         fsm_after_send = jsonpickle.loads(fsm_after_send)
-                        await fsm_after_send(session, user_id, state)
+                        # Safely pass app_context if supported
+                        kwargs = {}
+                        sig = inspect.signature(fsm_after_send)
+                        if 'app_context' in sig.parameters or any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+                            kwargs['app_context'] = app_context
+
+                        await fsm_after_send(session, user_id, state, **kwargs)
                 if current_state == PinState.sign:
                     await cmd_show_sign(session, user_id, state,
                                         my_gettext(user_id, "your_xdr_sign", (xdr,)),
                                         use_send=True)
-                global_data.log_queue.put_nowait(LogQuery(
+                
+                log_queue = app_context.log_queue if app_context else global_data.log_queue
+                log_queue.put_nowait(LogQuery(
                     user_id=user_id,
                     log_operation='sign',
                     log_operation_info=data.get('operation')
@@ -295,7 +313,7 @@ def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
 
 
 @router.callback_query(F.data == "Sign")
-async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await cmd_show_sign(session, callback.from_user.id, state, my_gettext(callback, 'send_xdr'))
     await state.set_state(StateSign.sending_xdr)
     await state.update_data(part_xdr='')
@@ -303,12 +321,12 @@ async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Se
 
 
 @router.message(StateSign.sending_xdr)
-async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Session):
-    await cmd_check_xdr(session, message.text, message.from_user.id, state)
+async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+    await cmd_check_xdr(session, message.text, message.from_user.id, state, app_context)
     await message.delete()
 
 
-async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext):
+async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext, app_context: AppContext = None):
     try:
         data = await state.get_data()
         part_xdr = data.get('part_xdr')
@@ -338,7 +356,7 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
             if check_xdr.find('eurmtl.me/sign_tools') > -1:
                 await state.update_data(tools=check_xdr, operation='sign_tools')
             await state.set_state(PinState.sign)
-            await cmd_ask_pin(session, user_id, state)
+            await cmd_ask_pin(session, user_id, state, app_context=app_context)
         else:
             raise Exception('Bad xdr')
     except Exception as ex:
@@ -348,7 +366,7 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
 
 @router.callback_query(F.data == "SendTr")
 @router.callback_query(F.data == "SendTools")
-async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     callback_url = data.get('callback_url')
     xdr = data.get('xdr')
@@ -380,7 +398,12 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
             elif wallet_connect:
                 try:
                     wallet_connect_func = jsonpickle.loads(wallet_connect)
-                    await wallet_connect_func(session, user_id, state)
+                    # Safely pass app_context if supported
+                    kwargs = {}
+                    sig = inspect.signature(wallet_connect_func)
+                    if 'app_context' in sig.parameters or any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+                        kwargs['app_context'] = app_context
+                    await wallet_connect_func(session, user_id, state, **kwargs)
 
                 except Exception as ex:
                     logger.info(['cmd_show_send_tr', callback, ex])
@@ -450,15 +473,15 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
 
 
 @router.message(PinState.ask_password)
-async def cmd_password(message: types.Message, state: FSMContext, session: Session):
+async def cmd_password(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(pin=message.text)
     await message.delete()
     await state.set_state(PinState.sign_and_send)
-    await sign_xdr(session, state, message.from_user.id)
+    await sign_xdr(session, state, message.from_user.id, app_context)
 
 
 @router.message(PinState.ask_password_set)
-async def cmd_password_set(message: types.Message, state: FSMContext, session: Session):
+async def cmd_password_set(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(pin=message.text)
     await state.set_state(PinState.ask_password_set2)
     await message.delete()
@@ -467,7 +490,7 @@ async def cmd_password_set(message: types.Message, state: FSMContext, session: S
 
 
 @router.message(PinState.ask_password_set2)
-async def cmd_password_set2(message: types.Message, state: FSMContext, session: Session):
+async def cmd_password_set2(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     user_id = message.from_user.id
     pin = data.get('pin', '')
@@ -487,7 +510,7 @@ async def cmd_password_set2(message: types.Message, state: FSMContext, session: 
 
 
 @router.callback_query(F.data == "ReSend")
-async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     xdr = data.get('xdr')
     user_id = callback.from_user.id
@@ -518,7 +541,7 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: 
 
 
 @router.callback_query(F.data == "Decode")
-async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     xdr = data.get('xdr')
 

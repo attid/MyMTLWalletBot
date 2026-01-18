@@ -70,7 +70,8 @@ async def test_cmd_tools_donate__no_donates(mock_session, mock_callback, mock_st
 @pytest.mark.asyncio
 async def test_cmd_yes_send(mock_session, mock_callback, mock_state):
     with patch("routers.sign.cmd_ask_pin", new_callable=AsyncMock) as mock_ask:
-        await cmd_yes_send(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        await cmd_yes_send(mock_callback, mock_state, mock_session, app_context)
         mock_state.set_state.assert_called_with(PinState.sign_and_send)
         mock_ask.assert_called_once()
 
@@ -80,7 +81,8 @@ async def test_cq_pin_digits(mock_session, mock_callback, mock_state):
     callback_data = PinCallbackData(action="3")
     
     with patch("routers.sign.cmd_ask_pin", new_callable=AsyncMock) as mock_ask:
-        await cq_pin(mock_callback, callback_data, mock_state, mock_session)
+        app_context = MagicMock()
+        await cq_pin(mock_callback, callback_data, mock_state, mock_session, app_context)
         
         mock_state.update_data.assert_called_with(pin='123')
         mock_ask.assert_called_once()

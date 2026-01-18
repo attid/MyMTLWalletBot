@@ -13,7 +13,9 @@ from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUser
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from core.use_cases.user.register import RegisterUser
 from core.use_cases.user.update_profile import UpdateUserProfile
-from core.use_cases.user.manage_user import AddDonation 
+from core.use_cases.user.manage_user import AddDonation
+from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService 
 # from db.requests import db_add_donate, db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr, get_kb_limits
 from middleware.throttling import rate_limit
@@ -54,7 +56,8 @@ async def cmd_start_sign(message: types.Message, state: FSMContext, session: Ses
 
 # @router.message(Command(commands=["start"]))
 @router.message(F.text.lower() == '/start', F.chat.type == 'private')
-async def cmd_start(message: types.Message, state: FSMContext, session: Session, bot: Bot):
+async def cmd_start(message: types.Message, state: FSMContext, session: Session, bot: Bot,
+                    app_context: AppContext, l10n: LocalizationService):
     # logger.info([message.from_user.id, ' cmd_start'])
     await clear_state(state)
 
@@ -100,7 +103,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         )
         
         # db_add_user_if_not_exists(session, message.from_user.id, message.from_user.username)
-        await cmd_language(session, message.from_user.id)
+        await cmd_language(session, message.from_user.id, l10n)
     else:
         await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         await cmd_show_balance(session, message.from_user.id, state)
@@ -142,7 +145,7 @@ async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, ses
 
 
 @router.message(Command(commands=["about"]))
-async def cmd_about(message: types.Message, session: Session):
+async def cmd_about(message: types.Message, session: Session, app_context: AppContext):
     msg = f'Sorry not ready\n' \
           f'Тут будет что-то о кошельке, переводчиках и добрых людях\n' \
           f'стать добрым - /donate'
@@ -198,15 +201,16 @@ async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: S
 
 
 @router.message(Command(commands=["donate"]))
-async def cmd_donate_message(message: types.Message, state: FSMContext, session: Session):
+async def cmd_donate_message(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
     await cmd_donate(session, message.from_user.id, state)
 
 
-async def cmd_after_donate(session: Session, user_id: int, state: FSMContext):
+async def cmd_after_donate(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
     data = await state.get_data()
     donate_sum = data.get('donate_sum')
-    await send_message(session, user_id=global_data.admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
+    admin_id = app_context.admin_id if app_context else global_data.admin_id
+    await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id))
     
     user_repo = SqlAlchemyUserRepository(session)

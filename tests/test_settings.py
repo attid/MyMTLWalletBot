@@ -41,13 +41,17 @@ def mock_message():
 @pytest.mark.asyncio
 async def test_cmd_language(mock_session, mock_callback):
     with patch("routers.common_setting.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
         mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
+        # mock_gd.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}} 
         
-        await cmd_language(mock_session, 123)
+        l10n = MagicMock()
+        l10n.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
+
+        await cmd_language(mock_session, 123, l10n)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
@@ -62,7 +66,10 @@ async def test_callbacks_lang(mock_session, mock_callback, mock_state):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}, 'ru': {}}
         
-        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session)
+        l10n = MagicMock()
+        l10n.lang_dict = {'en': {}, 'ru': {}}
+
+        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session, l10n)
         
         mock_change.assert_called_once_with(mock_session, 123, "ru")
         mock_state.update_data.assert_called_with(user_lang="ru")
