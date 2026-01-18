@@ -53,74 +53,7 @@ usdm_asset = Asset("USDM", 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSU
 
 
 
-async def parse_pay_stellar_uri(uri_data):
-    """
-    Parse a Stellar payment URI (web+stellar:pay) and extract parameters.
-    
-    Args:
-        uri_data (str): The Stellar payment URI string
-        
-    Returns:
-        dict: Dictionary containing parsed payment parameters
-    """
-    parsed = urlparse(uri_data)
-    query_parameters = parse_qs(parsed.query)
 
-    # Extract required parameters
-    destination = query_parameters.get("destination")[0]
-    amount = query_parameters.get("amount")[0]
-    asset_code = query_parameters.get("asset_code")[0]
-    asset_issuer = query_parameters.get("asset_issuer")[0]
-
-    # Extract optional memo
-    memo = query_parameters.get("memo")
-    if memo:
-        memo = memo[0]
-
-    return {
-        'destination': destination,
-        'amount': amount,
-        'asset_code': asset_code,
-        'asset_issuer': asset_issuer,
-        'memo': memo
-    }
-
-
-def get_good_asset_list() -> List[Balance]:
-    return [
-        Balance.from_dict(
-            {"asset_code": 'AUMTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'EURMTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'BTCMTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'SATSMTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'LABR', "asset_issuer": 'GA7I6SGUHQ26ARNCD376WXV5WSE7VJRX6OEFNFCEGRLFGZWQIV73LABR'}),
-        Balance.from_dict(
-            {"asset_code": 'MTL', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLRECT', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLand', "asset_issuer": 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLCITY', "asset_issuer": 'GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLDVL', "asset_issuer": 'GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA'}),
-        Balance.from_dict(
-            {"asset_code": 'FCM', "asset_issuer": 'GDIE253MSIYMFUS3VHRGEQPIBG7VAIPSMATWLTBF73UPOLBUH5RV2FCM'}),
-        Balance.from_dict(
-            {"asset_code": 'USDC', "asset_issuer": 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'}),
-        Balance.from_dict(
-            {"asset_code": 'MMWB', "asset_issuer": 'GBSNN2SPYZB2A5RPDTO3BLX4TP5KNYI7UMUABUS3TYWWEWAAM2D7CMMW'}),
-        Balance.from_dict(
-            {"asset_code": 'USDM', "asset_issuer": 'GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLFEST', "asset_issuer": 'GCGWAPG6PKBMHEEAHRLTWHFCAGZTQZDOXDMWBUBCXHLQBSBNWFRYFEST'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLAP', "asset_issuer": 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA'}),
-    ]
 
 
 def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
@@ -278,13 +211,6 @@ async def stellar_user_sign(session: Session, xdr: str, user_id: int, user_passw
     user_key_pair = await stellar_get_user_keypair(session, user_id, user_password)
     return stellar_sign(xdr, user_key_pair.secret)
 
-
-def is_base64(s):
-    try:
-        if base64.b64encode(base64.b64decode(s)) == s.encode():
-            return True
-    except Exception:
-        return False
 
 
 async def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_password: str) -> str:
@@ -829,16 +755,6 @@ async def stellar_check_receive_asset(send_asset: Asset, send_sum: str, receive_
 #               (user_id, xdr))
 
 
-def decode_data_value(data_value: str):
-    try:
-        base64_message = data_value
-        base64_bytes = base64_message.encode('utf-8')
-        message_bytes = base64.b64decode(base64_bytes)
-        message = message_bytes.decode('utf-8')
-        return message
-    except Exception as ex:
-        logger.info(f"decode_data_value error: {ex}")
-        return 'decode error'
 
 
 async def cmd_gen_data_xdr(from_account: str, name: str, value):
@@ -869,21 +785,6 @@ def gen_new(last_name):
 #    print(asyncio.run(stellar_delete_account(stellar_get_master(session), Keypair.from_secret(''))))
 
 
-def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset):
-    sale_asset = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
-    buy_asset = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
-    # market_link = f'https://stellar.expert/explorer/public/market/{sale_asset}/{buy_asset}'
-    market_link = f'https://eurmtl.me/cup/orderbook/{sale_asset}/{buy_asset}'
-    market_link = html_decoration.link(value='expert', link=market_link)
-    return market_link
-
-
-def my_float(s) -> float:
-    if isinstance(s, float):
-        return s
-    if s == 'unlimited':
-        return float(9999999999)
-    return float(str(s).replace(',', '.'))
 
 
 # async def stellar_update_credit(credit_list):
@@ -912,80 +813,11 @@ def my_float(s) -> float:
 #     logger.info(resp)
 
 
-def my_round(x: float, base=2):
-    return int(x * 10 ** base) / 10 ** base
 
 
-def float2str(f, short: bool = False) -> str:
-    if isinstance(f, str):
-        if f == 'unlimited':
-            return f
-        f = float(f)
-    if short and f > 0.01:
-        s = "%.2f" % f
-    else:
-        s = "%.8f" % f
-        s = s[:-1]
-    while len(s) > 1 and s[-1] in ('0', '.'):
-        l = s[-1]
-        s = s[0:-1]
-        if l == '.':
-            break
-    return s
 
 
-def find_stellar_addresses(text):
-    # Паттерн для обычных Stellar публичных ключей (начинаются с 'G' и содержат 56 символов)
-    stellar_public_key_pattern = r'G[A-Za-z0-9]{55}'
 
-    # Паттерн для Muxed адресов (начинаются с 'M' и содержат 69 символов)
-    muxed_address_pattern = r'M[A-Za-z0-9]{68}'
-
-    # Объединяем паттерны
-    combined_pattern = f'({stellar_public_key_pattern}|{muxed_address_pattern})'
-
-    # Находим все совпадения
-    matches = re.findall(combined_pattern, text)
-
-    # Проверяем каждое совпадение на валидность
-    valid_addresses = []
-    for match in matches:
-        if is_valid_stellar_address(match):
-            valid_addresses.append(match)
-
-    return valid_addresses
-
-
-def find_stellar_federation_address(text):
-    # Stellar федеральные адреса имеют формат 'username*domain.com'
-    stellar_federation_address_pattern = r'[a-z0-9]+[\._]?[a-z0-9]+[*][a-z0-9\-]+[\.][a-z0-9\.]+'
-    match = re.search(stellar_federation_address_pattern, text)
-    return match.group(0) if match else None
-
-
-import re
-
-
-def extract_url(msg, surl='eurmtl.me'):
-    try:
-        if surl:
-            pattern = rf"https?://{re.escape(surl)}[^\s]+"
-        else:
-            pattern = r"https?://[^\s]+"
-
-        search_result = re.search(pattern, msg)
-
-        return search_result.group(0) if search_result else None
-    except Exception as e:
-        print(f"Error extracting URL: {e}")
-        return None
-
-
-def xdr_to_uri(xdr: str) -> str:
-    transaction_envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    t = stellar_uri.TransactionStellarUri(transaction_envelope=transaction_envelope)
-    # t.sign(config_reader.config.signing_key.get_secret_value())
-    return t.to_uri()
 
 
 async def have_free_xlm(session, user_id: int, state=None):
@@ -1072,30 +904,6 @@ async def stellar_get_multi_sign_xdr(public_key) -> str:
         return transaction.build().to_xdr()
 
 
-def cut_text_to_28_bytes(text: str) -> str:
-    encoded_text = text.encode("utf-8")
-    if len(encoded_text) <= 28:
-        return text
-
-    trimmed_text = encoded_text[:28]
-
-    try:
-        return trimmed_text.decode("utf-8")
-    except UnicodeDecodeError:
-        return trimmed_text[:27].decode("utf-8")
-
-
-def is_valid_stellar_address(address):
-    try:
-        if address.startswith('G'):
-            StrKey.decode_ed25519_public_key(address)
-        elif address.startswith('M'):
-            MuxedAccount.from_account(address)
-        else:
-            return False
-        return True
-    except Exception:
-        return False
 
 
 async def test():
