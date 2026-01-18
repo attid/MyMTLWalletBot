@@ -22,7 +22,8 @@ from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import (my_gettext, send_message, cmd_show_sign, long_line)
 from other.web_tools import get_web_request, get_web_decoded_xdr
 from keyboards.common_keyboards import get_kb_return, get_return_button
-from other.global_data import global_data, LogQuery, StateSign
+from other.global_data import global_data, StateSign
+from infrastructure.log_models import LogQuery
 from other.stellar_tools import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
                                  async_stellar_send, stellar_get_user_account, stellar_get_user_keypair,
                                  stellar_is_free_wallet)
