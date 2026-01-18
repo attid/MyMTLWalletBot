@@ -26,7 +26,10 @@ async def test_cmd_add_new(mock_session):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
-        await cmd_add_new(callback, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await cmd_add_new(callback, mock_session, app_context=app_context)
         
         mock_send_message.assert_called_once()
         assert mock_send_message.call_args[1].get('reply_markup') is not None
@@ -61,7 +64,10 @@ async def test_cmd_sending_private_success(mock_session):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
-        await cmd_sending_private(message, state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await cmd_sending_private(message, state, mock_session, app_context=app_context)
         
         mock_add_wallet_instance.execute.assert_called_once_with(
             user_id=123,
@@ -129,7 +135,10 @@ async def test_add_wallet_new_key_queue(mock_session):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
-        await cq_add_new_key(callback, mock_session, state)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await cq_add_new_key(callback, mock_session, state, app_context=app_context)
         
         # We expect 3 calls: queue wait, try send, send good
         assert mock_info.call_count >= 3

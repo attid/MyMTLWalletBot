@@ -49,7 +49,10 @@ async def test_cmd_tools(mock_session, mock_callback, mock_state):
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
-        await cmd_tools(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await cmd_tools(mock_callback, mock_state, mock_session, app_context=app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio
@@ -62,7 +65,10 @@ async def test_cmd_tools_donate__no_donates(mock_session, mock_callback, mock_st
         mock_gd.user_lang_dic = {123: 'en'}
         mock_gd.lang_dict = {'en': {}}
         
-        await cmd_tools_donate(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await cmd_tools_donate(mock_callback, mock_state, mock_session, app_context=app_context)
         mock_send.assert_called_once()
 
 # --- tests for routers/sign.py ---

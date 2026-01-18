@@ -2,6 +2,7 @@ import json
 from os import listdir
 from typing import Union
 from aiogram import types
+from infrastructure.services.app_context import AppContext
 from sqlalchemy.orm import Session
 
 from other.config_reader import start_path
@@ -44,13 +45,15 @@ def check_user_lang(session: Session, user_id: int):
         return None
 
 
-def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], text: str, param: tuple = ()) -> str:
+def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], text: str, param: tuple = (), app_context: AppContext = None) -> str:
     if isinstance(user_id, str):
         lang = user_id
     else:
         user_id = get_user_id(user_id)
 
-        if user_id in global_data.user_lang_dic:
+        if app_context and app_context.localization_service:
+            lang = app_context.localization_service.get_user_lang(user_id)
+        elif user_id in global_data.user_lang_dic:
             lang = global_data.user_lang_dic[user_id]
         else:
             with global_data.db_pool.get_session() as session:
@@ -62,7 +65,12 @@ def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], tex
                     lang = 'en'
             global_data.user_lang_dic[user_id] = lang
 
-    text: str = global_data.lang_dict[lang].get(text, global_data.lang_dict['en'].get(text, f'{text} 0_0'))
+    if app_context and app_context.localization_service:
+        text_str = app_context.localization_service.get_text(lang, text)
+    else:
+        text_str = global_data.lang_dict[lang].get(text, global_data.lang_dict['en'].get(text, f'{text} 0_0'))
+    
+    text = text_str
     # won't use format if will be error in lang file
     for par in param:
         text = text.replace('{}', str(par), 1)

@@ -123,7 +123,10 @@ async def test_hide_notification_callback(mock_session, mock_callback, mock_stat
         mock_op_repo = MockOpRepo.return_value
         mock_op_repo.get_by_id = AsyncMock(return_value=mock_op) # Use get_by_id
         
-        await hide_notification_callback(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await hide_notification_callback(mock_callback, mock_state, mock_session, app_context=app_context)
         
         mock_state.update_data.assert_called()
         mock_menu.assert_called_once()
@@ -152,7 +155,10 @@ async def test_save_filter_callback(mock_session, mock_callback, mock_state):
         mock_repo_instance.find_duplicate = AsyncMock(return_value=None)
         mock_repo_instance.create = AsyncMock()
 
-        await save_filter_callback(mock_callback, mock_state, mock_session)
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
+
+        await save_filter_callback(mock_callback, mock_state, mock_session, app_context=app_context)
         
         mock_repo_instance.create.assert_called_once()
         mock_state.clear.assert_called_once()

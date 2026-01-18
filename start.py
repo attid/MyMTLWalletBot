@@ -213,6 +213,9 @@ async def main():
     # Initialize Services
     from infrastructure.services.app_context import AppContext
     from infrastructure.services.localization_service import LocalizationService
+
+    localization_service = LocalizationService(db_pool)
+    await localization_service.load_languages(f"{config.start_path}/langs/")
     
     app_context = AppContext(
         bot=bot,
@@ -220,11 +223,9 @@ async def main():
         admin_id=global_data.admin_id,
         cheque_queue=cheque_queue,
         log_queue=log_queue,
+        localization_service=localization_service,
         dispatcher=dp
     )
-    
-    localization_service = LocalizationService(db_pool)
-    await localization_service.load_languages(f"{config.start_path}/langs/")
     
     dp["app_context"] = app_context
 

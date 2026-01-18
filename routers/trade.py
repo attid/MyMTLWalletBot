@@ -1,5 +1,7 @@
 import jsonpickle
 from typing import List
+
+from infrastructure.services.app_context import AppContext
 from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -46,20 +48,20 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "Market")
-async def cmd_market(callback: types.CallbackQuery, session: Session):
-    await send_message(session, callback.message.chat.id, my_gettext(callback, 'kb_market'),
-                       reply_markup=get_kb_market(callback.message.chat.id))
+async def cmd_market(callback: types.CallbackQuery, session: Session, app_context: AppContext):
+    await send_message(session, callback.message.chat.id, my_gettext(callback, 'kb_market', app_context=app_context),
+                       reply_markup=get_kb_market(callback.message.chat.id, app_context=app_context))
 
     await callback.answer()
 
 
-def get_kb_market(user_id: int) -> types.InlineKeyboardMarkup:
+def get_kb_market(user_id: int, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_new_order'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_new_order', app_context=app_context),
                                     callback_data="NewOrder")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_show_order'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_show_order', app_context=app_context),
                                     callback_data="ShowOrders")],
-        get_return_button(user_id)
+        get_return_button(user_id, app_context=app_context)
     ]
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -67,7 +69,7 @@ def get_kb_market(user_id: int) -> types.InlineKeyboardMarkup:
 
 
 @router.callback_query(F.data == "NewOrder")
-async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     repo = SqlAlchemyWalletRepository(session)
     service = StellarService(horizon_url=config.horizon_url)
     use_case = GetWalletBalance(repo, service)
@@ -76,10 +78,10 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
     # Check free XLM
     xlm = next((a for a in asset_list if a.asset_code == 'XLM'), None)
     if not xlm or float(xlm.balance) <= 0.5:
-        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
-    msg = my_gettext(callback, 'choose_token_sale')
+    msg = my_gettext(callback, 'choose_token_sale', app_context=app_context)
     
     wallet = await repo.get_default_wallet(callback.from_user.id)
     vis_str = wallet.assets_visibility if wallet else None
@@ -91,7 +93,7 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
                                                   callback_data=SaleAssetCallbackData(
                                                       answer=token.asset_code).pack()
                                                   )])
-    kb_tmp.append(get_return_button(callback))
+    kb_tmp.append(get_return_button(callback, app_context=app_context))
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
     await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
@@ -99,14 +101,14 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
 
 @router.callback_query(SaleAssetCallbackData.filter())
 async def cq_trade_choose_token_sell(callback: types.CallbackQuery, callback_data: SaleAssetCallbackData, state: FSMContext,
-                               session: Session):
+                               session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
     for asset in asset_list:
         if asset.asset_code == answer:
             if my_float(asset.balance) == 0.0:
-                await callback.answer(my_gettext(callback, "zero_sum"), show_alert=True)
+                await callback.answer(my_gettext(callback, "zero_sum", app_context=app_context), show_alert=True)
             else:
                 await state.update_data(send_asset_code=asset.asset_code,
                                         send_asset_issuer=asset.asset_issuer,
@@ -117,8 +119,8 @@ async def cq_trade_choose_token_sell(callback: types.CallbackQuery, callback_dat
                                                               callback_data=BuyAssetCallbackData(
                                                                   answer=token.asset_code).pack()
                                                               )])
-                kb_tmp.append(get_return_button(callback))
-                msg = my_gettext(callback, 'choose_token_swap2', (asset.asset_code,))
+                kb_tmp.append(get_return_button(callback, app_context=app_context))
+                msg = my_gettext(callback, 'choose_token_swap2', (asset.asset_code,), app_context=app_context)
                 await send_message(session, callback, msg,
                                    reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
 
@@ -127,7 +129,7 @@ async def cq_trade_choose_token_sell(callback: types.CallbackQuery, callback_dat
 
 @router.callback_query(BuyAssetCallbackData.filter())
 async def cq_trade_choose_token_buy(callback: types.CallbackQuery, callback_data: BuyAssetCallbackData, state: FSMContext,
-                               session: Session):
+                               session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -138,7 +140,8 @@ async def cq_trade_choose_token_buy(callback: types.CallbackQuery, callback_data
             msg = my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
                                                          data.get('send_asset_max_sum', 0.0),
                                                          asset.asset_code,
-                                                         market_link)
+                                                         market_link),
+                                                         app_context=app_context
                              )
             await state.update_data(receive_asset_code=asset.asset_code,
                                     receive_asset_issuer=asset.asset_issuer,
@@ -146,11 +149,11 @@ async def cq_trade_choose_token_buy(callback: types.CallbackQuery, callback_data
                                     msg=msg,
                                     market_link=market_link)
             await state.set_state(StateSaleToken.selling_sum)
-            await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+            await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
 
 
 @router.message(StateSaleToken.selling_sum)
-async def cmd_send_sale_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_sale_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
     except:
@@ -166,19 +169,20 @@ async def cmd_send_sale_sum(message: types.Message, state: FSMContext, session: 
                                                      send_sum,
                                                      data.get('send_asset_code'),
                                                      data.get('market_link')
-                                                     )
+                                                     ),
+                                                     app_context=app_context
                          )
         await state.update_data(msg=msg)
-        await send_message(session, message, msg, reply_markup=get_kb_return(message))
+        await send_message(session, message, msg, reply_markup=get_kb_return(message, app_context=app_context))
         await message.delete()
     else:
-        await send_message(session, message, my_gettext(message, 'bad_sum') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(message, app_context=app_context))
         await message.delete()
 
 
 @router.message(StateSaleToken.selling_receive_sum)
-async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session: Session):
+async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         receive_sum = my_float(message.text)
     except:
@@ -189,15 +193,15 @@ async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session:
         await state.update_data(receive_sum=receive_sum, msg=None)
         await state.set_state(None)
 
-        await cmd_xdr_order(session, message, state)
+        await cmd_xdr_order(session, message, state, app_context=app_context)
         await message.delete()
     else:
-        await send_message(session, message, my_gettext(message, 'bad_sum') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(message, app_context=app_context))
         await message.delete()
 
 
-async def cmd_xdr_order(session: Session, message, state: FSMContext):
+async def cmd_xdr_order(session: Session, message, state: FSMContext, app_context: AppContext = None):
     data = await state.get_data()
 
     send_sum = data.get('send_sum')
@@ -264,7 +268,7 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext):
         xdr = result.xdr
     else:
         logger.error(f"ManageOffer failed: {result.error_message}")
-        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message))
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message, app_context=app_context))
         return
 
     # if delete_order:
@@ -277,11 +281,11 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext):
     #                              str(send_sum), Asset(receive_asset, receive_asset_code), str(receive_sum), offer_id)
 
     if delete_order:
-        msg = my_gettext(message, 'delete_sale', (send_sum, send_asset, receive_sum, receive_asset))
+        msg = my_gettext(message, 'delete_sale', (send_sum, send_asset, receive_sum, receive_asset), app_context=app_context)
     else:
-        msg = my_gettext(message, 'confirm_sale', (send_sum, send_asset, receive_sum, receive_asset))
+        msg = my_gettext(message, 'confirm_sale', (send_sum, send_asset, receive_sum, receive_asset), app_context=app_context)
     await state.update_data(xdr=xdr, operation='trade', msg=None)
-    await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
+    await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
 
 
 # **************************************************************************
@@ -290,7 +294,7 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext):
 # edit
 
 @router.callback_query(F.data == "ShowOrders")
-async def cmd_show_orders(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_show_orders(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     service = StellarService(horizon_url=config.horizon_url)
@@ -307,14 +311,14 @@ async def cmd_show_orders(callback: types.CallbackQuery, state: FSMContext, sess
             callback_data=EditOrderCallbackData(
                 answer=offer.id).pack()
         )])
-    kb_tmp.append(get_return_button(callback))
+    kb_tmp.append(get_return_button(callback, app_context=app_context))
     await send_message(session, callback, 'Choose order',
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
 
 
 @router.callback_query(EditOrderCallbackData.filter())
 async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderCallbackData, state: FSMContext,
-                        session: Session):
+                        session: Session, app_context: AppContext):
     answer = callback_data.answer
     await state.update_data(edit_offer_id=answer)
 
@@ -328,27 +332,27 @@ async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderC
         msg = f"{float(offer.amount)} {offer.selling.asset_code} -> ({float(offer.price)}) " \
               f"-> {float(offer.amount) * float(offer.price)} {offer.buying.asset_code}"
 
-        await send_message(session, callback, msg, reply_markup=get_kb_edir_order(callback.from_user.id))
+        await send_message(session, callback, msg, reply_markup=get_kb_edir_order(callback.from_user.id, app_context=app_context))
 
     await callback.answer()
 
 
-def get_kb_edir_order(user_id: int) -> types.InlineKeyboardMarkup:
+def get_kb_edir_order(user_id: int, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_edit_sum'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_edit_sum', app_context=app_context),
                                     callback_data="EditOrderAmount")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_edit_price'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_edit_price', app_context=app_context),
                                     callback_data="EditOrderCost")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_delete'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_delete', app_context=app_context),
                                     callback_data="DeleteOrder")],
-        get_return_button(user_id)
+        get_return_button(user_id, app_context=app_context)
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
 
 @router.callback_query(F.data == "EditOrderAmount")
-async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     offers = jsonpickle.decode(data['offers'])
     offer_id = int(data.get('edit_offer_id', 0))
@@ -384,17 +388,19 @@ async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext
                                                                                    Asset(data.get('receive_asset_code'),
                                                                                          data.get(
                                                                                              'receive_asset_issuer')))
-                                                           ))
+                                                           ),
+                                                           app_context=app_context
+                                                           )
 
         await state.update_data(msg=msg)
-        await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+        await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
         await callback.answer()
     else:
         await callback.answer('EditOrder for amount not found =(')
 
 
 @router.message(StateSaleToken.editing_amount)
-async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
     except:
@@ -409,16 +415,16 @@ async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: 
 
         await state.set_state(None)
 
-        await cmd_xdr_order(session, message, state)
+        await cmd_xdr_order(session, message, state, app_context=app_context)
         await message.delete()
     else:
-        await send_message(session, message, my_gettext(message, 'bad_sum') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(message, app_context=app_context))
         await message.delete()
 
 
 @router.callback_query(F.data == "EditOrderCost")
-async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     offers = jsonpickle.decode(data['offers'])
     offer_id = int(data.get('edit_offer_id', 0))
@@ -447,17 +453,19 @@ async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext,
                                                                                         data.get('receive_asset_code'),
                                                                                         data.get(
                                                                                             'receive_asset_issuer')))
-                                                            ))
+                                                            ),
+                                                            app_context=app_context
+                                                            )
 
         await state.update_data(msg=msg)
-        await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+        await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
         await callback.answer()
     else:
         await callback.answer('EditOrder for amount not found =(')
 
 
 @router.message(StateSaleToken.editing_price)
-async def cmd_edit_sale_cost(message: types.Message, state: FSMContext, session: Session):
+async def cmd_edit_sale_cost(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         receive_sum = my_float(message.text)
     except:
@@ -469,16 +477,16 @@ async def cmd_edit_sale_cost(message: types.Message, state: FSMContext, session:
 
         await state.set_state(None)
 
-        await cmd_xdr_order(session, message, state)
+        await cmd_xdr_order(session, message, state, app_context=app_context)
         await message.delete()
     else:
-        await send_message(session, message, my_gettext(message, 'bad_sum') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(message, app_context=app_context))
         await message.delete()
 
 
 @router.callback_query(F.data == "DeleteOrder")
-async def cmd_delete_order(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_delete_order(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     offers = jsonpickle.decode(data['offers'])
     offer_id = int(data.get('edit_offer_id', 0))
@@ -497,7 +505,7 @@ async def cmd_delete_order(callback: types.CallbackQuery, state: FSMContext, ses
                                 receive_asset_issuer=offer.buying.asset_issuer,
                                 delete_order=True)
 
-        await cmd_xdr_order(session, callback, state)
+        await cmd_xdr_order(session, callback, state, app_context=app_context)
     else:
         await callback.answer('DeleteOrder not found =(')
     await callback.answer()

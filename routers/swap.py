@@ -1,4 +1,7 @@
-from typing import List
+from typing import List, Union
+
+from infrastructure.services.app_context import AppContext
+from sqlalchemy.orm import Session
 
 import jsonpickle
 from aiogram import Router, types, F
@@ -46,7 +49,8 @@ def build_swap_confirm_message(
     receive_asset,
     scenario="send",  # "send" или "receive"
     need_alert=False,
-    cancel_offers=False
+    cancel_offers=False,
+    app_context: AppContext = None
 ):
     """
     Builds swap confirmation message for both scenarios.
@@ -60,12 +64,13 @@ def build_swap_confirm_message(
     msg = my_gettext(
         obj,
         "confirm_swap",
-        (send_sum, send_asset, receive_sum, receive_asset)
+        (send_sum, send_asset, receive_sum, receive_asset),
+        app_context=app_context
     )
     if need_alert:
-        msg = my_gettext(obj, 'swap_alert') + msg
+        msg = my_gettext(obj, 'swap_alert', app_context=app_context) + msg
     if cancel_offers:
-        msg = msg + my_gettext(obj, 'confirm_cancel_offers', (send_asset,))
+        msg = msg + my_gettext(obj, 'confirm_cancel_offers', (send_asset,), app_context=app_context)
     return msg
 
 
@@ -79,8 +84,8 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "Swap")
-async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    msg = my_gettext(callback, 'choose_token_swap')
+async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    msg = my_gettext(callback, 'choose_token_swap', app_context=app_context)
     
     # Refactored to use GetWalletBalance Use Case
     repo = SqlAlchemyWalletRepository(session)
@@ -98,7 +103,7 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
                                                   callback_data=SwapAssetFromCallbackData(
                                                       answer=token.asset_code).pack()
                                                   )])
-    kb_tmp.append(get_return_button(callback))
+    kb_tmp.append(get_return_button(callback, app_context=app_context))
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
     await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
@@ -106,7 +111,7 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
 
 @router.callback_query(SwapAssetFromCallbackData.filter())
 async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data: SwapAssetFromCallbackData,
-                                    state: FSMContext, session: Session):
+                                    state: FSMContext, session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -114,7 +119,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
     for asset in asset_list:
         if asset.asset_code == answer:
             if my_float(asset.balance) == 0.0:
-                await callback.answer(my_gettext(callback, "zero_sum"), show_alert=True)
+                await callback.answer(my_gettext(callback, "zero_sum", app_context=app_context), show_alert=True)
             else:
 
                 # Get summ of tokens, blocked by Sell offers 
@@ -133,7 +138,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 await state.update_data(send_asset_code=asset.asset_code, send_asset_issuer=asset.asset_issuer,
                                         send_asset_max_sum=asset.balance, send_asset_blocked_sum=blocked_token_sum)
 
-                msg = my_gettext(callback, 'choose_token_swap2', (asset.asset_code,))
+                msg = my_gettext(callback, 'choose_token_swap2', (asset.asset_code,), app_context=app_context)
 
                 kb_tmp = []
                 asset_list2 = []
@@ -160,14 +165,14 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                                                               callback_data=SwapAssetForCallbackData(
                                                                   answer=receive_asset).pack()
                                                               )])
-                kb_tmp.append(get_return_button(callback))
+                kb_tmp.append(get_return_button(callback, app_context=app_context))
                 await send_message(session, callback, msg,
                                    reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
 
 
 @router.callback_query(SwapAssetForCallbackData.filter())
 async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data: SwapAssetForCallbackData,
-                                   state: FSMContext, session: Session):
+                                   state: FSMContext, session: Session, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -179,15 +184,15 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
                                     receive_asset_min_sum=asset.balance)
             data = await state.get_data()
 
-            msg = my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
-                                                         data.get('send_asset_max_sum', 0.0),
-                                                         data.get('receive_asset_code'),
-                                                         stellar_get_market_link(Asset(data.get("send_asset_code"),
-                                                                                       data.get("send_asset_issuer")),
-                                                                                 Asset(data.get('receive_asset_code'),
-                                                                                       data.get(
-                                                                                           'receive_asset_issuer')))
-                                                         ))
+            msg = my_gettext(callback, 'send_sum_swap', (
+                data.get('send_asset_code'),
+                data.get('send_asset_max_sum', 0.0),
+                data.get('receive_asset_code'),
+                stellar_get_market_link(
+                    Asset(data.get("send_asset_code"), data.get("send_asset_issuer")),
+                    Asset(data.get('receive_asset_code'), data.get('receive_asset_issuer'))
+                )
+            ), app_context=app_context)
 
             # If user has some assets that are blocked by offers, remind him\her about it.
             blocked_sum = data.get('send_asset_blocked_sum')
@@ -195,7 +200,8 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
                 msg += '\n\n' + my_gettext(
                     callback,
                     'swap_summ_blocked_by_offers',
-                    (blocked_sum, data.get('send_asset_code'))
+                    (blocked_sum, data.get('send_asset_code')),
+                    app_context=app_context
                 )
 
             # Change state and show message
@@ -204,13 +210,13 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
 
             # Use swap confirm keyboard with strict receive button
             from keyboards.common_keyboards import get_kb_swap_confirm
-            keyboard = get_kb_swap_confirm(callback.from_user.id, data)
+            keyboard = get_kb_swap_confirm(callback.from_user.id, data, app_context=app_context)
             await send_message(session, callback, msg, reply_markup=keyboard)
     await callback.answer()
 
 # Handle "Specify exact amount to receive" button
 @router.callback_query(StateSwapToken.swap_sum, F.data == "SwapStrictReceive")
-async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     """
     Switch FSM to strict receive state and ask user to enter amount to receive.
     """
@@ -219,12 +225,12 @@ async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContex
     data = await state.get_data()
     msg = my_gettext(callback, "enter_strict_receive_sum", (
         data.get('receive_asset_code', ''),
-    ))
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    ), app_context=app_context)
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
 
 
 @router.callback_query(StateSwapToken.swap_sum, F.data == "CancelOffers")
-async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     """
         Handle callback event 'CancelOffers_swap' in state 'swap_sum'.
         Invert state of 'cancel offers' flag by clicking on button.
@@ -235,12 +241,12 @@ async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 
     # Update message with the same text and changed button checkbox state
     msg = data['msg']
-    keyboard = get_kb_offers_cancel(callback.from_user.id, data)
+    keyboard = get_kb_offers_cancel(callback.from_user.id, data, app_context=app_context)
     await send_message(session, callback, msg, reply_markup=keyboard)
 
 
 @router.message(StateSwapToken.swap_sum)
-async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
         from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -248,8 +254,8 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         db_user = await user_repo.get_by_id(message.from_user.id)
         if db_user and db_user.can_5000 == 0 and send_sum > 5000:
             data = await state.get_data()
-            msg0 = my_gettext(message, 'need_update_limits')
-            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message))
+            msg0 = my_gettext(message, 'need_update_limits', app_context=app_context)
+            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message, app_context=app_context))
             await message.delete()
             return
     except:
@@ -291,8 +297,8 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         else:
              # Fallback
              logger.error(f"SwapAssets failed: {result.error_message}")
-             keyboard = get_kb_offers_cancel(message.from_user.id, data)
-             await send_message(session, message, my_gettext(message, 'bad_sum') + f"\n{result.error_message}", reply_markup=keyboard)
+             keyboard = get_kb_offers_cancel(message.from_user.id, data, app_context=app_context)
+             await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + f"\n{result.error_message}", reply_markup=keyboard)
              await message.delete()
              return
 
@@ -317,19 +323,19 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
             msg = my_gettext(message, 'swap_alert') + msg
 
         if cancel_offers:
-            msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,))
+            msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,), app_context=app_context)
 
         await state.update_data(xdr=xdr, operation='swap', msg=None)
-        await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
+        await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
         await message.delete()
     else:
-        keyboard = get_kb_offers_cancel(message.from_user.id, data)
-        await send_message(session, message, my_gettext(message, 'bad_sum') + '\n' + data['msg'],
+        keyboard = get_kb_offers_cancel(message.from_user.id, data, app_context=app_context)
+        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
                            reply_markup=keyboard)
 
 # Handle input of amount to receive (strict receive)
 @router.message(StateSwapToken.swap_receive_sum)
-async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, session: Session):
+async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         receive_sum = my_float(message.text)
         from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -337,8 +343,8 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         db_user = await user_repo.get_by_id(message.from_user.id)
         if db_user and db_user.can_5000 == 0 and receive_sum > 5000:
             data = await state.get_data()
-            msg0 = my_gettext(message, 'need_update_limits')
-            await send_message(session, message, msg0, reply_markup=get_kb_return(message))
+            msg0 = my_gettext(message, 'need_update_limits', app_context=app_context)
+            await send_message(session, message, msg0, reply_markup=get_kb_return(message, app_context=app_context))
             await message.delete()
             return
     except:
@@ -362,8 +368,8 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         )
         max_send_amount = my_round(my_float(send_sum) * 1.001, 7)
         if my_float(max_send_amount) == 0.0:
-            keyboard = get_kb_return(message)
-            await send_message(session, message, my_gettext(message, 'bad_sum'), reply_markup=keyboard)
+            keyboard = get_kb_return(message, app_context=app_context)
+            await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context), reply_markup=keyboard)
             await message.delete()
             return
 
@@ -402,8 +408,8 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
             scenario = "receive"
             need_alert = False
         except Exception as ex:
-            keyboard = get_kb_return(message)
-            await send_message(session, message, my_gettext(message, 'bad_sum') + f"\n{ex}", reply_markup=keyboard)
+            keyboard = get_kb_return(message, app_context=app_context)
+            await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + f"\n{ex}", reply_markup=keyboard)
             await message.delete()
             return
 
@@ -416,13 +422,14 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
             receive_asset=receive_asset,
             scenario=scenario,
             need_alert=need_alert,
-            cancel_offers=cancel_offers
+            cancel_offers=cancel_offers,
+            app_context=app_context
         )
 
         await state.update_data(xdr=xdr, operation='swap', msg=None)
-        await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
+        await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
         await message.delete()
     else:
-        keyboard = get_kb_return(message)
-        await send_message(session, message, my_gettext(message, 'bad_sum'), reply_markup=keyboard)
+        keyboard = get_kb_return(message, app_context=app_context)
+        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context), reply_markup=keyboard)
         await message.delete()

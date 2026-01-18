@@ -40,6 +40,8 @@ async def test_cmd_fest_menu(mock_server, dp):
     
     with patch("routers.fest.config") as mock_config, \
          patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.fest.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("other.lang_tools.global_data") as mock_gd:
         
         mock_gd.user_lang_dic = {123: 'en'}
@@ -63,7 +65,8 @@ async def test_cmd_fest_menu(mock_server, dp):
             )
         )
         
-        await dp.feed_update(bot=bot, update=update)
+        app_context = MagicMock()
+        await dp.feed_update(bot=bot, update=update, app_context=app_context)
         
         # Verify menu message sent
         assert mock_send.call_count >= 1
@@ -85,6 +88,8 @@ async def test_fest_level_24_selection(mock_server, dp):
     dp.include_router(fest_router)
     
     with patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.fest.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("other.lang_tools.global_data") as mock_gd:
         
         mock_gd.user_lang_dic = {123: 'en'}
@@ -112,7 +117,8 @@ async def test_fest_level_24_selection(mock_server, dp):
             )
         )
         
-        await dp.feed_update(bot=bot, update=update)
+        app_context = MagicMock()
+        await dp.feed_update(bot=bot, update=update, app_context=app_context)
         
         # Should ask for sum
         assert mock_send.call_count >= 1
@@ -140,6 +146,8 @@ async def test_fest_sending_sum(mock_server, dp):
          patch("infrastructure.utils.stellar_utils.my_float", return_value=10.0), \
          patch("routers.fest.cmd_send_04", new_callable=AsyncMock) as mock_cmd_send_04, \
          patch("routers.fest.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.fest.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("other.lang_tools.global_data") as mock_gd:
         
         mock_gd.user_lang_dic = {123: 'en'}
@@ -167,7 +175,8 @@ async def test_fest_sending_sum(mock_server, dp):
             )
         )
         
-        await dp.feed_update(bot=bot, update=update)
+        app_context = MagicMock()
+        await dp.feed_update(bot=bot, update=update, app_context=app_context)
         
         mock_cmd_send_04.assert_called_once()
     
@@ -202,7 +211,8 @@ async def test_reload_fest_menu(mock_server, dp):
             )
         )
         
-        await dp.feed_update(bot=bot, update=update)
+        app_context = MagicMock()
+        await dp.feed_update(bot=bot, update=update, app_context=app_context)
         
         mock_load.assert_called_once()
         assert mock_config.fest_menu == {"New": "Menu"}
