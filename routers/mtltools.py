@@ -57,7 +57,7 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Se
                                     callback_data="MTLToolsUpdateMulti")],
         get_return_button(user_id, app_context=app_context)
     ]
-    await send_message(session,user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(session,user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await callback.answer()
 
 
@@ -83,7 +83,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
 
     msg = my_gettext(callback, 'delegate_start', (delegate,), app_context=app_context)
 
-    await send_message(session,callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(session,callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await callback.answer()
 
 
@@ -100,7 +100,7 @@ async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContex
                                delegate, None)
         await state.update_data(xdr=xdr)
         await send_message(session,callback, my_gettext(callback, 'delegate_delete', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context))
+                           reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
 
         await callback.answer()
     else:
@@ -113,7 +113,7 @@ async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContex
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
-    await send_message(session,callback, my_gettext(callback, 'delegate_send_address', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(session,callback, my_gettext(callback, 'delegate_send_address', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateTools.delegate_for)
     await callback.answer()
 
@@ -128,11 +128,11 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, s
                                "mtl_delegate", delegate)
         await state.update_data(xdr=xdr)
         await send_message(session,message, my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'delegate_send_address', app_context=app_context)
-        await send_message(session,message, msg)
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
@@ -176,7 +176,7 @@ async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, ses
 
     await state.update_data(donates=donates)
     await send_message(session,callback, my_gettext(callback, 'donate_show', app_context=app_context),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await callback.answer()
 
 
@@ -186,7 +186,7 @@ async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext,
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
-    await send_message(session,callback, my_gettext(callback, 'donate_send', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(session,callback, my_gettext(callback, 'donate_send', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateTools.donate_address)
     await callback.answer()
 
@@ -198,12 +198,12 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext,
     if my_account:
         await state.update_data(address=my_account.account.account.account_id)
         await send_message(session,message, my_gettext(message, 'donate_name', app_context=app_context),
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await state.set_state(StateTools.donate_name)
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'donate_send', app_context=app_context)
-        await send_message(session,message, msg)
+        await send_message(session,message, msg, app_context=app_context)
         await message.delete()
 
 
@@ -214,12 +214,12 @@ async def cmd_send_add_donate_name(message: types.Message, state: FSMContext, se
         name = name.replace('=', '_').replace(':', '_')
         await state.update_data(name=name)
         await send_message(session,message, my_gettext(message, 'donate_persent', app_context=app_context),
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await state.set_state(StateTools.donate_persent)
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'donate_send', app_context=app_context)
-        await send_message(session,message, msg)
+        await send_message(session,message, msg, app_context=app_context)
         await message.delete()
 
 
@@ -232,11 +232,11 @@ async def cmd_send_add_donate_percent(message: types.Message, state: FSMContext,
                                f"mtl_donate_{data['name']}={persent}", data['address'])
         await state.update_data(xdr=xdr)
         await send_message(session,message, my_gettext(message, 'donate_end', (data['name'], persent, data['address']), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'donate_send', app_context=app_context)
-        await send_message(session,message, msg)
+        await send_message(session,message, msg, app_context=app_context)
         await message.delete()
 
 
@@ -257,7 +257,7 @@ async def cq_donate_setting(callback: types.CallbackQuery, callback_data: Donate
                                    donates[idx][0], None)
             await state.update_data(xdr=xdr)
             await send_message(session,callback, my_gettext(callback, 'donate_delete', (donates[idx][1],), app_context=app_context),
-                               reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context))
+                               reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
     await callback.answer()
 
 
@@ -297,7 +297,7 @@ async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, sessio
 
     await state.update_data(donates=bod_dict)
     await send_message(session,callback, my_gettext(callback, 'show_bim', app_context=app_context),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await callback.answer()
 
 
@@ -307,7 +307,7 @@ async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, se
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
-    await send_message(session,callback, my_gettext(callback, 'send_bim_address', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(session,callback, my_gettext(callback, 'send_bim_address', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateTools.bim_address)
     await callback.answer()
 
@@ -319,12 +319,12 @@ async def cmd_send_add_bim_address(message: types.Message, state: FSMContext, se
     if my_account:
         await state.update_data(address=my_account.account.account.account_id)
         await send_message(session,message, my_gettext(message, 'send_bim_name', app_context=app_context),
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await state.set_state(StateTools.bim_name)
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'send_bim_address', app_context=app_context)
-        await send_message(session,message, msg)
+        await send_message(session,message, msg, app_context=app_context)
         await message.delete()
 
 
@@ -337,17 +337,17 @@ async def cmd_send_add_bim_name(message: types.Message, state: FSMContext, sessi
                                f"bod_{name}", data['address'])
         await state.update_data(xdr=xdr)
         await send_message(session,message, my_gettext(message, 'add_bim_end', (name, data['address'],), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'send_bim_name', app_context=app_context)
-        await send_message(session,message, msg)
+        await send_message(session,message, msg, app_context=app_context)
         await message.delete()
 
 
 @router.callback_query(BIMCallbackData.filter())
 async def cq_bim_setting(callback: types.CallbackQuery, callback_data: BIMCallbackData,
-                      state: FSMContext, session:Session, app_context: AppContext):
+                       state: FSMContext, session:Session, app_context: AppContext):
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
@@ -362,7 +362,7 @@ async def cq_bim_setting(callback: types.CallbackQuery, callback_data: BIMCallba
                                    donates[idx][0], None)
             await state.update_data(xdr=xdr)
             await send_message(session,callback, my_gettext(callback, 'delete_bim', (donates[idx][1],), app_context=app_context),
-                               reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context))
+                               reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
     await callback.answer()
 
 ########################################################################################################################
@@ -390,8 +390,8 @@ async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContex
         msg = msg.replace("<br>", "\n")
         msg = msg.replace("&nbsp;", "\u00A0")
         await callback.message.answer(msg)
-        await clear_last_message_id(callback.from_user.id)
-        await cmd_check_xdr(session, xdr, callback.from_user.id, state)
+        await clear_last_message_id(callback.from_user.id, app_context=app_context)
+        await cmd_check_xdr(session, xdr, callback.from_user.id, state, app_context=app_context)
 
 
 ########################################################################################################################

@@ -8,7 +8,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
-from other.global_data import global_data
+
 from other.lang_tools import my_gettext
 from other.lang_tools import my_gettext
 from other.web_tools import get_web_request
@@ -21,32 +21,38 @@ TELEGRAM_API_ERROR: Any = object()
 
 async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
                        reply_markup=None, need_new_msg=None, parse_mode='HTML', app_context: AppContext = None):
+    # app_context MUST be provided or global_data used as fallback (TEMPORARY)
+    # Removing global_data completely means we crash if app_context is None.
+    # Assuming app_context is always passed now.
     user_id = get_user_id(user_id)
+    
+    bot = app_context.bot
+    dispatcher = app_context.dispatcher
 
-    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=user_id, chat_id=user_id)
-    data = await global_data.dispatcher.storage.get_data(key=fsm_storage_key)
+    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
+    data = await dispatcher.storage.get_data(key=fsm_storage_key)
     msg_id = data.get('last_message_id', 0)
     if need_new_msg:
-        new_msg = await global_data.bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
+        new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
                                                      disable_web_page_preview=True)
         if msg_id > 0:
             with suppress(TelegramBadRequest):
-                await global_data.bot.delete_message(user_id, msg_id)
-        await global_data.dispatcher.storage.update_data(key=fsm_storage_key,
+                await bot.delete_message(user_id, msg_id)
+        await dispatcher.storage.update_data(key=fsm_storage_key,
                                                          data={'last_message_id': new_msg.message_id})
     else:
         if msg_id > 0:
             try:
-                await global_data.bot.edit_message_text(text=msg, chat_id=user_id, message_id=msg_id,
+                await bot.edit_message_text(text=msg, chat_id=user_id, message_id=msg_id,
                                                         reply_markup=reply_markup, parse_mode=parse_mode,
                                                         disable_web_page_preview=True)
                 return
             except Exception as ex:
                 logger.info(['send_message edit_text error', ex.__class__])
 
-        new_msg = await global_data.bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
+        new_msg = await bot.send_message(user_id, msg, reply_markup=reply_markup, parse_mode=parse_mode,
                                                      disable_web_page_preview=True)
-        await global_data.dispatcher.storage.update_data(key=fsm_storage_key,
+        await dispatcher.storage.update_data(key=fsm_storage_key,
                                                          data={'last_message_id': new_msg.message_id})
 
 
@@ -90,9 +96,9 @@ async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='
         await send_message(session, chat_id, msg, reply_markup=kb, parse_mode=parse_mode, app_context=app_context)
 
 
-async def check_username(user_id: int) -> Union[str, None, object]:
+async def check_username(user_id: int, app_context: AppContext) -> Union[str, None, object]:
     try:
-        chat = await global_data.bot.get_chat(user_id)
+        chat = await app_context.bot.get_chat(user_id)
         return chat.username
     except TelegramBadRequest as e:
         logger.warning(f"Telegram API error (TelegramBadRequest) when checking username for user_id={user_id}: {e}")
@@ -123,11 +129,11 @@ def long_line() -> str:
     return ''.ljust(53, '⠀')
 
 
-async def set_last_message_id(chat_id: int, msg_id: int):
-    fsm_storage_key = StorageKey(bot_id=global_data.bot.id, user_id=chat_id, chat_id=chat_id)
+async def set_last_message_id(chat_id: int, msg_id: int, app_context: AppContext):
+    fsm_storage_key = StorageKey(bot_id=app_context.bot.id, user_id=chat_id, chat_id=chat_id)
     # data = await dp.storage.get_data(key=fsm_storage_key)
-    await global_data.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
+    await app_context.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
 
 
-async def clear_last_message_id(chat_id: int):
-    await set_last_message_id(chat_id, 0)
+async def clear_last_message_id(chat_id: int, app_context: AppContext):
+    await set_last_message_id(chat_id, 0, app_context=app_context)

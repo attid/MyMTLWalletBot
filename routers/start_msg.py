@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
 from infrastructure.utils.telegram_utils import send_message, clear_state, clear_last_message_id
 from infrastructure.utils.common_utils import get_user_id
-from other.global_data import global_data
+
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
 from infrastructure.services.app_context import AppContext
@@ -107,7 +107,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             data = await state.get_data()
             await state.set_state(state=None)
             await clear_state(state)
-            msg = await get_start_text(session, state, user_id)
+            msg = await get_start_text(session, state, user_id, app_context=app_context)
 
             if refresh_callback and msg == data.get('start_msg'):
                 await refresh_callback.answer('Nothing to update, the data is up to date.', show_alert=True)
@@ -129,7 +129,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             await state.update_data(last_message_id=0)
 
 
-async def get_start_text(session, state, user_id):
+async def get_start_text(session, state, user_id, app_context: AppContext = None):
     from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     
@@ -201,7 +201,7 @@ USDT: {float2str(usdt_balance, True)}
     # msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
     #       f'{await stellar_get_balance_str(session, user_id, state=state)}'
     
-    msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
+    msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance", app_context=app_context)}\n\n' \
           f'{balance_str}'
     return msg
 
@@ -211,8 +211,8 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
                            public_key: str = None, wallet_id: int = None, app_context: AppContext = None):
     user_id = get_user_id(user_id)
     
-    bot = app_context.bot if app_context else global_data.bot
-    dispatcher = app_context.dispatcher if app_context else global_data.dispatcher
+    bot = app_context.bot
+    dispatcher = app_context.dispatcher
 
     if send_file:
         photo = types.FSInputFile(send_file)
@@ -224,7 +224,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         data = await dispatcher.storage.get_data(key=fsm_storage_key)
         with suppress(TelegramBadRequest):
             await bot.delete_message(user_id, data.get('last_message_id', 0))
-        await clear_last_message_id(user_id)
+        await clear_last_message_id(user_id, app_context=app_context)
 
     elif resend_transaction:
         await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id))

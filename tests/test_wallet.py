@@ -20,12 +20,8 @@ async def test_cmd_add_new(mock_session):
     callback.data = "AddNew"
     
     with patch("routers.add_wallet.send_message", new_callable=AsyncMock) as mock_send_message, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
-         
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
         
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
@@ -56,15 +52,11 @@ async def test_cmd_sending_private_success(mock_session):
          patch("routers.add_wallet.AddWallet") as MockAddWallet, \
          patch("routers.add_wallet.encrypt", return_value="ENCRYPTED"), \
          patch("routers.add_wallet.cmd_show_add_wallet_choose_pin", new_callable=AsyncMock) as mock_next, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
         MockKeypair.from_secret.return_value = mock_kp
         MockAddWallet.return_value = mock_add_wallet_instance
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+        mock_add_wallet_instance.execute = AsyncMock()
         
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
@@ -124,7 +116,6 @@ async def test_add_wallet_new_key_queue(mock_session):
          patch("routers.add_wallet.StellarService", mock_service), \
          patch("routers.add_wallet.config"), \
          patch("routers.add_wallet.cmd_info_message", new_callable=AsyncMock) as mock_info, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
         
         MockKeypair.generate_mnemonic_phrase.return_value = "mnemonic"
@@ -133,10 +124,6 @@ async def test_add_wallet_new_key_queue(mock_session):
         mock_service_instance.build_payment_transaction.return_value = "XDR_PAY"
         mock_service_instance.sign_transaction.return_value = "SIGNED_XDR"
         mock_service_instance.build_change_trust_transaction.return_value = "XDR_TRUST"
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
         
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'

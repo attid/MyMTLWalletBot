@@ -20,8 +20,10 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
+from infrastructure.services.app_context import AppContext
+
 @router.message()
-async def cmd_last_route(message: types.Message, state: FSMContext, session: Session):
+async def cmd_last_route(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     if message.chat.type != "private":
         return
 
@@ -32,10 +34,10 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
     has_sign_tools_link = 'eurmtl.me/sign_tools' in text or any('eurmtl.me/sign_tools' in entity.url for entity in entities if entity.type == 'url')
     if has_sign_tools_link or (len(text) > 60 and is_base64(text)):
         await clear_state(state)
-        await clear_last_message_id(message.from_user.id)
+        await clear_last_message_id(message.from_user.id, app_context=app_context)
         xdr_to_check = extract_url(text) if has_sign_tools_link else text
         await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
-                            user_id=message.from_user.id, state=state)
+                            user_id=message.from_user.id, state=state, app_context=app_context)
         return
     message_is_key = len(text) > 55 and is_valid_stellar_address(text)
 

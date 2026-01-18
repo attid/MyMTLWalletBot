@@ -15,6 +15,10 @@ from faststream import FastStream
 
 from other.lang_tools import my_gettext
 
+from infrastructure.services.app_context import AppContext
+
+APP_CONTEXT: AppContext = None
+
 # --- Глобальные переменные и объекты брокера ---
 
 PENDING_SIGN_REQUESTS: Dict[str, Dict[str, Any]] = {}
@@ -25,7 +29,9 @@ broker_task = None
 
 # --- Управление жизненным циклом брокера ---
 
-async def start_broker():
+async def start_broker(app_context: AppContext):
+    global APP_CONTEXT
+    APP_CONTEXT = app_context
     await broker.start()
 
 
@@ -102,11 +108,15 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
     Функция-"мост", инициирующая процесс подписи у пользователя через FSM.
     """
     logger.info(f"request_wc_signature: {user_id}")
-    from other.global_data import global_data
+    # from other.global_data import global_data
     from routers.sign import cmd_check_xdr
 
-    bot = global_data.bot
-    state = global_data.dispatcher.fsm.get_context(bot, user_id, user_id)
+    if APP_CONTEXT is None:
+        logger.error("APP_CONTEXT is not initialized")
+        return
+
+    bot = APP_CONTEXT.bot
+    state = APP_CONTEXT.dispatcher.fsm.get_context(bot, user_id, user_id)
     dapp_name = dapp_info.get("name", "Unknown App")
     dapp_url = dapp_info.get("url", "Unknown URL")
 
@@ -123,10 +133,10 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
         tools='wallet_connect'
     )
 
-    db_pool = global_data.db_pool
+    db_pool = APP_CONTEXT.db_pool
     with db_pool.get_session() as session:
-        await clear_last_message_id(user_id)
-        await cmd_check_xdr(session, xdr, user_id, state)
+        await clear_last_message_id(user_id, app_context=APP_CONTEXT)
+        await cmd_check_xdr(session, xdr, user_id, state, app_context=APP_CONTEXT)
         logger.info(f"cmd_check_xdr: {xdr}")
 
 
@@ -208,7 +218,7 @@ async def handle_pairing_events(msg: dict):
     Обрабатывает события о статусе WalletConnect пейринга и уведомляет пользователя.
     """
     try:
-        from other.global_data import global_data
+        # from other.global_data import global_data
         logger.info(msg)
 
         user_info = msg.get("user_info", {})
@@ -234,9 +244,13 @@ async def handle_pairing_events(msg: dict):
             logger.warning(f"Неизвестный статус события пейринга: {status}")
             return
 
-        db_pool = global_data.db_pool
+        if APP_CONTEXT is None:
+            logger.error("APP_CONTEXT is not initialized")
+            return
+
+        db_pool = APP_CONTEXT.db_pool
         with db_pool.get_session() as session:
-            await send_message(session, user_id, message, reply_markup=get_kb_return(user_id))
+            await send_message(session, user_id, message, reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)
 
     except Exception as e:
         logger.exception(f"Ошибка в обработчике событий пейринга: {e}")

@@ -13,6 +13,7 @@ from other.lang_tools import change_user_lang
 from other.stellar_tools import stellar_get_balance_str
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.services.localization_service import LocalizationService
+from infrastructure.services.app_context import AppContext
 
 
 class LangCallbackData(CallbackData, prefix="lang_"):
@@ -39,36 +40,36 @@ async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService
 
 
 @router.callback_query(F.data == "ChangeLang")
-async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session, l10n: LocalizationService):
+async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session, l10n: LocalizationService, app_context: AppContext):
     await cmd_language(session, callback.from_user.id, l10n)
 
 
 @router.callback_query(LangCallbackData.filter())
 async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallbackData, state: FSMContext,
-                         session: Session, l10n: LocalizationService):
+                         session: Session, l10n: LocalizationService, app_context: AppContext):
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
     change_user_lang(session, callback.from_user.id, lang)
     await state.update_data(user_lang=lang)
-    await callback.answer(my_gettext(callback, 'was_set', (lang,)))
-    await cmd_show_balance(session, callback.from_user.id, state)
+    await callback.answer(my_gettext(callback, 'was_set', (lang,), app_context=app_context))
+    await cmd_show_balance(session, callback.from_user.id, state, app_context=app_context)
 
 
 @router.callback_query(F.data == "ChangeWallet")
-async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await cmd_change_wallet(callback.from_user.id, state, session)
+async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    await cmd_change_wallet(callback.from_user.id, state, session, app_context=app_context)
 
 
 @router.message(Command(commands=["change_wallet"]))
-async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, session: Session):
+async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await message.delete()
     await clear_state(state)
-    await cmd_change_wallet(message.from_user.id, state, session)
+    await cmd_change_wallet(message.from_user.id, state, session, app_context=app_context)
 
 
 @router.callback_query(WalletSettingCallbackData.filter())
 async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSettingCallbackData,
-                     state: FSMContext, session: Session):
+                     state: FSMContext, session: Session, app_context: AppContext):
     answer = callback_data.action
     idx = str(callback_data.idx)
     user_id = callback.from_user.id
@@ -77,17 +78,17 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     if wallets.get(idx):
         if answer == 'DELETE':
             await state.update_data(idx=idx)
-            await cmd_confirm_delete(session, user_id, state)
+            await cmd_confirm_delete(session, user_id, state, app_context)
         if answer == 'SET_ACTIVE':
             wallet_repo = SqlAlchemyWalletRepository(session)
             await wallet_repo.set_default_wallet(user_id, wallets[idx])
-            await cmd_change_wallet(callback.message.chat.id, state, session)
+            await cmd_change_wallet(callback.message.chat.id, state, session, app_context=app_context)
         if answer == 'NAME':
             try:
                 wallet_repo = SqlAlchemyWalletRepository(session)
                 info = await wallet_repo.get_info(user_id, wallets[idx])
                 msg = f"{wallets[idx]} {info}\n" + my_gettext(callback,
-                                                              'your_balance') + '\n' + await stellar_get_balance_str(
+                                                              'your_balance', app_context=app_context) + '\n' + await stellar_get_balance_str(
                     session, user_id, wallets[idx])
             except:
                 msg = f'Error load. Please delete this'
@@ -95,11 +96,11 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     await callback.answer()
 
 
-async def cmd_confirm_delete(session: Session, user_id, state: FSMContext):
+async def cmd_confirm_delete(session: Session, user_id, state: FSMContext, app_context: AppContext):
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_yes'),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_yes', app_context=app_context),
                                     callback_data="YES_DELETE"),
-         types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_no'),
+         types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_no', app_context=app_context),
                                     callback_data="Return"),
          ]
     ]
@@ -108,12 +109,12 @@ async def cmd_confirm_delete(session: Session, user_id, state: FSMContext):
     idx = data.get('idx')
     wallets = data['wallets']
     wallet = wallets[idx]
-    text = my_gettext(user_id, 'kb_delete') + '\n' + wallet
-    await send_message(session=session, user_id=user_id, msg=text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    text = my_gettext(user_id, 'kb_delete', app_context=app_context) + '\n' + wallet
+    await send_message(session=session, user_id=user_id, msg=text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
 
 
 @router.callback_query(F.data == "YES_DELETE")
-async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     idx = data.get('idx')
     wallets = data['wallets']
@@ -121,9 +122,9 @@ async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, sessi
     wallet_repo = SqlAlchemyWalletRepository(session)
     await wallet_repo.delete(callback.from_user.id, wallets[idx], wallet_id=int(idx))
     await callback.answer()
-    await cmd_change_wallet(callback.message.chat.id, state, session)
+    await cmd_change_wallet(callback.message.chat.id, state, session, app_context=app_context)
 
 
 @router.callback_query(F.data == "Support")
-async def cmd_support(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await send_message(session, callback, my_gettext(callback, "support_bot"), reply_markup=get_kb_return(callback))
+async def cmd_support(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    await send_message(session, callback, my_gettext(callback, "support_bot", app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)

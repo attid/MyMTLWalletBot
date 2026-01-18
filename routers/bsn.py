@@ -375,9 +375,9 @@ async def process_tags(message: "Message", state: "FSMContext", session: "Sessio
         await parse_tag(tag=tag, message=message, session=session, bsn_data=tags, app_context=app_context)
 
     await state.update_data(tags=jsonpickle.dumps(tags))
-    await clear_last_message_id(message.chat.id)
+    await clear_last_message_id(message.chat.id, app_context=app_context)
     await send_message(session, user_id=message, msg=make_tag_message(tags, message.from_user.id, app_context),
-                       reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty(), app_context))
+                       reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty(), app_context), app_context=app_context)
 
 
 @bsn_router.message(Command("bsn", ignore_case=True))
@@ -388,9 +388,9 @@ async def bsn_mode_command(message: "Message", state: "FSMContext", command: "Co
     if command.args:
         tag = command.args
         await parse_tag(tag=tag, bsn_data=tags, message=message, session=session, app_context=app_context)
-    await clear_last_message_id(message.chat.id)
+    await clear_last_message_id(message.chat.id, app_context=app_context)
     await send_message(session, user_id=message, msg=make_tag_message(tags, message.from_user.id, app_context),
-                       reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty(), app_context))
+                       reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty(), app_context), app_context=app_context)
     await state.set_state(BSNStates.waiting_for_tags)
     await state.update_data(tags=jsonpickle.dumps(tags))
 

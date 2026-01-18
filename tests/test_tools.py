@@ -43,12 +43,9 @@ def mock_message():
 @pytest.mark.asyncio
 async def test_cmd_tools(mock_session, mock_callback, mock_state):
     with patch("routers.mtltools.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
         
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
@@ -60,12 +57,9 @@ async def test_cmd_tools(mock_session, mock_callback, mock_state):
 async def test_cmd_tools_donate__no_donates(mock_session, mock_callback, mock_state):
     with patch("routers.mtltools.stellar_get_data", return_value={}, new_callable=AsyncMock), \
          patch("routers.mtltools.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
         
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
@@ -101,12 +95,9 @@ async def test_cq_pin_digits(mock_session, mock_callback, mock_state):
 async def test_cmd_send_ton_start(mock_session, mock_callback, mock_state):
     with patch("routers.ton.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.ton.clear_state", new_callable=AsyncMock) as mock_clear, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("other.lang_tools.get_user_id", return_value=123):
          
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
+
 
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
@@ -145,17 +136,12 @@ async def test_process_remote_uri(mock_session, mock_state):
     with patch("routers.uri.http_session_manager.get_web_request", return_value=mock_resp, new_callable=AsyncMock), \
          patch("routers.uri.ProcessStellarUri") as mock_process_uri_class, \
          patch("routers.uri.cmd_check_xdr", new_callable=AsyncMock) as mock_check, \
-         patch("other.lang_tools.global_data") as mock_gd, \
          patch("infrastructure.utils.common_utils.get_user_id", return_value=123):
          
         # Setup ProcessStellarUri mock
         mock_process_uri_instance = AsyncMock()
         mock_process_uri_instance.execute.return_value = mock_result
         mock_process_uri_class.return_value = mock_process_uri_instance
-        
-        mock_gd.user_lang_dic = {123: 'en'}
-        mock_gd.localization_service.get_text.return_value = 'text'
-        mock_gd.lang_dict = {'en': {}}
         
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'

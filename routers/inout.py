@@ -64,7 +64,7 @@ async def cmd_inout(callback: types.CallbackQuery, session: Session, app_context
                                            callback_data="STARTS")],
                get_return_button(callback)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
@@ -75,14 +75,14 @@ async def cmd_inout(callback: types.CallbackQuery, session: Session, app_context
 
 @router.callback_query(F.data == "USDT_TRC20")
 async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session, app_context: AppContext):
-    msg = my_gettext(callback, "inout_usdt")
-    buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in'),
+    msg = my_gettext(callback, "inout_usdt", app_context=app_context)
+    buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in', app_context=app_context),
                                            callback_data="USDT_IN"),
-                types.InlineKeyboardButton(text=my_gettext(callback, 'kb_out'),
+                types.InlineKeyboardButton(text=my_gettext(callback, 'kb_out', app_context=app_context),
                                            callback_data="USDT_OUT"),
-                ], get_return_button(callback)]
+                ], get_return_button(callback, app_context=app_context)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
@@ -99,8 +99,8 @@ async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session:
     # Filter for USDM
     asset_list = [b for b in asset_list if b.asset_code == 'USDM']
     if not asset_list:
-        await send_message(session, callback, my_gettext(callback, 'usdm_need'),
-                           reply_markup=get_kb_return(callback))
+        await send_message(session, callback, my_gettext(callback, 'usdm_need', app_context=app_context),
+                           reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     else:
         user_repo = SqlAlchemyUserRepository(session)
         user_tron_private_key, _ = await user_repo.get_usdt_key(get_user_id(callback))
@@ -113,12 +113,12 @@ async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session:
         show_max_sum = max_usdt_sum if usdm_sum > max_usdt_sum else usdm_sum
 
         msg = my_gettext(callback, "usdt_in",
-                         (usdt_in_fee, min_usdt_sum, show_max_sum, tron_get_public(user_tron_private_key)))
-        buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_check'),
+                         (usdt_in_fee, min_usdt_sum, show_max_sum, tron_get_public(user_tron_private_key)), app_context=app_context)
+        buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_check', app_context=app_context),
                                                callback_data="USDT_CHECK"),
-                    ], get_return_button(callback)]
+                    ], get_return_button(callback, app_context=app_context)]
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-        await send_message(session, callback, msg, reply_markup=keyboard)
+        await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
@@ -177,7 +177,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         user_repo = SqlAlchemyUserRepository(session)
         await user_repo.update_usdt_balance(get_user_id(callback), full_usdt_balance)
         url = f'<a href="https://tronscan.org/#/address/{user_tron_key}">{user_tron_key}</a>'
-        admin_id = app_context.admin_id if app_context else global_data.admin_id
+        admin_id = app_context.admin_id
         await bot.send_message(chat_id=admin_id,
                                text=f"{get_user_id(callback)} send {income_usdt_balance} usdt "
                                     f"(full {full_usdt_balance})\n {url}")
@@ -207,7 +207,7 @@ async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     if wallet and wallet.use_pin == 10:
-        await send_message(session, callback, "Sorry, I can't work in read-only mode", reply_markup=get_kb_return(callback))
+        await send_message(session, callback, "Sorry, I can't work in read-only mode", reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
         await callback.answer()
         return
         
@@ -218,14 +218,14 @@ async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session
     has_usdm = any(b.asset_code == 'USDM' for b in asset_list)
     
     if not has_usdm:
-        await send_message(session, callback, my_gettext(callback, 'usdm_need'),
-                           reply_markup=get_kb_return(callback))
+        await send_message(session, callback, my_gettext(callback, 'usdm_need', app_context=app_context),
+                           reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     else:
         usdt_master_balance = await get_usdt_balance(private_key=tron_master_key)
         show_max_sum = max_usdt_sum if usdt_master_balance > max_usdt_sum else usdt_master_balance
 
-        msg = my_gettext(callback, "usdt_out", (min_usdt_sum, show_max_sum,))
-        await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+        msg = my_gettext(callback, "usdt_out", (min_usdt_sum, show_max_sum,), app_context=app_context)
+        await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
         await callback.answer()
         await state.update_data(msg=msg)
         await state.set_state(StateInOut.sending_usdt_address)
@@ -238,13 +238,13 @@ async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext,
                     "В течение минуты будет выслана транзакция. "
                     "Если что-то пойдёт не так, пожалуйста, нажмите кнопку 'Проверить'.")
 
-    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check'),
+    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check', app_context=app_context),
                                            callback_data="USDT_OUT_CHECK"),
-                ], get_return_button(user_id)]
+                ], get_return_button(user_id, app_context=app_context)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-    await send_message(session, user_id, message_text, reply_markup=keyboard)
+    await send_message(session, user_id, message_text, reply_markup=keyboard, app_context=app_context)
 
     await cmd_after_send_usdt_task(session, user_id, state, app_context)
 
@@ -255,13 +255,13 @@ async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMCon
         data = await state.get_data()
         out_pay_usdt = data.get("out_pay_usdt")
         if out_pay_usdt:
-            admin_id = app_context.admin_id if app_context else global_data.admin_id
+            admin_id = app_context.admin_id
             usdt_address = data.get('usdt_address')
             usdt_sum = data.get('usdt_sum')
             await send_message(session, user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address}',
                                need_new_msg=True,
-                               reply_markup=get_kb_return(user_id))
-            await clear_last_message_id(admin_id)
+                               reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+            await clear_last_message_id(admin_id, app_context=app_context)
             try:
                 success, tx_hash = await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address,
                                                          sun_fee=data.get("sun_fee", 0))
@@ -270,18 +270,18 @@ async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMCon
                     url = f'<a href="https://tronscan.org/#/transaction/{tx_hash}">{tx_hash}</a>'
                     await send_message(session, user_id=admin_id,
                                        msg=f'{user_id} {usdt_sum} usdt {usdt_address} good \n {url}',
-                                       need_new_msg=True, reply_markup=get_kb_return(user_id))
-                    await clear_last_message_id(admin_id)
+                                       need_new_msg=True, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+                    await clear_last_message_id(admin_id, app_context=app_context)
                     await send_message(session, user_id=user_id, msg=f'YOUR TRANSACTION: {url}',
-                                       need_new_msg=True, reply_markup=get_kb_return(user_id))
-                    await clear_last_message_id(user_id)
+                                       need_new_msg=True, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+                    await clear_last_message_id(user_id, app_context=app_context)
                 else:
                     raise Exception("USDT send failed")
             except Exception as e:
                 logger.error(e)
                 await send_message(session, user_id=admin_id,
                                    msg=f'{user_id} {usdt_sum} usdt {usdt_address} bad \n{e}',
-                                   need_new_msg=True, reply_markup=get_kb_return(user_id))
+                                   need_new_msg=True, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "USDT_OUT_CHECK")
@@ -317,13 +317,13 @@ async def cmd_send_get_address(message: types.Message, state: FSMContext, sessio
             usdm_balance = usdm_obj.balance
             
         await send_message(session, message,
-                           my_gettext(message, 'send_sum', ('USDM', float(usdm_balance))),
-                           reply_markup=get_kb_return(message))
+                           my_gettext(message, 'send_sum', ('USDM', float(usdm_balance)), app_context=app_context),
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await state.set_state(StateInOut.sending_usdt_sum)
     except:
         data = await state.get_data()
-        await send_message(session, message, f"{my_gettext(message, 'bad_key')}\n{data['msg']}",
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, f"{my_gettext(message, 'bad_key', app_context=app_context)}\n{data['msg']}",
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
     await message.delete()
 
 
@@ -342,8 +342,8 @@ async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: 
     usdm_obj = next((b for b in balances if b.asset_code == 'USDM'), None)
     
     if send_sum < 10 or not usdm_obj or send_sum > float(usdm_obj.balance) or send_sum > max_usdt_sum:
-        await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}",
-                           reply_markup=get_kb_return(message))
+        await send_message(session, message, f"{my_gettext(message, 'bad_sum', app_context=app_context)}\n{data['msg']}",
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
     else:
         await state.update_data(send_sum=send_sum)
         await state.set_state(None)
@@ -400,7 +400,7 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     if result.success:
         xdr = result.xdr
     else:
-        await send_message(session, message, f"Error: {result.error_message}")
+        await send_message(session, message, f"Error: {result.error_message}", app_context=app_context)
         return
 
     # xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
@@ -409,8 +409,8 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
 
     await state.update_data(xdr=xdr)
 
-    await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message))
-    await clear_last_message_id(message.chat.id)
+    await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
+    await clear_last_message_id(message.chat.id, app_context=app_context)
 
 
 ############################################################################
@@ -420,14 +420,14 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
 @router.callback_query(F.data == "BTC")
 async def cmd_receive_btc(callback: types.CallbackQuery, session: Session, app_context: AppContext):
     # await callback.answer('Not implemented yet', show_alert=True)
-    msg = my_gettext(callback, "inout_btc")
-    buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in'),
+    msg = my_gettext(callback, "inout_btc", app_context=app_context)
+    buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in', app_context=app_context),
                                            callback_data="BTC_IN"),
-                types.InlineKeyboardButton(text=my_gettext(callback, 'kb_out'),
+                types.InlineKeyboardButton(text=my_gettext(callback, 'kb_out', app_context=app_context),
                                            callback_data="BTC_OUT"),
-                ], get_return_button(callback)]
+                ], get_return_button(callback, app_context=app_context)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
@@ -445,13 +445,13 @@ async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, app
     user_repo = SqlAlchemyUserRepository(session)
     btc_uuid, btc_date = await user_repo.get_btc_uuid(user_id)
     if btc_uuid and btc_date and btc_date > datetime.now():
-        buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check'),
+        buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check', app_context=app_context),
                                                callback_data="BTC_CHECK"),
-                    ], get_return_button(user_id)]
+                    ], get_return_button(user_id, app_context=app_context)]
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
         link = f'<a href="https://thothpay.com/invoice?id={btc_uuid}">{btc_uuid}</a>'
-        msg = my_gettext(user_id, "btc_in_2", (link, btc_date.strftime('%d.%m.%Y %H:%M:%S')))
-        await send_message(session, user_id, msg, reply_markup=keyboard)
+        msg = my_gettext(user_id, "btc_in_2", (link, btc_date.strftime('%d.%m.%Y %H:%M:%S')), app_context=app_context)
+        await send_message(session, user_id, msg, reply_markup=keyboard, app_context=app_context)
 
     else:
         repo = SqlAlchemyWalletRepository(session)
@@ -460,10 +460,10 @@ async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, app
         sats_obj = next((b for b in master_balances if b.asset_code == 'SATSMTL'), None)
         sats_sum = int(float(sats_obj.balance)) if sats_obj else 0
         show_max_sum = max_btc_sum if sats_sum > max_btc_sum else sats_sum
-        msg = my_gettext(user_id, "btc_in", (0, show_max_sum, min_btc_sum))
+        msg = my_gettext(user_id, "btc_in", (0, show_max_sum, min_btc_sum), app_context=app_context)
         await state.set_state(StateInOut.sending_btc_sum_in)
         await state.update_data(msg=msg)
-        await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
 
 
 @router.message(StateInOut.sending_btc_sum_in)
@@ -486,7 +486,7 @@ async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: S
     
     if send_sum < min_btc_sum or not has_sats \
             or send_sum > show_max_sum:
-        await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}")
+        await send_message(session, message, f"{my_gettext(message, 'bad_sum', app_context=app_context)}\n{data['msg']}", app_context=app_context)
     else:
         order_uuid = await thoth_create_order(user_id=message.from_user.id, amount=send_sum)
         if order_uuid:
@@ -581,7 +581,7 @@ async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, sessio
     eurmtl_sum = float(eurmtl_obj.balance) if eurmtl_obj else 0.0
     await send_message(session, callback, 'Введи сумму в EURMTL которую вы хотите получить\n 1 EURMTL = 85 STARS\n'
                                           f'максимально в наличии {int(eurmtl_sum)} EURMTL',
-                       reply_markup=get_kb_return(callback))
+                       reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
 
 
 @router.message(StateInOut.sending_starts_sum_in)
@@ -608,7 +608,7 @@ async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session
                                      photo_url='https://montelibero.org/wp-content/uploads/2022/02/EURMTL_LOGO_NEW_1-1043x675.jpg')
 
     await message.delete()
-    await clear_last_message_id(message.chat.id)
+    await clear_last_message_id(message.chat.id, app_context=app_context)
 
 
 @router.pre_checkout_query()
@@ -647,10 +647,10 @@ async def cmd_process_message_successful_payment(message: types.Message, session
             password='0'
         )
         await cmd_info_message(session, message.chat.id, 'All works done!', app_context=app_context)
-        admin_id = app_context.admin_id if app_context else global_data.admin_id
+        admin_id = app_context.admin_id
         await send_message(session, user_id=admin_id,
                            msg=html.escape(f'{message.from_user} {message.successful_payment} good'),
-                           need_new_msg=True, reply_markup=get_kb_return(message.chat.id))
+                           need_new_msg=True, reply_markup=get_kb_return(message.chat.id, app_context=app_context), app_context=app_context)
 
 
 ############################################################################
@@ -678,7 +678,7 @@ async def cmd_balance(message: types.Message, session: Session, app_context: App
 
 
 async def notify_admin(bot: Bot, text: str, app_context: AppContext = None):
-    admin_id = app_context.admin_id if app_context else global_data.admin_id
+    admin_id = app_context.admin_id
     await bot.send_message(chat_id=admin_id, text=text)
 
 @safe_catch_async
@@ -824,7 +824,7 @@ async def cmd_usdt_auto(message: types.Message, session: Session, bot: Bot):
 
 
 @safe_catch_async
-async def usdt_worker(bot: Bot, session_pool: sessionmaker):
+async def usdt_worker(bot: Bot, session_pool: sessionmaker, app_context: AppContext):
     last_energy = 0
     while True:
         try:
@@ -835,7 +835,7 @@ async def usdt_worker(bot: Bot, session_pool: sessionmaker):
             if current_energy > 150_000 >= last_energy:
                 last_energy = current_energy
                 await bot.send_message(
-                    chat_id=global_data.admin_id,
+                    chat_id=app_context.admin_id,
                     text=f'Energy Full: {current_energy}'
                 )
                 with session_pool.get_session() as session:

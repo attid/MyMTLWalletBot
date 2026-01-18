@@ -17,7 +17,7 @@ from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
 from infrastructure.utils.common_utils import get_user_id
-from other.global_data import global_data
+# from other.global_data import global_data
 from other.lang_tools import my_gettext
 from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
 from infrastructure.utils.common_utils import float2str
@@ -235,7 +235,7 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext, a
         
     await state.update_data(last_message_id=0)
     #  "send_cheque_resend": "You have cheque {} with sum {} EURMTL for {} users, total sum {} with comment \"{}\" you can send link {} or press button to send"
-    bot = app_context.bot if app_context else global_data.bot
+    bot = app_context.bot
     link = f'https://t.me/{(await bot.me()).username}?start=cheque_{send_uuid}'
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_send_cheque'), switch_inline_query='')],

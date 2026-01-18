@@ -23,7 +23,7 @@ from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
 from infrastructure.utils.telegram_utils import send_message, clear_state
-from other.global_data import global_data
+
 from other.lang_tools import my_gettext, check_user_id, check_user_lang
 from other.stellar_tools import (stellar_get_balances, stellar_get_user_account,
                                  )
@@ -38,20 +38,20 @@ class SettingState(StatesGroup):
 
 
 @router.message(Command(commands=["start"]), F.text.contains("sign_"))
-async def cmd_start_sign(message: types.Message, state: FSMContext, session: Session):
+async def cmd_start_sign(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
 
     # check address
     await state.update_data(last_message_id=0)
-    await send_message(session, message.from_user.id, 'Loading')
+    await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
     # if user not exist
     if not check_user_id(session, message.from_user.id):
-        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start')
+        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start', app_context=app_context)
         return
 
     await cmd_check_xdr(session, 'https://eurmtl.me/sign_tools/' + message.text.split(' ')[1][5:], message.from_user.id,
-                        state)
+                        state, app_context=app_context)
 
 
 # @router.message(Command(commands=["start"]))
@@ -63,7 +63,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
 
     # check address
     await state.update_data(last_message_id=0)
-    await send_message(session, message.from_user.id, 'Loading')
+    await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
     if check_user_lang(session, message.from_user.id) is None:
         # Refactored to use Clean Architecture Use Case
@@ -106,14 +106,14 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         await cmd_language(session, message.from_user.id, l10n)
     else:
         await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
-        await cmd_show_balance(session, message.from_user.id, state)
+        await cmd_show_balance(session, message.from_user.id, state, app_context=app_context)
         await check_update_username(
             session, message.from_user.id, message.from_user.username, state
         )
 
 
 @router.callback_query(F.data == "Return")
-async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     try_sent_xdr = data.get('try_sent_xdr')
     if try_sent_xdr and datetime.strptime(try_sent_xdr, '%d.%m.%Y %H:%M:%S') > datetime.now():
@@ -122,7 +122,7 @@ async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: S
             seconds=10) - datetime.now()).total_seconds())
         await callback.answer(f'Please wait {remaining_seconds} seconds', show_alert=True)
     else:
-        await cmd_show_balance(session, callback.message.chat.id, state)
+        await cmd_show_balance(session, callback.message.chat.id, state, app_context=app_context)
         await callback.answer()
     await check_update_username(
         session, callback.from_user.id, callback.from_user.username, state
@@ -130,14 +130,14 @@ async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: S
 
 
 @router.callback_query(F.data == "DeleteReturn")
-async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     try:
         await callback.message.delete()
     except:
         await callback.message.edit_text('deleted')
         await callback.message.edit_reply_markup(None)
 
-    await cmd_show_balance(session, callback.message.chat.id, state)
+    await cmd_show_balance(session, callback.message.chat.id, state, app_context=app_context)
     await callback.answer()
     await check_update_username(
         session, callback.from_user.id, callback.from_user.username, state
@@ -149,7 +149,7 @@ async def cmd_about(message: types.Message, session: Session, app_context: AppCo
     msg = f'Sorry not ready\n' \
           f'Тут будет что-то о кошельке, переводчиках и добрых людях\n' \
           f'стать добрым - /donate'
-    await send_message(session, message.from_user.id, msg, reply_markup=get_kb_return(message))
+    await send_message(session, message.from_user.id, msg, reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
 
 
 def get_kb_donate(chat_id: int) -> types.InlineKeyboardMarkup:
@@ -170,7 +170,7 @@ def get_kb_donate(chat_id: int) -> types.InlineKeyboardMarkup:
     return keyboard
 
 
-async def cmd_donate(session: Session, user_id, state: FSMContext):
+async def cmd_donate(session: Session, user_id, state: FSMContext, app_context: AppContext):
     # Refactored to use GetWalletBalance Use Case
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     from infrastructure.services.stellar_service import StellarService
@@ -191,41 +191,41 @@ async def cmd_donate(session: Session, user_id, state: FSMContext):
           f'Top 5 donators you can see at /about list'
     await state.set_state(SettingState.send_donate_sum)
     await state.update_data(max_sum=eurmtl_balance, msg=msg)
-    await send_message(session, user_id, msg, reply_markup=get_kb_donate(user_id))
+    await send_message(session, user_id, msg, reply_markup=get_kb_donate(user_id), app_context=app_context)
 
 
 @router.callback_query(F.data == "Donate")
-async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await cmd_donate(session, callback.from_user.id, state)
+async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    await cmd_donate(session, callback.from_user.id, state, app_context=app_context)
     await callback.answer()
 
 
 @router.message(Command(commands=["donate"]))
 async def cmd_donate_message(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
-    await cmd_donate(session, message.from_user.id, state)
+    await cmd_donate(session, message.from_user.id, state, app_context=app_context)
 
 
 async def cmd_after_donate(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
     data = await state.get_data()
     donate_sum = data.get('donate_sum')
-    admin_id = app_context.admin_id if app_context else global_data.admin_id
+    admin_id = app_context.admin_id
     await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
-                       reply_markup=get_kb_return(user_id))
+                       reply_markup=get_kb_return(user_id), app_context=app_context)
     
     user_repo = SqlAlchemyUserRepository(session)
     add_donation = AddDonation(user_repo)
     await add_donation.execute(user_id, donate_sum)
 
 
-async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContext):
+async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     max_sum = float(data['max_sum'])
     try:
         donate_sum = float(donate_sum)
         if donate_sum > max_sum:
             await send_message(session, user_id, my_gettext(user_id, 'bad_sum') + '\n' + data['msg'],
-                               reply_markup=get_kb_return(user_id))
+                               reply_markup=get_kb_return(user_id), app_context=app_context)
         else:
             # Refactored to use Clean Architecture Use Case
             from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -266,65 +266,65 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
                 await state.update_data(xdr=xdr, donate_sum=donate_sum, fsm_after_send=jsonpickle.dumps(cmd_after_donate))
                 msg = my_gettext(user_id, 'confirm_send', (donate_sum, EURMTL_ASSET.code, father_key, memo))
                 msg = f"For donate\n{msg}"
-                await send_message(session, user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id))
+                await send_message(session, user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id), app_context=app_context)
             else:
-                await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id))
+                await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id), app_context=app_context)
 
     except Exception as ex:
         # logger.error(["get_donate_sum", ex])
         await send_message(session, user_id, my_gettext(user_id, 'bad_sum') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(user_id))
+                           reply_markup=get_kb_return(user_id), app_context=app_context)
 
 
 @router.callback_query(SettingState.send_donate_sum)
-async def cb_donate_sum(callback: types.CallbackQuery, state: FSMContext, session: Session):
-    await get_donate_sum(session, callback.from_user.id, callback.data, state)
+async def cb_donate_sum(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+    await get_donate_sum(session, callback.from_user.id, callback.data, state, app_context=app_context)
     await callback.answer()
 
 
 @router.message(SettingState.send_donate_sum)
-async def cmd_donate_sum(message: types.Message, state: FSMContext, session: Session):
-    await get_donate_sum(session, message.from_user.id, message.text, state)
+async def cmd_donate_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+    await get_donate_sum(session, message.from_user.id, message.text, state, app_context=app_context)
     await message.delete()
 
 
 @router.message(Command(commands=["delete_all"]))
-async def cmd_delete_all(message: types.Message, state: FSMContext, session: Session):
+async def cmd_delete_all(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     # Legacy delete all commented out
     # If implemented, use DeleteUser use case
-    await send_message(session, message.from_user.id, 'All was delete, restart please')
+    await send_message(session, message.from_user.id, 'All was delete, restart please', app_context=app_context)
     await state.clear()
 
 
 @router.callback_query(F.data == "SetDefault")
-async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.set_state(SettingState.send_default_address)
     # user_repo imported at top or here? Imported at top now.
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(callback.from_user.id)
     default_addr = user.default_address if user else None
-    msg = my_gettext(callback, 'set_default', (default_addr,))
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    msg = my_gettext(callback, 'set_default', (default_addr,), app_context=app_context)
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback), app_context=app_context)
     await callback.answer()
 
 
 @router.callback_query(F.data == "SetLimit")
 @router.callback_query(F.data == "OffLimits")
-async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_repo = SqlAlchemyUserRepository(session)
     db_user = await user_repo.get_by_id(callback.from_user.id)
     if callback.data == 'OffLimits' and db_user:
         db_user.can_5000 = 1 if db_user.can_5000 == 0 else 0
         await user_repo.update(db_user)
 
-    msg = my_gettext(callback, 'limits')
-    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000 if db_user else 0))
+    msg = my_gettext(callback, 'limits', app_context=app_context)
+    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000 if db_user else 0), app_context=app_context)
     await callback.answer()
     session.commit()
 
 
 @router.message(SettingState.send_default_address)
-async def cmd_set_default(message: types.Message, state: FSMContext, session: Session):
+async def cmd_set_default(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     address = message.text
     try:
         from infrastructure.services.stellar_service import StellarService
@@ -346,18 +346,18 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(message.from_user.id)
     default_addr = user.default_address if user else None
-    msg = my_gettext(message, 'set_default', (default_addr,))
-    await send_message(session, message, msg, reply_markup=get_kb_return(message))
+    msg = my_gettext(message, 'set_default', (default_addr,), app_context=app_context)
+    await send_message(session, message, msg, reply_markup=get_kb_return(message), app_context=app_context)
 
     await message.delete()
 
 
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "Refresh")
-async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     repo = SqlAlchemyWalletRepository(session)
     await repo.reset_balance_cache(callback.from_user.id)
-    await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback)
+    await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback, app_context=app_context)
     await callback.answer()
     await check_update_username(
         session, callback.from_user.id, callback.from_user.username, state
@@ -380,7 +380,7 @@ async def check_update_username(session: Session, user_id: int, user_name: str, 
 
 
 @router.callback_query(F.data == "ShowMoreToggle")
-async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMContext, session: Session):
+async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     """
         Invert state of 'show_more' flag by clicking on button.
     """
@@ -388,7 +388,7 @@ async def cq_show_more_less_click(callback: types.CallbackQuery, state: FSMConte
     new_state = not data.get('show_more', False)  # Invert flag state
     await state.update_data(show_more=new_state)
 
-    keyboard = await get_kb_default(session, callback.from_user.id, state)
-    await callback.message.edit_text(text=await get_start_text(session, state, callback.from_user.id),
+    keyboard = await get_kb_default(session, callback.from_user.id, state, app_context=app_context)
+    await callback.message.edit_text(text=await get_start_text(session, state, callback.from_user.id, app_context=app_context),
                                      reply_markup=keyboard, disable_web_page_preview=True)
     await callback.answer()
