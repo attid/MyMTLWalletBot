@@ -4,12 +4,13 @@ from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.types import TelegramObject
 
-from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from infrastructure.services.localization_service import LocalizationService
 
 class DbSessionMiddleware(BaseMiddleware):
-    def __init__(self, session_pool):
+    def __init__(self, session_pool, localization_service: LocalizationService):
         super().__init__()
         self.session_pool = session_pool
+        self.localization_service = localization_service
 
     async def __call__(
             self,
@@ -27,14 +28,22 @@ class DbSessionMiddleware(BaseMiddleware):
                 user_id=fsm_data.get('user_id', event.from_user.id),
                 last_message_id=data.get('last_message_id', 0)
             )
-            with self.session_pool.get_session() as session:
+            async with self.session_pool.get_session() as session:
                 user_repo = SqlAlchemyUserRepository(session)
                 user = await user_repo.get_by_id(event.from_user.id)
                 lang = user.language if user else 'en'
                 
+                # Update LocalizationService cache
+                self.localization_service.set_user_language(event.from_user.id, lang)
+
                 await fsm.update_data(
                     user_lang=fsm_data.get('user_lang', lang)
                 )
-        with self.session_pool.get_session() as session:
+        else:
+            # If lang is in FSM, ensure it's in service cache too (in case service restarted or cache cleared)
+            # Or just set it blindly to be safe and fast.
+            lang = fsm_data.get('user_lang', 'en')
+            self.localization_service.set_user_language(event.from_user.id, lang)
+        async with self.session_pool.get_session() as session:
             data["session"] = session
             return await handler(event, data)

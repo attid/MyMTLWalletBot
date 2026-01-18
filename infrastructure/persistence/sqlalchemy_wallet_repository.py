@@ -1,29 +1,29 @@
 from typing import List, Optional
 from sqlalchemy import update, func
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from core.domain.entities import Wallet
 from core.interfaces.repositories import IWalletRepository
 from db.models import MyMtlWalletBot
 
 class SqlAlchemyWalletRepository(IWalletRepository):
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         self.session = session
 
     async def get_by_user_id(self, user_id: int) -> List[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallets = result.scalars().all()
         return [self._to_entity(w) for w in db_wallets]
 
     async def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.id == wallet_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return self._to_entity(result.scalar_one_or_none())
 
     async def get_by_public_key(self, public_key: str) -> Optional[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.public_key == public_key)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallet = result.scalar_one_or_none()
         if db_wallet:
             return self._to_entity(db_wallet)
@@ -34,7 +34,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             MyMtlWalletBot.user_id == user_id,
             MyMtlWalletBot.default_wallet == 1 
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallet = result.scalar_one_or_none()
         if db_wallet:
             return self._to_entity(db_wallet)
@@ -46,7 +46,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             MyMtlWalletBot.user_id == user_id,
             MyMtlWalletBot.need_delete == 0
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallets = result.scalars().all()
         return [self._to_entity(w) for w in db_wallets]
 
@@ -64,12 +64,12 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             last_event_id=0
         )
         self.session.add(db_wallet)
-        self.session.flush()
+        await self.session.flush()
         return self._to_entity(db_wallet)
 
     async def update(self, wallet: Wallet) -> Wallet:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.id == wallet.id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallet = result.scalar_one_or_none()
         if db_wallet:
             db_wallet.default_wallet = 1 if wallet.is_default else 0
@@ -94,22 +94,22 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             db_wallet.use_pin = wallet.use_pin
             db_wallet.free_wallet = 1 if wallet.is_free else 0
                 
-            self.session.flush()
+            await self.session.flush()
             return self._to_entity(db_wallet)
         raise ValueError(f"Wallet with id {wallet.id} not found for update")
 
     async def reset_balance_cache(self, user_id: int) -> None:
         """Reset the cached balance for the user's default wallet."""
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.user_id == user_id, MyMtlWalletBot.default_wallet == 1)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         wallet = result.scalar_one_or_none()
         if wallet:
             wallet.balances_event_id = '0'
-            self.session.flush()
+            await self.session.flush()
 
     async def get_all_deleted(self) -> List[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.need_delete == 1)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return [self._to_entity(w) for w in result.scalars().all()]
 
     async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: int = None) -> None:
@@ -122,14 +122,14 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         )
         if wallet_id is not None:
             stmt = stmt.where(MyMtlWalletBot.id == wallet_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallet = result.scalar_one_or_none()
         if db_wallet:
             if erase:
-                self.session.delete(db_wallet)
+                await self.session.delete(db_wallet)
             else:
                 db_wallet.need_delete = 1
-            self.session.commit()
+            await self.session.commit()
 
     async def count_free_wallets(self, user_id: int) -> int:
         """Count the number of active free wallets for a user."""
@@ -138,7 +138,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             MyMtlWalletBot.free_wallet == 1,
             MyMtlWalletBot.need_delete == 0
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return result.scalar() or 0
 
     async def set_default_wallet(self, user_id: int, public_key: str) -> bool:
@@ -147,7 +147,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         stmt_unset = update(MyMtlWalletBot).where(
             MyMtlWalletBot.user_id == user_id
         ).values(default_wallet=0)
-        self.session.execute(stmt_unset)
+        await self.session.execute(stmt_unset)
         
         # Set new default
         stmt_set = update(MyMtlWalletBot).where(
@@ -155,10 +155,10 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             MyMtlWalletBot.public_key == public_key,
             MyMtlWalletBot.need_delete == 0
         ).values(default_wallet=1)
-        result = self.session.execute(stmt_set)
+        result = await self.session.execute(stmt_set)
         # We usually let the service layer commit, but here we might need flush to ensure updates are ready?
         # db/requests.py committed immediately. 
-        self.session.flush()
+        await self.session.flush()
         return result.rowcount > 0
 
     async def delete_all_by_user(self, user_id: int) -> None:
@@ -169,8 +169,8 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         stmt = update(MyMtlWalletBot).where(
             MyMtlWalletBot.user_id == user_id
         ).values(need_delete=1)
-        self.session.execute(stmt)
-        self.session.flush()
+        await self.session.execute(stmt)
+        await self.session.flush()
 
     async def get_info(self, user_id: int, public_key: str) -> str:
         """Get wallet info string."""
@@ -179,7 +179,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             MyMtlWalletBot.public_key == public_key,
             MyMtlWalletBot.need_delete == 0
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_wallet = result.scalar_one_or_none()
         if db_wallet is None:
             return "(нет данных)"

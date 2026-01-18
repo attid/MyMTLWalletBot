@@ -310,7 +310,6 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
              logger.warning("Asset visibility change in non-ORM session, commit might not be applicable.")
 
         if not save_error:
-        if not save_error:
             # Redraw the current page of the menu to reflect the change
             message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=page)
             try:

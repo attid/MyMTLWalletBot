@@ -378,7 +378,15 @@ async def mock_server():
 
 @pytest.fixture
 def mock_session():
-    return MagicMock()
+    session = AsyncMock()
+    # Mock execute result
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    result.scalar_one_or_none.return_value = None
+    result.scalar.return_value = None
+    result.all.return_value = []
+    session.execute.return_value = result
+    return session
 
 @pytest.fixture
 def mock_state():
@@ -410,35 +418,38 @@ def mock_global_data_autouse():
     gd = MagicMock()
     gd.db_pool = MagicMock()
     
-    session_mock = MagicMock()
-    gd.db_pool.get_session.return_value.__enter__.return_value = session_mock
-    
-    # Configure default user return from DB
+    session_mock = AsyncMock()
+    # Configure execute result for default user
     user_mock = MagicMock()
     user_mock.lang = 'en'
     user_mock.can_5000 = 1 # Default permission
+    user_mock.user_id = 123
     
-    # Allow chained query like session.query(User).filter(...).first()
-    session_mock.query.return_value.filter.return_value.first.return_value = user_mock
-    session_mock.query.return_value.get.return_value = user_mock
-    session_mock.scalar.return_value = user_mock
-
+    result_mock = MagicMock()
+    result_mock.scalars.return_value.all.return_value = [user_mock]
+    result_mock.scalar_one_or_none.return_value = user_mock
+    result_mock.scalar.return_value = user_mock
+    result_mock.all.return_value = [(user_mock,)]
+    
+    session_mock.execute.return_value = result_mock
+    
+    # Support async context manager
+    gd.db_pool.get_session.return_value.__aenter__.return_value = session_mock
+    gd.db_pool.get_session.return_value.__aexit__.return_value = None
+    
     gd.user_lang_dic = {123: 'en'}
+    gd.localization_service = MagicMock()
     gd.localization_service.get_text.return_value = 'text'
     gd.lang_dict = {'en': {}}
     
     # Patch known locations
-    # We patch 'other.lang_tools.global_data' which is the source of truth for many utils
-    # p1 = patch("other.lang_tools.global_data", gd)
     p3 = patch("other.lang_tools.my_gettext", return_value="text")
     p2 = patch("infrastructure.utils.common_utils.get_user_id", return_value=123)
     
-    # p1.start()
     p3.start()
     p2.start()
     
     yield gd
     
-    # p1.stop()
     p3.stop()
     p2.stop()

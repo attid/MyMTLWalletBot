@@ -5,7 +5,7 @@ from aiogram import Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select, update, delete
 
 from db.models import TOperations, MyMtlWalletBot, TLOperations, NotificationFilter
 from db.db_pool import DatabasePool
@@ -61,19 +61,21 @@ def decode_db_effect(operation: TOperations, decode_for: str, user_id: int):
 @with_timeout(60)
 @safe_catch_async
 async def fetch_addresses(session_pool: DatabasePool, app_context: AppContext):
-    with session_pool.get_session() as session:
+    async with session_pool.get_session() as session:
         # Request TLOperations to find accounts with new operations
-        tl_query = session.query(TLOperations.account, func.max(TLOperations.id).label('max_id'),
+        stmt = select(TLOperations.account, func.max(TLOperations.id).label('max_id'),
                                  MyMtlWalletBot.user_id) \
             .join(MyMtlWalletBot, MyMtlWalletBot.public_key == TLOperations.account) \
-            .filter(MyMtlWalletBot.need_delete == 0,
+            .where(MyMtlWalletBot.need_delete == 0,
                     MyMtlWalletBot.user_id > 0,
                     TLOperations.dt > datetime.utcnow() - timedelta(minutes=30),
                     TLOperations.id > MyMtlWalletBot.last_event_id
                     ) \
             .group_by(TLOperations.account, MyMtlWalletBot.user_id)
 
-        tl_results = await asyncio.to_thread(tl_query.all)
+        result = await session.execute(stmt)
+        tl_results = result.all()
+        
         if len(tl_results) > 10:
             logger.info(f'founded accounts: {len(tl_results)}')
 
@@ -83,31 +85,31 @@ async def fetch_addresses(session_pool: DatabasePool, app_context: AppContext):
 @safe_catch_async
 async def handle_address(tl_result, session_pool: DatabasePool, app_context: AppContext):
     # 1. Get all data from DB WITHOUT opening long transaction
-    with session_pool.get_session() as session:
+    async with session_pool.get_session() as session:
         logger.info(tl_result.account)
         # Get wallet info
-        wallet = await asyncio.to_thread(
-            session.query(MyMtlWalletBot)
-            .filter(MyMtlWalletBot.need_delete == 0,
-                    MyMtlWalletBot.user_id == tl_result.user_id,
-                    MyMtlWalletBot.public_key == tl_result.account)
-            .first
+        stmt_wallet = select(MyMtlWalletBot).where(
+            MyMtlWalletBot.need_delete == 0,
+            MyMtlWalletBot.user_id == tl_result.user_id,
+            MyMtlWalletBot.public_key == tl_result.account
         )
+        result_wallet = await session.execute(stmt_wallet)
+        wallet = result_wallet.scalar_one_or_none()
 
         if not wallet:
             return
 
-        operations = await asyncio.to_thread(
-            session.query(TOperations)
-            .filter(or_(TOperations.for_account == tl_result.account,
-                        TOperations.from_account == tl_result.account,
-                        TOperations.code2 == tl_result.account),
-                    TOperations.id > wallet.last_event_id,
-                    TOperations.dt > datetime.utcnow() - timedelta(minutes=30),
-                    TOperations.arhived == None)
-            .order_by(TOperations.id)
-            .all
-        )
+        stmt_ops = select(TOperations).where(
+            or_(TOperations.for_account == tl_result.account,
+                TOperations.from_account == tl_result.account,
+                TOperations.code2 == tl_result.account),
+            TOperations.id > wallet.last_event_id,
+            TOperations.dt > datetime.utcnow() - timedelta(minutes=30),
+            TOperations.arhived == None
+        ).order_by(TOperations.id)
+        
+        result_ops = await session.execute(stmt_ops)
+        operations = result_ops.scalars().all()
 
     if not operations:
         return
@@ -134,27 +136,27 @@ async def handle_address(tl_result, session_pool: DatabasePool, app_context: App
             logger.info(['handle_address', operation.id, ex])
 
     # 3. Execute all DB operations in one transaction
-    with session_pool.get_session() as session:
+    async with session_pool.get_session() as session:
         if last_event_id_to_update:
-            await asyncio.to_thread(
-                session.query(MyMtlWalletBot)
-                .filter(MyMtlWalletBot.public_key == wallet.public_key)
-                .update, {MyMtlWalletBot.last_event_id: last_event_id_to_update}
-            )
+            stmt_update = update(MyMtlWalletBot).where(
+                MyMtlWalletBot.public_key == wallet.public_key
+            ).values(last_event_id=last_event_id_to_update)
+            await session.execute(stmt_update)
 
         if wallet_to_delete:
             wallet_repo = SqlAlchemyWalletRepository(session)
             await wallet_repo.delete(user_id=wallet_to_delete['user_id'], public_key=wallet_to_delete['public_key'])
 
-        session.commit()
+        await session.commit()
 
     # 4. Send messages after transaction commit
     for msg in messages_to_send:
         try:
             # Check for notification filters
-            with session_pool.get_session() as session:
-                user_filters = session.query(NotificationFilter).filter(
-                    NotificationFilter.user_id == msg['user_id']).all()
+            async with session_pool.get_session() as session:
+                stmt_filter = select(NotificationFilter).where(NotificationFilter.user_id == msg['user_id'])
+                result_filter = await session.execute(stmt_filter)
+                user_filters = result_filter.scalars().all()
 
             should_send = True
             for f in user_filters:

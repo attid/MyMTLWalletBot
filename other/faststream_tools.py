@@ -134,7 +134,7 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
     )
 
     db_pool = APP_CONTEXT.db_pool
-    with db_pool.get_session() as session:
+    async with db_pool.get_session() as session:
         await clear_last_message_id(user_id, app_context=APP_CONTEXT)
         await cmd_check_xdr(session, xdr, user_id, state, app_context=APP_CONTEXT)
         logger.info(f"cmd_check_xdr: {xdr}")
@@ -249,7 +249,7 @@ async def handle_pairing_events(msg: dict):
             return
 
         db_pool = APP_CONTEXT.db_pool
-        with db_pool.get_session() as session:
+        async with db_pool.get_session() as session:
             await send_message(session, user_id, message, reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)
 
     except Exception as e:

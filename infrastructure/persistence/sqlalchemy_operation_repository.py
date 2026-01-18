@@ -1,17 +1,17 @@
 from typing import List, Optional
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from core.interfaces.repositories import IOperationRepository
 from db.models import TOperations
 
 class SqlAlchemyOperationRepository(IOperationRepository):
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         self.session = session
 
     async def get_by_id(self, operation_id: str) -> Optional[TOperations]:
         stmt = select(TOperations).where(TOperations.id == operation_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_recent_for_addresses(self, addresses: List[str], last_event_id: int, 
@@ -36,5 +36,5 @@ class SqlAlchemyOperationRepository(IOperationRepository):
             TOperations.dt > datetime.utcnow() - timedelta(minutes=minutes),
             TOperations.arhived == None
         ).order_by(TOperations.id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return list(result.scalars().all())

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 from sqlalchemy import func
 from sqlalchemy.future import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.entities import Cheque
 from core.interfaces.repositories import IChequeRepository
@@ -13,7 +13,7 @@ from db.models import MyMtlWalletBotCheque, MyMtlWalletBotChequeHistory, ChequeS
 class SqlAlchemyChequeRepository(IChequeRepository):
     """SQLAlchemy implementation for cheque operations."""
     
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         self.session = session
     
     async def create(self, uuid: str, amount: str, count: int, user_id: int, comment: str) -> Cheque:
@@ -26,7 +26,7 @@ class SqlAlchemyChequeRepository(IChequeRepository):
             cheque_comment=comment
         )
         self.session.add(db_cheque)
-        self.session.commit()
+        await self.session.commit()
         return self._to_entity(db_cheque)
     
     async def get_by_uuid(self, uuid: str, user_id: int = None) -> Optional[Cheque]:
@@ -34,7 +34,7 @@ class SqlAlchemyChequeRepository(IChequeRepository):
         stmt = select(MyMtlWalletBotCheque).where(MyMtlWalletBotCheque.cheque_uuid == uuid)
         if user_id is not None:
             stmt = stmt.where(MyMtlWalletBotCheque.user_id == user_id)
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_cheque = result.scalar_one_or_none()
         if db_cheque:
             return self._to_entity(db_cheque)
@@ -42,32 +42,36 @@ class SqlAlchemyChequeRepository(IChequeRepository):
     
     async def get_receive_count(self, uuid: str, user_id: int = None) -> int:
         """Get the number of times a cheque has been received."""
-        query = self.session.query(func.count('*')). \
-            select_from(MyMtlWalletBotCheque). \
-            join(MyMtlWalletBotChequeHistory, MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id). \
-            filter(MyMtlWalletBotCheque.cheque_uuid == uuid)
+        # Using future-style select with join and count
+        stmt = select(func.count('*')).select_from(MyMtlWalletBotCheque).join(
+            MyMtlWalletBotChequeHistory, 
+            MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id
+        ).where(MyMtlWalletBotCheque.cheque_uuid == uuid)
         
         if user_id is not None:
-            query = query.filter(MyMtlWalletBotChequeHistory.user_id == user_id)
+            stmt = stmt.where(MyMtlWalletBotChequeHistory.user_id == user_id)
         
-        receive_count = query.scalar()
+        result = await self.session.execute(stmt)
+        receive_count = result.scalar()
         return receive_count or 0
     
     async def get_available(self, user_id: int) -> List[Cheque]:
         """Get all available (not fully claimed) cheques for a user."""
-        cheques = self.session.query(
-            MyMtlWalletBotCheque
-        ).outerjoin(
+        # Translate query-style to select-style for async compatibility
+        stmt = select(MyMtlWalletBotCheque).outerjoin(
             MyMtlWalletBotChequeHistory,
             MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id
         ).group_by(
             MyMtlWalletBotCheque
         ).having(
             func.count(MyMtlWalletBotChequeHistory.cheque_id) < MyMtlWalletBotCheque.cheque_count
-        ).filter(
+        ).where(
             MyMtlWalletBotCheque.user_id == user_id,
             MyMtlWalletBotCheque.cheque_status != ChequeStatus.CANCELED.value
-        ).all()
+        )
+        
+        result = await self.session.execute(stmt)
+        cheques = result.scalars().all()
         
         return [self._to_entity(cheque) for cheque in cheques]
     
@@ -79,7 +83,7 @@ class SqlAlchemyChequeRepository(IChequeRepository):
             cheque_id=cheque_id
         )
         self.session.add(new_history)
-        self.session.commit()
+        await self.session.commit()
     
     async def cancel(self, cheque_uuid: str, user_id: int) -> bool:
         """Cancel a cheque (set status to CANCELED)."""
@@ -87,11 +91,11 @@ class SqlAlchemyChequeRepository(IChequeRepository):
              MyMtlWalletBotCheque.cheque_uuid == cheque_uuid,
              MyMtlWalletBotCheque.user_id == user_id
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         db_cheque = result.scalar_one_or_none()
         if db_cheque:
             db_cheque.cheque_status = ChequeStatus.CANCELED.value
-            self.session.commit()
+            await self.session.commit()
             return True
         return False
 

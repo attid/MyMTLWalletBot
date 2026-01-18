@@ -1,7 +1,7 @@
 import asyncio
 from typing import Optional
 from aiogram import Bot, Dispatcher
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from infrastructure.services.localization_service import LocalizationService
 from core.interfaces.repositories import IRepositoryFactory
 from core.interfaces.services import IStellarService
@@ -14,7 +14,7 @@ class AppContext:
     def __init__(
         self,
         bot: Bot,
-        db_pool: sessionmaker,
+        db_pool: async_sessionmaker,
         admin_id: int,
         cheque_queue: asyncio.Queue,
         log_queue: asyncio.Queue,

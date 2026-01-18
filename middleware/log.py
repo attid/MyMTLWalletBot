@@ -41,9 +41,9 @@ async def log_worker(app_context: AppContext):
                 log_operation=log_item.log_operation[:32],
                 log_operation_info=log_item.log_operation_info[:32]
             )
-            with app_context.db_pool.get_session() as session:
+            async with app_context.db_pool.get_session() as session:
                 session.add(new_log)
-                session.commit()
+                await session.commit()
         except Exception as e:
             logger.warning(f'{log_item.user_id}-{log_item.log_operation} failed {type(e)}')
         app_context.log_queue.task_done()
