@@ -58,7 +58,7 @@ def dp(mock_session, mock_app_context):
     return dp
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_lang(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_wallet_lang(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test ChangeLang callback -> Show language menu"""
     user_id = 123
     mock_app_context.bot = bot
@@ -72,7 +72,7 @@ async def test_cmd_wallet_lang(mock_server, bot, dp, mock_session, mock_app_cont
         )
     ))
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) == 1
     assert "Choose language" in sent_messages[0]['data']['text']
     # Verify buttons
@@ -82,7 +82,7 @@ async def test_cmd_wallet_lang(mock_server, bot, dp, mock_session, mock_app_cont
 
 
 @pytest.mark.asyncio
-async def test_callbacks_lang(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test lang_en callback -> Set language and show balance"""
     user_id = 123
     mock_app_context.bot = bot
@@ -110,13 +110,13 @@ async def test_callbacks_lang(mock_server, bot, dp, mock_session, mock_app_conte
         mock_show.assert_called_once()
         
         # Verify answer
-        answers = [r for r in mock_server if r['method'] == 'answerCallbackQuery']
+        answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
         assert len(answers) == 1
         assert "was_set" in answers[0]['data']['text'] # Mock gettext
 
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_wallet_setting(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test ChangeWallet callback"""
     user_id = 123
     mock_app_context.bot = bot
@@ -135,7 +135,7 @@ async def test_cmd_wallet_setting(mock_server, bot, dp, mock_session, mock_app_c
 
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting_msg(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_wallet_setting_msg(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test /change_wallet command"""
     user_id = 123
     mock_app_context.bot = bot
@@ -152,12 +152,12 @@ async def test_cmd_wallet_setting_msg(mock_server, bot, dp, mock_session, mock_a
         
         mock_change_wallet.assert_called_once()
         # Message should be deleted (mock_server doesn't show deleteMessage easily unless we track it)
-        deletes = [r for r in mock_server if r['method'] == 'deleteMessage']
+        deletes = [r for r in mock_telegram if r['method'] == 'deleteMessage']
         assert len(deletes) == 1
 
 
 @pytest.mark.asyncio
-async def test_cq_setting_delete(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cq_setting_delete(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test WalletSettingCallbackData DELETE action"""
     user_id = 123
     mock_app_context.bot = bot
@@ -183,7 +183,7 @@ async def test_cq_setting_delete(mock_server, bot, dp, mock_session, mock_app_co
         )
     ))
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) == 1
     assert "kb_delete" in sent_messages[0]['data']['text']
     assert "GWALLET1" in sent_messages[0]['data']['text']
@@ -191,7 +191,7 @@ async def test_cq_setting_delete(mock_server, bot, dp, mock_session, mock_app_co
 
 
 @pytest.mark.asyncio
-async def test_cq_setting_set_active(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cq_setting_set_active(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test WalletSettingCallbackData SET_ACTIVE action"""
     user_id = 123
     mock_app_context.bot = bot
@@ -223,7 +223,7 @@ async def test_cq_setting_set_active(mock_server, bot, dp, mock_session, mock_ap
 
 
 @pytest.mark.asyncio
-async def test_cq_setting_name(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cq_setting_name(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test WalletSettingCallbackData NAME action"""
     user_id = 123
     mock_app_context.bot = bot
@@ -250,7 +250,7 @@ async def test_cq_setting_name(mock_server, bot, dp, mock_session, mock_app_cont
             )
         ))
         
-        answers = [r for r in mock_server if r['method'] == 'answerCallbackQuery']
+        answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
         assert len(answers) >= 1
         # Find the answer with text
         text_answer = next((a for a in answers if 'text' in a['data']), None)
@@ -260,7 +260,7 @@ async def test_cq_setting_name(mock_server, bot, dp, mock_session, mock_app_cont
 
 
 @pytest.mark.asyncio
-async def test_cmd_yes_delete(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_yes_delete(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test YES_DELETE callback"""
     user_id = 123
     mock_app_context.bot = bot
@@ -289,7 +289,7 @@ async def test_cmd_yes_delete(mock_server, bot, dp, mock_session, mock_app_conte
 
 
 @pytest.mark.asyncio
-async def test_cmd_support(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_support(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test Support callback"""
     user_id = 123
     mock_app_context.bot = bot
@@ -303,6 +303,6 @@ async def test_cmd_support(mock_server, bot, dp, mock_session, mock_app_context)
         )
     ))
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) == 1
     assert "support_bot" in sent_messages[0]['data']['text']

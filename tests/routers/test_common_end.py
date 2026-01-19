@@ -13,7 +13,7 @@ from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
 
 
 @pytest.fixture
-async def common_end_app_context(mock_app_context, mock_server):
+async def common_end_app_context(mock_app_context, mock_telegram):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     mock_app_context.bot = bot
@@ -50,7 +50,7 @@ def _last_request(mock_server, method):
 
 @pytest.mark.asyncio
 async def test_cmd_last_route_stellar_address(
-    mock_server, mock_session, mock_message, common_end_app_context
+        mock_telegram, mock_session, mock_message, common_end_app_context
 ):
     mock_message.chat.type = "private"
     mock_message.text = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
@@ -75,14 +75,14 @@ async def test_cmd_last_route_stellar_address(
 
         await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "choose_token"
 
 
 @pytest.mark.asyncio
 async def test_cmd_last_route_xdr_base64(
-    mock_server, mock_session, mock_message, common_end_app_context
+        mock_telegram, mock_session, mock_message, common_end_app_context
 ):
     mock_message.chat.type = "private"
     mock_message.entities = []
@@ -107,13 +107,13 @@ async def test_cmd_last_route_xdr_base64(
     ):
         await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
 
 
 @pytest.mark.asyncio
 async def test_cmd_last_route_sign_tools_link(
-    mock_server, mock_session, mock_message, common_end_app_context
+        mock_telegram, mock_session, mock_message, common_end_app_context
 ):
     mock_message.chat.type = "private"
     mock_message.text = "Check https://eurmtl.me/sign_tools?xdr=AAAA"
@@ -141,13 +141,13 @@ async def test_cmd_last_route_sign_tools_link(
     ):
         await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
 
 
 @pytest.mark.asyncio
 async def test_cmd_last_route_forwarded_with_username(
-    mock_server, mock_session, mock_message, common_end_app_context
+        mock_telegram, mock_session, mock_message, common_end_app_context
 ):
     mock_message.chat.type = "private"
     mock_message.text = "Some text"
@@ -180,14 +180,14 @@ async def test_cmd_last_route_forwarded_with_username(
         await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
 
     mock_user_repo.get_account_by_username.assert_awaited_once_with("@testuser")
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "choose_token"
 
 
 @pytest.mark.asyncio
 async def test_cmd_last_route_non_private_chat(
-    mock_server, mock_session, mock_message, common_end_app_context
+        mock_telegram, mock_session, mock_message, common_end_app_context
 ):
     mock_message.chat.type = "group"
     mock_message.text = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
@@ -196,12 +196,12 @@ async def test_cmd_last_route_non_private_chat(
 
     await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
 
-    assert _last_request(mock_server, "sendMessage") is None
+    assert _last_request(mock_telegram, "sendMessage") is None
 
 
 @pytest.mark.asyncio
 async def test_cmd_last_route_normal_message(
-    mock_server, mock_session, mock_message, common_end_app_context
+        mock_telegram, mock_session, mock_message, common_end_app_context
 ):
     mock_message.chat.type = "private"
     mock_message.text = "Just a normal message"

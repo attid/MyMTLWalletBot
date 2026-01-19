@@ -39,7 +39,7 @@ def cleanup_router():
 # --- MTL Tools main menu ---
 
 @pytest.mark.asyncio
-async def test_cmd_tools(mock_server, dp):
+async def test_cmd_tools(mock_telegram, dp):
     """
     Test MTLTools callback: should show main tools menu.
     """
@@ -75,10 +75,10 @@ async def test_cmd_tools(mock_server, dp):
 
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is not None, "sendMessage should be called"
 
-    req_answer = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req_answer = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req_answer is not None, "answerCallbackQuery should be called"
 
     await bot.session.close()
@@ -87,7 +87,7 @@ async def test_cmd_tools(mock_server, dp):
 # --- Delegate handlers ---
 
 @pytest.mark.asyncio
-async def test_cmd_tools_delegate(mock_server, dp):
+async def test_cmd_tools_delegate(mock_telegram, dp):
     """
     Test MTLToolsDelegate callback: should show delegate management menu.
     """
@@ -140,7 +140,7 @@ async def test_cmd_tools_delegate(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         stellar_tools_module.stellar_get_data = original_get_data
@@ -151,7 +151,7 @@ async def test_cmd_tools_delegate(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_tools_del_delegate(mock_server, dp):
+async def test_cmd_tools_del_delegate(mock_telegram, dp):
     """
     Test MTLToolsDelDelegate callback: should generate XDR to delete delegate.
     """
@@ -208,7 +208,7 @@ async def test_cmd_tools_del_delegate(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         stellar_tools_module.stellar_get_data = original_get_data
@@ -221,7 +221,7 @@ async def test_cmd_tools_del_delegate(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_tools_add_delegate_low_xlm(mock_server, dp):
+async def test_cmd_tools_add_delegate_low_xlm(mock_telegram, dp):
     """
     Test AddDelegate callback with low XLM: should show alert.
     """
@@ -268,7 +268,7 @@ async def test_cmd_tools_add_delegate_low_xlm(mock_server, dp):
     finally:
         stellar_tools_module.have_free_xlm = original_have_xlm
 
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
     assert req["data"].get("show_alert") == "true", "Should show alert for low XLM"
 
@@ -276,7 +276,7 @@ async def test_cmd_tools_add_delegate_low_xlm(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_add_delegate_for(mock_server, dp):
+async def test_cmd_send_add_delegate_for(mock_telegram, dp):
     """
     Test sending delegate address: should generate XDR for confirmation.
     """
@@ -335,7 +335,7 @@ async def test_cmd_send_add_delegate_for(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_check_account = original_check
@@ -348,7 +348,7 @@ async def test_cmd_send_add_delegate_for(mock_server, dp):
 # --- Donate handlers ---
 
 @pytest.mark.asyncio
-async def test_cmd_tools_donate_with_existing(mock_server, dp):
+async def test_cmd_tools_donate_with_existing(mock_telegram, dp):
     """
     Test MTLToolsDonate callback with existing donations.
     """
@@ -403,7 +403,7 @@ async def test_cmd_tools_donate_with_existing(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         stellar_tools_module.stellar_get_data = original_get_data
@@ -414,7 +414,7 @@ async def test_cmd_tools_donate_with_existing(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_tools_add_donate_low_xlm(mock_server, dp):
+async def test_cmd_tools_add_donate_low_xlm(mock_telegram, dp):
     """
     Test AddDonate callback with low XLM: should show alert.
     """
@@ -461,7 +461,7 @@ async def test_cmd_tools_add_donate_low_xlm(mock_server, dp):
     finally:
         stellar_tools_module.have_free_xlm = original_have_xlm
 
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
     assert req["data"].get("show_alert") == "true", "Should show alert for low XLM"
 
@@ -469,7 +469,7 @@ async def test_cmd_tools_add_donate_low_xlm(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_add_donate_address(mock_server, dp):
+async def test_cmd_send_add_donate_address(mock_telegram, dp):
     """
     Test sending donate address: should ask for name.
     """
@@ -514,7 +514,7 @@ async def test_cmd_send_add_donate_address(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_check_account = original_check
@@ -523,7 +523,7 @@ async def test_cmd_send_add_donate_address(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_add_donate_name(mock_server, dp):
+async def test_cmd_send_add_donate_name(mock_telegram, dp):
     """
     Test sending donate name: should ask for percent.
     """
@@ -557,14 +557,14 @@ async def test_cmd_send_add_donate_name(mock_server, dp):
 
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is not None, "sendMessage should be called"
 
     await bot.session.close()
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_add_donate_percent(mock_server, dp):
+async def test_cmd_send_add_donate_percent(mock_telegram, dp):
     """
     Test sending donate percent: should generate XDR for confirmation.
     """
@@ -614,7 +614,7 @@ async def test_cmd_send_add_donate_percent(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_get_user_account = original_get_user
@@ -624,7 +624,7 @@ async def test_cmd_send_add_donate_percent(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cq_donate_setting_show(mock_server, dp):
+async def test_cq_donate_setting_show(mock_telegram, dp):
     """
     Test DonateCallbackData Show action: should show donate details.
     """
@@ -665,7 +665,7 @@ async def test_cq_donate_setting_show(mock_server, dp):
 
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
     assert req["data"].get("show_alert") == "true", "Should show alert with details"
 
@@ -673,7 +673,7 @@ async def test_cq_donate_setting_show(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cq_donate_setting_delete(mock_server, dp):
+async def test_cq_donate_setting_delete(mock_telegram, dp):
     """
     Test DonateCallbackData Delete action: should generate XDR to delete donate.
     """
@@ -727,7 +727,7 @@ async def test_cq_donate_setting_delete(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_get_user_account = original_get_user
@@ -739,7 +739,7 @@ async def test_cq_donate_setting_delete(mock_server, dp):
 # --- BIM handlers ---
 
 @pytest.mark.asyncio
-async def test_cmd_tools_bim(mock_server, dp):
+async def test_cmd_tools_bim(mock_telegram, dp):
     """
     Test MTLToolsAddBIM callback: should show BIM list.
     """
@@ -790,7 +790,7 @@ async def test_cmd_tools_bim(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         stellar_tools_module.stellar_get_data = original_get_data
@@ -801,7 +801,7 @@ async def test_cmd_tools_bim(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_tools_add_bim_low_xlm(mock_server, dp):
+async def test_cmd_tools_add_bim_low_xlm(mock_telegram, dp):
     """
     Test AddBIM callback with low XLM: should show alert.
     """
@@ -848,7 +848,7 @@ async def test_cmd_tools_add_bim_low_xlm(mock_server, dp):
     finally:
         stellar_tools_module.have_free_xlm = original_have_xlm
 
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
     assert req["data"].get("show_alert") == "true", "Should show alert for low XLM"
 
@@ -856,7 +856,7 @@ async def test_cmd_tools_add_bim_low_xlm(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_add_bim_address(mock_server, dp):
+async def test_cmd_send_add_bim_address(mock_telegram, dp):
     """
     Test sending BIM address: should ask for name.
     """
@@ -901,7 +901,7 @@ async def test_cmd_send_add_bim_address(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_check_account = original_check
@@ -910,7 +910,7 @@ async def test_cmd_send_add_bim_address(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_add_bim_name(mock_server, dp):
+async def test_cmd_send_add_bim_name(mock_telegram, dp):
     """
     Test sending BIM name: should generate XDR for confirmation.
     """
@@ -960,7 +960,7 @@ async def test_cmd_send_add_bim_name(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_get_user_account = original_get_user
@@ -970,7 +970,7 @@ async def test_cmd_send_add_bim_name(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cq_bim_setting_show(mock_server, dp):
+async def test_cq_bim_setting_show(mock_telegram, dp):
     """
     Test BIMCallbackData Show action: should show BIM details.
     """
@@ -1011,7 +1011,7 @@ async def test_cq_bim_setting_show(mock_server, dp):
 
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
     assert req["data"].get("show_alert") == "true", "Should show alert with details"
 
@@ -1019,7 +1019,7 @@ async def test_cq_bim_setting_show(mock_server, dp):
 
 
 @pytest.mark.asyncio
-async def test_cq_bim_setting_delete(mock_server, dp):
+async def test_cq_bim_setting_delete(mock_telegram, dp):
     """
     Test BIMCallbackData Delete action: should generate XDR to delete BIM.
     """
@@ -1073,7 +1073,7 @@ async def test_cq_bim_setting_delete(mock_server, dp):
     try:
         await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
-        req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
         assert req is not None, "sendMessage should be called"
     finally:
         mtltools_module.stellar_get_user_account = original_get_user

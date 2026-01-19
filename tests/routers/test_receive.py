@@ -29,7 +29,7 @@ def cleanup_router():
 
 
 @pytest.mark.asyncio
-async def test_cmd_receive(mock_server, dp):
+async def test_cmd_receive(mock_telegram, dp):
     """
     Test Receive callback: should get user account and create/send QR code.
     """
@@ -84,11 +84,11 @@ async def test_cmd_receive(mock_server, dp):
         assert os.path.exists(qr_path), f"QR code file {qr_path} should be created"
 
         # Verify sendPhoto was called (via mock_server)
-        req = next((r for r in mock_server if r["method"] == "sendPhoto"), None)
+        req = next((r for r in mock_telegram if r["method"] == "sendPhoto"), None)
         assert req is not None, "sendPhoto should be called"
 
         # Verify callback was answered
-        req_answer = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+        req_answer = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
         assert req_answer is not None, "answerCallbackQuery should be called"
 
         # Cleanup QR file

@@ -50,7 +50,7 @@ def mock_app_context():
 
 
 @pytest.fixture
-async def mock_server():
+async def mock_telegram():
     """Starts a local mock Telegram server."""
     routes = web.RouteTableDef()
     received_requests = []
@@ -477,7 +477,7 @@ class RouterTestMiddleware(BaseMiddleware):
 
 
 @pytest.fixture
-async def router_bot(mock_server):
+async def router_bot(mock_telegram):
     """Creates a Bot instance connected to mock Telegram server."""
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)

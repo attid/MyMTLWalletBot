@@ -37,7 +37,7 @@ class MockDbMiddleware(BaseMiddleware):
 
 
 @pytest.fixture
-async def start_app_context(mock_app_context, mock_server):
+async def start_app_context(mock_app_context, mock_telegram):
     """Setup app_context with real bot for mock_server integration."""
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
@@ -52,7 +52,7 @@ def _last_request(mock_server, method):
 
 
 @pytest.mark.asyncio
-async def test_get_start_text_show_less(mock_server, start_app_context):
+async def test_get_start_text_show_less(mock_telegram, start_app_context):
     """Test get_start_text with show_more=False shows only EURMTL."""
     user_id = 123
     mock_session = AsyncMock()
@@ -96,7 +96,7 @@ async def test_get_start_text_show_less(mock_server, start_app_context):
 
 
 @pytest.mark.asyncio
-async def test_get_start_text_show_more(mock_server, start_app_context):
+async def test_get_start_text_show_more(mock_telegram, start_app_context):
     """Test get_start_text with show_more=True shows all assets."""
     user_id = 123
     mock_session = AsyncMock()
@@ -139,7 +139,7 @@ async def test_get_start_text_show_more(mock_server, start_app_context):
 
 
 @pytest.mark.asyncio
-async def test_cmd_show_balance_success(mock_server, start_app_context, dp):
+async def test_cmd_show_balance_success(mock_telegram, start_app_context, dp):
     """Test cmd_show_balance sends message with balance."""
     user_id = 123
     mock_session = AsyncMock()
@@ -180,13 +180,13 @@ async def test_cmd_show_balance_success(mock_server, start_app_context, dp):
     await cmd_show_balance(mock_session, user_id, mock_state, app_context=start_app_context)
 
     # Verify sendMessage was called
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
     assert "EURMTL" in req["data"]["text"]
 
 
 @pytest.mark.asyncio
-async def test_cmd_change_wallet(mock_server, start_app_context):
+async def test_cmd_change_wallet(mock_telegram, start_app_context):
     """Test cmd_change_wallet displays wallet list."""
     user_id = 123
     mock_session = AsyncMock()
@@ -203,20 +203,20 @@ async def test_cmd_change_wallet(mock_server, start_app_context):
 
     await cmd_change_wallet(user_id, mock_state, mock_session, app_context=start_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
     # Verify wallet shortname in keyboard
     assert "GPUB" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
-async def test_cmd_info_message(mock_server, start_app_context):
+async def test_cmd_info_message(mock_telegram, start_app_context):
     """Test cmd_info_message sends message."""
     user_id = 123
     msg = "Test Message"
 
     await cmd_info_message(None, user_id, msg, app_context=start_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
     assert req["data"]["text"] == msg

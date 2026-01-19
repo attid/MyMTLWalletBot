@@ -76,7 +76,7 @@ def dp(mock_session, mock_app_context):
     return dp
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_wallet_setting(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test WalletSetting main menu"""
     user_id = 123
     mock_app_context.bot = bot
@@ -96,14 +96,14 @@ async def test_cmd_wallet_setting(mock_server, bot, dp, mock_session, mock_app_c
         )
     ))
     
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent) == 1
     assert "wallet_setting_msg" in sent[0]['data']['text']
     assert "BuyAddress" in sent[0]['data']['reply_markup']
 
 
 @pytest.mark.asyncio
-async def test_asset_visibility_menu(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_asset_visibility_menu(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test AssetVisibilityMenu loading"""
     user_id = 123
     mock_app_context.bot = bot
@@ -131,7 +131,7 @@ async def test_asset_visibility_menu(mock_server, bot, dp, mock_session, mock_ap
         )
     ))
     
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent) == 1
     assert "asset_visibility_msg" in sent[0]['data']['text']
     assert "EURMTL" in sent[0]['data']['reply_markup']
@@ -139,7 +139,7 @@ async def test_asset_visibility_menu(mock_server, bot, dp, mock_session, mock_ap
 
 
 @pytest.mark.asyncio
-async def test_asset_visibility_toggle(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_asset_visibility_toggle(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test toggling asset visibility"""
     user_id = 123
     mock_app_context.bot = bot
@@ -172,13 +172,13 @@ async def test_asset_visibility_toggle(mock_server, bot, dp, mock_session, mock_
     mock_session.commit.assert_called_once()
     
     # Verify UI update
-    edits = [r for r in mock_server if r['method'] == 'editMessageText']
+    edits = [r for r in mock_telegram if r['method'] == 'editMessageText']
     assert len(edits) == 1
-    assert "asset_visibility_changed" in [r for r in mock_server if r['method'] == 'answerCallbackQuery'][0]['data']['text']
+    assert "asset_visibility_changed" in [r for r in mock_telegram if r['method'] == 'answerCallbackQuery'][0]['data']['text']
 
 
 @pytest.mark.asyncio
-async def test_cmd_delete_asset_list(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_delete_asset_list(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test DeleteAsset menu"""
     user_id = 123
     mock_app_context.bot = bot
@@ -198,13 +198,13 @@ async def test_cmd_delete_asset_list(mock_server, bot, dp, mock_session, mock_ap
         )
     ))
     
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert "delete_asset2" in sent[0]['data']['text']
     assert "BTCMTL" in sent[0]['data']['reply_markup']
 
 
 @pytest.mark.asyncio
-async def test_cq_delete_asset_execute(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cq_delete_asset_execute(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test actual asset deletion (trustline removal)"""
     user_id = 123
     mock_app_context.bot = bot
@@ -243,7 +243,7 @@ async def test_cq_delete_asset_execute(mock_server, bot, dp, mock_session, mock_
 
 
 @pytest.mark.asyncio
-async def test_buy_address_flow(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_buy_address_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test BuyAddress flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -275,13 +275,13 @@ async def test_buy_address_flow(mock_server, bot, dp, mock_session, mock_app_con
         )
     ))
     
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert "confirm_send" in sent[0]['data']['text']
     assert "XDR_BUY" in str(await dp.storage.get_data(key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)))
 
 
 @pytest.mark.asyncio
-async def test_address_book_view(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_address_book_view(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test AddressBook viewing"""
     user_id = 123
     mock_app_context.bot = bot
@@ -304,7 +304,7 @@ async def test_address_book_view(mock_server, bot, dp, mock_session, mock_app_co
         )
     ))
     
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert "address_book" in sent[0]['data']['text']
     assert "GADDR" in sent[0]['data']['reply_markup']
     assert "My Friend" in sent[0]['data']['reply_markup']

@@ -21,7 +21,7 @@ from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
 
 
 @pytest.fixture
-async def mtlap_app_context(mock_app_context, mock_server):
+async def mtlap_app_context(mock_app_context, mock_telegram):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     mock_app_context.bot = bot
@@ -35,36 +35,36 @@ def _last_request(mock_server, method):
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools(mock_server, mock_session, mock_callback, mock_state, mtlap_app_context):
+async def test_cmd_mtlap_tools(mock_telegram, mock_session, mock_callback, mock_state, mtlap_app_context):
     await cmd_mtlap_tools(mock_callback, mock_state, mock_session, mtlap_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "mtlap_tools_text"
     mock_callback.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_delegate_a(mock_server, mock_session, mock_callback, mock_state, mtlap_app_context):
+async def test_cmd_mtlap_tools_delegate_a(mock_telegram, mock_session, mock_callback, mock_state, mtlap_app_context):
     with patch("routers.mtlap.stellar_get_data", new_callable=AsyncMock) as mock_get_data:
         mock_get_data.return_value = {"mtla_a_delegate": "DelegateA"}
 
         await cmd_mtlap_tools_delegate_a(mock_callback, mock_state, mock_session, mtlap_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "delegate_start"
     mock_callback.answer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_delegate_c(mock_server, mock_session, mock_callback, mock_state, mtlap_app_context):
+async def test_cmd_mtlap_tools_delegate_c(mock_telegram, mock_session, mock_callback, mock_state, mtlap_app_context):
     with patch("routers.mtlap.stellar_get_data", new_callable=AsyncMock) as mock_get_data:
         mock_get_data.return_value = {"mtla_c_delegate": "DelegateC"}
 
         await cmd_mtlap_tools_delegate_c(mock_callback, mock_state, mock_session, mtlap_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "delegate_start"
     mock_callback.answer.assert_awaited_once()
@@ -72,7 +72,7 @@ async def test_cmd_mtlap_tools_delegate_c(mock_server, mock_session, mock_callba
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(
-    mock_server, mock_session, mock_callback, mock_state, mtlap_app_context
+        mock_telegram, mock_session, mock_callback, mock_state, mtlap_app_context
 ):
     with patch("routers.mtlap.have_free_xlm", new_callable=AsyncMock) as mock_have_free_xlm:
         mock_have_free_xlm.return_value = False
@@ -81,7 +81,7 @@ async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(
             mock_callback, mock_state, mock_session, mtlap_app_context
         )
 
-    assert _last_request(mock_server, "sendMessage") is None
+    assert _last_request(mock_telegram, "sendMessage") is None
     mock_callback.answer.assert_awaited_once()
     _, kwargs = mock_callback.answer.call_args
     assert kwargs.get("show_alert") is True
@@ -89,7 +89,7 @@ async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_add_delegate_a_ok(
-    mock_server, mock_session, mock_callback, mock_state, mtlap_app_context
+        mock_telegram, mock_session, mock_callback, mock_state, mtlap_app_context
 ):
     with patch("routers.mtlap.have_free_xlm", new_callable=AsyncMock) as mock_have_free_xlm:
         mock_have_free_xlm.return_value = True
@@ -98,7 +98,7 @@ async def test_cmd_mtlap_tools_add_delegate_a_ok(
             mock_callback, mock_state, mock_session, mtlap_app_context
         )
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "delegate_send_address"
     mock_state.set_state.assert_awaited_once_with(MTLAPStateTools.delegate_for_a)
@@ -107,7 +107,7 @@ async def test_cmd_mtlap_tools_add_delegate_a_ok(
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_send_add_delegate_for_a(
-    mock_server, mock_session, mock_message, mock_state, mtlap_app_context
+        mock_telegram, mock_session, mock_message, mock_state, mtlap_app_context
 ):
     mock_message.text = "GDELEGATE"
     mock_account = MagicMock()
@@ -127,7 +127,7 @@ async def test_cmd_mtlap_send_add_delegate_for_a(
         )
 
     mock_state.update_data.assert_awaited_once_with(xdr="XDR")
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "delegate_add"
     mock_message.delete.assert_awaited_once()
@@ -135,14 +135,14 @@ async def test_cmd_mtlap_send_add_delegate_for_a(
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_tools_recommend(
-    mock_server, mock_session, mock_callback, mock_state, mtlap_app_context
+        mock_telegram, mock_session, mock_callback, mock_state, mtlap_app_context
 ):
     with patch("routers.mtlap.stellar_get_data", new_callable=AsyncMock) as mock_get_data:
         mock_get_data.return_value = {}
 
         await cmd_mtlap_tools_recommend(mock_callback, mock_state, mock_session, mtlap_app_context)
 
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "recommend_prompt"
     mock_state.set_state.assert_awaited_once_with(MTLAPStateTools.recommend_for)
@@ -151,7 +151,7 @@ async def test_cmd_mtlap_tools_recommend(
 
 @pytest.mark.asyncio
 async def test_cmd_mtlap_send_recommend(
-    mock_server, mock_session, mock_message, mock_state, mtlap_app_context
+        mock_telegram, mock_session, mock_message, mock_state, mtlap_app_context
 ):
     mock_message.text = "GRECOMMEND"
     mock_account = MagicMock()
@@ -172,7 +172,7 @@ async def test_cmd_mtlap_send_recommend(
 
     mock_gen_xdr.assert_awaited_once_with("GUSER", RECOMMEND_PREFIX, "GRECOMMEND")
     mock_state.update_data.assert_awaited_once_with(xdr="XDR")
-    request = _last_request(mock_server, "sendMessage")
+    request = _last_request(mock_telegram, "sendMessage")
     assert request is not None
     assert request["data"]["text"] == "recommend_confirm"
     mock_message.delete.assert_awaited_once()

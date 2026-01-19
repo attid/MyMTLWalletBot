@@ -12,7 +12,7 @@ from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
 
 
 @pytest.fixture
-async def common_start_app_context(mock_app_context, mock_server):
+async def common_start_app_context(mock_app_context, mock_telegram):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     mock_app_context.bot = bot
@@ -73,7 +73,7 @@ def _text_requests(mock_server):
 
 @pytest.mark.asyncio
 async def test_cmd_start_existing_user(
-    mock_server, mock_session, mock_message, common_start_app_context
+        mock_telegram, mock_session, mock_message, common_start_app_context
 ):
     mock_message.text = "/start"
     mock_message.chat.type = "private"
@@ -118,16 +118,16 @@ async def test_cmd_start_existing_user(
             common_start_app_context.localization_service,
         )
 
-    send_messages = _text_requests(mock_server)
+    send_messages = _text_requests(mock_telegram)
     assert any(req["data"]["text"] == "Loading" for req in send_messages)
     assert any("your_balance" in req["data"]["text"] for req in send_messages)
 
-    assert _requests(mock_server, "sendChatAction")
+    assert _requests(mock_telegram, "sendChatAction")
 
 
 @pytest.mark.asyncio
 async def test_cb_set_limit(
-    mock_server, mock_session, mock_callback, common_start_app_context
+        mock_telegram, mock_session, mock_callback, common_start_app_context
 ):
     mock_callback.data = "OffLimits"
 
@@ -146,5 +146,5 @@ async def test_cb_set_limit(
     mock_user_repo.update.assert_awaited_once_with(mock_user)
     mock_session.commit.assert_called_once()
 
-    send_messages = _requests(mock_server, "sendMessage")
+    send_messages = _requests(mock_telegram, "sendMessage")
     assert send_messages
