@@ -13,6 +13,7 @@ Follows testing rules from tests/README.md:
 """
 
 import pytest
+import base64
 from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
@@ -38,7 +39,7 @@ def cleanup_router():
 
 
 @pytest.fixture
-def setup_mtlap_mocks(router_app_context):
+def setup_mtlap_mocks(router_app_context, mock_horizon):
     """
     Common mock setup for mtlap router tests.
     Provides helper methods to configure specific test scenarios.
@@ -51,7 +52,7 @@ def setup_mtlap_mocks(router_app_context):
         def _setup_defaults(self):
             # Default wallet mock
             self.wallet = MagicMock()
-            self.wallet.public_key = "GUSER1234567890123456789012345678901234567890123456"
+            self.wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
 
             wallet_repo = MagicMock()
             wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
@@ -65,33 +66,23 @@ def setup_mtlap_mocks(router_app_context):
             user_repo.get_by_id = AsyncMock(return_value=self.user)
             self.ctx.repository_factory.get_user_repository.return_value = user_repo
             
-            # Default stellar service mocks
-            # get_account_details returns dict with 'data' field
-            self.ctx.stellar_service.get_account_details = AsyncMock(return_value={
-                'data': {}  # Empty data by default
-            })
-            
-            # check_account_exists returns bool
-            self.ctx.stellar_service.check_account_exists = AsyncMock(return_value=True)
-            
-            # build_manage_data_transaction returns XDR string
-            self.ctx.stellar_service.build_manage_data_transaction = AsyncMock(return_value="MOCK_XDR_STRING")
+            # Configure mock_horizon for source account
+            mock_horizon.set_account(self.wallet.public_key)
 
         def set_account_data(self, data: dict):
             """Configure account data entries (already decoded)."""
-            self.ctx.stellar_service.get_account_details = AsyncMock(return_value={
-                'data': data
-            })
+            # Encode values to base64 for mock_horizon
+            encoded_data = {k: base64.b64encode(v.encode()).decode() for k, v in data.items()}
+            mock_horizon.set_account(self.wallet.public_key, data=encoded_data)
 
         def set_account_exists(self, exists: bool):
             """Configure whether account exists check returns True/False."""
-            self.ctx.stellar_service.check_account_exists = AsyncMock(return_value=exists)
-
-        def set_free_xlm(self, amount: float):
-            """Helper to set free_xlm in state data."""
-            # Note: This is a helper that tests should call with state
-            # Tests need to manually set state data
-            return {"free_xlm": amount}
+            if not exists:
+                # GINVALID remains 404
+                pass
+            else:
+                 # Default is existence anyway
+                 pass
 
     return MtlapMockHelper(router_app_context)
 
@@ -256,8 +247,8 @@ async def test_cmd_mtlap_send_add_delegate_for_a_invalid(mock_telegram, mock_hor
     user_id = 123
     invalid_address = "GINVALID12345678901234567890123456789012345678901234"
     
-    # Configure account exists to return False
-    setup_mtlap_mocks.set_account_exists(False)
+    # Configure account exists check to return False
+    mock_horizon.set_not_found(invalid_address)
 
     # Setup router (mock_horizon will return 404 for unknown account)
     dp.message.middleware(RouterTestMiddleware(router_app_context))
@@ -391,7 +382,7 @@ async def test_cmd_mtlap_send_recommend_invalid(mock_telegram, mock_horizon, rou
     invalid_address = "GINVALID12345678901234567890123456789012345678901234"
     
     # Configure account exists check to return False
-    setup_mtlap_mocks.set_account_exists(False)
+    mock_horizon.set_not_found(invalid_address)
 
     # Setup router
     dp.message.middleware(RouterTestMiddleware(router_app_context))

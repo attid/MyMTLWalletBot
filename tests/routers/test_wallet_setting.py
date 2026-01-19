@@ -13,7 +13,7 @@ import jsonpickle
 from routers.wallet_setting import router as wallet_setting_router, AssetVisibilityCallbackData, DelAssetCallbackData
 from core.domain.entities import Wallet
 from core.domain.value_objects import Balance, PaymentResult
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+from tests.conftest import TEST_BOT_TOKEN
 from infrastructure.services.localization_service import LocalizationService
 
 class MockDbMiddleware(BaseMiddleware):
@@ -58,9 +58,9 @@ def mock_session():
     return session
 
 @pytest.fixture
-async def bot():
+async def bot(telegram_server_config):
     session = AiohttpSession(
-        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
+        api=TelegramAPIServer.from_base(telegram_server_config["url"])
     )
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     yield bot
@@ -204,8 +204,9 @@ async def test_cmd_delete_asset_list(mock_telegram, bot, dp, mock_session, mock_
 
 
 @pytest.mark.asyncio
-async def test_cq_delete_asset_execute(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_cq_delete_asset_execute(mock_telegram, mock_horizon, horizon_server_config, bot, dp, mock_session, mock_app_context):
     """Test actual asset deletion (trustline removal)"""
+    from infrastructure.services.stellar_service import StellarService
     user_id = 123
     mock_app_context.bot = bot
     
@@ -216,17 +217,21 @@ async def test_cq_delete_asset_execute(mock_telegram, bot, dp, mock_session, moc
     await dp.storage.set_data(key=storage_key, data={"assets": jsonpickle.encode(assets)})
     
     # Mocks for deletion
+    public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
     mock_wallet = MagicMock(spec=Wallet)
-    mock_wallet.public_key = "GUSER"
+    mock_wallet.public_key = public_key
     mock_repo = MagicMock()
     mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
     
-    mock_app_context.stellar_service.get_selling_offers = AsyncMock(return_value=[])
-    mock_app_context.stellar_service.build_change_trust_transaction = AsyncMock(return_value="XDR_CLOSE")
+    # Real StellarService
+    mock_app_context.stellar_service = StellarService(horizon_url=horizon_server_config["url"])
+    
+    # Configure mock_horizon
+    mock_horizon.set_account(public_key)
     
     with patch("routers.sign.cmd_ask_pin", AsyncMock()) as mock_ask_pin, \
-         patch("routers.wallet_setting.stellar_check_xdr", AsyncMock(return_value="XDR_CLOSE")):
+         patch("routers.wallet_setting.stellar_check_xdr", AsyncMock(side_effect=lambda x: x)):
              
         cb_data = DelAssetCallbackData(answer="BTCMTL").pack()
         await dp.feed_update(bot=bot, update=types.Update(
@@ -238,7 +243,10 @@ async def test_cq_delete_asset_execute(mock_telegram, bot, dp, mock_session, moc
             )
         ))
         
-        mock_app_context.stellar_service.build_change_trust_transaction.assert_called_once()
+        # Verify stored in state
+        data = await dp.storage.get_data(key=storage_key)
+        assert "xdr" in data
+        assert "AAAA" in data['xdr']
         mock_ask_pin.assert_called_once()
 
 

@@ -44,19 +44,22 @@ class StellarService(IStellarService):
 
     async def build_payment_transaction(
         self, 
-        source_account_id: str, 
-        destination_account_id: str, 
-        asset_code: str, 
-        asset_issuer: Optional[str], 
-        amount: str, 
+        source_public_key: str = None, 
+        destination_account_id: str = None, 
+        asset_code: str = None, 
+        asset_issuer: Optional[str] = None, 
+        amount: str = None, 
         memo: Optional[str] = None,
         sequence: Optional[int] = None,
         cancel_offers: bool = False,
-        create_account: bool = False
+        create_account: bool = False,
+        source_account_id: str = None,
+        **kwargs
     ) -> str:
+        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              # Load source account for sequence number
-             source_account = await server.load_account(source_account_id)
+             source_account = await server.load_account(source_id)
         
         from stellar_sdk import TransactionBuilder, Asset, Network, Price
         
@@ -75,7 +78,7 @@ class StellarService(IStellarService):
             
         if cancel_offers:
              # Fetch offers for this asset and cancel them
-             offers = await self.get_selling_offers(source_account_id)
+             offers = await self.get_selling_offers(source_public_key)
              # Filter offers that sell this asset
              for offer in offers:
                  selling = offer.get('selling', {})
@@ -131,17 +134,20 @@ class StellarService(IStellarService):
 
     async def swap_assets(
         self,
-        source_account_id: str,
-        send_asset: Asset,
-        send_amount: str,
-        receive_asset: Asset,
-        receive_amount: str,
+        source_public_key: str = None,
+        send_asset: Asset = None,
+        send_amount: str = None,
+        receive_asset: Asset = None,
+        receive_amount: str = None,
         path: List[Asset] = [],
         strict_receive: bool = False, # if True, use destination amount, else source amount
-        cancel_offers: bool = False
+        cancel_offers: bool = False,
+        source_account_id: str = None,
+        **kwargs
     ) -> str:
+        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
-             source_account = await server.load_account(source_account_id)
+             source_account = await server.load_account(source_id)
         
         from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network, Price
         
@@ -154,13 +160,14 @@ class StellarService(IStellarService):
         transaction.set_timeout(180)
 
         # Helper to convert domain Asset to SDK Asset
-        def to_sdk_asset(a: Asset) -> SdkAsset:
+        def to_sdk_asset(a: Asset) -> Optional[SdkAsset]:
+            if not a: return None
             if a.code == "XLM": return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
 
         if cancel_offers:
              # Reuse logic from build_payment
-             offers = await self.get_selling_offers(source_account_id)
+             offers = await self.get_selling_offers(source_id)
              for offer in offers:
                  selling = offer.get('selling', {})
                  s_code = selling.get('asset_code')
@@ -185,11 +192,11 @@ class StellarService(IStellarService):
                           offer_id=int(offer.get('id', 0))
                       )
 
-        path_assets = [to_sdk_asset(a) for a in path]
+        path_assets = [to_sdk_asset(a) for a in (path or []) if a]
         
         if strict_receive:
             transaction.append_path_payment_strict_receive_op(
-                destination=source_account_id, # sending to self
+                destination=source_id, # sending to self
                 send_asset=to_sdk_asset(send_asset),
                 send_max=send_amount,
                 dest_asset=to_sdk_asset(receive_asset),
@@ -198,7 +205,7 @@ class StellarService(IStellarService):
             )
         else:
              transaction.append_path_payment_strict_send_op(
-                destination=source_account_id,
+                destination=source_id,
                 send_asset=to_sdk_asset(send_asset),
                 send_amount=send_amount,
                 dest_asset=to_sdk_asset(receive_asset),
@@ -210,15 +217,18 @@ class StellarService(IStellarService):
 
     async def manage_offer(
         self,
-        source_account_id: str,
-        selling: Asset,
-        buying: Asset,
-        amount: str,
-        price: str,
-        offer_id: int = 0
+        source_public_key: str = None,
+        selling: Asset = None,
+        buying: Asset = None,
+        amount: str = None,
+        price: str = None,
+        offer_id: int = 0,
+        source_account_id: str = None,
+        **kwargs
     ) -> str:
+        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
-             source_account = await server.load_account(source_account_id)
+             source_account = await server.load_account(source_id)
         
         from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network, Price
         
@@ -243,8 +253,12 @@ class StellarService(IStellarService):
         
         return transaction.build().to_xdr()
 
-    async def sign_transaction(self, transaction_envelope, secret: str) -> str:
-        return transaction_envelope.sign(secret)
+    def sign_transaction(self, xdr: str, secret: str) -> str:
+        from stellar_sdk import TransactionEnvelope, Network, Keypair
+        transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        kp = Keypair.from_secret(secret)
+        transaction.sign(kp)
+        return transaction.to_xdr()
 
     async def sign_xdr(self, xdr: str, secret: str) -> str:
         from stellar_sdk import TransactionEnvelope, Network, Keypair
@@ -283,13 +297,16 @@ class StellarService(IStellarService):
 
     async def build_change_trust_transaction(
         self,
-        source_account_id: str,
-        asset_code: str,
-        asset_issuer: str,
-        limit: Optional[str] = None
+        source_public_key: str = None,
+        asset_code: str = None,
+        asset_issuer: str = None,
+        limit: Optional[str] = None,
+        source_account_id: str = None,
+        **kwargs
     ) -> str:
+        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
-             source_account = await server.load_account(source_account_id)
+             source_account = await server.load_account(source_id)
         
         from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
         
@@ -311,19 +328,25 @@ class StellarService(IStellarService):
 
     async def build_manage_data_transaction(
         self,
-        source_account_id: str,
-        data_name: str,
-        data_value: Optional[str] = None
+        source_account_id: str = None,
+        data_name: Optional[str] = None,
+        data_value: Optional[str] = None,
+        data: Optional[Dict[str, Optional[str]]] = None,
+        source_public_key: str = None,
+        **kwargs
     ) -> str:
         """Build transaction for manage data operation.
         
         Args:
             source_account_id: Source account public key
-            data_name: Name of the data entry
-            data_value: Value to set (None to delete)
+            data_name: Name of the data entry (legacy)
+            data_value: Value to set (None to delete) (legacy)
+            data: Dictionary of data entries to set/delete
+            source_public_key: Alias for source_account_id
         """
+        source_id = source_account_id or source_public_key or kwargs.get('source_public_key')
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
-             source_account = await server.load_account(source_account_id)
+             source_account = await server.load_account(source_id)
         
         from stellar_sdk import TransactionBuilder, Network
 
@@ -334,7 +357,11 @@ class StellarService(IStellarService):
         )
         transaction.set_timeout(180)
         
-        transaction.append_manage_data_op(data_name=data_name, data_value=data_value)
+        if data:
+            for name, value in data.items():
+                transaction.append_manage_data_op(data_name=name, data_value=value)
+        elif data_name:
+            transaction.append_manage_data_op(data_name=data_name, data_value=data_value)
             
         return transaction.build().to_xdr()
 

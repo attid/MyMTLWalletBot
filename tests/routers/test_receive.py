@@ -7,7 +7,6 @@ import datetime
 
 from routers.receive import router as receive_router, create_beautiful_code
 from tests.conftest import (
-    MOCK_SERVER_URL, 
     TEST_BOT_TOKEN, 
     RouterTestMiddleware,
     create_callback_update,

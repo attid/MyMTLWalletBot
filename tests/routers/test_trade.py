@@ -71,9 +71,6 @@ def setup_trade_mocks(router_app_context):
             manage_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_MANAGE_OFFER"))
             self.ctx.use_case_factory.create_manage_offer.return_value = manage_uc
 
-            # Stellar service
-            self.ctx.stellar_service.get_selling_offers = AsyncMock(return_value=[])
-
     return TradeMockHelper(router_app_context)
 
 
@@ -171,13 +168,13 @@ async def test_cmd_trade_creation_flow(mock_telegram, router_app_context, setup_
 
 
 @pytest.mark.asyncio
-async def test_cmd_show_orders(mock_telegram, router_app_context, setup_trade_mocks):
+async def test_cmd_show_orders(mock_telegram, mock_horizon, router_app_context, setup_trade_mocks):
     """Test ShowOrders: should list user's active offers."""
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(trade_router)
 
-    # Mock active offers. ID must be string for mytypes from_dict.
+    # Mock active offers via mock_horizon
     mock_offer = {
         "id": "12345",
         "amount": "100.0",
@@ -185,7 +182,7 @@ async def test_cmd_show_orders(mock_telegram, router_app_context, setup_trade_mo
         "selling": {"asset_code": "XLM", "asset_type": "native"},
         "buying": {"asset_code": "EURMTL", "asset_issuer": VALID_ISSUER}
     }
-    router_app_context.stellar_service.get_selling_offers.return_value = [mock_offer]
+    mock_horizon.set_offers(setup_trade_mocks.wallet.public_key, [mock_offer])
 
     await dp.feed_update(router_app_context.bot, create_callback_update(123, "ShowOrders"))
     

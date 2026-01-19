@@ -660,7 +660,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session, *
     service = app_context.stellar_service
 
     tx = await service.build_change_trust_transaction(
-             source_public_key=wallet.public_key,
+             source_account_id=wallet.public_key,
              asset_code=asset_code,
              asset_issuer=asset_issuer
          )

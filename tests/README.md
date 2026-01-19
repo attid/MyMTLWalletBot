@@ -1,5 +1,7 @@
 # Testing Guidelines / Правила тестирования
 
+**Запуск тестов:** `uv run pytest`
+
 ## Принципы ("философия тестов")
 
 ### 1. Минимум моков — Максимум реального кода
@@ -33,6 +35,24 @@ await handler(message, state, session, app_context=mock_app_context)
 - Передавать моки через параметры, а не патчить модули
 - Быть устойчивы к рефакторингу импортов
 
+### 3. Запрет на мокирование StellarService (Используйте mock_horizon)
+
+**Проблема:** Мокирование методов `StellarService` (например, `build_payment_transaction`) скрывает ошибки в бизнес-логике формирования транзакций.
+
+**Решение:** Вместо мока сервиса, используйте **реальный** `StellarService`, подключенный к `mock_horizon`.
+
+```python
+# ❌ ПЛОХО: Тестируем мок, а не код
+ctx.stellar_service.build_payment_transaction.return_value = "XDR"
+
+# ✅ ХОРОШО: Тестируем реальный сервис с эмулятором сети
+# (В conftest.py router_app_context уже настроен так)
+mock_horizon.set_account(source_pub, balances=[...])
+await handler(...)
+# Проверяем, что ушло в сеть
+reqs = mock_horizon.get_requests("transactions")
+```
+
 ```python
 # ❌ ПЛОХО: хрупкий patch по пути модуля
 with patch("routers.swap.SqlAlchemyUserRepository") as MockRepo:
@@ -44,7 +64,28 @@ mock_app_context.repository_factory.get_user_repository.return_value = mock_user
 await cmd_swap_sum(message, state, session, app_context=mock_app_context)
 ```
 
-### 3. Каскадная валидация
+### 3. Строгие моки (Strict Mocks) — `spec=...`
+
+**Проблема:** Обычный `AsyncMock` "всеяден" — он примет любые аргументы, даже если они не существуют в реальном классе. Это скрывает баги (например, `TypeError: unexpected argument`).
+
+**Правило:** При создании моков для Сервисов, Репозиториев и Сущностей **ОБЯЗАТЕЛЬНО** указывайте `spec`.
+
+```python
+from infrastructure.services.stellar_service import StellarService
+
+# ❌ ПЛОХО: Пропустит ошибку service.method(wrong_arg=1)
+mock_service = AsyncMock()
+
+# ✅ ХОРОШО: Упадет с TypeError, если аргументы неверны
+mock_service = AsyncMock(spec=StellarService)
+```
+
+**Критически важно для:**
+- `StellarService`
+- Всех Репозиториев (`IUserRepository` и т.д.)
+- Сущностей (`Wallet`, `User`)
+
+### 4. Каскадная валидация
 
 Если функция вызывает другую локальную функцию — пусть она отработает.
 Тест должен проверять конечный результат, а не промежуточные вызовы.
@@ -123,7 +164,7 @@ async def test_handler(mock_telegram, router_app_context):
 Фикстура для эмуляции Stellar Horizon API. Позволяет:
 - Настраивать ответы для аккаунтов, офферов, путей
 - Проверять что именно отправлялось в Horizon
-- Избавиться от `patch()` для Stellar функций
+- Использовать реальный `StellarService` вместо моков
 
 **Использование:**
 ```python
@@ -134,6 +175,8 @@ async def test_stellar_operation(mock_horizon, router_app_context):
         {"asset_type": "native", "balance": "100.0"}
     ])
     
+    # router_app_context уже содержит реальный StellarService,
+    # подключенный к локальному mock_horizon.
     await handler(...)
     
     # Проверка запросов к Horizon
@@ -154,8 +197,8 @@ async def test_stellar_operation(mock_horizon, router_app_context):
 def mock_app_context():
     """Создаёт стандартный mock AppContext для тестов."""
     ctx = MagicMock()
-    ctx.localization_service.get_text.return_value = "text"
-    ctx.stellar_service = AsyncMock()
+    ctx.localization_service = MagicMock()
+    ctx.stellar_service = AsyncMock() # Default mock, overridden in router_app_context
     ctx.repository_factory = MagicMock()
     ctx.use_case_factory = MagicMock()
     ctx.bot = AsyncMock()
@@ -183,9 +226,9 @@ class RouterTestMiddleware(BaseMiddleware):
 
 ```python
 @pytest.fixture
-async def router_bot(mock_telegram):
+async def router_bot(mock_telegram, telegram_server_config):
     """Creates a Bot instance connected to mock Telegram server."""
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
+    session = AiohttpSession(api=TelegramAPIServer.from_base(telegram_server_config["url"]))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     yield bot
     await bot.session.close()
@@ -193,14 +236,16 @@ async def router_bot(mock_telegram):
 
 ### router_app_context
 
-Комбинирует `mock_app_context` с реальным `bot`, подключенным к `mock_telegram`.
+Комбинирует `mock_app_context` с реальным `bot` и реальным `StellarService`, подключенными к мок-серверам.
 
 ```python
 @pytest.fixture
-async def router_app_context(mock_app_context, router_bot):
+async def router_app_context(mock_app_context, router_bot, horizon_server_config, mock_horizon):
     """Standard app_context for router tests."""
+    from infrastructure.services.stellar_service import StellarService
     mock_app_context.bot = router_bot
     mock_app_context.dispatcher = Dispatcher()
+    mock_app_context.stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     return mock_app_context
 ```
 

@@ -119,7 +119,7 @@ async def test_cb_cheque_info(mock_telegram, router_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_invoice_yes(mock_telegram, router_app_context, dp):
+async def test_cmd_invoice_yes(mock_telegram, mock_horizon, router_app_context, dp):
     """Test InvoiceYes callback"""
     user_id = 123
     cheque_uuid = "uuid-invoice"
@@ -157,12 +157,13 @@ async def test_cmd_invoice_yes(mock_telegram, router_app_context, dp):
 
     # Setup Wallet Repo
     mock_wallet = MagicMock()
-    mock_wallet.public_key = "GUSER"
+    mock_wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
     mock_wallet_repo = MagicMock()
     mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     router_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
     
-    router_app_context.stellar_service.build_change_trust_transaction = AsyncMock(return_value="XDR_TRUST")
+    # Configure mock_horizon for GUSER
+    mock_horizon.set_account(mock_wallet.public_key)
 
     # Run /start invoice_... to set state
     update1 = create_message_update(user_id, f"/start invoice_{cheque_uuid}", update_id=1)
@@ -177,7 +178,10 @@ async def test_cmd_invoice_yes(mock_telegram, router_app_context, dp):
     assert len(messages) >= 1, "Should send at least Loading message"
     
     # Verify trustline was built (main functionality)
-    router_app_context.stellar_service.build_change_trust_transaction.assert_called()
+    # build_change_trust_transaction calls load_account which hits Horizon
+    reqs = mock_horizon.get_requests("accounts")
+    assert len(reqs) >= 1
+    assert any(r['account_id'] == mock_wallet.public_key for r in reqs)
 
 
 @pytest.mark.asyncio
