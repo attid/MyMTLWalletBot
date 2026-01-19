@@ -66,19 +66,22 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         register_use_case = app_context.use_case_factory.create_register_user(session)
         
         # Generate a new Stellar account
-        kp = Keypair.random()
+        mnemonic = app_context.stellar_service.generate_mnemonic()
+        kp = app_context.stellar_service.get_keypair_from_mnemonic(mnemonic)
         public_key = kp.public_key
         secret_key = kp.secret
         
         # Encrypt the secret key
         encrypted_secret = app_context.encryption_service.encrypt(secret_key, str(message.from_user.id))
+        encrypted_mnemonic = app_context.encryption_service.encrypt(mnemonic, secret_key)
         
         await register_use_case.execute(
              user_id=message.from_user.id,
              username=message.from_user.username,
              language='en', # Default
              public_key=public_key,
-             secret_key=encrypted_secret
+             secret_key=encrypted_secret,
+             seed_key=encrypted_mnemonic
         )
         
         # db_add_user_if_not_exists(session, message.from_user.id, message.from_user.username)

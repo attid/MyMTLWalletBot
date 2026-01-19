@@ -14,7 +14,7 @@ class RegisterUser:
         self.user_repository = user_repository
         self.wallet_repository = wallet_repository
 
-    async def execute(self, user_id: int, username: str, language: str, public_key: str, secret_key: str = None) -> Tuple[User, Wallet]:
+    async def execute(self, user_id: int, username: str, language: str, public_key: str, secret_key: str = None, seed_key: str = None) -> Tuple[User, Wallet]:
         """
         Registers a new user and their initial wallet.
         Atomic operation is ideal (Unit of Work), but here we do sequential.
@@ -29,7 +29,7 @@ class RegisterUser:
             if not default_wallet:
                 # Should not happen ideally if registered fully, but handle repair?
                  # Create wallet if missing
-                default_wallet = await self._create_wallet(user_id, public_key, secret_key)
+                default_wallet = await self._create_wallet(user_id, public_key, secret_key, seed_key)
             return existing_user, default_wallet
 
         # 2. Create User
@@ -37,16 +37,18 @@ class RegisterUser:
         saved_user = await self.user_repository.create(new_user)
 
         # 3. Create Default Wallet
-        saved_wallet = await self._create_wallet(user_id, public_key, secret_key)
+        saved_wallet = await self._create_wallet(user_id, public_key, secret_key, seed_key)
 
         return saved_user, saved_wallet
 
-    async def _create_wallet(self, user_id: int, public_key: str, secret_key: str) -> Wallet:
+    async def _create_wallet(self, user_id: int, public_key: str, secret_key: str, seed_key: str) -> Wallet:
         new_wallet = Wallet(
             id=0, # Auto-increment
             user_id=user_id,
             public_key=public_key,
             is_default=True,
-            is_free=True # Default to free/checking wallet logic
+            is_free=True, # Default to free/checking wallet logic
+            secret_key=secret_key,
+            seed_key=seed_key
         )
         return await self.wallet_repository.create(new_wallet)
