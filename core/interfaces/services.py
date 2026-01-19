@@ -176,7 +176,7 @@ class ITonService(ABC):
         
     @property
     @abstractmethod
-    def mnemonic(self) -> List[str]:
+    def mnemonic(self) -> Optional[str]:
         """Get the mnemonic phrase."""
         pass
 

@@ -31,9 +31,25 @@ class TonService(ITonService):
 
     def __init__(self, api_key: Optional[str] = None, is_testnet: bool = False, rps: int = 1):
         self.client = ToncenterV3Client(api_key=api_key, is_testnet=is_testnet, rps=rps, max_retries=3)
-        self.wallet: Optional[WalletV5R1] = None
-        self.mnemonic: Optional[str] = None
+        self._wallet: Optional[WalletV5R1] = None
+        self._mnemonic: Optional[str] = None
         self.usdt_master = USDT_TEST_MASTER if is_testnet else USDT_MASTER
+
+    @property
+    def wallet(self) -> Optional[WalletV5R1]:
+        return self._wallet
+
+    @wallet.setter
+    def wallet(self, value: Optional[WalletV5R1]):
+        self._wallet = value
+
+    @property
+    def mnemonic(self) -> Optional[str]:
+        return self._mnemonic
+
+    @mnemonic.setter
+    def mnemonic(self, value: Optional[str]):
+        self._mnemonic = value
 
     # ---------- Wallet
     @staticmethod
