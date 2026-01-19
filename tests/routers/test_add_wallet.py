@@ -11,7 +11,7 @@ def mock_session():
     return MagicMock()
 
 @pytest.mark.asyncio
-async def test_cmd_add_new(mock_session, mock_app_context, mock_server):
+async def test_cmd_add_new(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.from_user.id = 123
     callback.data = "AddNew"
@@ -22,7 +22,7 @@ async def test_cmd_add_new(mock_session, mock_app_context, mock_server):
     # Implicitly passes if no error and mocks called
 
 @pytest.mark.asyncio
-async def test_cmd_sending_private_success(mock_session, mock_app_context, mock_server):
+async def test_cmd_sending_private_success(mock_session, mock_app_context, mock_telegram):
     message = AsyncMock()
     message.text = "SSECRETKEY"
     message.from_user.id = 123
@@ -57,7 +57,7 @@ async def test_cmd_sending_private_success(mock_session, mock_app_context, mock_
         mock_next.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_add_wallet_new_key_queue(mock_session, mock_app_context, mock_server):
+async def test_add_wallet_new_key_queue(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.from_user.id = 123
     callback.message.chat.id = 123
@@ -106,21 +106,21 @@ async def test_add_wallet_new_key_queue(mock_session, mock_app_context, mock_ser
         mock_app_context.stellar_service.submit_transaction.assert_called()
 
 @pytest.mark.asyncio
-async def test_cq_add_have_key(mock_session, mock_app_context, mock_server):
+async def test_cq_add_have_key(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     state = AsyncMock(spec=FSMContext)
     await cq_add_have_key(callback, state, mock_session, app_context=mock_app_context)
     state.set_state.assert_called_with(StateAddWallet.sending_private)
 
 @pytest.mark.asyncio
-async def test_cq_add_read_only(mock_session, mock_app_context, mock_server):
+async def test_cq_add_read_only(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     state = AsyncMock(spec=FSMContext)
     await cq_add_read_only(callback, state, mock_session, app_context=mock_app_context)
     state.set_state.assert_called_with(StateAddWallet.sending_public)
 
 @pytest.mark.asyncio
-async def test_cmd_sending_public(mock_session, mock_app_context, mock_server):
+async def test_cmd_sending_public(mock_session, mock_app_context, mock_telegram):
     message = AsyncMock()
     message.text = "GPUBLICKEY"
     message.from_user.id = 123
@@ -143,7 +143,7 @@ async def test_cmd_sending_public(mock_session, mock_app_context, mock_server):
         mock_show.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_cq_add_read_only_pin(mock_session, mock_app_context, mock_server):
+async def test_cq_add_read_only_pin(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.message.chat.id = 123
     state = AsyncMock(spec=FSMContext)
@@ -154,14 +154,14 @@ async def test_cq_add_read_only_pin(mock_session, mock_app_context, mock_server)
         mock_ask.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_cq_add_password(mock_session, mock_app_context, mock_server):
+async def test_cq_add_password(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     state = AsyncMock(spec=FSMContext)
     await cq_add_password(callback, state, mock_session, app_context=mock_app_context)
     state.set_state.assert_called_with(PinState.ask_password_set)
 
 @pytest.mark.asyncio
-async def test_cq_add_read_only_no_password(mock_session, mock_app_context, mock_server):
+async def test_cq_add_read_only_no_password(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.from_user.id = 123
     state = AsyncMock(spec=FSMContext)
@@ -171,7 +171,7 @@ async def test_cq_add_read_only_no_password(mock_session, mock_app_context, mock
         mock_show.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_cq_add_ton(mock_session, mock_app_context, mock_server):
+async def test_cq_add_ton(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.from_user.id = 123
     callback.message.chat.id = 123

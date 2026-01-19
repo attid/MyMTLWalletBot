@@ -16,7 +16,7 @@ def cleanup_router():
         monitoring_router._parent_router = None
 
 @pytest.mark.asyncio
-async def test_handle_monitoring_message(mock_server, dp):
+async def test_handle_monitoring_message(mock_telegram, dp):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     
@@ -40,14 +40,14 @@ async def test_handle_monitoring_message(mock_server, dp):
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
     
     # Check if sendMessage was called with expected text
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is not None, "sendMessage should have been called"
     assert req["data"]["text"] == "#skynet #mmwb command=pong"
     
     await bot.session.close()
 
 @pytest.mark.asyncio
-async def test_handle_monitoring_message_ignore(mock_server, dp):
+async def test_handle_monitoring_message_ignore(mock_telegram, dp):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     
@@ -71,7 +71,7 @@ async def test_handle_monitoring_message_ignore(mock_server, dp):
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
     
     # Check that NO sendMessage was called
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is None, "sendMessage should NOT have been called"
     
     await bot.session.close()

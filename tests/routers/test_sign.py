@@ -32,7 +32,7 @@ def dp_with_router(dp: Dispatcher, mock_app_context):
     return dp
 
 @pytest.mark.asyncio
-async def test_full_flow_sign_pin_success(mock_server, dp_with_router, mock_app_context, mock_session):
+async def test_full_flow_sign_pin_success(mock_telegram, dp_with_router, mock_app_context, mock_session):
     """
     Scenario: User signs and sends an XDR using PIN flow via REAL dispatcher.
     """
@@ -178,12 +178,12 @@ async def test_full_flow_sign_pin_success(mock_server, dp_with_router, mock_app_
     # mock_server fixture yields `received_requests` list.
     # We can inspect it to see if `sendMessage` was called with success text.
     # Note: send_message utility might use editMessageText if last_message_id is set.
-    messages = [r for r in mock_server if r['method'] in ('sendMessage', 'editMessageText')]
+    messages = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')]
     # There should be several messages (Ask XDR, Ask Pin, Signed Info, Success Info)
     assert len(messages) >= 3
 
 @pytest.mark.asyncio
-async def test_full_flow_mistake_pin_mock(mock_server, dp_with_router, mock_app_context, mock_session):
+async def test_full_flow_mistake_pin_mock(mock_telegram, dp_with_router, mock_app_context, mock_session):
     user_id = 987
     chat_id = 987
     

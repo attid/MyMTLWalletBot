@@ -12,7 +12,7 @@ def mock_session():
     return MagicMock()
 
 @pytest.mark.asyncio
-async def test_cmd_fest_menu(mock_session, mock_app_context, mock_server):
+async def test_cmd_fest_menu(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.data = "Fest2024"
     callback.message.chat.id = 123
@@ -47,7 +47,7 @@ async def test_cmd_fest_menu(mock_session, mock_app_context, mock_server):
         config.fest_menu = original_menu
 
 @pytest.mark.asyncio
-async def test_cmd_fest_level_24(mock_session, mock_app_context, mock_server):
+async def test_cmd_fest_level_24(mock_session, mock_app_context, mock_telegram):
     callback = AsyncMock()
     callback.from_user.id = 123
     callback.message.chat.id = 123
@@ -65,7 +65,7 @@ async def test_cmd_fest_level_24(mock_session, mock_app_context, mock_server):
     # Actual msg text depends on localization mocking, but we verify update_data call
 
 @pytest.mark.asyncio
-async def test_cmd_fest_get_sum(mock_session, mock_app_context, mock_server):
+async def test_cmd_fest_get_sum(mock_session, mock_app_context, mock_telegram):
     message = AsyncMock()
     message.text = "10.5"
     message.from_user.id = 123
@@ -120,7 +120,7 @@ async def test_cmd_fest_get_sum(mock_session, mock_app_context, mock_server):
         config.fest_menu = original_menu
 
 @pytest.mark.asyncio
-async def test_cmd_reload_fest_menu(mock_session, mock_app_context, mock_server):
+async def test_cmd_reload_fest_menu(mock_session, mock_app_context, mock_telegram):
     message = AsyncMock()
     message.from_user.username = "itolstov"
     state = AsyncMock(spec=FSMContext)

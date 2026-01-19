@@ -34,7 +34,7 @@ def cleanup_router():
 
 
 @pytest.mark.asyncio
-async def test_bsn_mode_command(mock_server, dp):
+async def test_bsn_mode_command(mock_telegram, dp):
     """
     Test /bsn command: should fetch BSN data from Stellar and show edit menu.
     """
@@ -85,14 +85,14 @@ async def test_bsn_mode_command(mock_server, dp):
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
     # Verify sendMessage was called
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is not None, "sendMessage should be called"
 
     await bot.session.close()
 
 
 @pytest.mark.asyncio
-async def test_bsn_mode_command_with_args(mock_server, dp):
+async def test_bsn_mode_command_with_args(mock_telegram, dp):
     """
     Test /bsn Name MyName command: should parse tag from args and add to BSN data.
     """
@@ -136,14 +136,14 @@ async def test_bsn_mode_command_with_args(mock_server, dp):
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
     # Verify sendMessage was called
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is not None, "sendMessage should be called"
 
     await bot.session.close()
 
 
 @pytest.mark.asyncio
-async def test_process_tags_add_new_tag(mock_server, dp):
+async def test_process_tags_add_new_tag(mock_telegram, dp):
     """
     Test adding a new tag in BSN editing mode.
     """
@@ -188,14 +188,14 @@ async def test_process_tags_add_new_tag(mock_server, dp):
     await dp.feed_update(bot=bot, update=update, app_context=app_context)
 
     # Verify sendMessage was called
-    req = next((r for r in mock_server if r["method"] == "sendMessage"), None)
+    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
     assert req is not None, "sendMessage should be called"
 
     await bot.session.close()
 
 
 @pytest.mark.asyncio
-async def test_finish_send_bsn(mock_server, dp):
+async def test_finish_send_bsn(mock_telegram, dp):
     """
     Test sending BSN data: should generate XDR and ask for PIN.
     """
@@ -261,14 +261,14 @@ async def test_finish_send_bsn(mock_server, dp):
     assert state_data.get('xdr') == "XDR_BASE64", "XDR should be stored in state"
 
     # Verify answerCallbackQuery was called
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
 
     await bot.session.close()
 
 
 @pytest.mark.asyncio
-async def test_finish_back_bsn(mock_server, dp):
+async def test_finish_back_bsn(mock_telegram, dp):
     """
     Test back button: should clear BSN state and return to balance.
     """
@@ -337,7 +337,7 @@ async def test_finish_back_bsn(mock_server, dp):
     assert state is None, "State should be cleared"
 
     # Verify answerCallbackQuery was called
-    req = next((r for r in mock_server if r["method"] == "answerCallbackQuery"), None)
+    req = next((r for r in mock_telegram if r["method"] == "answerCallbackQuery"), None)
     assert req is not None, "answerCallbackQuery should be called"
 
     await bot.session.close()

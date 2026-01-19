@@ -61,7 +61,7 @@ def dp(mock_session, mock_app_context):
     return dp
 
 @pytest.mark.asyncio
-async def test_cmd_create_cheque_flow_full(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_create_cheque_flow_full(mock_telegram, bot, dp, mock_session, mock_app_context):
     """
     Full flow: /create_cheque -> sum -> count -> comment -> execute
     """
@@ -77,7 +77,7 @@ async def test_cmd_create_cheque_flow_full(mock_server, bot, dp, mock_session, m
             text="/create_cheque"
         )
     ))
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 2. Sum
     mock_create_cheque = MagicMock()
@@ -92,7 +92,7 @@ async def test_cmd_create_cheque_flow_full(mock_server, bot, dp, mock_session, m
             text="50"
         )
     ))
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 3. Click "Change Comment"
     await dp.feed_update(bot=bot, update=types.Update(
@@ -103,10 +103,10 @@ async def test_cmd_create_cheque_flow_full(mock_server, bot, dp, mock_session, m
             data="ChequeComment"
         )
     ))
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) == 1
     assert "kb_change_comment" in sent_messages[0]['data']['text']
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 4. Enter Comment
     await dp.feed_update(bot=bot, update=types.Update(
@@ -117,9 +117,9 @@ async def test_cmd_create_cheque_flow_full(mock_server, bot, dp, mock_session, m
             text="For Pizza"
         )
     ))
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) >= 1
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 5. Execute
     await dp.feed_update(bot=bot, update=types.Update(
@@ -130,12 +130,12 @@ async def test_cmd_create_cheque_flow_full(mock_server, bot, dp, mock_session, m
             data="ChequeExecute"
         )
     ))
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert "confirm_send" in sent_messages[0]['data']['text']
 
 
 @pytest.mark.asyncio
-async def test_cb_cheque_info(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cb_cheque_info(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test cheque info callback"""
     user_id = 123
     cheque_uuid = "uuid-info"
@@ -161,14 +161,14 @@ async def test_cb_cheque_info(mock_server, bot, dp, mock_session, mock_app_conte
         )
     ))
     
-    answers = [r for r in mock_server if r['method'] == 'answerCallbackQuery']
+    answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
     assert len(answers) == 1
     assert "3" in answers[0]['data']['text'] # received
     assert "10" in answers[0]['data']['text'] # total
 
 
 @pytest.mark.asyncio
-async def test_cmd_invoice_yes(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_invoice_yes(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test InvoiceYes callback"""
     user_id = 123
     cheque_uuid = "uuid-invoice"
@@ -214,7 +214,7 @@ async def test_cmd_invoice_yes(mock_server, bot, dp, mock_session, mock_app_cont
             text=f"/start invoice_{cheque_uuid}"
         )
     ))
-    mock_server.clear()
+    mock_telegram.clear()
 
     # Now click InvoiceYes
     await dp.feed_update(bot=bot, update=types.Update(
@@ -227,7 +227,7 @@ async def test_cmd_invoice_yes(mock_server, bot, dp, mock_session, mock_app_cont
     ))
     
     # Expect: send_sum_swap message
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) >= 1
     assert "send_sum_swap" in sent_messages[-1]['data']['text']
     
@@ -236,7 +236,7 @@ async def test_cmd_invoice_yes(mock_server, bot, dp, mock_session, mock_app_cont
 
 
 @pytest.mark.asyncio
-async def test_inline_query_cheques(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_inline_query_cheques(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test inline query for cheques"""
     user_id = 999
     mock_app_context.bot = bot
@@ -264,7 +264,7 @@ async def test_inline_query_cheques(mock_server, bot, dp, mock_session, mock_app
             )
         ))
     
-    answers = [r for r in mock_server if r['method'] == 'answerInlineQuery']
+    answers = [r for r in mock_telegram if r['method'] == 'answerInlineQuery']
     assert len(answers) == 1
     results_str = answers[0]['data']['results']
     results = json.loads(results_str)

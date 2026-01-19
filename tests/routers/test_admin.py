@@ -72,7 +72,7 @@ def dp(mock_session):
     return dp
 
 @pytest.mark.asyncio
-async def test_cmd_stats(mock_server, bot, dp, mock_session):
+async def test_cmd_stats(mock_telegram, bot, dp, mock_session):
     # Mock return values for counts
     mock_session.query.return_value.limit.return_value.all.return_value = [("op1", 5), ("op2", 3)]
     
@@ -90,14 +90,14 @@ async def test_cmd_stats(mock_server, bot, dp, mock_session):
     await dp.feed_update(bot=bot, update=update)
     
     # Verify message sent to mock_server
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) > 0
     args = sent_messages[0]['data']['text']
     assert "Статистика бота" in args
     assert "op1: 5" in args
 
 @pytest.mark.asyncio
-async def test_cmd_exit_restart(mock_server, bot, dp, mock_session):
+async def test_cmd_exit_restart(mock_telegram, bot, dp, mock_session):
     # Case 1: First call, sets state
     update = types.Update(
         update_id=2,
@@ -112,11 +112,11 @@ async def test_cmd_exit_restart(mock_server, bot, dp, mock_session):
     
     await dp.feed_update(bot=bot, update=update)
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert any(":'[" in m['data']['text'] for m in sent_messages)
     
     # Case 2: Second call, exits
-    mock_server.clear()
+    mock_telegram.clear()
     with patch("routers.admin.exit") as mock_exit:
         update2 = types.Update(
             update_id=3,
@@ -130,12 +130,12 @@ async def test_cmd_exit_restart(mock_server, bot, dp, mock_session):
         )
         await dp.feed_update(bot=bot, update=update2)
         
-        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert any("Chao :[[[" in m['data']['text'] for m in sent_messages)
         mock_exit.assert_called()
 
 @pytest.mark.asyncio
-async def test_cmd_horizon(mock_server, bot, dp, mock_session):
+async def test_cmd_horizon(mock_telegram, bot, dp, mock_session):
     with patch("routers.admin.horizont_urls", ["url1", "url2"]):
         config.horizon_url = "url1"
         
@@ -153,11 +153,11 @@ async def test_cmd_horizon(mock_server, bot, dp, mock_session):
         await dp.feed_update(bot=bot, update=update)
         assert config.horizon_url == "url2"
         
-        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert any("Horizon url: url2" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_horizon_rw(mock_server, bot, dp, mock_session):
+async def test_cmd_horizon_rw(mock_telegram, bot, dp, mock_session):
     with patch("routers.admin.horizont_urls", ["url1", "url2"]):
         config.horizon_url_rw = "url1"
         
@@ -175,11 +175,11 @@ async def test_cmd_horizon_rw(mock_server, bot, dp, mock_session):
         await dp.feed_update(bot=bot, update=update)
         assert config.horizon_url_rw == "url2"
         
-        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert any("Horizon url: url2" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_log_err_clear(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_log_err_clear(mock_telegram, bot, dp, mock_session, mock_app_context):
     mock_app_context.bot = bot
     
     # Create dummy files for aiogram to read
@@ -205,11 +205,11 @@ async def test_cmd_log_err_clear(mock_server, bot, dp, mock_session, mock_app_co
             )
             await dp.feed_update(bot=bot, update=update, app_context=mock_app_context)
             
-            sent_docs = [r for r in mock_server if r['method'] == 'sendDocument']
+            sent_docs = [r for r in mock_telegram if r['method'] == 'sendDocument']
             assert len(sent_docs) >= 1
             
             # Test /err
-            mock_server.clear()
+            mock_telegram.clear()
             update2 = types.Update(
                 update_id=7,
                 message=types.Message(
@@ -221,7 +221,7 @@ async def test_cmd_log_err_clear(mock_server, bot, dp, mock_session, mock_app_co
                 )
             )
             await dp.feed_update(bot=bot, update=update2, app_context=mock_app_context)
-            sent_docs = [r for r in mock_server if r['method'] == 'sendDocument']
+            sent_docs = [r for r in mock_telegram if r['method'] == 'sendDocument']
             assert len(sent_docs) >= 1
             
             # Test /clear
@@ -243,7 +243,7 @@ async def test_cmd_log_err_clear(mock_server, bot, dp, mock_session, mock_app_co
                 os.remove(f_name)
 
 @pytest.mark.asyncio
-async def test_cmd_fee(mock_server, bot, dp, mock_session):
+async def test_cmd_fee(mock_telegram, bot, dp, mock_session):
     with patch("routers.admin.async_stellar_check_fee", return_value="10-100"):
         
         update = types.Update(
@@ -259,11 +259,11 @@ async def test_cmd_fee(mock_server, bot, dp, mock_session):
         
         await dp.feed_update(bot=bot, update=update)
         
-        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert any("Комиссия (мин и мах) 10-100" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_user_wallets(mock_server, bot, dp, mock_session):
+async def test_cmd_user_wallets(mock_telegram, bot, dp, mock_session):
     # Mock user lookup
     user_mock = MagicMock()
     user_mock.user_id = 111
@@ -291,7 +291,7 @@ async def test_cmd_user_wallets(mock_server, bot, dp, mock_session):
     
     await dp.feed_update(bot=bot, update=update)
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) > 0
     args = sent_messages[0]['data']['text']
     assert "GABC" in args
@@ -299,7 +299,7 @@ async def test_cmd_user_wallets(mock_server, bot, dp, mock_session):
     assert "free" in args
 
 @pytest.mark.asyncio
-async def test_cmd_address_info(mock_server, bot, dp, mock_session):
+async def test_cmd_address_info(mock_telegram, bot, dp, mock_session):
     # Mock wallet/user join
     wallet_row = MagicMock()
     wallet_row.user_id = 111
@@ -325,14 +325,14 @@ async def test_cmd_address_info(mock_server, bot, dp, mock_session):
     
     await dp.feed_update(bot=bot, update=update)
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent_messages) > 0
     args = sent_messages[0]['data']['text']
     assert "user_id: 111" in args
     assert "@testuser" in args
 
 @pytest.mark.asyncio
-async def test_cmd_delete_address(mock_server, bot, dp, mock_session):
+async def test_cmd_delete_address(mock_telegram, bot, dp, mock_session):
     wallet_mock = MagicMock()
     wallet_mock.need_delete = 0
     mock_session.query.return_value.filter.return_value.one_or_none.return_value = wallet_mock
@@ -352,11 +352,11 @@ async def test_cmd_delete_address(mock_server, bot, dp, mock_session):
     
     assert wallet_mock.need_delete == 1
     mock_session.commit.assert_called()
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert any("Адрес помечен удалённым" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_help(mock_server, bot, dp):
+async def test_cmd_help(mock_telegram, bot, dp):
     update = types.Update(
         update_id=13,
         message=types.Message(
@@ -370,11 +370,11 @@ async def test_cmd_help(mock_server, bot, dp):
     
     await dp.feed_update(bot=bot, update=update)
     
-    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert any("/stats" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_test(mock_server, bot, dp, mock_app_context):
+async def test_cmd_test(mock_telegram, bot, dp, mock_app_context):
     mock_app_context.bot = bot
     chat_mock = MagicMock()
     chat_mock.json.return_value = '{"id": 215155653, "type": "private"}'
@@ -392,5 +392,5 @@ async def test_cmd_test(mock_server, bot, dp, mock_app_context):
         
         await dp.feed_update(bot=bot, update=update, app_context=mock_app_context)
         
-        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent_messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert len(sent_messages) >= 1

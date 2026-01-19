@@ -44,7 +44,7 @@ def cleanup_router():
 
 
 @pytest.fixture
-async def trade_app_context(mock_app_context, mock_server):
+async def trade_app_context(mock_app_context, mock_telegram):
     """Setup app_context with real bot for mock_server integration."""
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
@@ -61,7 +61,7 @@ def _last_request(mock_server, method):
 # --- Market menu ---
 
 @pytest.mark.asyncio
-async def test_cmd_market(mock_server, trade_app_context, dp):
+async def test_cmd_market(mock_telegram, trade_app_context, dp):
     """
     Test Market callback: should show market menu.
     """
@@ -86,15 +86,15 @@ async def test_cmd_market(mock_server, trade_app_context, dp):
 
     await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
-    req_answer = _last_request(mock_server, "answerCallbackQuery")
+    req_answer = _last_request(mock_telegram, "answerCallbackQuery")
     assert req_answer is not None, "answerCallbackQuery should be called"
 
 
 @pytest.mark.asyncio
-async def test_cmd_sale_new_order(mock_server, trade_app_context, dp):
+async def test_cmd_sale_new_order(mock_telegram, trade_app_context, dp):
     """
     Test NewOrder callback: should show available tokens for sale.
     """
@@ -134,12 +134,12 @@ async def test_cmd_sale_new_order(mock_server, trade_app_context, dp):
 
     await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
 
 @pytest.mark.asyncio
-async def test_cmd_sale_new_order_low_xlm(mock_server, trade_app_context, dp):
+async def test_cmd_sale_new_order_low_xlm(mock_telegram, trade_app_context, dp):
     """
     Test NewOrder callback with low XLM: should show alert.
     """
@@ -179,13 +179,13 @@ async def test_cmd_sale_new_order_low_xlm(mock_server, trade_app_context, dp):
 
     await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
 
-    req = _last_request(mock_server, "answerCallbackQuery")
+    req = _last_request(mock_telegram, "answerCallbackQuery")
     assert req is not None, "answerCallbackQuery should be called"
     assert req["data"].get("show_alert") == "true", "Should show alert for low XLM"
 
 
 @pytest.mark.asyncio
-async def test_cq_trade_choose_token_sell(mock_server, trade_app_context, dp):
+async def test_cq_trade_choose_token_sell(mock_telegram, trade_app_context, dp):
     """
     Test SaleAssetCallbackData: should show buy options.
     """
@@ -217,12 +217,12 @@ async def test_cq_trade_choose_token_sell(mock_server, trade_app_context, dp):
 
     await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
 
 @pytest.mark.asyncio
-async def test_cq_trade_choose_token_buy(mock_server, trade_app_context, dp):
+async def test_cq_trade_choose_token_buy(mock_telegram, trade_app_context, dp):
     """
     Test BuyAssetCallbackData: should set state to selling_sum.
     """
@@ -259,7 +259,7 @@ async def test_cq_trade_choose_token_buy(mock_server, trade_app_context, dp):
 
     await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
     # Verify state was set
@@ -268,7 +268,7 @@ async def test_cq_trade_choose_token_buy(mock_server, trade_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_sale_sum(mock_server, trade_app_context, dp):
+async def test_cmd_send_sale_sum(mock_telegram, trade_app_context, dp):
     """
     Test sending sale sum: should ask for receive cost.
     """
@@ -297,7 +297,7 @@ async def test_cmd_send_sale_sum(mock_server, trade_app_context, dp):
 
     await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
     # Verify state changed to selling_receive_sum

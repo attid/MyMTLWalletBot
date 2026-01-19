@@ -54,7 +54,7 @@ def dp(mock_session, mock_app_context):
     return dp
 
 @pytest.mark.asyncio
-async def test_cmd_start_remote(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_start_remote(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test /start uri_... flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -94,7 +94,7 @@ async def test_cmd_start_remote(mock_server, bot, dp, mock_session, mock_app_con
 
 
 @pytest.mark.asyncio
-async def test_process_stellar_uri(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_process_stellar_uri(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test direct web+stellar:tx... URI flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -128,7 +128,7 @@ async def test_process_stellar_uri(mock_server, bot, dp, mock_session, mock_app_
 
 
 @pytest.mark.asyncio
-async def test_process_wc_uri(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_process_wc_uri(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test WalletConnect wc:... URI flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -149,6 +149,6 @@ async def test_process_wc_uri(mock_server, bot, dp, mock_session, mock_app_conte
         ))
         
         mock_publish.assert_called_once()
-        sent = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert len(sent) == 1
         assert "wc_pairing_initiated" in sent[0]['data']['text']

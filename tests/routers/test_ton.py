@@ -24,7 +24,7 @@ from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
 
 
 @pytest.fixture
-async def ton_app_context(mock_app_context, mock_server):
+async def ton_app_context(mock_app_context, mock_telegram):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     mock_app_context.bot = bot
@@ -67,7 +67,7 @@ def _text_requests(mock_server):
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_ton_start(mock_server, mock_session, mock_callback, ton_app_context):
+async def test_cmd_send_ton_start(mock_telegram, mock_session, mock_callback, ton_app_context):
     state = make_state()
 
     await cmd_send_ton_start(
@@ -80,13 +80,13 @@ async def test_cmd_send_ton_start(mock_server, mock_session, mock_callback, ton_
     state.set_state.assert_awaited_once_with(StateSendTon.sending_for)
     mock_callback.answer.assert_awaited_once()
     assert any(
-        req["data"]["text"] == "Enter recipient's address:" for req in _text_requests(mock_server)
+        req["data"]["text"] == "Enter recipient's address:" for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_address_valid(
-    mock_server, mock_session, mock_message, ton_app_context
+        mock_telegram, mock_session, mock_message, ton_app_context
 ):
     state = make_state()
     mock_message.text = "EQD" + ("A" * 45)
@@ -103,13 +103,13 @@ async def test_cmd_send_ton_address_valid(
     state.set_state.assert_awaited_once_with(StateSendTon.sending_sum)
     mock_message.delete.assert_awaited_once()
     assert any(
-        req["data"]["text"] == "Enter amount to send:" for req in _text_requests(mock_server)
+        req["data"]["text"] == "Enter amount to send:" for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_address_invalid(
-    mock_server, mock_session, mock_message, ton_app_context
+        mock_telegram, mock_session, mock_message, ton_app_context
 ):
     state = make_state()
     mock_message.text = "short"
@@ -124,13 +124,13 @@ async def test_cmd_send_ton_address_invalid(
     state.set_state.assert_not_awaited()
     mock_message.delete.assert_not_awaited()
     assert any(
-        "Invalid address" in req["data"]["text"] for req in _text_requests(mock_server)
+        "Invalid address" in req["data"]["text"] for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_sum_valid(
-    mock_server, mock_session, mock_message, ton_app_context
+        mock_telegram, mock_session, mock_message, ton_app_context
 ):
     state = make_state({"recipient_address": "EQD" + ("A" * 45)})
     mock_message.text = "10.5"
@@ -148,13 +148,13 @@ async def test_cmd_send_ton_sum_valid(
     mock_message.delete.assert_awaited_once()
     assert any(
         "Please confirm sending 10.5 TON" in req["data"]["text"]
-        for req in _text_requests(mock_server)
+        for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_sum_invalid(
-    mock_server, mock_session, mock_message, ton_app_context
+        mock_telegram, mock_session, mock_message, ton_app_context
 ):
     state = make_state({"recipient_address": "EQD" + ("A" * 45)})
     mock_message.text = "-1"
@@ -169,13 +169,13 @@ async def test_cmd_send_ton_sum_invalid(
     state.set_state.assert_not_awaited()
     mock_message.delete.assert_not_awaited()
     assert any(
-        "Invalid amount" in req["data"]["text"] for req in _text_requests(mock_server)
+        "Invalid amount" in req["data"]["text"] for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_confirm_success(
-    mock_server, mock_session, mock_callback, ton_app_context
+        mock_telegram, mock_session, mock_callback, ton_app_context
 ):
     state = make_state({"recipient_address": "EQD" + ("A" * 45), "amount": 10.5})
 
@@ -199,17 +199,17 @@ async def test_cmd_send_ton_confirm_success(
     ton_service.send_ton.assert_awaited_once_with("EQD" + ("A" * 45), 10.5)
     mock_callback.answer.assert_awaited_once()
     assert any(
-        "Sending transaction" in req["data"]["text"] for req in _text_requests(mock_server)
+        "Sending transaction" in req["data"]["text"] for req in _text_requests(mock_telegram)
     )
     assert any(
         "Successfully sent 10.5 TON" in req["data"]["text"]
-        for req in _text_requests(mock_server)
+        for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_confirm_not_ton_wallet(
-    mock_server, mock_session, mock_callback, ton_app_context
+        mock_telegram, mock_session, mock_callback, ton_app_context
 ):
     state = make_state({"recipient_address": "EQD" + ("A" * 45), "amount": 10.5})
 
@@ -226,13 +226,13 @@ async def test_cmd_send_ton_confirm_not_ton_wallet(
 
     mock_callback.answer.assert_awaited_once()
     assert any(
-        "not a TON wallet" in req["data"]["text"] for req in _text_requests(mock_server)
+        "not a TON wallet" in req["data"]["text"] for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_cancel(
-    mock_server, mock_session, mock_callback, ton_app_context
+        mock_telegram, mock_session, mock_callback, ton_app_context
 ):
     state = make_state()
 
@@ -245,13 +245,13 @@ async def test_cmd_send_ton_cancel(
 
     mock_callback.answer.assert_awaited_once()
     assert any(
-        "Transaction cancelled." in req["data"]["text"] for req in _text_requests(mock_server)
+        "Transaction cancelled." in req["data"]["text"] for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_usdt_start(
-    mock_server, mock_session, mock_callback, ton_app_context
+        mock_telegram, mock_session, mock_callback, ton_app_context
 ):
     state = make_state()
 
@@ -265,13 +265,13 @@ async def test_cmd_send_ton_usdt_start(
     state.set_state.assert_awaited_once_with(StateSendTonUSDT.sending_for)
     mock_callback.answer.assert_awaited_once()
     assert any(
-        req["data"]["text"] == "Enter recipient's address:" for req in _text_requests(mock_server)
+        req["data"]["text"] == "Enter recipient's address:" for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_usdt_address_valid(
-    mock_server, mock_session, mock_message, ton_app_context
+        mock_telegram, mock_session, mock_message, ton_app_context
 ):
     state = make_state()
     mock_message.text = "EQD" + ("B" * 45)
@@ -288,13 +288,13 @@ async def test_cmd_send_ton_usdt_address_valid(
     state.set_state.assert_awaited_once_with(StateSendTonUSDT.sending_sum)
     mock_message.delete.assert_awaited_once()
     assert any(
-        req["data"]["text"] == "Enter amount to send:" for req in _text_requests(mock_server)
+        req["data"]["text"] == "Enter amount to send:" for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_usdt_sum_valid(
-    mock_server, mock_session, mock_message, ton_app_context
+        mock_telegram, mock_session, mock_message, ton_app_context
 ):
     state = make_state({"recipient_address": "EQD" + ("B" * 45)})
     mock_message.text = "5"
@@ -312,13 +312,13 @@ async def test_cmd_send_ton_usdt_sum_valid(
     mock_message.delete.assert_awaited_once()
     assert any(
         "Please confirm sending 5.0 USDT" in req["data"]["text"]
-        for req in _text_requests(mock_server)
+        for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_usdt_confirm_success(
-    mock_server, mock_session, mock_callback, ton_app_context
+        mock_telegram, mock_session, mock_callback, ton_app_context
 ):
     state = make_state({"recipient_address": "EQD" + ("B" * 45), "amount": 5.0})
 
@@ -342,17 +342,17 @@ async def test_cmd_send_ton_usdt_confirm_success(
     ton_service.send_usdt.assert_awaited_once_with("EQD" + ("B" * 45), 5.0)
     mock_callback.answer.assert_awaited_once()
     assert any(
-        "Sending transaction" in req["data"]["text"] for req in _text_requests(mock_server)
+        "Sending transaction" in req["data"]["text"] for req in _text_requests(mock_telegram)
     )
     assert any(
         "Successfully sent 5.0 USDT" in req["data"]["text"]
-        for req in _text_requests(mock_server)
+        for req in _text_requests(mock_telegram)
     )
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_ton_usdt_cancel(
-    mock_server, mock_session, mock_callback, ton_app_context
+        mock_telegram, mock_session, mock_callback, ton_app_context
 ):
     state = make_state()
 
@@ -365,5 +365,5 @@ async def test_cmd_send_ton_usdt_cancel(
 
     mock_callback.answer.assert_awaited_once()
     assert any(
-        "Transaction cancelled." in req["data"]["text"] for req in _text_requests(mock_server)
+        "Transaction cancelled." in req["data"]["text"] for req in _text_requests(mock_telegram)
     )

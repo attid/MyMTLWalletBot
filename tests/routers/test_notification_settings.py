@@ -20,7 +20,7 @@ from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
 
 
 @pytest.fixture
-async def notification_settings_app_context(mock_app_context, mock_server):
+async def notification_settings_app_context(mock_app_context, mock_telegram):
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     mock_app_context.bot = bot
@@ -66,7 +66,7 @@ def _last_text_request(mock_server):
 
 @pytest.mark.asyncio
 async def test_hide_notification_callback(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state()
 
@@ -107,7 +107,7 @@ async def test_hide_notification_callback(
     assert state_data["min_amount"] == 10.0
     assert state_data["operation_type"] == "payment"
 
-    request = _last_text_request(mock_server)
+    request = _last_text_request(mock_telegram)
     assert request is not None
     assert request["data"]["text"] == "notification_settings_menu"
     mock_callback.answer.assert_awaited_once()
@@ -115,7 +115,7 @@ async def test_hide_notification_callback(
 
 @pytest.mark.asyncio
 async def test_toggle_token_callback_sets_asset(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state(
         {
@@ -143,12 +143,12 @@ async def test_toggle_token_callback_sets_asset(
 
     state_data = await state.get_data()
     assert state_data["asset_code"] == "EURMTL"
-    assert _last_text_request(mock_server) is not None
+    assert _last_text_request(mock_telegram) is not None
 
 
 @pytest.mark.asyncio
 async def test_toggle_token_callback_clears_asset(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state(
         {
@@ -168,12 +168,12 @@ async def test_toggle_token_callback_clears_asset(
 
     state_data = await state.get_data()
     assert state_data["asset_code"] is None
-    assert _last_text_request(mock_server) is not None
+    assert _last_text_request(mock_telegram) is not None
 
 
 @pytest.mark.asyncio
 async def test_change_amount_callback_cycles(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state(
         {
@@ -192,12 +192,12 @@ async def test_change_amount_callback_cycles(
 
     state_data = await state.get_data()
     assert state_data["min_amount"] == 1
-    assert _last_text_request(mock_server) is not None
+    assert _last_text_request(mock_telegram) is not None
 
 
 @pytest.mark.asyncio
 async def test_toggle_wallets_callback(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state(
         {
@@ -216,12 +216,12 @@ async def test_toggle_wallets_callback(
 
     state_data = await state.get_data()
     assert state_data["for_all_wallets"] is True
-    assert _last_text_request(mock_server) is not None
+    assert _last_text_request(mock_telegram) is not None
 
 
 @pytest.mark.asyncio
 async def test_save_filter_callback_creates(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state(
         {
@@ -249,14 +249,14 @@ async def test_save_filter_callback_creates(
 
     mock_repo.create.assert_awaited_once()
     state.clear.assert_awaited_once()
-    request = _last_text_request(mock_server)
+    request = _last_text_request(mock_telegram)
     assert request is not None
     assert request["data"]["text"] == "filter_saved"
 
 
 @pytest.mark.asyncio
 async def test_save_filter_callback_duplicate(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     state = make_state(
         {
@@ -291,14 +291,14 @@ async def test_save_filter_callback_duplicate(
 
     mock_repo.create.assert_not_called()
     state.clear.assert_not_called()
-    request = _last_text_request(mock_server)
+    request = _last_text_request(mock_telegram)
     assert request is not None
     assert request["data"]["text"] == "filter_already_exists"
 
 
 @pytest.mark.asyncio
 async def test_notification_settings_callback(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     mock_repo = MagicMock()
     mock_repo.get_by_user_id = AsyncMock(return_value=[MagicMock(), MagicMock()])
@@ -312,7 +312,7 @@ async def test_notification_settings_callback(
         app_context=notification_settings_app_context,
     )
 
-    request = _last_text_request(mock_server)
+    request = _last_text_request(mock_telegram)
     assert request is not None
     assert request["data"]["text"] == "notification_settings_info"
     mock_callback.answer.assert_awaited_once()
@@ -320,7 +320,7 @@ async def test_notification_settings_callback(
 
 @pytest.mark.asyncio
 async def test_delete_all_filters_callback(
-    mock_server, mock_session, mock_callback, notification_settings_app_context
+        mock_telegram, mock_session, mock_callback, notification_settings_app_context
 ):
     mock_repo = MagicMock()
     mock_repo.delete_all_by_user = AsyncMock()
@@ -335,7 +335,7 @@ async def test_delete_all_filters_callback(
     )
 
     mock_repo.delete_all_by_user.assert_awaited_once_with(mock_callback.from_user.id)
-    request = _last_text_request(mock_server)
+    request = _last_text_request(mock_telegram)
     assert request is not None
     assert request["data"]["text"] == "all_filters_deleted"
     mock_callback.answer.assert_awaited_once()

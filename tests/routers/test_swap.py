@@ -43,7 +43,7 @@ def cleanup_router():
 
 
 @pytest.fixture
-async def swap_app_context(mock_app_context, mock_server):
+async def swap_app_context(mock_app_context, mock_telegram):
     """Setup app_context with real bot for mock_server integration."""
     session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
@@ -64,7 +64,7 @@ def _text_requests(mock_server):
 # --- Swap handlers ---
 
 @pytest.mark.asyncio
-async def test_cmd_swap_01(mock_server, swap_app_context, dp):
+async def test_cmd_swap_01(mock_telegram, swap_app_context, dp):
     """
     Test Swap callback: should show available tokens for swap.
     """
@@ -105,14 +105,14 @@ async def test_cmd_swap_01(mock_server, swap_app_context, dp):
 
     await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
     # Verify the use case was called
     mock_use_case.execute.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_cmd_swap_01_shows_tokens(mock_server, swap_app_context, dp):
+async def test_cmd_swap_01_shows_tokens(mock_telegram, swap_app_context, dp):
     """
     Test Swap callback: verifies token list is displayed correctly.
     """
@@ -155,7 +155,7 @@ async def test_cmd_swap_01_shows_tokens(mock_server, swap_app_context, dp):
 
     await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None
     # Verify keyboard contains tokens
     markup = req["data"].get("reply_markup", "")
@@ -164,7 +164,7 @@ async def test_cmd_swap_01_shows_tokens(mock_server, swap_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cq_swap_choose_token_from(mock_server, swap_app_context, dp):
+async def test_cq_swap_choose_token_from(mock_telegram, swap_app_context, dp):
     """
     Test SwapAssetFromCallbackData: should show tokens to swap for.
     """
@@ -219,12 +219,12 @@ async def test_cq_swap_choose_token_from(mock_server, swap_app_context, dp):
     ):
         await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-        req = _last_request(mock_server, "sendMessage")
+        req = _last_request(mock_telegram, "sendMessage")
         assert req is not None, "sendMessage should be called"
 
 
 @pytest.mark.asyncio
-async def test_cq_swap_choose_token_for(mock_server, swap_app_context, dp):
+async def test_cq_swap_choose_token_for(mock_telegram, swap_app_context, dp):
     """
     Test SwapAssetForCallbackData: should set state to swap_sum.
     """
@@ -262,7 +262,7 @@ async def test_cq_swap_choose_token_for(mock_server, swap_app_context, dp):
 
     await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
     # Verify state was set
@@ -271,7 +271,7 @@ async def test_cq_swap_choose_token_for(mock_server, swap_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_swap_sum(mock_server, swap_app_context, dp):
+async def test_cmd_swap_sum(mock_telegram, swap_app_context, dp):
     """
     Test sending swap sum: should calculate and show result.
     """
@@ -323,7 +323,7 @@ async def test_cmd_swap_sum(mock_server, swap_app_context, dp):
     ):
         await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-        req = _last_request(mock_server, "sendMessage")
+        req = _last_request(mock_telegram, "sendMessage")
         assert req is not None, "sendMessage should be called"
 
         # Verify swap use case was called
@@ -331,7 +331,7 @@ async def test_cmd_swap_sum(mock_server, swap_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_swap_sum_exceeds_limit(mock_server, swap_app_context, dp):
+async def test_cmd_swap_sum_exceeds_limit(mock_telegram, swap_app_context, dp):
     """
     Test sending swap sum: should block if sum exceeds limit for restricted users.
     """
@@ -370,14 +370,14 @@ async def test_cmd_swap_sum_exceeds_limit(mock_server, swap_app_context, dp):
 
     await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None
     # Should show limit warning
     assert "need_update_limits" in req["data"]["text"]
 
 
 @pytest.mark.asyncio
-async def test_cq_swap_strict_receive(mock_server, swap_app_context, dp):
+async def test_cq_swap_strict_receive(mock_telegram, swap_app_context, dp):
     """
     Test strict receive callback: should set state to swap_receive_sum.
     """
@@ -407,7 +407,7 @@ async def test_cq_swap_strict_receive(mock_server, swap_app_context, dp):
 
     await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None, "sendMessage should be called"
 
     # Verify state was set to swap_receive_sum
@@ -416,7 +416,7 @@ async def test_cq_swap_strict_receive(mock_server, swap_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cmd_swap_receive_sum(mock_server, swap_app_context, dp):
+async def test_cmd_swap_receive_sum(mock_telegram, swap_app_context, dp):
     """
     Test sending swap receive sum: should calculate and show result.
     """
@@ -466,7 +466,7 @@ async def test_cmd_swap_receive_sum(mock_server, swap_app_context, dp):
     ):
         await dp.feed_update(bot=swap_app_context.bot, update=update, app_context=swap_app_context)
 
-        req = _last_request(mock_server, "sendMessage")
+        req = _last_request(mock_telegram, "sendMessage")
         assert req is not None, "sendMessage should be called"
 
         # Verify swap use case was called with strict_receive=True
@@ -476,7 +476,7 @@ async def test_cmd_swap_receive_sum(mock_server, swap_app_context, dp):
 
 
 @pytest.mark.asyncio
-async def test_cq_swap_cancel_offers_toggle(mock_server, swap_app_context, dp):
+async def test_cq_swap_cancel_offers_toggle(mock_telegram, swap_app_context, dp):
     """
     Test CancelOffers callback: should toggle cancel_offers flag.
     """
@@ -515,5 +515,5 @@ async def test_cq_swap_cancel_offers_toggle(mock_server, swap_app_context, dp):
     data = await ctx.get_data()
     assert data.get("cancel_offers") is True
 
-    req = _last_request(mock_server, "sendMessage")
+    req = _last_request(mock_telegram, "sendMessage")
     assert req is not None

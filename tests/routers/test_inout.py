@@ -55,7 +55,7 @@ def dp(mock_session, mock_app_context):
     return dp
 
 @pytest.mark.asyncio
-async def test_menu_flow(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_menu_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test navigation in InOut menu"""
     user_id = 123
     mock_app_context.bot = bot
@@ -69,10 +69,10 @@ async def test_menu_flow(mock_server, bot, dp, mock_session, mock_app_context):
             data="InOut"
         )
     ))
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent) == 1
     assert "inout" in sent[0]['data']['text']
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 2. Select USDT
     await dp.feed_update(bot=bot, update=types.Update(
@@ -83,13 +83,13 @@ async def test_menu_flow(mock_server, bot, dp, mock_session, mock_app_context):
             data="USDT_TRC20"
         )
     ))
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent) == 1
     assert "inout_usdt" in sent[0]['data']['text']
 
 
 @pytest.mark.asyncio
-async def test_usdt_in_flow(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test USDT Deposit flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -117,7 +117,7 @@ async def test_usdt_in_flow(mock_server, bot, dp, mock_session, mock_app_context
             )
         ))
     
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 2. Click USDT_CHECK
     mock_lock = AsyncMock()
@@ -146,13 +146,13 @@ async def test_usdt_in_flow(mock_server, bot, dp, mock_session, mock_app_context
                 )
             ))
             
-            sent = [r for r in mock_server if r['method'] == 'sendMessage']
+            sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
             assert any("All works done" in str(m['data']) or "text" in str(m['data']) for m in sent)
             mock_pay_uc.execute.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_usdt_out_flow(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test USDT Withdrawal flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -177,7 +177,7 @@ async def test_usdt_out_flow(mock_server, bot, dp, mock_session, mock_app_contex
                 data="USDT_OUT"
             )
         ))
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 2. Send USDT Address
     with patch("routers.inout.check_valid_trx", return_value=True):
@@ -190,9 +190,9 @@ async def test_usdt_out_flow(mock_server, bot, dp, mock_session, mock_app_contex
             )
         ))
     
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert "send_sum" in sent[0]['data']['text']
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 3. Send Sum
     mock_energy = MagicMock()
@@ -214,13 +214,13 @@ async def test_usdt_out_flow(mock_server, bot, dp, mock_session, mock_app_contex
             )
         ))
         
-        sent = [r for r in mock_server if r['method'] == 'sendMessage']
+        sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
         assert "confirm_send" in sent[0]['data']['text']
         mock_pay_uc.execute.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_btc_flow(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_btc_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test BTC In flow"""
     user_id = 123
     mock_app_context.bot = bot
@@ -234,7 +234,7 @@ async def test_btc_flow(mock_server, bot, dp, mock_session, mock_app_context):
             data="BTC"
         )
     ))
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 2. Click BTC_IN
     mock_user_repo = MagicMock()
@@ -258,9 +258,9 @@ async def test_btc_flow(mock_server, bot, dp, mock_session, mock_app_context):
             data="BTC_IN"
         )
     ))
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert "btc_in" in sent[0]['data']['text']
-    mock_server.clear()
+    mock_telegram.clear()
 
     # 3. Enter Sum
     with patch("routers.inout.thoth_create_order", AsyncMock(return_value="ORDER_UUID")):
@@ -277,7 +277,7 @@ async def test_btc_flow(mock_server, bot, dp, mock_session, mock_app_context):
 
 
 @pytest.mark.asyncio
-async def test_cmd_balance_admin(mock_server, bot, dp, mock_session, mock_app_context):
+async def test_cmd_balance_admin(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test /balance command (admin only)"""
     user_id = 123
     username = "itolstov"
@@ -303,7 +303,7 @@ async def test_cmd_balance_admin(mock_server, bot, dp, mock_session, mock_app_co
             )
         ))
         
-    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
     assert len(sent) == 1
     assert "addr1" in sent[0]['data']['text']
     assert "300.0" in sent[0]['data']['text']

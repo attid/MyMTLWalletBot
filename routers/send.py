@@ -388,7 +388,7 @@ async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 
     # Update message with the same text and changed button checkbox state
     msg = data['msg']
-    keyboard = get_kb_offers_cancel(callback.from_user.id, data)
+    keyboard = get_kb_offers_cancel(callback.from_user.id, data, app_context=app_context)
     await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
 
 
