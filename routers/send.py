@@ -56,22 +56,22 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
+def get_kb_send(user_id: Union[types.CallbackQuery, types.Message, int], *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
-    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_choose'), switch_inline_query_current_chat='')],
-               get_return_button(user_id)]
+    buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_choose', app_context=app_context), switch_inline_query_current_chat='')],
+               get_return_button(user_id, app_context=app_context)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
 
-async def cmd_send_start(user_id: int, state: FSMContext, session: Session, app_context: AppContext = None):
-    msg = my_gettext(user_id, 'send_address')
+async def cmd_send_start(user_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
+    msg = my_gettext(user_id, 'send_address', app_context=app_context)
     await clear_state(state)
     # keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True,
     #                                     keyboard=[[types.KeyboardButtonRequestUser()]])
     # await send_message(session,user_id, msg, reply_markup=keyboard)
-    await send_message(session, user_id, msg, reply_markup=get_kb_send(user_id), app_context=app_context)
+    await send_message(session, user_id, msg, reply_markup=get_kb_send(user_id, app_context=app_context), app_context=app_context)
     await state.set_state(StateSendToken.sending_for)
 
 
@@ -88,7 +88,7 @@ async def cmd_send_message(message: types.Message, state: FSMContext, session: S
 
 
 async def cmd_send_token(message: types.Message, state: FSMContext, session: Session,
-                         send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, app_context: AppContext = None):
+                         send_for: str, send_asset: Asset, send_sum: float, send_memo: str = None, *, app_context: AppContext):
     try:
         if '@' == send_for[0]:
             # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -283,11 +283,11 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
             await cmd_create_account(message.from_user.id, state, session, app_context)
         else:
             logger.error(f"StateSendFor: failed to find or activate wallet. Searched: {address}, free_wallet={free_wallet}")
-            msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'send_address')
-            await send_message(session, message, msg, reply_markup=get_kb_return(message))
+            msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'send_address', app_context=app_context)
+            await send_message(session, message, msg, reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
 
 
-async def cmd_send_choose_token(message: types.Message, state: FSMContext, session: Session, app_context: AppContext = None):
+async def cmd_send_choose_token(message: types.Message, state: FSMContext, session: Session, *, app_context: AppContext):
     data = await state.get_data()
     address = data.get('send_address')
 
@@ -332,9 +332,9 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
                                                           callback_data=SendAssetCallbackData(
                                                               answer=token.asset_code).pack()
                                                           )])
-    kb_tmp.append(get_return_button(message))
+    kb_tmp.append(get_return_button(message, app_context=app_context))
     await send_message(session, message, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp),
-                       need_new_msg=True)
+                       need_new_msg=True, app_context=app_context)
     await state.update_data(assets=jsonpickle.encode(asset_list))
 
 
@@ -411,8 +411,8 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session
         db_user = await user_repo.get_by_id(message.from_user.id)
         if db_user and db_user.can_5000 == 0 and send_sum > 5000:
             data = await state.get_data()
-            msg0 = my_gettext(message, 'need_update_limits')
-            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message))
+            msg0 = my_gettext(message, 'need_update_limits', app_context=app_context)
+            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
             await message.delete()
             return
 
@@ -428,12 +428,12 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: Session
         await cmd_send_04(session, message, state, app_context=app_context)
         await message.delete()
     else:
-        keyboard = get_kb_offers_cancel(message.from_user.id, data)
-        await send_message(session, message, f"{my_gettext(message, 'bad_sum')}\n{data['msg']}",
-                           reply_markup=keyboard)
+        keyboard = get_kb_offers_cancel(message.from_user.id, data, app_context=app_context)
+        await send_message(session, message, f"{my_gettext(message, 'bad_sum', app_context=app_context)}\n{data['msg']}",
+                           reply_markup=keyboard, app_context=app_context)
 
 
-async def cmd_send_04(session: Session, message: types.Message, state: FSMContext, need_new_msg=None, app_context: AppContext = None):
+async def cmd_send_04(session: Session, message: types.Message, state: FSMContext, need_new_msg=None, *, app_context: AppContext):
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
@@ -500,9 +500,9 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
 
 @router.callback_query(F.data == "Memo")
 async def cmd_get_memo(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    msg = my_gettext(callback, 'send_memo')
+    msg = my_gettext(callback, 'send_memo', app_context=app_context)
     await state.set_state(StateSendToken.sending_memo)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
 
 
 @router.message(StateSendToken.sending_memo)
@@ -514,7 +514,7 @@ async def cmd_send_memo(message: Message, state: FSMContext, session: Session, a
     await cmd_send_04(session, message, state, need_new_msg=True, app_context=app_context)
 
 
-async def cmd_create_account(user_id: int, state: FSMContext, session: Session, app_context: AppContext = None):
+async def cmd_create_account(user_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
     data = await state.get_data()
 
     send_sum = data.get('activate_sum', 5)
@@ -551,16 +551,16 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session, 
     await state.update_data(xdr=xdr, send_asset_code="XLM", send_asset_issuer=None,
                             send_sum=send_sum)
 
-    kb = get_kb_yesno_send_xdr(user_id)
+    kb = get_kb_yesno_send_xdr(user_id, app_context=app_context)
     kb.inline_keyboard.insert(1, [types.InlineKeyboardButton(text='Send 15 xlm',
                                                              callback_data="Send15xlm")])
-    await send_message(session, user_id, msg, reply_markup=kb, need_new_msg=True)
+    await send_message(session, user_id, msg, reply_markup=kb, need_new_msg=True, app_context=app_context)
 
 
 @router.callback_query(F.data == "Send15xlm")
 async def cmd_send_15_xlm(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(activate_sum=15)
-    await cmd_create_account(callback.from_user.id, state, session, app_context)
+    await cmd_create_account(callback.from_user.id, state, session, app_context=app_context)
 
 
 @router.message(StateSendToken.sending_for, F.photo)

@@ -9,7 +9,7 @@ from infrastructure.services.app_context import AppContext
 from other.lang_tools import my_gettext
 
 
-def get_return_button(chat_id, text=None, callback=None, app_context: AppContext = None):
+def get_return_button(chat_id, text=None, callback=None, *, app_context: AppContext):
     if text is None:
         text = my_gettext(chat_id, 'kb_return', app_context=app_context)
 
@@ -20,7 +20,7 @@ def get_return_button(chat_id, text=None, callback=None, app_context: AppContext
 
 
 def get_kb_return(user_id: Union[InlineKeyboardMarkup, InlineKeyboardButton, int],
-                  add_buttons=None, app_context: AppContext = None) -> InlineKeyboardMarkup:
+                  add_buttons=None, *, app_context: AppContext) -> InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
     if add_buttons:
@@ -37,7 +37,7 @@ class HideNotificationCallbackData(CallbackData, prefix="hide_notification"):
 
 
 def get_hide_notification_keyboard(user_id: int, operation_id: str,
-                                   wallet_id: int, app_context: AppContext = None) -> InlineKeyboardMarkup:
+                                   wallet_id: int, *, app_context: AppContext) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text=my_gettext(user_id, 'kb_hide_similar_messages', app_context=app_context),
                                     callback_data=HideNotificationCallbackData(
@@ -50,15 +50,15 @@ def get_hide_notification_keyboard(user_id: int, operation_id: str,
     return keyboard
 
 
-def get_kb_del_return(user_id: Union[InlineKeyboardMarkup, InlineKeyboardButton, int], app_context: AppContext = None) -> InlineKeyboardMarkup:
+def get_kb_del_return(user_id: Union[InlineKeyboardMarkup, InlineKeyboardButton, int], *, app_context: AppContext) -> InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
-    buttons = [get_return_button(user_id, text=my_gettext(user_id, 'kb_delete_and_return', app_context=app_context), callback='DeleteReturn')]
+    buttons = [get_return_button(user_id, text=my_gettext(user_id, 'kb_delete_and_return', app_context=app_context), callback='DeleteReturn', app_context=app_context)]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
 
-def get_kb_yesno_send_xdr(chat_id, add_button_memo=False, app_context: AppContext = None):
+def get_kb_yesno_send_xdr(chat_id, add_button_memo=False, *, app_context: AppContext):
     buttons = [
         [InlineKeyboardButton(text=my_gettext(chat_id, 'kb_sign', app_context=app_context), callback_data="Sign"),
          InlineKeyboardButton(text=my_gettext(chat_id, 'kb_cancel', app_context=app_context), callback_data="Return")]
@@ -70,7 +70,7 @@ def get_kb_yesno_send_xdr(chat_id, add_button_memo=False, app_context: AppContex
 
 
 def get_kb_send(user_id: int, with_tools: bool = False, tool_name: str = 'eurmtl.me',
-                can_send=True, app_context: AppContext = None) -> InlineKeyboardMarkup:
+                can_send=True, *, app_context: AppContext) -> InlineKeyboardMarkup:
     buttons = []
 
     # Если есть колбек (tool_name == 'callback'), не показываем кнопку отправки в блокчейн
@@ -91,14 +91,14 @@ def get_kb_send(user_id: int, with_tools: bool = False, tool_name: str = 'eurmtl
     return keyboard
 
 
-def get_kb_resend(user_id: int, app_context: AppContext = None) -> InlineKeyboardMarkup:
+def get_kb_resend(user_id: int, *, app_context: AppContext) -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=my_gettext(user_id, 'kb_resend', app_context=app_context), callback_data="ReSend")],
                get_return_button(user_id, app_context=app_context)]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
 
-def get_kb_offers_cancel(user_id: int, data: dict, app_context: AppContext = None) -> InlineKeyboardMarkup:
+def get_kb_offers_cancel(user_id: int, data: dict, *, app_context: AppContext) -> InlineKeyboardMarkup:
     """
         Create keyboard with optional checkbox-button '🟢 Cancel offers' and 'Return'-button
     """
@@ -108,17 +108,18 @@ def get_kb_offers_cancel(user_id: int, data: dict, app_context: AppContext = Non
         btn_txt = my_gettext(
             user_id,
             'kb_cancel_offers',
-            (cancel_offers_state, data.get('send_asset_code'))
+            (cancel_offers_state, data.get('send_asset_code')),
+            app_context=app_context
         )
         btn = [types.InlineKeyboardButton(text=btn_txt, callback_data='CancelOffers')]
         buttons.append(btn)
 
-    buttons.append(get_return_button(user_id))
+    buttons.append(get_return_button(user_id, app_context=app_context))
 
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_kb_swap_confirm(user_id: int, data: dict, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
+def get_kb_swap_confirm(user_id: int, data: dict, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     """
     Create keyboard for swap confirmation with:
     - Optional 'Cancel offers' checkbox
@@ -146,7 +147,7 @@ def get_kb_swap_confirm(user_id: int, data: dict, app_context: AppContext = None
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_kb_limits(user_id: int, off_limit: int, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
+def get_kb_limits(user_id: int, off_limit: int, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     buttons = []
     state = '🟢' if off_limit == 1 else '⚪️'
     btn_txt = my_gettext(
@@ -163,7 +164,7 @@ def get_kb_limits(user_id: int, off_limit: int, app_context: AppContext = None) 
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_kb_return_url(user_id: int, return_url: str, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
+def get_kb_return_url(user_id: int, return_url: str, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     """
     Create a keyboard with a return_url button and a return button.
     """

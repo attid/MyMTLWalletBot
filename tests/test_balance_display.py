@@ -53,7 +53,7 @@ async def test_get_start_text_show_less(mock_session):
              mock_config.horizon_url = "https://horizon-testnet.stellar.org"
              
              # Execute
-             text = await get_start_text(mock_session, mock_state, user_id, app_context)
+             text = await get_start_text(mock_session, mock_state, user_id, app_context=app_context)
         
         # Assertions
         assert "EURMTL" in text
@@ -103,7 +103,7 @@ async def test_get_start_text_show_more(mock_session):
         with patch("other.config_reader.config") as mock_config:
              mock_config.horizon_url = "https://horizon-testnet.stellar.org"
         
-             text = await get_start_text(mock_session, mock_state, user_id, app_context)
+             text = await get_start_text(mock_session, mock_state, user_id, app_context=app_context)
         
         assert "EURMTL" in text
         assert "BTC" in text

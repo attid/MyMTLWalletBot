@@ -55,7 +55,7 @@ async def cmd_market(callback: types.CallbackQuery, session: Session, app_contex
     await callback.answer()
 
 
-def get_kb_market(user_id: int, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
+def get_kb_market(user_id: int, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_new_order', app_context=app_context),
                                     callback_data="NewOrder")],
@@ -201,7 +201,7 @@ async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session:
         await message.delete()
 
 
-async def cmd_xdr_order(session: Session, message, state: FSMContext, app_context: AppContext = None):
+async def cmd_xdr_order(session: Session, message, state: FSMContext, *, app_context: AppContext):
     data = await state.get_data()
 
     send_sum = data.get('send_sum')
@@ -337,7 +337,7 @@ async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderC
     await callback.answer()
 
 
-def get_kb_edir_order(user_id: int, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
+def get_kb_edir_order(user_id: int, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_edit_sum', app_context=app_context),
                                     callback_data="EditOrderAmount")],

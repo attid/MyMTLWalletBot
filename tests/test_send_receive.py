@@ -12,10 +12,12 @@ from stellar_sdk import Asset
 
 @pytest.mark.asyncio
 async def test_cmd_send_start(mock_session, mock_callback, mock_state):
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
+    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.send.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
-        await cmd_send_start(mock_callback, mock_state, mock_session, app_context)
+        await cmd_send_start(123, mock_state, mock_session, app_context=app_context)
         mock_send.assert_called_once()
         # Verify app_context is passed to send_message
         _, kwargs = mock_send.call_args
@@ -64,14 +66,21 @@ async def test_cmd_send_choose_token(mock_session, mock_callback, mock_state):
     mock_state.get_data.return_value = {"send_address": "GADDR..."}
     
     with patch("core.use_cases.wallet.get_balance.GetWalletBalance") as MockGetBalance, \
-         patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.send.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.send.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
         
         mock_use_case = MockGetBalance.return_value
         mock_use_case.execute = AsyncMock(return_value=[mock_bal])
         
+        mock_message = MagicMock()
+        mock_message.from_user.id = 123
+        
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
-        await cmd_send_choose_token(mock_callback, mock_state, mock_session, app_context)
+        app_context.repository_factory.get_wallet_repository.return_value = MagicMock()
+        app_context.stellar_service = MagicMock()
+        await cmd_send_choose_token(mock_message, mock_state, mock_session, app_context=app_context)
         mock_send.assert_called_once()
 
 # --- tests for routers/receive.py ---
@@ -180,14 +189,18 @@ async def test_cmd_create_account(mock_session, mock_state):
     mock_state.get_data.return_value = {"activate_sum": 10, "send_address": "GNEW"}
 
     with patch("core.use_cases.payment.send_payment.SendPayment") as MockSendPayment, \
-         patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.send.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.send.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
 
         mock_use_case = MockSendPayment.return_value
         mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_CREATE"))
 
         app_context = MagicMock()
         app_context.localization_service.get_text.return_value = 'text'
-        await cmd_create_account(user_id, mock_state, mock_session, app_context)
+        app_context.repository_factory.get_wallet_repository.return_value = MagicMock()
+        app_context.stellar_service = MagicMock()
+        await cmd_create_account(user_id, mock_state, mock_session, app_context=app_context)
         
         mock_use_case.execute.assert_called_once()
         _, kwargs = mock_use_case.execute.call_args

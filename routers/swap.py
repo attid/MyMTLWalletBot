@@ -50,7 +50,7 @@ def build_swap_confirm_message(
     scenario="send",  # "send" или "receive"
     need_alert=False,
     cancel_offers=False,
-    app_context: AppContext = None
+    *, app_context: AppContext
 ):
     """
     Builds swap confirmation message for both scenarios.
@@ -317,10 +317,11 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         msg = my_gettext(
             message,
             'confirm_swap',
-            (float2str(send_sum), send_asset, receive_sum, receive_asset)
+            (float2str(send_sum), send_asset, receive_sum, receive_asset),
+            app_context=app_context
         )
         if need_alert:
-            msg = my_gettext(message, 'swap_alert') + msg
+            msg = my_gettext(message, 'swap_alert', app_context=app_context) + msg
 
         if cancel_offers:
             msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,), app_context=app_context)

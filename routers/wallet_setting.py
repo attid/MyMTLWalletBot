@@ -95,35 +95,35 @@ ASSETS_PER_PAGE = 30 # Max assets per page
 
 @router.callback_query(F.data == "WalletSetting")
 async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext, l10n: LocalizationService):
-    msg = my_gettext(callback, 'wallet_setting_msg')
+    msg = my_gettext(callback, 'wallet_setting_msg', app_context=app_context)
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     free_wallet = wallet.is_free if wallet else False
     if free_wallet:
-        private_button = types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy'), callback_data="BuyAddress")
+        private_button = types.InlineKeyboardButton(text=my_gettext(callback, 'kb_buy', app_context=app_context), callback_data="BuyAddress")
     else:
-        private_button = types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key'),
+        private_button = types.InlineKeyboardButton(text=my_gettext(callback, 'kb_get_key', app_context=app_context),
                                                     callback_data="GetPrivateKey")
 
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_manage_assets'), callback_data="ManageAssetsMenu")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_address_book'), callback_data="AddressBook")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_manage_assets', app_context=app_context), callback_data="ManageAssetsMenu")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_address_book', app_context=app_context), callback_data="AddressBook")],
         [types.InlineKeyboardButton(text='Manage Data', callback_data="ManageData")],
         [private_button],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_password'), callback_data="SetPassword")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_remove_password'), callback_data="RemovePassword")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate'), callback_data="Donate")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_default'), callback_data="SetDefault")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_limit'), callback_data="SetLimit")],
-        [types.InlineKeyboardButton(text='🔕 ' + my_gettext(callback, 'kb_notification_settings'),
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_password', app_context=app_context), callback_data="SetPassword")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_remove_password', app_context=app_context), callback_data="RemovePassword")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_donate', app_context=app_context), callback_data="Donate")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_default', app_context=app_context), callback_data="SetDefault")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_set_limit', app_context=app_context), callback_data="SetLimit")],
+        [types.InlineKeyboardButton(text='🔕 ' + my_gettext(callback, 'kb_notification_settings', app_context=app_context),
                                     callback_data="NotificationSettings")],
-        [types.InlineKeyboardButton(text='🌐 ' + my_gettext(callback, 'change_lang'), callback_data="ChangeLang")],
+        [types.InlineKeyboardButton(text='🌐 ' + my_gettext(callback, 'change_lang', app_context=app_context), callback_data="ChangeLang")],
         # last button
-        get_return_button(callback)
+        get_return_button(callback, app_context=app_context)
     ]
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
 
 
 @router.callback_query(F.data == "ManageAssetsMenu")
@@ -695,7 +695,7 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext, ap
         message += f'\n\nYour seed phrase is <code>{secrets.seed_phrase}</code>'
     
     await state.set_state(None)
-    await send_message(session, user_id, message, reply_markup=get_kb_del_return(user_id))
+    await send_message(session, user_id, message, reply_markup=get_kb_del_return(user_id, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "GetPrivateKey")
@@ -719,7 +719,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
             await callback.answer()
 
 
-async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
+async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
     data = await state.get_data()
     buy_address = data.get('buy_address')
     admin_id = app_context.admin_id
