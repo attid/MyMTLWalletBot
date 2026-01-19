@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram import types
@@ -6,99 +5,80 @@ from aiogram.fsm.context import FSMContext
 from routers.common_setting import cmd_language, callbacks_lang, cmd_support, LangCallbackData
 from routers.notification_settings import hide_notification_callback, save_filter_callback
 from keyboards.common_keyboards import HideNotificationCallbackData
-from db.models import MyMtlWalletBot
-
-@pytest.fixture
-def mock_session():
-    session = MagicMock()
-    return session
-
-@pytest.fixture
-def mock_state():
-    state = AsyncMock(spec=FSMContext)
-    state.get_data.return_value = {}
-    return state
-
-@pytest.fixture
-def mock_callback():
-    callback = AsyncMock()
-    callback.from_user.id = 123
-    callback.from_user.username = "user"
-    callback.message = AsyncMock()
-    callback.message.chat.id = 123
-    return callback
-
-@pytest.fixture
-def mock_message():
-    message = AsyncMock()
-    message.from_user.id = 123
-    message.chat.id = 123
-    message.text = "test_text"
-    return message
 
 # --- tests for routers/common_setting.py ---
 
 @pytest.mark.asyncio
-async def test_cmd_language(mock_session, mock_callback):
-    with patch("routers.common_setting.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
-        # mock_gd.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}} 
-        
-        l10n = MagicMock()
-        l10n.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
-        
-        app_context = MagicMock()
-        app_context.localization_service.get_text.return_value = 'text'
+async def test_cmd_language(mock_session, mock_callback, mock_app_context):
+    # Setup localization
+    mock_app_context.localization_service.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
+    
+    # Run handler
+    await cmd_language(mock_session, 123, mock_app_context.localization_service, app_context=mock_app_context)
+    
+    # Verify
+    mock_app_context.bot.send_message.assert_called_once()
 
-        await cmd_language(mock_session, 123, l10n, app_context=app_context)
-        mock_send.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_callbacks_lang(mock_session, mock_callback, mock_state):
+async def test_callbacks_lang(mock_session, mock_callback, mock_state, mock_app_context):
     callback_data = LangCallbackData(action="ru")
     
-    with patch("routers.common_setting.change_user_lang", new_callable=AsyncMock) as mock_change, \
-         patch("routers.common_setting.cmd_show_balance", new_callable=AsyncMock) as mock_balance, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-        
+    # Setup mocks for cmd_show_balance dependencies
+    mock_wallet = MagicMock()
+    mock_wallet.public_key = "GKey"
+    mock_wallet.is_free = False
+    
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    mock_wallet_repo.get_info = AsyncMock(return_value="WalletInfo")
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    mock_secret_service = MagicMock()
+    mock_secret_service.is_ton_wallet = AsyncMock(return_value=False)
+    mock_app_context.use_case_factory.create_wallet_secret_service.return_value = mock_secret_service
+    
+    mock_balance_use_case = MagicMock()
+    mock_balance_use_case.execute = AsyncMock(return_value=[])
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_use_case
+    
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock())
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
 
+    # Mock change_user_lang (legacy DB util)
+    with patch("routers.common_setting.change_user_lang", new_callable=AsyncMock) as mock_change:
         
-        l10n = MagicMock()
-        l10n.lang_dict = {'en': {}, 'ru': {}}
-        
-        app_context = MagicMock()
-
-        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session, l10n, app_context)
+        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session, mock_app_context.localization_service, mock_app_context)
         
         mock_change.assert_called_once_with(mock_session, 123, "ru")
-        mock_state.update_data.assert_called_with(user_lang="ru")
-        mock_balance.assert_called_once()
+        
+        # Check that user_lang was updated
+        # mock_state.update_data is called multiple times (once for lang, once for balance)
+        # We need to verify that one of them was user_lang='ru'
+        calls = [call.kwargs for call in mock_state.update_data.call_args_list]
+        assert any(c.get('user_lang') == 'ru' for c in calls)
+        
+        # Verify cmd_show_balance execution via side-effects (send_message called)
+        mock_app_context.bot.send_message.assert_called()
+
 
 @pytest.mark.asyncio
-async def test_cmd_support(mock_session, mock_callback, mock_state):
-    with patch("routers.common_setting.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
+async def test_cmd_support(mock_session, mock_callback, mock_state, mock_app_context):
+    await cmd_support(mock_callback, mock_state, mock_session, app_context=mock_app_context)
+    
+    # send_message calls bot.send_message
+    mock_app_context.bot.send_message.assert_called_once()
 
-        
-        app_context = MagicMock()
-        app_context.localization_service.get_text.return_value = 'text'
-        await cmd_support(mock_callback, mock_state, mock_session, app_context)
-        mock_send.assert_called_once()
 
 # --- tests for routers/notification_settings.py ---
 
 @pytest.mark.asyncio
-async def test_hide_notification_callback(mock_session, mock_callback, mock_state):
-    # Fix: Correctly pack data as string and assign to callback.data
+async def test_hide_notification_callback(mock_session, mock_callback, mock_state, mock_app_context):
     callback_data = HideNotificationCallbackData(wallet_id=1, operation_id="10")
     mock_callback.data = callback_data.pack()
     
-    # Fix: unpacking inside handler expects string, mock_callback.data is now string.
-    
-    # Create mock objects
+    # Setup mocks
     mock_wallet = MagicMock()
     mock_wallet.user_id = 123
     mock_wallet.public_key = "GKey"
@@ -108,30 +88,27 @@ async def test_hide_notification_callback(mock_session, mock_callback, mock_stat
     mock_op.amount1 = "10.0"
     mock_op.operation = "payment"
 
-    with patch("routers.notification_settings.SqlAlchemyWalletRepository") as MockWalletRepo, \
-         patch("routers.notification_settings.SqlAlchemyOperationRepository") as MockOpRepo, \
-         patch("routers.notification_settings.send_notification_settings_menu", new_callable=AsyncMock) as mock_menu, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-         
+    # Configure repository factory
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_by_id = AsyncMock(return_value=mock_wallet)
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    mock_op_repo = MagicMock()
+    mock_op_repo.get_by_id = AsyncMock(return_value=mock_op)
+    mock_app_context.repository_factory.get_operation_repository.return_value = mock_op_repo
+    
+    # Mock send_notification_settings_menu to avoid complex UI construction if desired, 
+    # OR let it run. Let's let it run but ensure it calls send_message.
+    # It calls send_message -> bot.send_message.
+    
+    await hide_notification_callback(mock_callback, mock_state, mock_session, app_context=mock_app_context)
+    
+    mock_state.update_data.assert_called()
+    mock_app_context.bot.send_message.assert_called()
 
-        
-        # Setup repo returns
-        mock_wallet_repo = MockWalletRepo.return_value
-        mock_wallet_repo.get_by_id = AsyncMock(return_value=mock_wallet) # Use get_by_id as per implementation
-        
-        mock_op_repo = MockOpRepo.return_value
-        mock_op_repo.get_by_id = AsyncMock(return_value=mock_op) # Use get_by_id
-        
-        app_context = MagicMock()
-        app_context.localization_service.get_text.return_value = 'text'
-
-        await hide_notification_callback(mock_callback, mock_state, mock_session, app_context=app_context)
-        
-        mock_state.update_data.assert_called()
-        mock_menu.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_save_filter_callback(mock_session, mock_callback, mock_state):
+async def test_save_filter_callback(mock_session, mock_callback, mock_state, mock_app_context):
     mock_state.get_data.return_value = {
         'asset_code': 'XLM',
         'min_amount': 10,
@@ -140,23 +117,13 @@ async def test_save_filter_callback(mock_session, mock_callback, mock_state):
         'for_all_wallets': False
     }
     
-    # Mocking that no existing filter exists
+    mock_repo = MagicMock()
+    mock_repo.find_duplicate = AsyncMock(return_value=None)
+    mock_repo.create = AsyncMock()
+    mock_app_context.repository_factory.get_notification_repository.return_value = mock_repo
+
+    await save_filter_callback(mock_callback, mock_state, mock_session, app_context=mock_app_context)
     
-    with patch("routers.notification_settings.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.notification_settings.SqlAlchemyNotificationRepository") as MockRepo, \
-         patch("other.lang_tools.get_user_id", return_value=123):
-        
-
-        
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.find_duplicate = AsyncMock(return_value=None)
-        mock_repo_instance.create = AsyncMock()
-
-        app_context = MagicMock()
-        app_context.localization_service.get_text.return_value = 'text'
-
-        await save_filter_callback(mock_callback, mock_state, mock_session, app_context=app_context)
-        
-        mock_repo_instance.create.assert_called_once()
-        mock_state.clear.assert_called_once()
-        mock_send.assert_called_once()
+    mock_repo.create.assert_called_once()
+    mock_state.clear.assert_called_once()
+    mock_app_context.bot.send_message.assert_called()

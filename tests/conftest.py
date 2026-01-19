@@ -33,6 +33,13 @@ def mock_app_context():
     ctx.repository_factory = MagicMock()
     ctx.use_case_factory = MagicMock()
     ctx.bot = AsyncMock()
+    
+    # Mock dispatcher storage
+    ctx.dispatcher = MagicMock()
+    ctx.dispatcher.storage = MagicMock()
+    ctx.dispatcher.storage.get_data = AsyncMock(return_value={})
+    ctx.dispatcher.storage.update_data = AsyncMock()
+    
     ctx.admin_id = 123456
     return ctx
 

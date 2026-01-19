@@ -69,7 +69,17 @@ class LocalizationService:
                 lang = 'en'
 
         # Fallback to English if key not found in user's language, then key itself
-        text = self.lang_dict.get(lang, {}).get(key, self.lang_dict.get('en', {}).get(key, f'{key} 0_0'))
+        user_lang_dict = self.lang_dict.get(lang, {})
+        en_lang_dict = self.lang_dict.get('en', {})
+        
+        text = user_lang_dict.get(key)
+        if text is None:
+            text = en_lang_dict.get(key)
+            if text is None:
+                # Log warning if key missing entirely
+                from loguru import logger
+                logger.warning(f"Localization key missing: '{key}' for lang '{lang}' (user_id={user_id})")
+                text = f'{key} 0_0'
         
         # Simple format replacement
         for par in params:

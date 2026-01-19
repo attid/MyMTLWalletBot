@@ -220,7 +220,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         await clear_last_message_id(user_id, app_context=app_context)
 
     elif resend_transaction:
-        await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id), app_context=app_context)
+        await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id, app_context=app_context), app_context=app_context)
     elif operation_id:
         keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id)
         await send_message(None, user_id, msg, reply_markup=keyboard, app_context=app_context)

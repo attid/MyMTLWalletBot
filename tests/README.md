@@ -124,3 +124,6 @@ def mock_app_context():
 1. Тесты, которые часто ломаются при рефакторинге
 2. Тесты с большим количеством patch (>3)
 3. Новые тесты для роутеров без покрытия
+
+
+**Any router tests without `mock_server` are considered invalid.**
