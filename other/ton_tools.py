@@ -1,7 +1,7 @@
 import asyncio
 from pprint import pprint
 
-from pytonapi import Tonapi
+from pytonapi import AsyncTonapi
 from pytoniq_core import Address
 from tonutils.client import TonapiClient
 from tonutils.utils import to_amount
@@ -22,7 +22,7 @@ async def main() -> None:
     mnemonic = config.ton_token
     wallet, public_key, private_key, mnemonic = WalletV5R1.from_mnemonic(client, mnemonic)
 
-    tonapi = Tonapi(api_key=API_KEY)
+    tonapi = AsyncTonapi(api_key=API_KEY)
     account = tonapi.accounts.get_info(account_id=wallet.address.to_str())
 
     print(f"Raw form: {account.address.to_raw()}")
