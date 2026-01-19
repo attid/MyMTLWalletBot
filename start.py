@@ -137,14 +137,14 @@ async def set_commands(bot: Bot):
 
     await bot.set_my_commands(commands=commands_clear, scope=BotCommandScopeDefault())
     await bot.set_my_commands(commands=commands_private, scope=BotCommandScopeAllPrivateChats())
-    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admin_ids[0]))
+    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admins[0]))
 
 
 async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await start_broker()
     await set_commands(bot)
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admin_ids[0], text='Bot started')
+        await bot.send_message(chat_id=config.admins[0], text='Bot started')
     # fest.fest_menu = await gs_update_fest_menu()
     
     app_context: AppContext = dispatcher["app_context"]
@@ -171,7 +171,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
 async def on_shutdown(bot: Bot):
     await stop_broker()
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admin_ids[0], text='Bot stopped')
+        await bot.send_message(chat_id=config.admins[0], text='Bot stopped')
     
     # Retrieve dispatcher somehow? or assume task_list is somewhere
     # on_shutdown sends bot only? 
@@ -186,7 +186,7 @@ async def on_shutdown(bot: Bot):
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     await stop_broker()
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admin_ids[0], text='Bot stopped')
+        await bot.send_message(chat_id=config.admins[0], text='Bot stopped')
     
     task_list = dispatcher.get("task_list", [])
     for task in task_list:
@@ -237,7 +237,7 @@ async def main():
     app_context = AppContext(
         bot=bot,
         db_pool=db_pool,
-        admin_id=config.admin_ids[0],
+        admin_id=config.admins[0],
         cheque_queue=cheque_queue,
         log_queue=log_queue,
         repository_factory=repository_factory,
@@ -248,7 +248,7 @@ async def main():
     
     dp["app_context"] = app_context
 
-    setup_async_utils(bot, config.admin_ids[0])
+    setup_async_utils(bot, config.admins[0])
     scheduler_jobs(scheduler, db_pool, dp, app_context)
 
     await bot_add_routers(bot, dp, db_pool, app_context, localization_service)
