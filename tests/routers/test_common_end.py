@@ -23,24 +23,36 @@ def cleanup_router():
         end_router._parent_router = None
 
 @pytest.fixture
-def setup_common_end_mocks(router_app_context):
+def setup_common_end_mocks(router_app_context, horizon_server_config):
     """
     Common mock setup for common_end router tests.
     """
+    from infrastructure.services.stellar_service import StellarService
+    
     class CommonEndMockHelper:
         def __init__(self, ctx):
             self.ctx = ctx
             self._setup_defaults()
 
         def _setup_defaults(self):
-            # Default Stellar mocks
-            self.ctx.stellar_service.check_account = AsyncMock(return_value=MagicMock(account_id="GVALID", memo=None))
-            self.ctx.stellar_service.check_xdr = AsyncMock(return_value="VALID_XDR")
-            self.ctx.stellar_service.is_free_wallet = AsyncMock(return_value=False)
+            # Real StellarService
+            self.ctx.stellar_service = StellarService(horizon_url=horizon_server_config["url"])
+            
+            # Patch underlying tools
+            self.p_check_acc = patch("other.stellar_tools.stellar_check_account", 
+                                     return_value=MagicMock(account_id="GVALID", memo=None))
+            self.p_check_xdr = patch("other.stellar_tools.stellar_check_xdr", return_value="VALID_XDR")
+            self.p_is_free = patch("other.stellar_tools.stellar_is_free_wallet", return_value=False)
+            self.p_get_acc = patch("other.stellar_tools.stellar_get_user_account")
+
+            self.m_check_acc = self.p_check_acc.start()
+            self.m_check_xdr = self.p_check_xdr.start()
+            self.m_is_free = self.p_is_free.start()
+            self.m_get_acc = self.p_get_acc.start()
             
             mock_acc = MagicMock()
             mock_acc.account.account_id = "GUSER"
-            self.ctx.stellar_service.get_user_account = AsyncMock(return_value=mock_acc)
+            self.m_get_acc.return_value = mock_acc
 
             # Default Balance Use Case
             self.balances = [
@@ -60,7 +72,15 @@ def setup_common_end_mocks(router_app_context):
             self.wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(use_pin=0))
             self.ctx.repository_factory.get_wallet_repository.return_value = self.wallet_repo
 
-    return CommonEndMockHelper(router_app_context)
+        def stop(self):
+            self.p_check_acc.stop()
+            self.p_check_xdr.stop()
+            self.p_is_free.stop()
+            self.p_get_acc.stop()
+
+    helper = CommonEndMockHelper(router_app_context)
+    yield helper
+    helper.stop()
 
 
 def get_latest_msg(mock_telegram):

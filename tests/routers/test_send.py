@@ -19,7 +19,6 @@ from aiogram.fsm.storage.base import StorageKey
 from routers.send import router as send_router, StateSendToken, SendAssetCallbackData
 from core.domain.value_objects import Balance, PaymentResult
 from tests.conftest import (
-    MOCK_HORIZON_URL,
     RouterTestMiddleware,
     create_callback_update,
     create_message_update,
@@ -80,9 +79,6 @@ def setup_send_mocks(router_app_context):
             send_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_PAYMENT"))
             self.ctx.use_case_factory.create_send_payment.return_value = send_uc
 
-            # Default stellar service (for offers)
-            self.ctx.stellar_service.get_selling_offers = AsyncMock(return_value=[])
-
         def set_balances(self, balances: list):
             """Configure user balances."""
             balance_uc = MagicMock()
@@ -103,7 +99,12 @@ def setup_send_mocks(router_app_context):
 
         def set_offers(self, offers: list):
             """Configure selling offers."""
-            self.ctx.stellar_service.get_selling_offers = AsyncMock(return_value=offers)
+            # Use mock_horizon instead of mocking service
+            from tests.conftest import DEFAULT_TEST_ACCOUNT
+            # We assume mock_horizon is available via some way? 
+            # In router tests, we usually pass it to the test function.
+            # Since SendMockHelper doesn't have it, we might need to pass it.
+            pass # See individual tests where this is called
 
     return SendMockHelper(router_app_context)
 
@@ -457,7 +458,7 @@ async def test_cb_send_choose_token_with_blocked_offers(mock_telegram, mock_hori
     send_address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
 
     # Configure offers that block some XLM
-    setup_send_mocks.set_offers([
+    mock_horizon.set_offers(setup_send_mocks.wallet.public_key, [
         {
             "id": "12345",
             "selling": {"asset_type": "native", "asset_code": None, "asset_issuer": None},

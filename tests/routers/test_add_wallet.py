@@ -26,7 +26,7 @@ def cleanup_router():
         add_wallet_router._parent_router = None
 
 @pytest.fixture
-def setup_add_wallet_mocks(router_app_context):
+def setup_add_wallet_mocks(router_app_context, mock_horizon):
     """
     Common mock setup for add_wallet router tests.
     """
@@ -42,7 +42,7 @@ def setup_add_wallet_mocks(router_app_context):
             
             # Master wallet mock
             self.master_wallet = MagicMock()
-            self.master_wallet.public_key = "GMASTER"
+            self.master_wallet.public_key = "GAXLST7ZHHXGQGIIRJYICL4PRDFB4Q7KVL65HX6BN6DELPYOJEHZSPSG"
             self.master_wallet.secret_key = "ENC_MASTER"
             self.master_wallet.is_free = False
             self.wallet_repo.get_default_wallet = AsyncMock(return_value=self.master_wallet)
@@ -59,23 +59,12 @@ def setup_add_wallet_mocks(router_app_context):
             self.user_repo.get_by_id = AsyncMock(return_value=MagicMock(lang='en'))
             self.ctx.repository_factory.get_user_repository.return_value = self.user_repo
 
-            # Stellar Service
-            self.ctx.stellar_service.generate_mnemonic = MagicMock(return_value="word " * 12)
-            
-            self.new_kp = MagicMock()
-            self.new_kp.public_key = "GNEW"
-            self.new_kp.secret = "SNEW"
-            self.ctx.stellar_service.get_keypair_from_mnemonic = MagicMock(return_value=self.new_kp)
-            
-            self.ctx.stellar_service.get_keypair_from_secret = MagicMock(return_value=MagicMock(public_key="GEXISTING"))
-            self.ctx.stellar_service.build_payment_transaction = AsyncMock(return_value="XDR_PAY")
-            self.ctx.stellar_service.build_change_trust_transaction = AsyncMock(return_value="XDR_TRUST")
-            self.ctx.stellar_service.sign_transaction = MagicMock(return_value="SIGNED_XDR")
-            self.ctx.stellar_service.submit_transaction = AsyncMock()
+            # Configure mock_horizon for master wallet
+            mock_horizon.set_account(self.master_wallet.public_key)
 
             # Encryption
             self.ctx.encryption_service.encrypt = MagicMock(return_value="ENCRYPTED")
-            self.ctx.encryption_service.decrypt = MagicMock(return_value="DECRYPTED")
+            self.ctx.encryption_service.decrypt = MagicMock(return_value="SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV") # Valid secret for GAXL...
 
             # TON Service
             self.ctx.ton_service.generate_wallet = MagicMock(return_value=(MagicMock(address=MagicMock(to_str=lambda **kwargs: "TON_ADDR")), ["w1", "w2"]))
@@ -133,8 +122,9 @@ async def test_add_wallet_have_key_flow(mock_telegram, router_app_context, setup
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "AddWalletHaveKey"))
     assert await dp.storage.get_state(state_key) == StateAddWallet.sending_private
 
-    # 2. Send Secret
-    await dp.feed_update(router_app_context.bot, create_message_update(user_id, "SSECRET", update_id=2, message_id=2))
+    # 2. Send Secret (Valid format required for SDK)
+    valid_secret = "SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV"
+    await dp.feed_update(router_app_context.bot, create_message_update(user_id, valid_secret, update_id=2, message_id=2))
     
     # Verify UC call
     setup_add_wallet_mocks.add_wallet_uc.execute.assert_called_once()
@@ -145,7 +135,7 @@ async def test_add_wallet_have_key_flow(mock_telegram, router_app_context, setup
 
 
 @pytest.mark.asyncio
-async def test_add_wallet_new_key_flow(mock_telegram, router_app_context, setup_add_wallet_mocks):
+async def test_add_wallet_new_key_flow(mock_telegram, mock_horizon, router_app_context, setup_add_wallet_mocks):
     """Test creating a NEW free Stellar wallet."""
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
@@ -162,14 +152,12 @@ async def test_add_wallet_new_key_flow(mock_telegram, router_app_context, setup_
     with patch("routers.add_wallet.new_wallet_lock", mock_lock):
         await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "AddWalletNewKey"))
 
-    # Verify key generation
-    router_app_context.stellar_service.generate_mnemonic.assert_called_once()
-    
     # Verify UC call
     setup_add_wallet_mocks.add_wallet_uc.execute.assert_called_once()
     
-    # Verify funding transactions
-    assert router_app_context.stellar_service.submit_transaction.call_count >= 1
+    # Verify funding transactions were sent to mock_horizon
+    tx_reqs = mock_horizon.get_requests("transactions")
+    assert len(tx_reqs) >= 1
     
     # Success message
     all_texts = get_all_texts(mock_telegram)

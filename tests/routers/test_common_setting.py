@@ -12,7 +12,7 @@ from routers.start_msg import WalletSettingCallbackData
 from infrastructure.services.localization_service import LocalizationService
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from aiogram.fsm.storage.base import StorageKey
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+from tests.conftest import TEST_BOT_TOKEN
 
 class MockDbMiddleware(BaseMiddleware):
     def __init__(self, session, app_context):
@@ -40,9 +40,9 @@ def mock_session():
     return session
 
 @pytest.fixture
-async def bot():
+async def bot(telegram_server_config):
     session = AiohttpSession(
-        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
+        api=TelegramAPIServer.from_base(telegram_server_config["url"])
     )
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     yield bot

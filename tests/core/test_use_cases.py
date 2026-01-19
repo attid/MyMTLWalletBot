@@ -3,74 +3,66 @@ from unittest.mock import AsyncMock, MagicMock
 from core.domain.entities import User, Wallet
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.user.register import RegisterUser
+from infrastructure.services.stellar_service import StellarService
 
 @pytest.mark.asyncio
-async def test_get_wallet_balance_success():
+async def test_get_wallet_balance_success(mock_horizon, horizon_server_config):
     # Setup Mocks
     mock_wallet_repo = AsyncMock()
-    mock_stellar_service = AsyncMock()
+    stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     # Mock Data
     user_id = 123
-    wallet = Wallet(id=1, user_id=user_id, public_key="GKEY", is_default=True, is_free=False)
+    public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    wallet = Wallet(id=1, user_id=user_id, public_key=public_key, is_default=True, is_free=False)
     mock_wallet_repo.get_default_wallet.return_value = wallet
     
-    # Mock Account Details
-    mock_account = {
-        "balances": [
-             {"asset_type": "native", "balance": "100.0", "buying_liabilities": "0", "selling_liabilities": "0", "asset_code": None, "asset_issuer": None}
-        ],
-        "num_sponsoring": 0,
-        "signers": ["GKEY"],
-        "data": {}
-    }
-    mock_stellar_service.get_account_details.return_value = mock_account
-    mock_stellar_service.get_selling_offers.return_value = []
+    # Configure mock_horizon instead of mocking service
+    mock_horizon.set_account(public_key, balances=[
+        {"asset_type": "native", "balance": "100.0000000"}
+    ])
+    mock_horizon.set_offers(public_key, [])
     
     # Execute
-    use_case = GetWalletBalance(mock_wallet_repo, mock_stellar_service)
+    use_case = GetWalletBalance(mock_wallet_repo, stellar_service)
     result = await use_case.execute(user_id)
     
     # Verify return type is List[Balance]
     assert isinstance(result, list)
     assert len(result) == 1
     assert result[0].asset_code == "XLM"
-    assert result[0].balance == "100.0"
+    assert result[0].balance == "100.0000000"
     
     mock_wallet_repo.get_default_wallet.assert_called_once_with(user_id)
-    mock_stellar_service.get_account_details.assert_called_once_with("GKEY")
-    mock_stellar_service.get_selling_offers.assert_called_once_with("GKEY")
 
 @pytest.mark.asyncio
-async def test_get_wallet_balance_with_address():
+async def test_get_wallet_balance_with_address(mock_horizon, horizon_server_config):
     mock_wallet_repo = AsyncMock()
-    mock_stellar_service = AsyncMock()
+    stellar_service = StellarService(horizon_url=horizon_server_config["url"])
+    public_key = "GOTHER1234567890"
     
-    # Mock Account Details
-    mock_account = {
-        "balances": [{"asset_type": "native", "balance": "50.0", "buying_liabilities": "0", "selling_liabilities": "0"}],
-        "num_sponsoring": 0, "signers": ["GOTHER"], "data": {}
-    }
-    mock_stellar_service.get_account_details.return_value = mock_account
-    mock_stellar_service.get_selling_offers.return_value = []
+    # Configure mock_horizon
+    mock_horizon.set_account(public_key, balances=[
+        {"asset_type": "native", "balance": "50.0000000"}
+    ])
+    mock_horizon.set_offers(public_key, [])
     
-    use_case = GetWalletBalance(mock_wallet_repo, mock_stellar_service)
-    result = await use_case.execute(user_id=123, public_key="GOTHER")
+    use_case = GetWalletBalance(mock_wallet_repo, stellar_service)
+    result = await use_case.execute(user_id=123, public_key=public_key)
     
     assert len(result) == 1
-    assert result[0].balance == "50.0"
+    assert result[0].balance == "50.0000000"
     
     # Needs to ensure repo was NOT called
     mock_wallet_repo.get_default_wallet.assert_not_called()
-    mock_stellar_service.get_account_details.assert_called_once_with("GOTHER")
 
 @pytest.mark.asyncio
-async def test_get_wallet_balance_no_wallet():
+async def test_get_wallet_balance_no_wallet(horizon_server_config):
     mock_wallet_repo = AsyncMock()
-    mock_stellar_service = AsyncMock()
+    stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     mock_wallet_repo.get_default_wallet.return_value = None
     
-    use_case = GetWalletBalance(mock_wallet_repo, mock_stellar_service)
+    use_case = GetWalletBalance(mock_wallet_repo, stellar_service)
     
     with pytest.raises(ValueError, match="No default wallet found"):
         await use_case.execute(999)

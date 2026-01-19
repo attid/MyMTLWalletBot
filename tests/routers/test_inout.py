@@ -10,7 +10,7 @@ import datetime
 from decimal import Decimal
 
 from routers.inout import router as inout_router, StateInOut
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+from tests.conftest import TEST_BOT_TOKEN
 from core.domain.value_objects import Balance, PaymentResult
 from infrastructure.services.localization_service import LocalizationService
 
@@ -37,9 +37,9 @@ def mock_session():
     return MagicMock()
 
 @pytest.fixture
-async def bot():
+async def bot(telegram_server_config):
     session = AiohttpSession(
-        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
+        api=TelegramAPIServer.from_base(telegram_server_config["url"])
     )
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     yield bot

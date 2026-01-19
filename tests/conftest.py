@@ -507,13 +507,16 @@ async def router_bot(mock_telegram, telegram_server_config):
 
 
 @pytest.fixture
-async def router_app_context(mock_app_context, router_bot):
+async def router_app_context(mock_app_context, router_bot, horizon_server_config, mock_horizon):
     """
     Standard app_context for router tests.
     Combines mock_app_context with real bot connected to mock_server.
+    Uses real StellarService connected to mock_horizon.
     """
+    from infrastructure.services.stellar_service import StellarService
     mock_app_context.bot = router_bot
     mock_app_context.dispatcher = Dispatcher()
+    mock_app_context.stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     return mock_app_context
 
 
@@ -648,6 +651,7 @@ async def mock_horizon(horizon_server_config):
         def __init__(self):
             self.requests = []
             self.accounts = {}  # account_id -> account data
+            self.not_found_accounts = set() # accounts that should return 404
             self.offers = {}    # account_id -> list of offers
             self.paths = []     # configured paths for strict-send/receive
             self.transaction_response = {"successful": True, "hash": "abc123"}
@@ -655,6 +659,7 @@ async def mock_horizon(horizon_server_config):
         def set_account(self, account_id: str, balances: list = None, sequence: str = "123456789",
                        signers: list = None, data: dict = None):
             """Configure account response."""
+            self.not_found_accounts.discard(account_id)
             self.accounts[account_id] = {
                 "id": account_id,
                 "account_id": account_id,
@@ -670,6 +675,11 @@ async def mock_horizon(horizon_server_config):
                 "flags": {"auth_required": False, "auth_revocable": False, "auth_immutable": False},
                 "paging_token": account_id
             }
+
+        def set_not_found(self, account_id: str):
+            """Force account to return 404."""
+            self.not_found_accounts.add(account_id)
+            self.accounts.pop(account_id, None)
 
         def set_offers(self, account_id: str, offers: list):
             """Configure offers response for account."""
@@ -702,6 +712,7 @@ async def mock_horizon(horizon_server_config):
             """Clear all state."""
             self.requests.clear()
             self.accounts.clear()
+            self.not_found_accounts.clear()
             self.offers.clear()
             self.paths.clear()
 
@@ -725,10 +736,13 @@ async def mock_horizon(horizon_server_config):
             "params": dict(request.query)
         })
 
+        if account_id in state.not_found_accounts:
+            return web.json_response({"status": 404, "title": "Resource Missing", "detail": "Account not found"}, status=404)
+
         if account_id in state.accounts:
             return web.json_response(state.accounts[account_id])
 
-        # Return default account structure
+        # Default: Return a funded account structure for any address (compatibility)
         return web.json_response({
             "id": account_id,
             "account_id": account_id,

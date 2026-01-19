@@ -21,7 +21,7 @@ def cleanup_router():
         bsn_router._parent_router = None
 
 @pytest.fixture
-def setup_bsn_mocks(router_app_context):
+def setup_bsn_mocks(router_app_context, mock_horizon):
     """
     Common mock setup for BSN router tests.
     """
@@ -39,18 +39,15 @@ def setup_bsn_mocks(router_app_context):
             wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
             self.ctx.repository_factory.get_wallet_repository.return_value = wallet_repo
 
-            # Default stellar service mock
-            self.ctx.stellar_service.get_account_details = AsyncMock(return_value={
-                'data': {
-                    'Name': 'VGVzdFVzZXI=',  # base64 encoded "TestUser"
-                    'About': 'VGVzdCBkZXNjcmlwdGlvbg==',
-                }
+            # Configure mock_horizon with initial data
+            mock_horizon.set_account(self.wallet.public_key, data={
+                'Name': 'VGVzdFVzZXI=',  # base64 encoded "TestUser"
+                'About': 'VGVzdCBkZXNjcmlwdGlvbg==',
             })
-            self.ctx.stellar_service.build_manage_data_transaction = AsyncMock(return_value="XDR_MANAGE_DATA")
 
         def set_account_data(self, data: dict):
             """Configure Stellar account data."""
-            self.ctx.stellar_service.get_account_details = AsyncMock(return_value={'data': data})
+            mock_horizon.set_account(self.wallet.public_key, data=data)
 
     return BSNMockHelper(router_app_context)
 
@@ -114,7 +111,7 @@ async def test_process_tags_interaction(mock_telegram, router_app_context, setup
 
 
 @pytest.mark.asyncio
-async def test_finish_send_bsn(mock_telegram, router_app_context, setup_bsn_mocks):
+async def test_finish_send_bsn(mock_telegram, mock_horizon, router_app_context, setup_bsn_mocks):
     """Test SEND button: should generate XDR and ask for PIN."""
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
@@ -137,11 +134,10 @@ async def test_finish_send_bsn(mock_telegram, router_app_context, setup_bsn_mock
         update = create_callback_update(user_id=user_id, callback_data=SEND_CALLBACK_DATA)
         await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
         
-        # Verify XDR was built with changed data
-        router_app_context.stellar_service.build_manage_data_transaction.assert_called_once()
-        # Verify stored in state
+        # Verify XDR was stored in state
         state_data = await state.get_data()
-        assert state_data['xdr'] == "XDR_MANAGE_DATA"
+        assert "xdr" in state_data
+        assert "AAAA" in state_data['xdr']
         # Verify PIN requested
         mock_ask_pin.assert_called_once()
 

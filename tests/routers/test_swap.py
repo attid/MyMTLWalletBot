@@ -69,9 +69,6 @@ def setup_swap_mocks(router_app_context):
             swap_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_SWAP"))
             self.ctx.use_case_factory.create_swap_assets.return_value = swap_uc
 
-            # Stellar service
-            self.ctx.stellar_service.get_selling_offers = AsyncMock(return_value=[])
-
     return SwapMockHelper(router_app_context)
 
 
