@@ -212,7 +212,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg', app_context=app_context),
                                                   callback_data="ManageAssetsMenu")]
         await bot.send_photo(user_id, photo=photo, caption=msg,
-                                         reply_markup=get_kb_return(user_id, add_buttons))
+                                         reply_markup=get_kb_return(user_id, add_buttons, app_context=app_context))
         fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
         data = await dispatcher.storage.get_data(key=fsm_storage_key)
         with suppress(TelegramBadRequest):
@@ -225,7 +225,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id)
         await send_message(None, user_id, msg, reply_markup=keyboard, app_context=app_context)
     else:
-        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id), app_context=app_context)
+        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
 
 
 # user_id = 123456

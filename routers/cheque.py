@@ -29,7 +29,6 @@ from core.use_cases.cheque.cancel_cheque import CancelCheque
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.wallet.add_wallet import AddWallet
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.persistence.sqlalchemy_cheque_repository import SqlAlchemyChequeRepository
 from infrastructure.services.stellar_service import StellarService
 from infrastructure.services.encryption_service import EncryptionService
 from other.config_reader import config as app_config
@@ -111,15 +110,9 @@ async def cmd_cheque_show(session: Session, message: Message, state: FSMContext,
     msg = my_gettext(message, 'send_cheque',
                      (float2str(send_sum), send_count, float(send_sum) * send_count, send_comment), app_context=app_context)
 
-    # Refactored to use Clean Architecture Use Case
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.cheque.create_cheque import CreateCheque
-    from other.config_reader import config
-
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=config.horizon_url)
-    use_case = CreateCheque(repo, service)
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    service = app_context.stellar_service
+    use_case = app_context.use_case_factory.create_create_cheque(session)
 
     result = await use_case.execute(
         user_id=message.from_user.id,
@@ -152,7 +145,7 @@ def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int], 
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_amount', app_context=app_context), callback_data="CreateCheque")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_count', app_context=app_context), callback_data="ChequeCount")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_comment', app_context=app_context), callback_data="ChequeComment")],
-        get_return_button(user_id)]
+        get_return_button(user_id, app_context=app_context)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
@@ -227,7 +220,7 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *
     send_comment = data.get("send_comment", '')
     send_uuid = data.get("send_uuid", '')
     
-    repo = SqlAlchemyChequeRepository(session)
+    repo = app_context.repository_factory.get_cheque_repository(session)
     cheque = await repo.get_by_uuid(send_uuid)
     
     if cheque is None:
@@ -253,12 +246,12 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *
         await send_message(session, user_id, my_gettext(user_id, 'send_cheque_resend',
                                                         (send_uuid, float2str(cheque.amount), cheque.count,
                                                          float(cheque.amount) * cheque.count, cheque.comment, link), app_context=app_context),
-                           reply_markup=kb)
+                           reply_markup=kb, app_context=app_context)
     if cheque.status == ChequeStatus.INVOICE.value:
         await send_message(session, user_id, my_gettext(user_id, 'send_invoice_buy_resend',
                                                         (send_uuid, float2str(cheque.amount), cheque.count,
                                                          cheque.asset.split(':')[0], cheque.comment, link), app_context=app_context),
-                           reply_markup=kb)
+                           reply_markup=kb, app_context=app_context)
 
     await state.update_data(last_message_id=0)
 
@@ -268,7 +261,7 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
                           session: Session, app_context: AppContext):
     cmd = callback_data.cmd
     cheque_uuid = callback_data.uuid
-    repo = SqlAlchemyChequeRepository(session)
+    repo = app_context.repository_factory.get_cheque_repository(session)
     cheque = await repo.get_by_uuid(cheque_uuid)
     if not cheque: 
          # Handle null
@@ -294,12 +287,7 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
 
 
 async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, state: FSMContext, app_context: AppContext):
-    wallet_repo = SqlAlchemyWalletRepository(session)
-    cheque_repo = SqlAlchemyChequeRepository(session)
-    stellar_service = StellarService(horizon_url=app_config.horizon_url)
-    encryption_service = EncryptionService()
-    
-    use_case = CancelCheque(wallet_repo, cheque_repo, stellar_service, encryption_service, cheque_public)
+    use_case = app_context.use_case_factory.create_cancel_cheque(session)
     result = await use_case.execute(user_id=user_id, cheque_uuid=cheque_uuid)
     
     if not result.success:
@@ -307,9 +295,7 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
          return
 
     await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2", app_context=app_context), app_context=app_context)
-    await state.update_data(xdr=result.xdr, operation='cancel_cheque')
-    
-    await stellar_service.submit_transaction(result.xdr)
+    await app_context.stellar_service.submit_transaction(result.xdr)
     
     await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque', app_context=app_context), app_context=app_context)
     # No need to reset_balance_cache with new architecture
@@ -318,7 +304,7 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
 @router.inline_query(F.chat_type != "sender")
 async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, app_context: AppContext):
     results = []
-    repo = SqlAlchemyChequeRepository(session)
+    repo = app_context.repository_factory.get_cheque_repository(session)
     # all exist cheques
     data = await repo.get_available(inline_query.from_user.id)
 
@@ -369,7 +355,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
     await state.update_data(cheque_uuid=cheque_uuid)
     user_id = message.from_user.id
 
-    repo = SqlAlchemyChequeRepository(session)
+    repo = app_context.repository_factory.get_cheque_repository(session)
     cheque = await repo.get_by_uuid(cheque_uuid)
     
     receive_count = await repo.get_receive_count(cheque_uuid)
@@ -409,13 +395,7 @@ async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: Se
 
 async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMContext, cheque_uuid: str,
                                      username: str, app_context: AppContext):
-    wallet_repo = SqlAlchemyWalletRepository(session)
-    cheque_repo = SqlAlchemyChequeRepository(session)
-    stellar_service = StellarService(horizon_url=app_config.horizon_url)
-    encryption_service = EncryptionService()
-    add_wallet_uc = AddWallet(wallet_repo)
-    
-    use_case = ClaimCheque(wallet_repo, cheque_repo, stellar_service, encryption_service, add_wallet_uc, cheque_public)
+    use_case = app_context.use_case_factory.create_claim_cheque(session)
     result = await use_case.execute(user_id=user_id, cheque_uuid=cheque_uuid, username=username)
 
     if not result.success:
@@ -427,7 +407,7 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
     
     # Send transaction
     if result.xdr:
-        await stellar_service.submit_transaction(result.xdr)
+        await app_context.stellar_service.submit_transaction(result.xdr)
         
     await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque', app_context=app_context), app_context=app_context)
     
@@ -470,7 +450,7 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
     user_id = callback.from_user.id
     xdr = None
 
-    cheque_repo = SqlAlchemyChequeRepository(session)
+    cheque_repo = app_context.repository_factory.get_cheque_repository(session)
     cheque = await cheque_repo.get_by_uuid(cheque_uuid)
     if not cheque:
         await callback.answer(my_gettext(user_id, 'bad_cheque', app_context=app_context))
@@ -483,21 +463,18 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
         await callback.answer(my_gettext(user_id, 'bad_cheque', app_context=app_context))
         return
 
-    # Step 2: Check if the cheque asset is in the balance
-    cheque_asset_code, cheque_asset_issuer = cheque.asset.split(':')
-    
     # Refactored to use GetWalletBalance Use Case
-    wallet_repo = SqlAlchemyWalletRepository(session)
-    stellar_service = StellarService(horizon_url=app_config.horizon_url)
-    balance_use_case = GetWalletBalance(wallet_repo, stellar_service)
+    balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     
+    cheque_asset_code, cheque_asset_issuer = cheque.asset.split(':')
     all_balances = await balance_use_case.execute(user_id=callback.from_user.id)
     asset_list = [b for b in all_balances if b.asset_code == cheque_asset_code]
     
     if not asset_list:
         # If the cheque asset is not in the balance list, add the trust line
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
-        xdr = await stellar_service.build_change_trust_transaction(
+        xdr = await app_context.stellar_service.build_change_trust_transaction(
             source_account_id=wallet.public_key,
             asset_code=cheque_asset_code,
             asset_issuer=cheque_asset_issuer
@@ -538,7 +515,7 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
 async def cmd_cheques(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
     # Получение списка доступных чеков
-    repo = SqlAlchemyChequeRepository(session)
+    repo = app_context.repository_factory.get_cheque_repository(session)
     cheques = await repo.get_available(message.from_user.id)
 
     # Перебор чеков и их отправка

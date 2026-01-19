@@ -27,7 +27,8 @@ def mock_app_context():
     """
     ctx = MagicMock()
     ctx.localization_service = MagicMock()
-    ctx.localization_service.get_text.return_value = "text"
+    # Improve my_gettext mock to return the key itself for easier testing
+    ctx.localization_service.get_text.side_effect = lambda chat_id, key, param=None, **kwargs: key
     ctx.stellar_service = AsyncMock()
     ctx.repository_factory = MagicMock()
     ctx.use_case_factory = MagicMock()
@@ -460,7 +461,7 @@ def mock_global_data_autouse():
     gd.lang_dict = {'en': {}}
     
     # Patch known locations
-    p3 = patch("other.lang_tools.my_gettext", return_value="text")
+    p3 = patch("other.lang_tools.my_gettext", side_effect=lambda chat_id, key, param=None, **kwargs: f"text {key}")
     p2 = patch("infrastructure.utils.common_utils.get_user_id", return_value=123)
     
     p3.start()
