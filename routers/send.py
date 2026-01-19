@@ -77,14 +77,14 @@ async def cmd_send_start(user_id: int, state: FSMContext, session: Session, *, a
 
 @router.callback_query(F.data == "Send")
 async def cmd_send_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    await cmd_send_start(callback.from_user.id, state, session, app_context)
+    await cmd_send_start(callback.from_user.id, state, session, app_context=app_context)
     await callback.answer()
 
 
 @router.message(Command(commands=["send"]))
 async def cmd_send_message(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await message.delete()
-    await cmd_send_start(message.from_user.id, state, session, app_context)
+    await cmd_send_start(message.from_user.id, state, session, app_context=app_context)
 
 
 async def cmd_send_token(message: types.Message, state: FSMContext, session: Session,
@@ -213,7 +213,7 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
         return
 
     # Call the cmd_send_token function
-    await cmd_send_token(message, state, session, stellar_address, eurmtl_asset, amount, memo, app_context)
+    await cmd_send_token(message, state, session, stellar_address, eurmtl_asset, amount, memo, app_context=app_context)
 
 
 @router.message(StateSendToken.sending_for, F.text)
@@ -266,7 +266,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
             await state.update_data(memo=my_account.memo, federal_memo=True)
 
         await state.set_state(None)
-        await cmd_send_choose_token(message, state, session, app_context)
+        await cmd_send_choose_token(message, state, session, app_context=app_context)
     else:
         wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await wallet_repo.get_default_wallet(message.from_user.id)
@@ -280,7 +280,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
         if (not free_wallet) and (len(address) == 56) and (address[0] == 'G'):  # need activate
             await state.update_data(send_address=address)
             await state.set_state(state=None)
-            await cmd_create_account(message.from_user.id, state, session, app_context)
+            await cmd_create_account(message.from_user.id, state, session, app_context=app_context)
         else:
             logger.error(f"StateSendFor: failed to find or activate wallet. Searched: {address}, free_wallet={free_wallet}")
             msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'send_address', app_context=app_context)
@@ -581,7 +581,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 await state.update_data(qr=qr_data, last_message_id=0)
                 await message.reply(f'QR code: <code>{qr_data}</code>\n'
                                     f'preparations are in progress...')
-                await cmd_send_for(message, state, session, app_context)
+                await cmd_send_for(message, state, session, app_context=app_context)
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:pay'):
                 # Parse payment URI
                 payment_data = await parse_pay_stellar_uri(qr_data)

@@ -156,7 +156,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
                 stellar_get_user_keypair(session, user_id, pin)  # test pin
-                await sign_xdr(session, state, user_id, app_context)
+                await sign_xdr(session, state, user_id, app_context=app_context)
             except:
                 pass
 
@@ -187,7 +187,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
                 stellar_get_user_keypair(session, user_id, pin)  # test pin
-                await sign_xdr(session, state, user_id, app_context)
+                await sign_xdr(session, state, user_id, app_context=app_context)
             except:
                 await query.answer(my_gettext(user_id, "bad_password"), show_alert=True)
                 return True
@@ -203,7 +203,7 @@ async def cmd_password_from_pin(message: types.Message, state: FSMContext, sessi
     await cmd_ask_pin(session, user_id, state, app_context=app_context)
     try:
         stellar_get_user_keypair(session, user_id, pin)  # test pin
-        await sign_xdr(session, state, user_id, app_context)
+        await sign_xdr(session, state, user_id, app_context=app_context)
     except:
         pass
 
@@ -324,7 +324,7 @@ async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Se
 
 @router.message(StateSign.sending_xdr)
 async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
-    await cmd_check_xdr(session, message.text, message.from_user.id, state, app_context)
+    await cmd_check_xdr(session, message.text, message.from_user.id, state, app_context=app_context)
     await message.delete()
 
 
@@ -479,7 +479,7 @@ async def cmd_password(message: types.Message, state: FSMContext, session: Sessi
     await state.update_data(pin=message.text)
     await message.delete()
     await state.set_state(PinState.sign_and_send)
-    await sign_xdr(session, state, message.from_user.id, app_context)
+    await sign_xdr(session, state, message.from_user.id, app_context=app_context)
 
 
 @router.message(PinState.ask_password_set)

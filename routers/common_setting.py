@@ -78,7 +78,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     if wallets.get(idx):
         if answer == 'DELETE':
             await state.update_data(idx=idx)
-            await cmd_confirm_delete(session, user_id, state, app_context)
+            await cmd_confirm_delete(session, user_id, state, app_context=app_context)
         if answer == 'SET_ACTIVE':
             wallet_repo = SqlAlchemyWalletRepository(session)
             await wallet_repo.set_default_wallet(user_id, wallets[idx])
