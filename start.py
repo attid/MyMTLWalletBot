@@ -141,13 +141,12 @@ async def set_commands(bot: Bot):
 
 
 async def on_startup(bot: Bot, dispatcher: Dispatcher):
-    await start_broker()
+    app_context: AppContext = dispatcher["app_context"]
+    await start_broker(app_context)
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=config.admins[0], text='Bot started')
     # fest.fest_menu = await gs_update_fest_menu()
-    
-    app_context: AppContext = dispatcher["app_context"]
     
     if config.test_mode:
         task_list = [
