@@ -59,8 +59,7 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                 public_key = find_stellar_federation_address(message.caption.lower())
 
         if message.forward_from and public_key is None:
-            from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-            user_repo = SqlAlchemyUserRepository(session)
+            user_repo = app_context.repository_factory.get_user_repository(session)
             public_key, user_id = await user_repo.get_account_by_username('@' + message.forward_from.username)
 
         if public_key:

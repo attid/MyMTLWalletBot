@@ -30,6 +30,7 @@ def mock_app_context():
     ctx.localization_service.get_text.return_value = "text"
     ctx.stellar_service = AsyncMock()
     ctx.repository_factory = MagicMock()
+    ctx.use_case_factory = MagicMock()
     ctx.bot = AsyncMock()
     ctx.admin_id = 123456
     return ctx

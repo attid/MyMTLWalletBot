@@ -36,9 +36,6 @@ from infrastructure.utils.stellar_utils import (
 from other.stellar_tools import (
     stellar_check_account, get_first_balance_from_list
 )
-from core.use_cases.user.update_profile import UpdateUserProfile
-# from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository 
-# from infrastructure.services.stellar_service import StellarService
 from other.config_reader import config
 
 
@@ -116,7 +113,7 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
 
             if actual_username_lower != current_username_in_db_lower:
                 logger.warning(f"cmd_send_token: username in DB needs update: searched/expected={send_for}, actual_telegram_username={tmp_name}, in_db={current_username_in_db}, user_id={user_id}")
-                update_profile = UpdateUserProfile(user_repo)
+                update_profile = app_context.use_case_factory.create_update_user_profile(session)
                 await update_profile.execute(user_id=user_id, username=tmp_name)
 
             # Проверяем, совпадает ли актуальный username с тем, на который хотят отправить
@@ -243,7 +240,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
 
             if actual_username_lower != current_username_in_db_lower:
                 logger.warning(f"StateSendFor: username in DB needs update: searched/expected={send_for_input}, actual_telegram_username={tmp_name}, in_db={current_username_in_db}, user_id={user_id}")
-                update_profile = UpdateUserProfile(user_repo)
+                update_profile = app_context.use_case_factory.create_update_user_profile(session)
                 await update_profile.execute(user_id=user_id, username=tmp_name)
 
             if actual_username_lower != send_for_input_lower:
@@ -292,14 +289,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
     address = data.get('send_address')
 
     # Refactored to use GetWalletBalance Use Case
-    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    # from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.wallet.get_balance import GetWalletBalance
-    from other.config_reader import config
-
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
-    use_case = GetWalletBalance(repo, service)
+    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
 
     asset_list = await use_case.execute(user_id=message.from_user.id)
     sender_asset_list = await use_case.execute(user_id=message.from_user.id, public_key=address)
@@ -456,15 +446,9 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
         msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,), app_context=app_context)
 
     # Refactored to use Clean Architecture Use Case
-    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    # from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.payment.send_payment import SendPayment
     from core.domain.value_objects import Asset as DomainAsset
-    from other.config_reader import config
 
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
-    use_case = SendPayment(repo, service)
+    use_case = app_context.use_case_factory.create_send_payment(session)
 
     result = await use_case.execute(
         user_id=message.from_user.id,
@@ -523,16 +507,10 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session, 
     msg = my_gettext(user_id, 'confirm_activate', (send_address, send_sum), app_context=app_context)
 
     # Refactored to use SendPayment Use Case with create_account=True
-    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    # from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.payment.send_payment import SendPayment
     from core.domain.value_objects import Asset as DomainAsset
-    from other.config_reader import config
     from loguru import logger
 
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
-    use_case = SendPayment(repo, service)
+    use_case = app_context.use_case_factory.create_send_payment(session)
 
     result = await use_case.execute(
         user_id=user_id,
@@ -601,14 +579,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
             elif len(qr_data) > 56 and qr_data.startswith('web+stellar:tx'):
                 await clear_state(state)
                 # Process transaction URI with Clean Architecture Use Case
-                # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-                # from infrastructure.services.stellar_service import StellarService
-                from core.use_cases.stellar.process_uri import ProcessStellarUri
-                from other.config_reader import config as app_config
-
-                repo = app_context.repository_factory.get_wallet_repository(session)
-                service = app_context.stellar_service
-                use_case = ProcessStellarUri(repo, service)
+                use_case = app_context.use_case_factory.create_process_stellar_uri(session)
 
                 result = await use_case.execute(qr_data, message.from_user.id)
                 

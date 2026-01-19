@@ -8,12 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
 
-from sqlalchemy.orm import Session
-from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from core.use_cases.user.register import RegisterUser
-from core.use_cases.user.update_profile import UpdateUserProfile
-from core.use_cases.user.manage_user import AddDonation
+from core.domain.value_objects import Asset as DomainAsset
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService 
 # from db.requests import db_add_donate, db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
@@ -67,13 +62,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
 
     if await check_user_lang(session, message.from_user.id) is None:
         # Refactored to use Clean Architecture Use Case
-        from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-        from core.use_cases.user.register import RegisterUser
-
-        user_repo = SqlAlchemyUserRepository(session)
-        wallet_repo = SqlAlchemyWalletRepository(session)
-        register_use_case = RegisterUser(user_repo, wallet_repo)
+        register_use_case = app_context.use_case_factory.create_register_user(session)
         
         # We need to generate a keypair. For now, retaining reliance on stellar_tools or similar if needed,
         # but RegisterUser expects keys.
@@ -172,13 +161,8 @@ def get_kb_donate(chat_id: int) -> types.InlineKeyboardMarkup:
 
 async def cmd_donate(session: Session, user_id, state: FSMContext, app_context: AppContext):
     # Refactored to use GetWalletBalance Use Case
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.wallet.get_balance import GetWalletBalance
     from other.config_reader import config as app_config
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=app_config.horizon_url)
-    balance_use_case = GetWalletBalance(repo, service)
+    balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     balances = await balance_use_case.execute(user_id=user_id)
     # Filter for EURMTL
     eurmtl_balances = [b for b in balances if b.asset_code == 'EURMTL']
@@ -213,8 +197,10 @@ async def cmd_after_donate(session: Session, user_id: int, state: FSMContext, *,
     await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
                        reply_markup=get_kb_return(user_id), app_context=app_context)
     
-    user_repo = SqlAlchemyUserRepository(session)
-    add_donation = AddDonation(user_repo)
+    await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
+                       reply_markup=get_kb_return(user_id), app_context=app_context)
+    
+    add_donation = app_context.use_case_factory.create_add_donation(session)
     await add_donation.execute(user_id, donate_sum)
 
 
@@ -228,15 +214,11 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
                                reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         else:
             # Refactored to use Clean Architecture Use Case
-            from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-            from infrastructure.services.stellar_service import StellarService
-            from core.use_cases.payment.send_payment import SendPayment
             from core.constants import EURMTL_ASSET
             from other.config_reader import config as app_config
 
-            repo = SqlAlchemyWalletRepository(session)
-            service = StellarService(horizon_url=app_config.horizon_url)
-            use_case = SendPayment(repo, service)
+            repo = app_context.repository_factory.get_wallet_repository(session)
+            use_case = app_context.use_case_factory.create_send_payment(session)
 
             # Get father key (fee account or similar? 0 is usually master/fee account in this bot's logic)
             # In legacy stellar_tools: stellar_get_user_account(session, 0)
@@ -300,7 +282,7 @@ async def cmd_delete_all(message: types.Message, state: FSMContext, session: Ses
 async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.set_state(SettingState.send_default_address)
     # user_repo imported at top or here? Imported at top now.
-    user_repo = SqlAlchemyUserRepository(session)
+    user_repo = app_context.repository_factory.get_user_repository(session)
     user = await user_repo.get_by_id(callback.from_user.id)
     default_addr = user.default_address if user else None
     msg = my_gettext(callback, 'set_default', (default_addr,), app_context=app_context)
@@ -311,7 +293,7 @@ async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, sessi
 @router.callback_query(F.data == "SetLimit")
 @router.callback_query(F.data == "OffLimits")
 async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    user_repo = SqlAlchemyUserRepository(session)
+    user_repo = app_context.repository_factory.get_user_repository(session)
     db_user = await user_repo.get_by_id(callback.from_user.id)
     if callback.data == 'OffLimits' and db_user:
         db_user.can_5000 = 1 if db_user.can_5000 == 0 else 0
@@ -327,23 +309,17 @@ async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session
 async def cmd_set_default(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     address = message.text
     try:
-        from infrastructure.services.stellar_service import StellarService
-        from core.use_cases.wallet.get_balance import GetWalletBalance
         from other.config_reader import config as app_config
-        repo = SqlAlchemyWalletRepository(session)
-        service = StellarService(horizon_url=app_config.horizon_url)
-        balance_use_case = GetWalletBalance(repo, service)
+        balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         await balance_use_case.execute(user_id=message.from_user.id, public_key=address)
         # Update default address via UpdateUserProfile Use Case
-        user_repo = SqlAlchemyUserRepository(session)
-        update_profile = UpdateUserProfile(user_repo)
+        update_profile = app_context.use_case_factory.create_update_user_profile(session)
         await update_profile.execute(user_id=message.from_user.id, default_address=address)
     except:
-        user_repo = SqlAlchemyUserRepository(session)
-        update_profile = UpdateUserProfile(user_repo)
+        update_profile = app_context.use_case_factory.create_update_user_profile(session)
         await update_profile.execute(user_id=message.from_user.id, default_address='')
     
-    user_repo = SqlAlchemyUserRepository(session)
+    user_repo = app_context.repository_factory.get_user_repository(session)
     user = await user_repo.get_by_id(message.from_user.id)
     default_addr = user.default_address if user else None
     msg = my_gettext(message, 'set_default', (default_addr,), app_context=app_context)
@@ -355,7 +331,7 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "Refresh")
 async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     await repo.reset_balance_cache(callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback, app_context=app_context)
     await callback.answer()
@@ -373,8 +349,7 @@ async def check_update_username(session: Session, user_id: int, user_name: str, 
     data = await state.get_data()
     state_user_name = data.get('user_name', '')
     if user_name != state_user_name:
-        user_repo = SqlAlchemyUserRepository(session)
-        update_profile = UpdateUserProfile(user_repo)
+        update_profile = app_context.use_case_factory.create_update_user_profile(session)
         await update_profile.execute(user_id=user_id, username=user_name)
         await state.update_data(user_name=user_name)
 

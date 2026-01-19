@@ -19,8 +19,9 @@ from routers.swap import StateSwapToken
 from infrastructure.utils.common_utils import get_user_id
 # from other.global_data import global_data
 from other.lang_tools import my_gettext
-from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
+from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link, eurmtl_asset
 from infrastructure.utils.common_utils import float2str
+from infrastructure.utils.telegram_utils import send_message, clear_state
 from core.constants import CHEQUE_PUBLIC_KEY
 from core.use_cases.cheque.create_cheque import CreateCheque
 from core.use_cases.cheque.claim_cheque import ClaimCheque
@@ -73,14 +74,14 @@ async def cmd_create_cheque(
     if isinstance(update, Message):
         await update.delete()
     msg = my_gettext(update, 'send_cheque_sum', app_context=app_context)
-    await send_message(session, update, msg, reply_markup=get_kb_return(update))
+    await send_message(session, update, msg, reply_markup=get_kb_return(update, app_context=app_context), app_context=app_context)
     await state.set_state(StateCheque.sending_sum)
     if isinstance(update, CallbackQuery):
         await update.answer()
 
 
 @router.message(StateCheque.sending_sum)
-async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: Session):
+async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
     except:
@@ -92,13 +93,13 @@ async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: Sessi
         await state.update_data(send_sum=send_sum)
         await state.set_state(None)
 
-        await cmd_cheque_show(session, message, state)
+        await cmd_cheque_show(session, message, state, app_context)
         await message.delete()
     else:
         await message.delete()
 
 
-async def cmd_cheque_show(session: Session, message: Message, state: FSMContext):
+async def cmd_cheque_show(session: Session, message: Message, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
@@ -131,7 +132,7 @@ async def cmd_cheque_show(session: Session, message: Message, state: FSMContext)
         xdr = result.xdr
     else:
         logger.error(f"CreateCheque failed: {result.error_message}")
-        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message))
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         return
 
     # xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
@@ -140,10 +141,10 @@ async def cmd_cheque_show(session: Session, message: Message, state: FSMContext)
 
     await state.update_data(xdr=xdr, operation='cheque')
 
-    await send_message(session, message, msg, reply_markup=get_kb_send_cheque(message.from_user.id))
+    await send_message(session, message, msg, reply_markup=get_kb_send_cheque(message.from_user.id, app_context), app_context=app_context)
 
 
-def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int]) -> types.InlineKeyboardMarkup:
+def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int], app_context: AppContext) -> types.InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
     buttons = [
@@ -157,15 +158,15 @@ def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int]) 
 
 
 @router.callback_query(F.data=="ChequeCount")
-async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: Session):
+async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     msg = my_gettext(callback, 'kb_change_count', app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateCheque.sending_count)
     await callback.answer()
 
 
 @router.message(StateCheque.sending_count)
-async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Session):
+async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
         send_count = int(message.text)
         if send_count < 1:
@@ -177,36 +178,36 @@ async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Ses
         await state.update_data(send_count=send_count)
         await state.set_state(None)
 
-        await cmd_cheque_show(session, message, state)
+        await cmd_cheque_show(session, message, state, app_context)
         await message.delete()
     else:
         await message.delete()
 
 
 @router.callback_query(F.data=="ChequeComment")
-async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session):
+async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     msg = my_gettext(callback, 'kb_change_comment', app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateCheque.sending_comment)
     await callback.answer()
 
 
 @router.message(StateCheque.sending_comment)
-async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: Session):
+async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: Session, app_context: AppContext):
     send_comment = message.text[:255]
 
     if send_comment:
         await state.update_data(send_comment=send_comment)
         await state.set_state(None)
 
-        await cmd_cheque_show(session, message, state)
+        await cmd_cheque_show(session, message, state, app_context)
         await message.delete()
     else:
         await message.delete()
 
 
 @router.callback_query(F.data=="ChequeExecute")
-async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session: Session):
+async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)
@@ -215,7 +216,7 @@ async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session
     msg = my_gettext(callback, 'confirm_send',
                      (float2str(send_sum * send_count), eurmtl_asset.code, cheque_public, send_uuid[:16]), app_context=app_context)
     await state.update_data(fsm_after_send=jsonpickle.dumps(cheque_after_send))
-    await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
     await callback.answer()
 
 
@@ -243,7 +244,7 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *
                                     callback_data=ChequeCallbackData(uuid=send_uuid, cmd='info').pack())],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_cancel_cheque', app_context=app_context),
                                     callback_data=ChequeCallbackData(uuid=send_uuid, cmd='cancel').pack())],
-        get_return_button(user_id)
+        get_return_button(user_id, app_context=app_context)
     ])
     
     # Entity uses 'ChequeStatus' enum values directly?
@@ -268,7 +269,7 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
     cmd = callback_data.cmd
     cheque_uuid = callback_data.uuid
     repo = SqlAlchemyChequeRepository(session)
-    cheque = await repo.get_by_uuid(cheque_uuid, callback.from_user.id)
+    cheque = await repo.get_by_uuid(cheque_uuid)
     if not cheque: 
          # Handle null
          await callback.answer('Cheque not found', show_alert=True)
@@ -302,15 +303,15 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
     result = await use_case.execute(user_id=user_id, cheque_uuid=cheque_uuid)
     
     if not result.success:
-         await cmd_info_message(session, user_id, f"Error: {result.error_message}")
+         await cmd_info_message(session,  user_id, f"Error: {result.error_message}", app_context=app_context)
          return
 
-    await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2", app_context=app_context))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2", app_context=app_context), app_context=app_context)
     await state.update_data(xdr=result.xdr, operation='cancel_cheque')
     
     await stellar_service.submit_transaction(result.xdr)
     
-    await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque', app_context=app_context))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque', app_context=app_context), app_context=app_context)
     # No need to reset_balance_cache with new architecture
 
 
@@ -362,7 +363,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 
     # check address
     await state.update_data(last_message_id=0)
-    await send_message(session, message.from_user.id, 'Loading')
+    await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
     cheque_uuid = message.text.split(' ')[1].split('_')[1]
     await state.update_data(cheque_uuid=cheque_uuid)
@@ -375,7 +376,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
     user_receive_count = await repo.get_receive_count(cheque_uuid, user_id)
     
     if not cheque or user_receive_count > 0 or receive_count >= cheque.count:
-        await send_message(session, user_id, my_gettext(user_id, 'bad_cheque', app_context=app_context), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'bad_cheque', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         return
 
     # "inline_cheque": "Чек на {} EURMTL, для {} получателя/получателей, \n\n \"{}\"",
@@ -383,17 +384,17 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
         msg = my_gettext(user_id, 'inline_cheque', (cheque.amount, cheque.count, cheque.comment), app_context=app_context)
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_get_cheque', app_context=app_context), callback_data='ChequeYes')],
-            get_return_button(user_id)
+            get_return_button(user_id, app_context=app_context)
         ])
     else:
         msg = my_gettext(user_id, 'inline_invoice_buy',
                          (cheque.amount, cheque.asset.split(':')[0], cheque.comment), app_context=app_context)
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_get_invoice_buy', app_context=app_context), callback_data='InvoiceYes')],
-            get_return_button(user_id)
+            get_return_button(user_id, app_context=app_context)
         ])
 
-    await send_message(session, message, msg, reply_markup=kb)
+    await send_message(session, message, msg, reply_markup=kb, app_context=app_context)
 
 
 @router.callback_query(F.data=="ChequeYes")
@@ -412,23 +413,23 @@ async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMC
     cheque_repo = SqlAlchemyChequeRepository(session)
     stellar_service = StellarService(horizon_url=app_config.horizon_url)
     encryption_service = EncryptionService()
-    add_wallet_uc = AddWallet(wallet_repo, encryption_service)
+    add_wallet_uc = AddWallet(wallet_repo)
     
     use_case = ClaimCheque(wallet_repo, cheque_repo, stellar_service, encryption_service, add_wallet_uc, cheque_public)
     result = await use_case.execute(user_id=user_id, cheque_uuid=cheque_uuid, username=username)
 
     if not result.success:
-         await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id))
+         await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
          return
          
-    await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2", app_context=app_context))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, "try_send2", app_context=app_context), app_context=app_context)
     await state.update_data(xdr=result.xdr, operation='receive_cheque')
     
     # Send transaction
     if result.xdr:
         await stellar_service.submit_transaction(result.xdr)
         
-    await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque', app_context=app_context))
+    await cmd_info_message(session,  user_id, my_gettext(user_id, 'send_good_cheque', app_context=app_context), app_context=app_context)
     
     # Language check/prompt was: if was_new: ...
     # We can detect if user was new by checking if they have set language?
@@ -523,7 +524,7 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
                                                  ), app_context=app_context)
     await state.set_state(StateSwapToken.swap_sum)
     await state.update_data(msg=msg, xdr=xdr)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
 
     await callback.answer()
 

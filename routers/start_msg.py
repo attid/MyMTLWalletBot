@@ -18,8 +18,6 @@ from infrastructure.utils.common_utils import get_user_id
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
 from infrastructure.services.app_context import AppContext
-from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from services.ton_service import TonService
 
 
@@ -78,7 +76,8 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext, *, a
                                                    callback_data="ChangeWallet")])
         buttons.append([types.InlineKeyboardButton(text='ℹ️ ' + my_gettext(chat_id, 'kb_support', app_context=app_context),
                                                    callback_data="Support")])
-        wallet_repo = SqlAlchemyWalletRepository(session)
+        
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         default_wallet = await wallet_repo.get_default_wallet(chat_id)
         is_free = default_wallet.is_free if default_wallet else False 
         if not is_free:
@@ -94,7 +93,7 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext, *, a
 
 async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
                            refresh_callback: types.CallbackQuery = None, *, app_context: AppContext, **kwargs):
-    user_repo = SqlAlchemyUserRepository(session)
+    user_repo = app_context.repository_factory.get_user_repository(session)
     user = await user_repo.get_by_id(user_id)
     # new user ?
     if not user:
@@ -130,11 +129,8 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
 
 
 async def get_start_text(session, state, user_id, *, app_context: AppContext):
-    from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    
-    secret_service = SqlAlchemyWalletSecretService(session)
-    repo = SqlAlchemyWalletRepository(session)
+    secret_service = app_context.use_case_factory.create_wallet_secret_service(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     
     wallet = await repo.get_default_wallet(user_id)
     if await secret_service.is_ton_wallet(user_id):
@@ -158,21 +154,11 @@ USDT: {float2str(usdt_balance, True)}
 
     simple_account = user_account[:4] + '..' + user_account[-4:]
     
-    # Refactored Balance Retrieval via Clean Architecture
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    from infrastructure.services.stellar_service import StellarService
-    from core.use_cases.wallet.get_balance import GetWalletBalance
-    from other.config_reader import config
-    
-    wallet_repo = SqlAlchemyWalletRepository(session)
-    info = await wallet_repo.get_info(user_id, user_account)
+    info = await repo.get_info(user_id, user_account)
     link = 'https://viewer.eurmtl.me/account/' + user_account
     from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE
     
-    repo = SqlAlchemyWalletRepository(session)
-    # Using real horizon from config
-    service = StellarService(horizon_url=config.horizon_url)
-    use_case = GetWalletBalance(repo, service)
+    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     
     balances = await use_case.execute(user_id)
     
@@ -251,7 +237,8 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
     msg = my_gettext(user_id, 'setting_msg', app_context=app_context)
     buttons = []
-    repo = SqlAlchemyWalletRepository(session)
+    
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallets = await repo.get_all_active(user_id)
     for wallet in wallets:
         active_name = '📌 Active' if wallet.is_default else 'Set active'
@@ -271,3 +258,4 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, *
 
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await state.update_data(wallets={wallet.id: wallet.public_key for wallet in wallets})
+
