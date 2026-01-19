@@ -13,7 +13,7 @@ def get_python_files(root_path):
                 python_files.append(os.path.join(root, file))
     return python_files
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 @pytest.mark.parametrize("file_path", get_python_files(PROJECT_ROOT))
 def test_syntax(file_path):
