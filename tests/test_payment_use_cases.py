@@ -42,7 +42,7 @@ async def test_send_payment_negative_amount():
     
     result = await use_case.execute(123, "GDEST", Asset(code="XLM"), -5.0)
     assert result.success is False
-    assert result.error_message == "Amount must be positive"
+    assert result.error_message == "Amount must be positive and finite (not unlimited)"
 
 @pytest.mark.asyncio
 async def test_send_payment_dest_not_found():

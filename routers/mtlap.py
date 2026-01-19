@@ -187,7 +187,7 @@ async def cmd_mtlap_send_add_delegate_for_a(message: types.Message, state: FSMCo
                            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'delegate_send_address')
+        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'delegate_send_address', app_context=app_context)
         await send_message(session, message, msg)
         await message.delete()
 
@@ -267,7 +267,7 @@ async def cmd_mtlap_send_add_delegate_for_c(message: types.Message, state: FSMCo
                            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2') + '\n' + my_gettext(message, 'delegate_send_address')
+        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'delegate_send_address', app_context=app_context)
         await send_message(session, message, msg)
         await message.delete()
 

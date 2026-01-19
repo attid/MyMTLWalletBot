@@ -51,8 +51,9 @@ async def test_cmd_cancel_cheque(mock_session, mock_state):
         # But we patch class definition in router. 
         # Inside router: stellar_service = StellarService(...)
         # So we mocked the class. The instance is MockClass.return_value.
+        mock_app_context = MagicMock()
         with patch("routers.cheque.StellarService", return_value=mock_service):
-            await cmd_cancel_cheque(mock_session, user_id, cheque_uuid, mock_state)
+            await cmd_cancel_cheque(mock_session, user_id, cheque_uuid, mock_state, app_context=mock_app_context)
         
         mock_use_case.execute.assert_called_once_with(user_id=123, cheque_uuid="uuid")
         mock_state.update_data.assert_called()
@@ -80,7 +81,8 @@ async def test_cmd_send_money_from_cheque(mock_session, mock_state):
         mock_service_instance = MockService.return_value
         mock_service_instance.submit_transaction = AsyncMock()
         
-        await cmd_send_money_from_cheque(mock_session, user_id, mock_state, cheque_uuid, username)
+        mock_app_context = MagicMock()
+        await cmd_send_money_from_cheque(mock_session, user_id, mock_state, cheque_uuid, username, app_context=mock_app_context)
         
         mock_use_case.execute.assert_called_once()
         mock_service_instance.submit_transaction.assert_called_with("XDR")

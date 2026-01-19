@@ -128,12 +128,12 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
 
 @router.callback_query(F.data == "ManageAssetsMenu")
 async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    msg = my_gettext(callback, 'manage_assets_msg')
+    msg = my_gettext(callback, 'manage_assets_msg', app_context=app_context)
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete_one'), callback_data="DeleteAsset")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_list'), callback_data="AddAsset")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_expert'), callback_data="AddAssetExpert")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_asset_visibility'), callback_data="AssetVisibilityMenu")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete_one', app_context=app_context), callback_data="DeleteAsset")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_list', app_context=app_context), callback_data="AddAsset")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_expert', app_context=app_context), callback_data="AddAssetExpert")],
+        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_asset_visibility', app_context=app_context), callback_data="AssetVisibilityMenu")],
         get_return_button(callback)
     ]
     await callback.answer()
@@ -172,8 +172,8 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, app_
         current_status = vis_dict.get(code, ASSET_VISIBLE)
 
         # Button texts with status indicators
-        exchange_only_text = my_gettext(user_id, 'asset_exchange_only')
-        hidden_text = my_gettext(user_id, 'asset_hidden')
+        exchange_only_text = my_gettext(user_id, 'asset_exchange_only', app_context=app_context)
+        hidden_text = my_gettext(user_id, 'asset_hidden', app_context=app_context)
         if current_status == ASSET_EXCHANGE_ONLY:
             exchange_only_text = "✅ " + exchange_only_text
         elif current_status == ASSET_HIDDEN:
@@ -200,12 +200,12 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, app_
     nav_buttons = []
     if page > 1:
         nav_buttons.append(types.InlineKeyboardButton(
-            text="◀️ " + my_gettext(user_id, 'prev_page'),
+            text="◀️ " + my_gettext(user_id, 'prev_page', app_context=app_context),
             callback_data=AssetVisibilityCallbackData(action="page", page=page - 1).pack()
         ))
     if page < total_pages:
         nav_buttons.append(types.InlineKeyboardButton(
-            text=my_gettext(user_id, 'next_page') + " ▶️",
+            text=my_gettext(user_id, 'next_page', app_context=app_context) + " ▶️",
             callback_data=AssetVisibilityCallbackData(action="page", page=page + 1).pack()
         ))
 
@@ -218,9 +218,9 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, app_
     kb.append(get_return_button(user_id)) # Assuming get_return_button returns a list containing the button
 
     # Generate message text
-    message_text = my_gettext(user_id, 'asset_visibility_msg')
+    message_text = my_gettext(user_id, 'asset_visibility_msg', app_context=app_context)
     if total_pages > 1:
-         message_text += f"\n{my_gettext(user_id, 'page')} {page}/{total_pages}"
+         message_text += f"\n{my_gettext(user_id, 'page', app_context=app_context)} {page}/{total_pages}"
 
     reply_markup = types.InlineKeyboardMarkup(inline_keyboard=kb)
     return message_text, reply_markup
@@ -256,7 +256,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
             await callback.answer()
         except Exception as e:
             logger.error(f"Error editing message for asset visibility page change: {e}")
-            await callback.answer(my_gettext(callback, 'error_refreshing_menu'), show_alert=True) # Inform user about error
+            await callback.answer(my_gettext(callback, 'error_refreshing_menu', app_context=app_context), show_alert=True) # Inform user about error
 
     elif action == "set":
         # Set the visibility status for an asset
@@ -278,7 +278,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 
         if target_status_str is None:
              logger.error(f"Invalid target status integer received: {target_status_int} for asset {asset_code}")
-             await callback.answer(my_gettext(callback, 'error_processing_request'), show_alert=True)
+             await callback.answer(my_gettext(callback, 'error_processing_request', app_context=app_context), show_alert=True)
              return # Stop if status is invalid
 
         vis_dict = deserialize_visibility(wallet.assets_visibility) if wallet.assets_visibility else {}
@@ -304,7 +304,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
             except Exception as e:
                 session.rollback()
                 logger.error(f"Error committing asset visibility changes: {e}")
-                await callback.answer(my_gettext(callback, 'error_saving_settings'), show_alert=True)
+                await callback.answer(my_gettext(callback, 'error_saving_settings', app_context=app_context), show_alert=True)
                 save_error = True
         else:
              logger.warning("Asset visibility change in non-ORM session, commit might not be applicable.")
@@ -314,11 +314,11 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
             message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=page)
             try:
                 await callback.message.edit_text(message_text, reply_markup=reply_markup)
-                await callback.answer(my_gettext(callback, 'asset_visibility_changed'))
+                await callback.answer(my_gettext(callback, 'asset_visibility_changed', app_context=app_context))
             except Exception as e:
                 logger.error(f"Error editing message after asset visibility change: {e}")
                 # If edit fails after save, at least inform user status was likely saved
-                await callback.answer(my_gettext(callback, 'asset_visibility_changed') + " (UI update failed)", show_alert=True)
+                await callback.answer(my_gettext(callback, 'asset_visibility_changed', app_context=app_context) + " (UI update failed)", show_alert=True)
 
     elif action == "toggle":
         # Handle legacy toggle action if necessary, or log a warning
@@ -348,7 +348,7 @@ async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, se
                                                       answer=token.asset_code).pack()
                                                   )])
     kb_tmp.append(get_return_button(callback))
-    msg = my_gettext(callback, 'delete_asset2')
+    msg = my_gettext(callback, 'delete_asset2', app_context=app_context)
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
     await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
@@ -376,7 +376,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
             has_offers = any(o['selling']['asset_code'] == asset[0].asset_code and o['selling']['asset_issuer'] == asset[0].asset_issuer for o in offers)
             
             if has_offers:
-                await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers'),
+                await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers', app_context=app_context),
                                    reply_markup=get_kb_return(callback))
                 await callback.answer()
                 return
@@ -406,12 +406,12 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
         )
         xdr = tx.to_xdr()
 
-        msg = my_gettext(callback, 'confirm_close_asset', (asset[0].asset_code, asset[0].asset_issuer))
+        msg = my_gettext(callback, 'confirm_close_asset', (asset[0].asset_code, asset[0].asset_issuer), app_context=app_context)
         await state.update_data(xdr=xdr)
 
         await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
     else:
-        await callback.answer(my_gettext(callback, "bad_data"), show_alert=True)
+        await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
         logger.info(f'error add asset {callback.from_user.id} {answer}')
 
     await callback.answer()
@@ -433,14 +433,14 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
     is_free = wallet.is_free if wallet else False
     
     if is_free and (len(await balance_use_case.execute(user_id=user_id)) > 5):
-        await send_message(session, user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'only_3', app_context=app_context), reply_markup=get_kb_return(user_id))
         return False
 
     # Check free XLM
     balances = await balance_use_case.execute(user_id=user_id)
     xlm = next((a for a in balances if a.asset_code == 'XLM'), None)
     if not xlm or float(xlm.balance) <= 0.5:
-        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
     good_asset = get_good_asset_list()
@@ -450,7 +450,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
             good_asset.remove(found[0])
 
     if len(good_asset) == 0:
-        await send_message(session, user_id, my_gettext(user_id, 'have_all'), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'have_all', app_context=app_context), reply_markup=get_kb_return(user_id))
         return False
 
     kb_tmp = []
@@ -460,7 +460,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
                                                       answer=key.asset_code).pack()
                                                   )])
     kb_tmp.append(get_return_button(callback))
-    await send_message(session, callback, my_gettext(user_id, 'open_asset'),
+    await send_message(session, callback, my_gettext(user_id, 'open_asset', app_context=app_context),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
 
     await state.update_data(assets=jsonpickle.encode(good_asset))
@@ -479,7 +479,7 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
                                 send_asset_issuer=asset[0].asset_issuer)
         await cmd_add_asset_end(callback.message.chat.id, state, session, )
     else:
-        await callback.answer(my_gettext(callback, "bad_data"), show_alert=True)
+        await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
         logger.info(f'error add asset {callback.from_user.id} {answer}')
 
     await callback.answer()
@@ -499,18 +499,18 @@ async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext,
     is_free = wallet.is_free if wallet else False
     
     if is_free and (len(await balance_use_case.execute(user_id=user_id)) > 5):
-        await send_message(session, user_id, my_gettext(user_id, 'only_3'), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'only_3', app_context=app_context), reply_markup=get_kb_return(user_id))
         return False
 
     # Check free XLM
     balances = await balance_use_case.execute(user_id=user_id)
     xlm = next((a for a in balances if a.asset_code == 'XLM'), None)
     if not xlm or float(xlm.balance) <= 0.5:
-        await callback.answer(my_gettext(callback, 'low_xlm'), show_alert=True)
+        await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
     await state.set_state(StateAddAsset.sending_code)
-    msg = my_gettext(user_id, 'send_code')
+    msg = my_gettext(user_id, 'send_code', app_context=app_context)
     await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
     await callback.answer()
 
@@ -523,7 +523,7 @@ async def cmd_sending_code(message: types.Message, state: FSMContext, session: S
 
     await state.set_state(StateAddAsset.sending_issuer)
 
-    msg = my_gettext(user_id, 'send_issuer', (public_issuer,))
+    msg = my_gettext(user_id, 'send_issuer', (public_issuer,), app_context=app_context)
     await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
 
 
@@ -566,7 +566,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
         if public_key is None:
             raise Exception("public_key is None")
     except Exception as ex:
-        await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
+        await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
                            reply_markup=get_kb_return(message))
         return
 
@@ -598,7 +598,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session):
     )
     xdr = tx.to_xdr()
 
-    msg = my_gettext(chat_id, 'confirm_asset', (asset_code, asset_issuer))
+    msg = my_gettext(chat_id, 'confirm_asset', (asset_code, asset_issuer), app_context=app_context)
 
     await state.update_data(xdr=xdr, operation='add_asset')
     await send_message(session, chat_id, msg, reply_markup=get_kb_yesno_send_xdr(chat_id))
@@ -672,7 +672,7 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
             public_key = wallet.public_key
             await state.update_data(public_key=public_key)
             await cmd_show_add_wallet_choose_pin(session, callback.from_user.id, state,
-                                                 my_gettext(callback, 'for_address', (public_key,)))
+                                                 my_gettext(callback, 'for_address', (public_key,), app_context=app_context))
             await callback.answer()
 
 
@@ -776,7 +776,7 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
             )
             xdr = result.xdr
             await state.update_data(xdr=xdr)
-            msg = my_gettext(callback, 'confirm_send', (config.wallet_cost, eurmtl_asset.code, father_key, memo))
+            msg = my_gettext(callback, 'confirm_send', (config.wallet_cost, eurmtl_asset.code, father_key, memo), app_context=app_context)
             msg = f"For buy {public_key}\n{msg}"
 
             await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
@@ -801,7 +801,7 @@ async def cmd_edit_address_book(session: Session, user_id: int, app_context: App
                                            callback_data=AddressBookCallbackData(
                                                action='Show', idx=entry.id).pack()
                                            ),
-                types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_delete'),
+                types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_delete', app_context=app_context),
                                            callback_data=AddressBookCallbackData(
                                                action='Delete', idx=entry.id).pack()
                                            )
@@ -809,7 +809,7 @@ async def cmd_edit_address_book(session: Session, user_id: int, app_context: App
         )
     buttons.append(get_return_button(user_id))
 
-    await send_message(session, user_id, my_gettext(user_id, 'address_book'),
+    await send_message(session, user_id, my_gettext(user_id, 'address_book', app_context=app_context),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
 
 

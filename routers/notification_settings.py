@@ -49,19 +49,21 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
     user_data = await state.get_data()
     user_id = callback.from_user.id
 
+    is_token_notify = user_data.get('asset_code') is not None
+    is_wallets_notify = user_data.get('for_all_wallets')
+
     text = my_gettext(user_id, 'notification_settings_menu', app_context=app_context)
 
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'toggle_token_button',
-                                                    (user_data.get('asset_code', my_gettext(user_id, 'any_token', app_context=app_context)),), app_context=app_context),
-                                    callback_data="toggle_token")],
+                                                   ('✅' if is_token_notify else '❌'), app_context=app_context),
+                                   callback_data="toggle_token_notify")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'change_amount_button', (user_data.get('min_amount', 0),), app_context=app_context),
                                     callback_data="change_amount")],
         [types.InlineKeyboardButton(
             text=my_gettext(user_id, 'toggle_wallets_button',
-                            (my_gettext(user_id, 'yes', app_context=app_context) if user_data.get('for_all_wallets') else my_gettext(user_id,
-                                                                                                            'no', app_context=app_context),), app_context=app_context),
-            callback_data="toggle_wallets")],
+                            ('✅' if is_wallets_notify else '❌'), app_context=app_context),
+            callback_data="toggle_wallets_notify")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'save_button', app_context=app_context), callback_data="save_filter")],
         get_return_button(user_id, app_context=app_context)
     ]

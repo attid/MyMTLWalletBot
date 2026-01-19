@@ -70,9 +70,9 @@ def get_kb_market(user_id: int, *, app_context: AppContext) -> types.InlineKeybo
 
 @router.callback_query(F.data == "NewOrder")
 async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=config.horizon_url)
-    use_case = GetWalletBalance(repo, service)
+    # Use DI from app_context
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     asset_list = await use_case.execute(user_id=callback.from_user.id)
     
     # Check free XLM
@@ -83,7 +83,7 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
 
     msg = my_gettext(callback, 'choose_token_sale', app_context=app_context)
     
-    wallet = await repo.get_default_wallet(callback.from_user.id)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
     vis_str = wallet.assets_visibility if wallet else None
     asset_list = [a for a in asset_list if get_asset_visibility(vis_str, a.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY)]
 
@@ -250,10 +250,8 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext, *, app_con
             
         amount = float(send_sum)
 
-    # Refactored to use Clean Architecture Use Case
-    repo = SqlAlchemyWalletRepository(session)
-    service = StellarService(horizon_url=config.horizon_url)
-    use_case = ManageOffer(repo, service)
+    # Use DI from app_context
+    use_case = app_context.use_case_factory.create_manage_offer(session)
 
     result = await use_case.execute(
         user_id=message.from_user.id,
@@ -295,10 +293,10 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext, *, app_con
 
 @router.callback_query(F.data == "ShowOrders")
 async def cmd_show_orders(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    repo = SqlAlchemyWalletRepository(session)
-    wallet = await repo.get_default_wallet(callback.from_user.id)
-    service = StellarService(horizon_url=config.horizon_url)
-    offers_dicts = await service.get_selling_offers(wallet.public_key)
+    # Use DI from app_context
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    offers_dicts = await app_context.stellar_service.get_selling_offers(wallet.public_key)
     offers = [MyOffer.from_dict(o) for o in offers_dicts]
     
     await state.update_data(offers=jsonpickle.encode(offers))
@@ -371,9 +369,9 @@ async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext
                                 receive_asset_code=offer.buying.asset_code,
                                 receive_asset_issuer=offer.buying.asset_issuer)
         try:
-            repo = SqlAlchemyWalletRepository(session)
-            service = StellarService(horizon_url=config.horizon_url)
-            balances = await GetWalletBalance(repo, service).execute(callback.from_user.id)
+            # Use DI from app_context
+            balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+            balances = await balance_use_case.execute(callback.from_user.id)
             target_obj = next((b for b in balances if b.asset_code == data.get('send_asset_code')), None)
             max_balance = target_obj.balance if target_obj else "not found =("
         except:

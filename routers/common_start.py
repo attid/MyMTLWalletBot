@@ -224,8 +224,8 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
     try:
         donate_sum = float(donate_sum)
         if donate_sum > max_sum:
-            await send_message(session, user_id, my_gettext(user_id, 'bad_sum') + '\n' + data['msg'],
-                               reply_markup=get_kb_return(user_id), app_context=app_context)
+            await send_message(session, user_id, my_gettext(user_id, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+                               reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         else:
             # Refactored to use Clean Architecture Use Case
             from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -264,7 +264,7 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
             if result.success:
                 xdr = result.xdr
                 await state.update_data(xdr=xdr, donate_sum=donate_sum, fsm_after_send=jsonpickle.dumps(cmd_after_donate))
-                msg = my_gettext(user_id, 'confirm_send', (donate_sum, EURMTL_ASSET.code, father_key, memo))
+                msg = my_gettext(user_id, 'confirm_send', (donate_sum, EURMTL_ASSET.code, father_key, memo), app_context=app_context)
                 msg = f"For donate\n{msg}"
                 await send_message(session, user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id), app_context=app_context)
             else:
@@ -272,8 +272,8 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
 
     except Exception as ex:
         # logger.error(["get_donate_sum", ex])
-        await send_message(session, user_id, my_gettext(user_id, 'bad_sum') + '\n' + data['msg'],
-                           reply_markup=get_kb_return(user_id), app_context=app_context)
+        await send_message(session, user_id, my_gettext(user_id, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+                           reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(SettingState.send_donate_sum)
