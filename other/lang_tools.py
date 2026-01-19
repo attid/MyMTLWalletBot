@@ -4,12 +4,17 @@ from sqlalchemy.orm import Session
 from db.models import MyMtlWalletBotUsers
 from infrastructure.services.app_context import AppContext
 
-def change_user_lang(session: Session, user_id: int, lang: str):
+from sqlalchemy import select
+
+async def change_user_lang(session: Session, user_id: int, lang: str):
     # Direct DB update (legacy pattern, should use repo)
-    user = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
+    stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    
     if user is not None:
         user.lang = lang
-        session.commit()
+        await session.commit()
     else:
         raise ValueError(f"No user found with user_id {user_id}")
 
@@ -26,13 +31,12 @@ def get_user_id(message: Union[types.Message, types.CallbackQuery, int]) -> int:
     return 0
 
 
-def check_user_lang(session: Session, user_id: int):
+async def check_user_lang(session: Session, user_id: int):
     # Fallback legacy
-    user = session.query(MyMtlWalletBotUsers.lang).filter(MyMtlWalletBotUsers.user_id == user_id).one_or_none()
-    if user is not None:
-        return user.lang
-    else:
-        return None
+    stmt = select(MyMtlWalletBotUsers.lang).where(MyMtlWalletBotUsers.user_id == user_id)
+    result = await session.execute(stmt)
+    lang = result.scalar_one_or_none()
+    return lang
 
 
 def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], text: str, param: tuple = (), app_context: AppContext = None) -> str:
@@ -49,6 +53,8 @@ def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], tex
     return f"{text} (no_loc)"
 
 
-def check_user_id(session: Session, user_id: int):
-    user_count = session.query(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == user_id).count()
-    return user_count > 0
+async def check_user_id(session: Session, user_id: int):
+    stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    return user is not None

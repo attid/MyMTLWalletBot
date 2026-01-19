@@ -46,7 +46,7 @@ async def cmd_start_sign(message: types.Message, state: FSMContext, session: Ses
     await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
     # if user not exist
-    if not check_user_id(session, message.from_user.id):
+    if not await check_user_id(session, message.from_user.id):
         await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start', app_context=app_context)
         return
 
@@ -65,7 +65,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
     await state.update_data(last_message_id=0)
     await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
-    if check_user_lang(session, message.from_user.id) is None:
+    if await check_user_lang(session, message.from_user.id) is None:
         # Refactored to use Clean Architecture Use Case
         from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
         from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository

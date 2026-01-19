@@ -49,7 +49,7 @@ async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallb
                          session: Session, l10n: LocalizationService, app_context: AppContext):
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
-    change_user_lang(session, callback.from_user.id, lang)
+    await change_user_lang(session, callback.from_user.id, lang)
     await state.update_data(user_lang=lang)
     await callback.answer(my_gettext(callback, 'was_set', (lang,), app_context=app_context))
     await cmd_show_balance(session, callback.from_user.id, state, app_context=app_context)
