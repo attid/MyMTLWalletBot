@@ -181,6 +181,10 @@ USDT: {float2str(usdt_balance, True)}
     
     # Filter visible
     balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
+
+    # Filter EURMTL only if needed (legacy logic)
+    if (await state.get_data()).get('show_more', False) is False:
+         balances = [b for b in balances if b.asset_code == 'EURMTL']
     
     # from infrastructure.utils.stellar_utils import my_float
     from infrastructure.utils.stellar_utils import my_float
