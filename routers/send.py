@@ -99,8 +99,8 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
 
             if tmp_name is TELEGRAM_API_ERROR:
                 logger.error(f"cmd_send_token: Telegram API error when checking username for user_id={user_id}. Searched: {send_for}")
-                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error', app_context=app_context), # Предполагается, что есть такой ключ в локализации
-                                   reply_markup=get_kb_return(message))
+                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error', app_context=app_context),
+                                   reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
                 return # Прерываем выполнение, так как не можем проверить username
 
             # Сравниваем tmp_name (фактический username) с send_for (ожидаемый username)
@@ -129,7 +129,7 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
     except Exception as ex:
         logger.error(f"cmd_send_token: failed to resolve address. Searched: {send_for}, Exception: {ex}")
         await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
-                           reply_markup=get_kb_return(message))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         return
 
     await state.update_data(send_sum=send_sum,
@@ -153,14 +153,14 @@ async def cmd_eurmtl(message: types.Message, state: FSMContext, session: Session
     parts = message.text.split()
     if len(parts) < 3:
         await send_message(session, message.from_user.id,
-                           'Invalid command format. Usage: /eurmtl @username|address amount [memo]')
+                           'Invalid command format. Usage: /eurmtl @username|address amount [memo]', app_context=app_context)
         return
 
     try:
         send_for = parts[1]
         amount = float(parts[2])
     except ValueError:
-        await send_message(session, message.from_user.id, 'Invalid amount. Please enter a numerical value.')
+        await send_message(session, message.from_user.id, 'Invalid amount. Please enter a numerical value.', app_context=app_context)
         return
 
     memo = ' '.join(parts[3:]) if len(parts) > 3 else None
@@ -177,24 +177,24 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
 
     # check address
     await state.update_data(last_message_id=0)
-    await send_message(session, message.from_user.id, 'Loading')
+    await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
     # if user not exist
     if not await check_user_id(session, message.from_user.id):
-        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start')
+        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start', app_context=app_context)
         return
 
     # Parse the start command
     parts = message.text.split('eurmtl_')[1].strip().split('-')
     if len(parts) < 2:
-        await send_message(session, message.from_user.id, 'Invalid command format')
+        await send_message(session, message.from_user.id, 'Invalid command format', app_context=app_context)
         return
 
     username = parts[0]
     try:
         amount = float(parts[1])
     except ValueError:
-        await send_message(session, message.from_user.id, 'Invalid amount')
+        await send_message(session, message.from_user.id, 'Invalid amount', app_context=app_context)
         return
 
     memo = ' '.join(parts[2:]) if len(parts) > 2 else None
@@ -206,7 +206,7 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
         user_repo = app_context.repository_factory.get_user_repository(session)
         stellar_address, _ = await user_repo.get_account_by_username(send_for)
     except Exception as ex:
-        await send_message(session, message.from_user.id, f'Error: {str(ex)}')
+        await send_message(session, message.from_user.id, f'Error: {str(ex)}', app_context=app_context)
         return
 
     # Call the cmd_send_token function
@@ -231,7 +231,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
             if tmp_name is TELEGRAM_API_ERROR:
                 logger.error(f"StateSendFor: Telegram API error when checking username for user_id={user_id}. Searched: {send_for_input}")
                 await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error', app_context=app_context),
-                                   reply_markup=get_kb_return(message))
+                                   reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
                 return
 
             actual_username_lower = tmp_name.lower() if tmp_name else None
@@ -251,7 +251,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
         except Exception as ex:
             logger.error(f"StateSendFor: failed to resolve username. Searched: {send_for_input}, Exception: {ex}")
             await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
-                               reply_markup=get_kb_return(message))
+                               reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
             return
     else:
         public_key = data.get('qr', message.text)
@@ -372,7 +372,7 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
 
                 await state.set_state(StateSendToken.sending_sum)
                 keyboard = get_kb_offers_cancel(callback.from_user.id, data)
-                await send_message(session, callback, msg, reply_markup=keyboard)
+                await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     return True
 
 
@@ -389,7 +389,7 @@ async def cq_send_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
     # Update message with the same text and changed button checkbox state
     msg = data['msg']
     keyboard = get_kb_offers_cancel(callback.from_user.id, data)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
 
 
 @router.message(StateSendToken.sending_sum)
@@ -464,7 +464,7 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     else:
         # Fallback or error handling
         logger.error(f"SendPayment failed: {result.error_message}")
-        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message))
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         return
 
     # xdr = await stellar_pay((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
@@ -479,8 +479,8 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
 
     add_button_memo = federal_memo is None
     await send_message(session, message, msg,
-                       reply_markup=get_kb_yesno_send_xdr(message, add_button_memo=add_button_memo),
-                       need_new_msg=need_new_msg)
+                       reply_markup=get_kb_yesno_send_xdr(message, add_button_memo=add_button_memo, app_context=app_context),
+                       need_new_msg=need_new_msg, app_context=app_context)
 
 
 @router.callback_query(F.data == "Memo")
@@ -524,7 +524,7 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session, 
         xdr = result.xdr
     else:
         logger.error(f"cmd_create_account failed: {result.error_message}")
-        await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         return
 
     await state.update_data(xdr=xdr, send_asset_code="XLM", send_asset_issuer=None,
@@ -584,7 +584,7 @@ async def handle_docs_photo(message: types.Message, state: FSMContext, session: 
                 result = await use_case.execute(qr_data, message.from_user.id)
                 
                 if not result.success:
-                    await send_message(session, message.from_user.id, f'Error: {result.error_message}')
+                    await send_message(session, message.from_user.id, f'Error: {result.error_message}', app_context=app_context)
                     return
 
                 # Update state with transaction data
