@@ -50,6 +50,16 @@ class SqlAlchemyUserRepository(IUserRepository):
             # For now, let's treat this strictly as update.
             raise ValueError(f"User with id {user.id} not found for update")
 
+    async def update_lang(self, user_id: int, lang: str):
+        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            user.lang = lang
+            await self.session.flush()
+        else:
+             raise ValueError(f"User with id {user_id} not found for update_lang")
+
     async def get_account_by_username(self, username: str) -> tuple[Optional[str], Optional[int]]:
         """Get wallet public key and user_id by Telegram username."""
         from db.models import MyMtlWalletBot

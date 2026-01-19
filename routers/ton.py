@@ -118,12 +118,14 @@ async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext,
         await send_message(session, user_id, "Your default wallet is not a TON wallet.", app_context=app_context)
 
     await clear_state(state)
+    await state.set_state(None)
     await callback.answer()
 
 
 @router.callback_query(StateSendTon.sending_confirmation, F.data == "ton_no")
 async def cmd_send_ton_cancel(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
+    await state.set_state(None)
     await send_message(session, callback.from_user.id, "Transaction cancelled.", app_context=app_context)
     await callback.answer()
 
@@ -210,11 +212,13 @@ async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMCon
                            reply_markup=get_kb_return(callback.from_user.id, app_context=app_context), app_context=app_context)
 
     await clear_state(state)
+    await state.set_state(None)
     await callback.answer()
 
 
 @router.callback_query(StateSendTonUSDT.sending_confirmation, F.data == "ton_no")
 async def cmd_send_ton_usdt_cancel(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await clear_state(state)
+    await state.set_state(None)
     await send_message(session, callback.from_user.id, "Transaction cancelled.", app_context=app_context)
     await callback.answer()

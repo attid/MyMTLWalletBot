@@ -473,6 +473,8 @@ class RouterTestMiddleware(BaseMiddleware):
 
         data["session"] = session
         data["app_context"] = self.app_context
+        if hasattr(self.app_context, 'localization_service'):
+            data["l10n"] = self.app_context.localization_service
         return await handler(event, data)
 
 

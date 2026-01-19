@@ -1,142 +1,137 @@
-
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import types
-from aiogram.fsm.context import FSMContext
-from routers.fest import cmd_fest, cmd_fest_level_24, cmd_fest_get_sum, cmd_reload_fest_menu, StateFest, SendLevel24
-from infrastructure.services.app_context import AppContext
+from unittest.mock import AsyncMock, MagicMock, patch
+from aiogram.fsm.storage.base import StorageKey
+
+from routers.fest import (
+    router as fest_router,
+    StateFest,
+    SendLevel24,
+)
+from core.domain.value_objects import PaymentResult
 from other.config_reader import config
+from tests.conftest import (
+    RouterTestMiddleware,
+    create_callback_update,
+    create_message_update,
+    get_telegram_request,
+)
+
+@pytest.fixture(autouse=True)
+def cleanup_router():
+    """Ensure router is detached and config is restored."""
+    original_menu = getattr(config, 'fest_menu', {})
+    yield
+    config.fest_menu = original_menu
+    if fest_router.parent_router:
+        fest_router._parent_router = None
 
 @pytest.fixture
-def mock_session():
-    return MagicMock()
+def setup_fest_mocks(router_app_context):
+    """
+    Common mock setup for fest router tests.
+    """
+    class FestMockHelper:
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self._setup_defaults()
+
+        def _setup_defaults(self):
+            # Setup test menu in config
+            config.fest_menu = {"Participant1": "GADDRESS1"}
+            
+            # Mock send payment use case (needed by cmd_send_04)
+            self.send_uc = MagicMock()
+            self.send_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_FEST"))
+            self.ctx.use_case_factory.create_send_payment.return_value = self.send_uc
+
+    return FestMockHelper(router_app_context)
+
+
+def get_latest_msg(mock_telegram):
+    """Helper to get latest message or edit from mock_telegram."""
+    msgs = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')]
+    return msgs[-1] if msgs else None
+
 
 @pytest.mark.asyncio
-async def test_cmd_fest_menu(mock_session, mock_app_context, mock_telegram):
-    callback = AsyncMock()
-    callback.data = "Fest2024"
-    callback.message.chat.id = 123
-    state = AsyncMock(spec=FSMContext)
-    state.get_data.return_value = {}
+async def test_cmd_fest_menu(mock_telegram, router_app_context, setup_fest_mocks):
+    """Test clicking Fest2024: should show participant selection."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(fest_router)
 
-    # Mock config.fest_menu via patching config object itself or assume it's set?
-    # Config is imported directly in router.
-    # To test without patching is hard if we rely on global config state.
-    # However, we can patch `other.config_reader.config` for the duration of test OR just set it if mutable.
-    # config is Pydantic Settings? Or SimpleNamespace?
-    # It seems to be an object.
-    # Since `routers/fest.py` does standard `from other.config_reader import config`.
-    # We can patch 'routers.fest.config' BUT user wanted NO PATCHES.
-    # If we modify mutable state `config.fest_menu`, we must reset it.
+    await dp.feed_update(router_app_context.bot, create_callback_update(123, "Fest2024"))
     
-    original_menu = getattr(config, 'fest_menu', {})
-    config.fest_menu = {"Participant1": "Address1"}
-    
-    try:
-        mock_app_context.localization_service.get_text.return_value = 'text'
-        
-        await cmd_fest(callback, mock_session, state, app_context=mock_app_context)
-        
-        # Verify send_message called (via callback answer or new msg)
-        # cmd_fest calls send_message with InlineKeyboard
-        # We can't easily assert internal send_message call without patching it or using a Spy.
-        # But if no error, it likely worked.
-        # We can check if callback.message.answer was called? No, it uses helper.
-        pass
-    finally:
-        config.fest_menu = original_menu
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    # Check for participant name in keyboard
+    assert "Participant1" in req["data"]["reply_markup"]
+
 
 @pytest.mark.asyncio
-async def test_cmd_fest_level_24(mock_session, mock_app_context, mock_telegram):
-    callback = AsyncMock()
-    callback.from_user.id = 123
-    callback.message.chat.id = 123
-    state = AsyncMock(spec=FSMContext)
-    state.get_data.return_value = {}
+async def test_cmd_fest_level_24(mock_telegram, router_app_context, setup_fest_mocks):
+    """Test selecting a participant: should ask for amount."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(fest_router)
+
+    user_id = 123
+    cb_data = SendLevel24(level_1="Participant1").pack()
     
-    callback_data = SendLevel24(level_1="Participant1")
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, cb_data))
     
-    mock_app_context.localization_service.get_text.return_value = 'text'
+    req = get_latest_msg(mock_telegram)
+    assert "Send sum in EURMTL" in req["data"]["text"]
+    assert "Participant1" in req["data"]["text"]
     
-    await cmd_fest_level_24(callback, callback_data, state, session=mock_session, app_context=mock_app_context)
-    
-    state.set_state.assert_called_with(StateFest.sending_sum)
-    state.update_data.assert_called_with(msg='Send sum in EURMTL to wallet Participant1', level_1='Participant1')
-    # Actual msg text depends on localization mocking, but we verify update_data call
+    # Verify state
+    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    assert await dp.storage.get_state(state_key) == StateFest.sending_sum
+
 
 @pytest.mark.asyncio
-async def test_cmd_fest_get_sum(mock_session, mock_app_context, mock_telegram):
-    message = AsyncMock()
-    message.text = "10.5"
-    message.from_user.id = 123
-    message.chat.id = 123
-    state = AsyncMock(spec=FSMContext)
-    
-    # Simulate FSM storage
-    state_storage = {
-        'level_1': 'Participant1',
-        'msg': 'Test msg'
-    }
-    state.get_data.side_effect = lambda: state_storage
-    
-    async def mock_update_data(**kwargs):
-        state_storage.update(kwargs)
-        
-    state.update_data.side_effect = mock_update_data
-    
-    # Mock config
-    original_menu = getattr(config, 'fest_menu', {})
-    config.fest_menu = {"Participant1": "Address1"}
-    
-    try:
-        # Mock cmd_send_04 being called?
-        # It's imported directly.
-        # To verify it is called without patching, we rely on it executing.
-        # cmd_send_04 eventually calls `use_case_factory.create_send_payment`.
-        # So we can verify THAT.
-        
-        mock_send_use_case = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.xdr = "XDR"
-        mock_send_use_case.execute.return_value = mock_result
-        mock_app_context.use_case_factory.create_send_payment.return_value = mock_send_use_case
-        
-        mock_app_context.localization_service.get_text.return_value = 'text'
+async def test_cmd_fest_get_sum_flow(mock_telegram, router_app_context, setup_fest_mocks):
+    """Test entering amount for fest: should move to payment confirmation."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(fest_router)
 
-        await cmd_fest_get_sum(message, state, mock_session, app_context=mock_app_context)
-        
-        state.set_state.assert_called_with(None)
-        state.update_data.assert_any_call(
-            send_sum=10.5,
-            send_address="Address1",
-            send_asset_code='EURMTL',
-            send_asset_issuer='GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
-        )
-        # Verify use_case execution (triggered via cmd_send_04)
-        mock_send_use_case.execute.assert_called()
-        
-    finally:
-        config.fest_menu = original_menu
+    user_id = 123
+    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    
+    # Pre-set state and data
+    await dp.storage.set_state(state_key, StateFest.sending_sum)
+    await dp.storage.update_data(state_key, {'level_1': 'Participant1', 'msg': 'Prompt'})
+
+    await dp.feed_update(router_app_context.bot, create_message_update(user_id, "10.5"))
+    
+    # Should call send use case (via cmd_send_04)
+    setup_fest_mocks.send_uc.execute.assert_called_once()
+    
+    # Verify state cleared
+    assert await dp.storage.get_state(state_key) is None
+    
+    # Verify confirmation message (localized as confirm_send usually)
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    # confirm_send is the key usually returned by mock localization
+    assert "confirm_send" in req["data"]["text"]
+
 
 @pytest.mark.asyncio
-async def test_cmd_reload_fest_menu(mock_session, mock_app_context, mock_telegram):
-    message = AsyncMock()
-    message.from_user.username = "itolstov"
-    state = AsyncMock(spec=FSMContext)
-    
-    # load_fest_info is imported. It makes external request to Grist.
-    # To avoid external request in test, and to avoid patching...
-    # We must patch `routers.fest.load_fest_info` because it is hard dependency.
-    # Or satisfy library user compliance of "no patches" except for external calls?
-    # Since `load_fest_info` is an external integration function from `other.grist_tools`.
-    # Patching it is acceptable/necessary for unit test if we can't inject it.
-    
-    with patch("routers.fest.load_fest_info", new_callable=AsyncMock) as mock_load:
-        mock_load.return_value = {"New": "Menu"}
-        
-        await cmd_reload_fest_menu(message, state, mock_session, app_context=mock_app_context)
-        
-        assert config.fest_menu == {"New": "Menu"}
-        message.answer.assert_called_with(text='redy')
+async def test_cmd_reload_fest_menu(mock_telegram, router_app_context, setup_fest_mocks):
+    """Test /reload_fest_menu command (admin only)."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(fest_router)
 
+    user_id = 123
+    # Username must match the itolstov in router
+    update = create_message_update(user_id, "/reload_fest_menu", username="itolstov")
+    
+    with patch("routers.fest.load_fest_info", AsyncMock(return_value={"New": "Menu"})):
+        await dp.feed_update(router_app_context.bot, update, app_context=router_app_context)
+
+    assert config.fest_menu == {"New": "Menu"}
+    req = get_latest_msg(mock_telegram)
+    assert "redy" in req["data"]["text"]

@@ -72,8 +72,7 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
     current_state = await state.get_state()
 
     if pin_type is None:
-        from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-        repo = SqlAlchemyWalletRepository(session)
+        repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await repo.get_default_wallet(chat_id)
         pin_type = wallet.use_pin if wallet else 0
         await state.update_data(pin_type=pin_type)
@@ -304,8 +303,7 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
     except Exception as ex:
         logger.info(['ex', ex, current_state])
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password", app_context=app_context), app_context=app_context)
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     await repo.reset_balance_cache(user_id)
     await state.update_data(pin='')
 

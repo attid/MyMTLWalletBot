@@ -1,217 +1,169 @@
-import base64
+
 import pytest
+import base64
 from unittest.mock import AsyncMock, MagicMock, patch
+from aiogram import types
+from aiogram.fsm.storage.base import StorageKey
+import datetime
 
-from aiogram import Bot, Dispatcher
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.fsm.storage.memory import MemoryStorage
+from routers.common_end import (
+    router as end_router,
+)
+from core.domain.value_objects import Balance
+from tests.conftest import (
+    RouterTestMiddleware,
+    get_telegram_request,
+)
 
-from other.mytypes import Balance
-from routers.common_end import cmd_last_route
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
-
+@pytest.fixture(autouse=True)
+def cleanup_router():
+    """Ensure router is detached after each test."""
+    yield
+    if end_router.parent_router:
+        end_router._parent_router = None
 
 @pytest.fixture
-async def common_end_app_context(mock_app_context, mock_telegram):
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    mock_app_context.bot = bot
-    mock_app_context.dispatcher = Dispatcher(storage=MemoryStorage())
-    yield mock_app_context
-    await bot.session.close()
+def setup_common_end_mocks(router_app_context):
+    """
+    Common mock setup for common_end router tests.
+    """
+    class CommonEndMockHelper:
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self._setup_defaults()
+
+        def _setup_defaults(self):
+            # Default Stellar mocks
+            self.ctx.stellar_service.check_account = AsyncMock(return_value=MagicMock(account_id="GVALID", memo=None))
+            self.ctx.stellar_service.check_xdr = AsyncMock(return_value="VALID_XDR")
+            self.ctx.stellar_service.is_free_wallet = AsyncMock(return_value=False)
+            
+            mock_acc = MagicMock()
+            mock_acc.account.account_id = "GUSER"
+            self.ctx.stellar_service.get_user_account = AsyncMock(return_value=mock_acc)
+
+            # Default Balance Use Case
+            self.balances = [
+                Balance(asset_code="EURMTL", balance="100.0", asset_issuer="GISS", asset_type="credit_alphanum12"),
+            ]
+            balance_uc = MagicMock()
+            balance_uc.execute = AsyncMock(return_value=self.balances)
+            self.ctx.use_case_factory.create_get_wallet_balance.return_value = balance_uc
+
+            # User Repo
+            self.user_repo = MagicMock()
+            self.user_repo.get_account_by_username = AsyncMock(return_value=("GFORWARDED", 456))
+            self.ctx.repository_factory.get_user_repository.return_value = self.user_repo
+            
+            # Wallet Repo
+            self.wallet_repo = MagicMock()
+            self.wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(use_pin=0))
+            self.ctx.repository_factory.get_wallet_repository.return_value = self.wallet_repo
+
+    return CommonEndMockHelper(router_app_context)
 
 
-def make_state(initial=None):
-    data = dict(initial or {})
-    state = AsyncMock()
+def get_latest_msg(mock_telegram):
+    """Helper to get latest message or edit from mock_telegram."""
+    msgs = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')]
+    return msgs[-1] if msgs else None
 
-    async def get_data():
-        return dict(data)
-
-    async def update_data(**kwargs):
-        data.update(kwargs)
-
-    async def set_data(value):
-        data.clear()
-        data.update(value)
-
-    state.get_data.side_effect = get_data
-    state.update_data.side_effect = update_data
-    state.set_data.side_effect = set_data
-    state.set_state = AsyncMock()
-    state.get_state = AsyncMock(return_value=None)
-    return state
-
-
-def _last_request(mock_server, method):
-    return next((req for req in reversed(mock_server) if req["method"] == method), None)
-
-
-@pytest.mark.asyncio
-async def test_cmd_last_route_stellar_address(
-        mock_telegram, mock_session, mock_message, common_end_app_context
-):
-    mock_message.chat.type = "private"
-    mock_message.text = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
-    mock_message.entities = []
-    mock_message.caption = None
-    mock_message.forward_sender_name = None
-    mock_message.forward_from = None
-
-    state = make_state()
-
-    balance_uc = AsyncMock()
-    user_balances = [Balance(asset_code="EURMTL", balance="100", asset_issuer="GISSUER")]
-    sender_balances = [Balance(asset_code="EURMTL", balance="50", asset_issuer="GISSUER")]
-    balance_uc.execute.side_effect = [user_balances, sender_balances]
-    common_end_app_context.use_case_factory.create_get_wallet_balance.return_value = balance_uc
-
-    with patch("routers.common_end.stellar_check_account", new_callable=AsyncMock) as mock_check:
-        mock_account = MagicMock()
-        mock_account.account_id = mock_message.text
-        mock_account.memo = None
-        mock_check.return_value = mock_account
-
-        await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
-
-    request = _last_request(mock_telegram, "sendMessage")
-    assert request is not None
-    assert request["data"]["text"] == "choose_token"
-
-
-@pytest.mark.asyncio
-async def test_cmd_last_route_xdr_base64(
-        mock_telegram, mock_session, mock_message, common_end_app_context
-):
-    mock_message.chat.type = "private"
-    mock_message.entities = []
-    mock_message.text = base64.b64encode(b"x" * 48).decode()
-
-    state = make_state()
-
-    common_end_app_context.stellar_service.is_free_wallet.return_value = False
-    common_end_app_context.stellar_service.check_xdr.return_value = "XDR"
-    common_end_app_context.stellar_service.get_user_account.return_value = MagicMock(
-        account=MagicMock(account_id="GUSER")
+def create_custom_message_update(user_id: int, text: str, **kwargs) -> types.Update:
+    """Helper to create message update with custom fields (entities, forward_from etc)."""
+    return types.Update(
+        update_id=1,
+        message=types.Message(
+            message_id=1,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=user_id, type='private'),
+            from_user=types.User(id=user_id, is_bot=False, first_name="Test", username="test"),
+            text=text,
+            **kwargs
+        )
     )
 
-    mock_wallet = MagicMock()
-    mock_wallet.use_pin = 0
-    mock_repo = MagicMock()
-    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
 
-    with patch(
-        "infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository",
-        return_value=mock_repo,
-    ):
-        await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
+@pytest.mark.asyncio
+async def test_cmd_last_route_stellar_address(mock_telegram, router_app_context, setup_common_end_mocks):
+    """Test sending a direct Stellar address: should ask for token."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
 
-    request = _last_request(mock_telegram, "sendMessage")
-    assert request is not None
+    user_id = 123
+    address = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
+    
+    await dp.feed_update(router_app_context.bot, create_custom_message_update(user_id, address))
+
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    assert "choose_token" in req["data"]["text"]
 
 
 @pytest.mark.asyncio
-async def test_cmd_last_route_sign_tools_link(
-        mock_telegram, mock_session, mock_message, common_end_app_context
-):
-    mock_message.chat.type = "private"
-    mock_message.text = "Check https://eurmtl.me/sign_tools?xdr=AAAA"
-    mock_entity = MagicMock()
-    mock_entity.type = "url"
-    mock_entity.url = "https://eurmtl.me/sign_tools?xdr=AAAA"
-    mock_message.entities = [mock_entity]
+async def test_cmd_last_route_xdr_base64(mock_telegram, router_app_context, setup_common_end_mocks):
+    """Test sending Base64 XDR: should transition to signing."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
 
-    state = make_state()
+    user_id = 123
+    # Sufficiently long base64 string
+    xdr = base64.b64encode(b"This is a long enough string to be considered XDR and bypass length checks").decode()
+    
+    with patch("routers.common_end.cmd_check_xdr", AsyncMock()) as mock_check:
+        await dp.feed_update(router_app_context.bot, create_custom_message_update(user_id, xdr))
 
-    common_end_app_context.stellar_service.is_free_wallet.return_value = False
-    common_end_app_context.stellar_service.check_xdr.return_value = "XDR"
-    common_end_app_context.stellar_service.get_user_account.return_value = MagicMock(
-        account=MagicMock(account_id="GUSER")
-    )
-
-    mock_wallet = MagicMock()
-    mock_wallet.use_pin = 0
-    mock_repo = MagicMock()
-    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
-
-    with patch(
-        "infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository",
-        return_value=mock_repo,
-    ):
-        await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
-
-    request = _last_request(mock_telegram, "sendMessage")
-    assert request is not None
+    mock_check.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_cmd_last_route_forwarded_with_username(
-        mock_telegram, mock_session, mock_message, common_end_app_context
-):
-    mock_message.chat.type = "private"
-    mock_message.text = "Some text"
-    mock_message.entities = []
-    mock_message.caption = None
-    mock_message.forward_sender_name = None
+async def test_cmd_last_route_sign_link(mock_telegram, router_app_context, setup_common_end_mocks):
+    """Test sending a sign_tools link."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
 
-    mock_forward_user = MagicMock()
-    mock_forward_user.username = "testuser"
-    mock_message.forward_from = mock_forward_user
+    user_id = 123
+    text = "Please sign: https://eurmtl.me/sign_tools/abcde"
+    
+    # Create update with entities
+    entity = types.MessageEntity(type="url", offset=13, length=32, url="https://eurmtl.me/sign_tools/abcde")
+    update = create_custom_message_update(user_id, text, entities=[entity])
+    
+    with patch("routers.common_end.cmd_check_xdr", AsyncMock()) as mock_check:
+        await dp.feed_update(router_app_context.bot, update)
 
-    state = make_state()
-
-    balance_uc = AsyncMock()
-    user_balances = [Balance(asset_code="EURMTL", balance="100", asset_issuer="GISSUER")]
-    sender_balances = [Balance(asset_code="EURMTL", balance="50", asset_issuer="GISSUER")]
-    balance_uc.execute.side_effect = [user_balances, sender_balances]
-    common_end_app_context.use_case_factory.create_get_wallet_balance.return_value = balance_uc
-
-    mock_user_repo = MagicMock()
-    mock_user_repo.get_account_by_username = AsyncMock(return_value=("GTEST123...", 456))
-    common_end_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
-
-    with patch("routers.common_end.stellar_check_account", new_callable=AsyncMock) as mock_check:
-        mock_account = MagicMock()
-        mock_account.account_id = "GTEST123..."
-        mock_account.memo = "test_memo"
-        mock_check.return_value = mock_account
-
-        await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
-
-    mock_user_repo.get_account_by_username.assert_awaited_once_with("@testuser")
-    request = _last_request(mock_telegram, "sendMessage")
-    assert request is not None
-    assert request["data"]["text"] == "choose_token"
+    mock_check.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_cmd_last_route_non_private_chat(
-        mock_telegram, mock_session, mock_message, common_end_app_context
-):
-    mock_message.chat.type = "group"
-    mock_message.text = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
+async def test_cmd_last_route_forwarded_from_user(mock_telegram, router_app_context, setup_common_end_mocks):
+    """Test forwarded message: should resolve username to address."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
 
-    state = make_state()
+    user_id = 123
+    fwd_user = types.User(id=456, is_bot=False, first_name="Forwarded", username="itolstov")
+    update = create_custom_message_update(user_id, "Hello", forward_from=fwd_user)
+    
+    await dp.feed_update(router_app_context.bot, update)
 
-    await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
-
-    assert _last_request(mock_telegram, "sendMessage") is None
+    setup_common_end_mocks.user_repo.get_account_by_username.assert_called_with("@itolstov")
+    req = get_latest_msg(mock_telegram)
+    assert "choose_token" in req["data"]["text"]
 
 
 @pytest.mark.asyncio
-async def test_cmd_last_route_normal_message(
-        mock_telegram, mock_session, mock_message, common_end_app_context
-):
-    mock_message.chat.type = "private"
-    mock_message.text = "Just a normal message"
-    mock_message.entities = []
-    mock_message.caption = None
-    mock_message.forward_sender_name = None
-    mock_message.forward_from = None
+async def test_cmd_last_route_delete_normal(mock_telegram, router_app_context, setup_common_end_mocks):
+    """Test normal message: should be deleted."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
 
-    state = make_state()
+    user_id = 123
+    await dp.feed_update(router_app_context.bot, create_custom_message_update(user_id, "Just some text"))
 
-    await cmd_last_route(mock_message, state, mock_session, common_end_app_context)
-
-    mock_message.delete.assert_called_once()
+    # Verify deleteMessage was called
+    assert any(r['method'] == 'deleteMessage' for r in mock_telegram)

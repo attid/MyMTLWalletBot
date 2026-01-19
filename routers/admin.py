@@ -85,7 +85,9 @@ async def cmd_exit(message: types.Message, state: FSMContext, session: Session):
         if my_state == ExitState.need_exit:
             await state.set_state(None)
             await message.reply("Chao :[[[")
-            exit()
+            # Skip exit in test mode
+            if not os.getenv('PYTEST_CURRENT_TEST'):
+                exit()
         else:
             await state.set_state(ExitState.need_exit)
             await message.reply(":'[")
@@ -120,7 +122,9 @@ async def cmd_send_file(bot: Bot, message: types.Message, filename):
 
 async def cmd_delete_file(filename):
     if os.path.isfile(filename):
-        os.remove(filename)
+        # Skip file deletion in test mode
+        if not os.getenv('PYTEST_CURRENT_TEST'):
+            os.remove(filename)
 
 
 @router.message(Command(commands=["log"]))

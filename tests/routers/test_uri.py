@@ -1,154 +1,125 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.fsm.context import FSMContext
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram import Bot, Dispatcher, types
+from aiogram.fsm.storage.base import StorageKey
 import datetime
 
 from routers.uri import router as uri_router
 from core.use_cases.stellar.process_uri import ProcessStellarUriResult
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
-from infrastructure.services.localization_service import LocalizationService
-
-class MockDbMiddleware(BaseMiddleware):
-    def __init__(self, session, app_context):
-        self.session = session
-        self.app_context = app_context
-        self.l10n = MagicMock(spec=LocalizationService)
-
-    async def __call__(self, handler, event, data):
-        data["session"] = self.session
-        data["app_context"] = self.app_context
-        data["l10n"] = self.l10n
-        return await handler(event, data)
+from tests.conftest import (
+    RouterTestMiddleware,
+    create_message_update,
+    get_telegram_request,
+)
 
 @pytest.fixture(autouse=True)
 def cleanup_router():
+    """Ensure router is detached after each test."""
     yield
     if uri_router.parent_router:
-         uri_router._parent_router = None
+        uri_router._parent_router = None
 
 @pytest.fixture
-def mock_session():
-    session = MagicMock()
-    return session
+def setup_uri_mocks(router_app_context):
+    """
+    Common mock setup for URI router tests.
+    """
+    class URIMockHelper:
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self._setup_defaults()
 
-@pytest.fixture
-async def bot():
-    session = AiohttpSession(
-        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
-    )
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    yield bot
-    await bot.session.close()
+        def _setup_defaults(self):
+            # Default Wallet mock
+            self.wallet = MagicMock()
+            self.wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            
+            wallet_repo = MagicMock()
+            wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
+            self.ctx.repository_factory.get_wallet_repository.return_value = wallet_repo
 
-@pytest.fixture
-def dp(mock_session, mock_app_context):
-    dp = Dispatcher()
-    middleware = MockDbMiddleware(mock_session, mock_app_context)
-    dp.message.middleware(middleware)
-    dp.callback_query.middleware(middleware)
-    dp.include_router(uri_router)
-    return dp
+            # Default UseCase mock
+            self.process_uri_uc = AsyncMock()
+            self.ctx.use_case_factory.create_process_stellar_uri.return_value = self.process_uri_uc
+
+        def set_uri_result(self, xdr="XDR_DATA", callback=None, return_url=None):
+            self.process_uri_uc.execute.return_value = ProcessStellarUriResult(
+                success=True, xdr=xdr, callback_url=callback, return_url=return_url
+            )
+
+    return URIMockHelper(router_app_context)
+
 
 @pytest.mark.asyncio
-async def test_cmd_start_remote(mock_telegram, bot, dp, mock_session, mock_app_context):
-    """Test /start uri_... flow"""
+async def test_cmd_start_remote_uri(mock_telegram, router_app_context, setup_uri_mocks):
+    """Test /start uri_... flow: fetches from remote and processes."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(uri_router)
+
     user_id = 123
-    mock_app_context.bot = bot
+    setup_uri_mocks.set_uri_result(xdr="XDR_FROM_REMOTE")
     
-    # Setup Mocks
+    # Mock remote server response
     mock_resp = MagicMock()
     mock_resp.status = 200
-    mock_resp.data = {'uri': 'web+stellar:tx?xdr=XDR_FROM_SERVER'}
+    mock_resp.data = {'uri': 'web+stellar:tx?xdr=XDR_REMOTE'}
     
-    mock_result = ProcessStellarUriResult(
-        success=True,
-        xdr='XDR_FINAL',
-        callback_url='url',
-        return_url=None,
-        error_message=None
-    )
-    
-    with patch("routers.uri.http_session_manager.get_web_request", return_value=mock_resp, new_callable=AsyncMock), \
-         patch("routers.uri.ProcessStellarUri") as mock_process_uri_class, \
-         patch("routers.uri.cmd_check_xdr", new_callable=AsyncMock) as mock_check_xdr:
+    with patch("routers.uri.http_session_manager.get_web_request", AsyncMock(return_value=mock_resp)), \
+         patch("routers.uri.cmd_check_xdr", AsyncMock()) as mock_check_xdr:
          
-        mock_instance = AsyncMock()
-        mock_instance.execute.return_value = mock_result
-        mock_process_uri_class.return_value = mock_instance
+        update = create_message_update(user_id, "/start uri_abcde")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+        # Verify UseCase called with data from server
+        setup_uri_mocks.process_uri_uc.execute.assert_called_once_with('web+stellar:tx?xdr=XDR_REMOTE', user_id)
         
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            message=types.Message(
-                message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'),
-                from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
-                text="/start uri_12345"
-            )
-        ))
+        # Verify transition to signing
+        mock_check_xdr.assert_called_once()
         
-        mock_instance.execute.assert_called_once_with('web+stellar:tx?xdr=XDR_FROM_SERVER', user_id)
+        # Verify state
+        state = dp.fsm.get_context(bot=router_app_context.bot, chat_id=user_id, user_id=user_id)
+        data = await state.get_data()
+        assert data['xdr'] == "XDR_FROM_REMOTE"
+
+
+@pytest.mark.asyncio
+async def test_process_direct_stellar_uri(mock_telegram, router_app_context, setup_uri_mocks):
+    """Test sending direct web+stellar:tx URI."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(uri_router)
+
+    user_id = 123
+    setup_uri_mocks.set_uri_result(xdr="XDR_DIRECT")
+    
+    with patch("routers.uri.cmd_check_xdr", AsyncMock()) as mock_check_xdr:
+        update = create_message_update(user_id, "web+stellar:tx?xdr=INPUT_XDR")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+        setup_uri_mocks.process_uri_uc.execute.assert_called_once()
         mock_check_xdr.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_process_stellar_uri(mock_telegram, bot, dp, mock_session, mock_app_context):
-    """Test direct web+stellar:tx... URI flow"""
+async def test_process_wc_uri(mock_telegram, router_app_context, setup_uri_mocks):
+    """Test WalletConnect URI: should initiate pairing."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(uri_router)
+
     user_id = 123
-    mock_app_context.bot = bot
     
-    mock_result = ProcessStellarUriResult(
-        success=True,
-        xdr='XDR_FINAL',
-        callback_url=None,
-        return_url=None,
-        error_message=None
-    )
-    
-    with patch("routers.uri.ProcessStellarUri") as mock_process_uri_class, \
-         patch("routers.uri.cmd_check_xdr", new_callable=AsyncMock) as mock_check_xdr:
-         
-        mock_instance = AsyncMock()
-        mock_instance.execute.return_value = mock_result
-        mock_process_uri_class.return_value = mock_instance
-        
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            message=types.Message(
-                message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'),
-                from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
-                text="web+stellar:tx?xdr=XDR_INPUT"
-            )
-        ))
-        
-        mock_instance.execute.assert_called_once()
-        mock_check_xdr.assert_called_once()
+    # Need to patch publish_pairing_request as it's an external network call
+    with patch("routers.uri.publish_pairing_request", AsyncMock()) as mock_publish:
+        update = create_message_update(user_id, "wc:test-uri")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
-
-@pytest.mark.asyncio
-async def test_process_wc_uri(mock_telegram, bot, dp, mock_session, mock_app_context):
-    """Test WalletConnect wc:... URI flow"""
-    user_id = 123
-    mock_app_context.bot = bot
-    
-    mock_account = MagicMock()
-    mock_account.account.account_id = "G_USER_ADDRESS"
-
-    with patch("routers.uri.stellar_get_user_account", new_callable=AsyncMock, return_value=mock_account), \
-         patch("routers.uri.publish_pairing_request", new_callable=AsyncMock) as mock_publish:
-         
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            message=types.Message(
-                message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'),
-                from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
-                text="wc:test-connection-string"
-            )
-        ))
-        
         mock_publish.assert_called_once()
-        sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
-        assert len(sent) == 1
-        assert "wc_pairing_initiated" in sent[0]['data']['text']
+        
+        # Verify user received confirmation
+        req = get_telegram_request(mock_telegram, "sendMessage")
+        assert "wc_pairing_initiated" in req["data"]["text"]
+        
+        # Verify original message deleted
+        assert any(r['method'] == 'deleteMessage' for r in mock_telegram)

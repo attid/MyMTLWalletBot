@@ -9,18 +9,12 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
-from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, my_gettext
-# from other.stellar_tools import stellar_create_new, stellar_save_new, stellar_save_ro, async_stellar_send, new_wallet_lock
 from other.locks import new_wallet_lock
 from other.config_reader import config
 
 from infrastructure.services.app_context import AppContext
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.app_context import AppContext
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from core.use_cases.wallet.add_wallet import AddWallet
 
 
 class StateAddWallet(StatesGroup):
@@ -32,7 +26,6 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-@router.callback_query(F.data == "AddNew")
 @router.callback_query(F.data == "AddNew")
 async def cmd_add_new(callback: types.CallbackQuery, session: Session, app_context: AppContext):
     buttons = [
@@ -93,13 +86,10 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
 
 @router.callback_query(F.data == "AddWalletNewKey")
 async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state: FSMContext, app_context: AppContext):
-    # Check if user can add free wallet (via Use Case check/Repo limit)
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     add_wallet = app_context.use_case_factory.create_add_wallet(session)
     
-    # We can check limit first to fail fast, although execute() does it too.
     try:
-        # Check limit manually or just try? 
         count = await wallet_repo.count_free_wallets(callback.from_user.id)
         if count > 2:
              await callback.answer(my_gettext(callback.message.chat.id, "max_wallets", app_context=app_context), show_alert=True)
@@ -112,14 +102,10 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
                                    f'Please wait, your position in the queue is {waiting_count}.', app_context=app_context)
 
         async with new_wallet_lock:
-             # 1. Generate keys
              mnemonic = app_context.stellar_service.generate_mnemonic()
              kp = app_context.stellar_service.get_keypair_from_mnemonic(mnemonic)
              
-             # 2. Add to DB
-             # Encrypt secrets
              encrypted_secret = app_context.encryption_service.encrypt(kp.secret, str(callback.from_user.id))
-             # seed_key encrypted with OWN secret (legacy logic)
              encrypted_seed = app_context.encryption_service.encrypt(mnemonic, kp.secret)
              
              await add_wallet.execute(
@@ -128,11 +114,9 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
                  secret_key=encrypted_secret,
                  seed_key=encrypted_seed,
                  is_free=True,
-                 is_default=False # Will be set to true inside execute if first? NO, execute sets default if is_default=True
-                 # Legacy set default via db_add_wallet calling set_default.
+                 is_default=False
              )
              
-             # 3. Fund and Trust (StellarService)
              await cmd_info_message(session, callback.message.chat.id, msg, app_context=app_context)
              
              service = app_context.stellar_service
@@ -144,7 +128,6 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
                  
              master_secret = app_context.encryption_service.decrypt(master_wallet.secret_key, '0')
              
-             # Create Account
              xdr = await service.build_payment_transaction(
                  source_account_id=master_wallet.public_key,
                  destination_account_id=kp.public_key,
@@ -156,7 +139,6 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
              signed_xdr = service.sign_transaction(xdr, master_secret)
              await service.submit_transaction(signed_xdr)
              
-             # Add Trustlines
              from core.constants import MTL_ASSET, EURMTL_ASSET, SATSMTL_ASSET, USDM_ASSET
              for asset in [MTL_ASSET, EURMTL_ASSET, SATSMTL_ASSET, USDM_ASSET]:
                  trust_xdr = await service.build_change_trust_transaction(
@@ -173,8 +155,8 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
         data = await state.get_data()
         fsm_after_send = data.get('fsm_after_send')
         if fsm_after_send:
-            fsm_after_send = jsonpickle.loads(fsm_after_send)
-            await fsm_after_send(session, callback.from_user.id, state)
+            fsm_after_send_func = jsonpickle.loads(fsm_after_send)
+            await fsm_after_send_func(session, callback.from_user.id, state, app_context=app_context)
             
     except Exception as e:
         logger.error(f"Error creating wallet: {e}")
@@ -194,7 +176,7 @@ async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: 
 
     msg = msg + my_gettext(user_id, 'choose_protect', app_context=app_context)
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
-                       parse_mode='HTML')
+                       parse_mode='HTML', app_context=app_context)
 
 
 @router.callback_query(F.data == "AddWalletReadOnly")
@@ -208,12 +190,9 @@ async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, ses
 @router.message(StateAddWallet.sending_public)
 async def cmd_sending_public(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     try:
-        # await stellar_get_balances(session, message.from_user.id, public_key=message.text)
         public_key = message.text
-        
         add_wallet = app_context.use_case_factory.create_add_wallet(session)
         
-        # Legacy behavior: save public_key as secret_key too for RO wallets
         await add_wallet.execute(
             user_id=message.from_user.id,
             public_key=public_key,
@@ -262,31 +241,14 @@ async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSM
         add_wallet = app_context.use_case_factory.create_add_wallet(session)
         wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         
-        # Check limits effectively done by add_wallet.execute(is_free=True)?
-        # But we need to generate keys first. It's safe to generate then fail if limit reached.
-        # Or check first.
         count = await wallet_repo.count_free_wallets(callback.from_user.id)
         if count > 2:
              await callback.answer(my_gettext(callback.message.chat.id, "max_wallets", app_context=app_context), show_alert=True)
              return
 
         wallet_obj, mnemonic_list = app_context.ton_service.generate_wallet()
-        
-        # public_key: string representation
         public_key = wallet_obj.address.to_str(is_bounceable=False)
         seed_key = mnemonic_list
-        # ton_service.mnemonic type? 
-        # Legacy: seed_key=ton_service.mnemonic passed to db_add_wallet.
-        # If it's a list, db adapter probably handled it or it's a string.
-        # TonService.mnemonic is usually a list of words.
-        # `db/requests.py` takes `seed_key: str`.
-        # Assuming `ton_service.mnemonic` is a string or I should join it.
-        # Looking at legacy code: seed_key=ton_service.mnemonic.
-        # If it's a list, SQLAlchemy might complain if column is String.
-        # Checking `services/ton_service.py` not possible conveniently right now, assuming existing usage was correct.
-        # If `ton_service.mnemonic` is list, I should probably join it? 
-        # `pytonlib` mnemonic is list.
-        # I'll convert to string just in case if it's list.
         seed_str = seed_key
         if isinstance(seed_key, list):
             seed_str = " ".join(seed_key)
