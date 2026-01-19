@@ -132,23 +132,28 @@ def mock_app_context():
 
 # Правила тестирования и именования
 
-## 1. Один Роутер = Один Файл Тестов
+## 1. Структура Директорий
 
-Для каждого файла роутера в `routers/` должен быть ровно один соответствующий файл тестов в `tests/`.
+Мы используем вложенную структуру, зеркальную исходному коду:
+
+- `tests/routers/` — Тесты для роутеров (`routers/*.py`)
+- `tests/core/` — Тесты бизнес-логики (`core/`)
+- `tests/infrastructure/` — Тесты репозиториев и адаптеров (`infrastructure/`)
+- `tests/other/` — Тесты утилит и прочего (`other/`)
 
 **Соглашение об именовании:**
-`routers/<name>.py` -> `tests/test_<name>.py`
+`routers/<name>.py` -> `tests/routers/test_<name>.py`
 
 **Примеры:**
-- `routers/admin.py` -> `tests/test_admin.py`
-- `routers/send.py` -> `tests/test_send.py`
-- `routers/wallet_setting.py` -> `tests/test_wallet_setting.py`
+- `routers/admin.py` -> `tests/routers/test_admin.py`
+- `routers/send.py` -> `tests/routers/test_send.py`
+- `routers/wallet_setting.py` -> `tests/routers/test_wallet_setting.py`
 
 ## 2. Изоляция контента
 
-Файл тестов `tests/test_<name>.py` должен содержать **ТОЛЬКО** тесты, относящиеся к функционалу, определенному в `routers/<name>.py`.
+Файл тестов `tests/routers/test_<name>.py` должен содержать **ТОЛЬКО** тесты, относящиеся к функционалу, определенному в `routers/<name>.py`.
 - Не смешивайте тесты для нескольких роутеров в одном файле (например, избегайте `test_trade_swap.py`).
-- Если нужно протестировать общую логику, поместите её в `tests/test_common.py` или в отдельный файл тестов для конкретного сервиса/хелпера (например, `tests/test_stellar_tools.py`).
+- Если нужно протестировать общую логику, поместите её в `tests/routers/test_common.py` или в отдельный файл тестов.
 
 ## 3. Обязательное изучение и Правило mock_server
 
