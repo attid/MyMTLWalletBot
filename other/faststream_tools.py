@@ -82,8 +82,8 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         logger.info(f"pending_req: {pending_req}")
 
         # 3. Сообщаем пользователю об успехе
-        await send_message(session, user_id, my_gettext(user_id, 'wc_sign_success'),
-                           reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'wc_sign_success', app_context=APP_CONTEXT),
+                           reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)
         logger.info(f"pending_req: {pending_req}")
 
     except Exception as e:
@@ -95,8 +95,8 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         if pending_req:
             pending_req['result'] = response_msg
             pending_req['event'].set()
-        await send_message(session, user_id, my_gettext(user_id, 'bad_password'),
-                           reply_markup=get_kb_return(user_id))  # Общее сообщение об ошибке
+        await send_message(session, user_id, my_gettext(user_id, 'bad_password', app_context=APP_CONTEXT),
+                           reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)  # Общее сообщение об ошибке
 
     finally:
         await state.set_state(None)  # Очищаем состояние в любом случае

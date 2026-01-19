@@ -135,7 +135,7 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
     await callback.answer()
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
 
 
 # Helper function to generate the message text and keyboard markup
@@ -503,7 +503,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
     is_free = wallet.is_free if wallet else False
     
     if is_free and (len(await balance_use_case.execute(user_id=user_id)) > 5):
-        await send_message(session, user_id, my_gettext(user_id, 'only_3', app_context=app_context), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'only_3', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         return False
 
     # Check free XLM
@@ -520,7 +520,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
             good_asset.remove(found[0])
 
     if len(good_asset) == 0:
-        await send_message(session, user_id, my_gettext(user_id, 'have_all', app_context=app_context), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'have_all', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         return False
 
     kb_tmp = []
@@ -530,8 +530,8 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
                                                       answer=key.asset_code).pack()
                                                   )])
     kb_tmp.append(get_return_button(callback, app_context=app_context))
-    await send_message(session, callback, my_gettext(user_id, 'open_asset', app_context=app_context),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
+    await send_message(session, user_id, my_gettext(user_id, 'open_asset', app_context=app_context),
+                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp), app_context=app_context)
 
     await state.update_data(assets=jsonpickle.encode(good_asset))
 
@@ -569,7 +569,7 @@ async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext,
     is_free = wallet.is_free if wallet else False
     
     if is_free and (len(await balance_use_case.execute(user_id=user_id)) > 5):
-        await send_message(session, user_id, my_gettext(user_id, 'only_3', app_context=app_context), reply_markup=get_kb_return(user_id))
+        await send_message(session, user_id, my_gettext(user_id, 'only_3', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         return False
 
     # Check free XLM
@@ -581,7 +581,7 @@ async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext,
 
     await state.set_state(StateAddAsset.sending_code)
     msg = my_gettext(user_id, 'send_code', app_context=app_context)
-    await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
+    await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
     await callback.answer()
 
 
@@ -594,7 +594,7 @@ async def cmd_sending_code(message: types.Message, state: FSMContext, session: S
     await state.set_state(StateAddAsset.sending_issuer)
 
     msg = my_gettext(user_id, 'send_issuer', (public_issuer,), app_context=app_context)
-    await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id))
+    await send_message(session, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
 
 
 @router.message(StateAddAsset.sending_issuer)
@@ -613,11 +613,11 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 
     # check address
     await state.update_data(last_message_id=0)
-    await send_message(session, message.from_user.id, 'Loading')
+    await send_message(session, message.from_user.id, 'Loading', app_context=app_context)
 
     # if user not exist
     if not await check_user_id(session, message.from_user.id):
-        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start')
+        await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start', app_context=app_context)
         return
 
     asset = message.text.split(' ')[1][6:]
@@ -637,7 +637,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
             raise Exception("public_key is None")
     except Exception as ex:
         await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
-                           reply_markup=get_kb_return(message))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         return
 
     await state.update_data(send_asset_code=asset_code)
@@ -676,7 +676,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session, *
     msg = my_gettext(chat_id, 'confirm_asset', (asset_code, asset_issuer), app_context=app_context)
 
     await state.update_data(xdr=xdr, operation='add_asset')
-    await send_message(session, chat_id, msg, reply_markup=get_kb_yesno_send_xdr(chat_id))
+    await send_message(session, chat_id, msg, reply_markup=get_kb_yesno_send_xdr(chat_id, app_context=app_context), app_context=app_context)
 
 
 ########################################################################################################################
@@ -710,7 +710,7 @@ async def remove_password(session: Session, user_id: int, state: FSMContext, app
         pin_type=0
     )
     await state.set_state(None)
-    await cmd_info_message(session, user_id, 'Password was unset', )
+    await cmd_info_message(session, user_id, 'Password was unset', app_context=app_context)
 
 
 @router.callback_query(F.data == "RemovePassword")
@@ -722,7 +722,7 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
     if pin_type in (1, 2):
         await state.update_data(fsm_func=jsonpickle.dumps(remove_password))
         await state.set_state(PinState.sign)
-        await cmd_ask_pin(session, callback.from_user.id, state)
+        await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
         await callback.answer()
     elif pin_type == 10:
         await callback.answer('You have read only account', show_alert=True)

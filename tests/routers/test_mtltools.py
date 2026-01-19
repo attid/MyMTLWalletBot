@@ -94,7 +94,7 @@ async def test_cmd_tools_del_delegate(mock_telegram, router_app_context, setup_m
     
     req = get_latest_msg(mock_telegram)
     assert "delegate_delete" in req["data"]["text"]
-    assert "Sign" in req["data"]["reply_markup"]
+    assert "Yes" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
@@ -126,7 +126,7 @@ async def test_add_delegate_flow(mock_telegram, router_app_context, setup_mtltoo
 
     req = get_latest_msg(mock_telegram)
     assert "delegate_add" in req["data"]["text"]
-    assert "Sign" in req["data"]["reply_markup"]
+    assert "Yes" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
@@ -171,7 +171,7 @@ async def test_donate_management_flow(mock_telegram, router_app_context, setup_m
 
     req = get_latest_msg(mock_telegram)
     assert "donate_end" in req["data"]["text"]
-    assert "Sign" in req["data"]["reply_markup"]
+    assert "Yes" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
@@ -213,7 +213,7 @@ async def test_bim_management_flow(mock_telegram, router_app_context, setup_mtlt
 
     req = get_latest_msg(mock_telegram)
     assert "add_bim_end" in req["data"]["text"]
-    assert "Sign" in req["data"]["reply_markup"]
+    assert "Yes" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio

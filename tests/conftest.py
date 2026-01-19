@@ -4,20 +4,39 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import sys
 import os
+import socket
+import random
 sys.path.append(os.getcwd())
 from aiohttp import web
 from aiogram import Dispatcher
 
-# Constants for Mock Telegram Server
-MOCK_SERVER_PORT = 8081
-MOCK_SERVER_HOST = "localhost"
-MOCK_SERVER_URL = f"http://{MOCK_SERVER_HOST}:{MOCK_SERVER_PORT}"
 TEST_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 
-# Constants for Mock Horizon Server
-MOCK_HORIZON_PORT = 8082
-MOCK_HORIZON_HOST = "localhost"
-MOCK_HORIZON_URL = f"http://{MOCK_HORIZON_HOST}:{MOCK_HORIZON_PORT}"
+def get_free_port(start_port=8000, end_port=9000, retries=10):
+    """
+    Finds a free port in the specified range.
+    Tries random ports and attempts to bind to them.
+    """
+    for _ in range(retries):
+        port = random.randint(start_port, end_port)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(('127.0.0.1', port))
+            sock.close()
+            return port
+        except OSError:
+            continue
+    raise RuntimeError(f"Could not find a free port in range {start_port}-{end_port} after {retries} attempts")
+
+@pytest.fixture(scope="function")
+def telegram_server_config():
+    port = get_free_port()
+    return {"host": "localhost", "port": port, "url": f"http://localhost:{port}"}
+
+@pytest.fixture(scope="function")
+def horizon_server_config():
+    port = get_free_port()
+    return {"host": "localhost", "port": port, "url": f"http://localhost:{port}"}
 
 @pytest.fixture
 def dp():
@@ -50,7 +69,7 @@ def mock_app_context():
 
 
 @pytest.fixture
-async def mock_telegram():
+async def mock_telegram(telegram_server_config):
     """Starts a local mock Telegram server."""
     routes = web.RouteTableDef()
     received_requests = []
@@ -395,7 +414,7 @@ async def mock_telegram():
     app.add_routes(routes)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, MOCK_SERVER_HOST, MOCK_SERVER_PORT)
+    site = web.TCPSite(runner, telegram_server_config["host"], telegram_server_config["port"])
     await site.start()
 
     yield received_requests
@@ -479,9 +498,9 @@ class RouterTestMiddleware(BaseMiddleware):
 
 
 @pytest.fixture
-async def router_bot(mock_telegram):
+async def router_bot(mock_telegram, telegram_server_config):
     """Creates a Bot instance connected to mock Telegram server."""
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
+    session = AiohttpSession(api=TelegramAPIServer.from_base(telegram_server_config["url"]))
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     yield bot
     await bot.session.close()
@@ -607,7 +626,7 @@ DEFAULT_TEST_ACCOUNT = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI
 
 
 @pytest.fixture
-async def mock_horizon():
+async def mock_horizon(horizon_server_config):
     """
     Starts a local mock Stellar Horizon server.
 
@@ -919,10 +938,10 @@ async def mock_horizon():
     app.add_routes(routes)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, MOCK_HORIZON_HOST, MOCK_HORIZON_PORT)
+    site = web.TCPSite(runner, horizon_server_config["host"], horizon_server_config["port"])
     await site.start()
 
-    print(f"[MockHorizon] Started on {MOCK_HORIZON_URL}")
+    print(f"[MockHorizon] Started on {horizon_server_config['url']}")
 
     yield state
 
