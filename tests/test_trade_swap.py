@@ -41,8 +41,12 @@ async def test_cmd_sale_new_order(mock_session, mock_callback, mock_state):
         mock_use_case_instance = MockUseCase.return_value
         mock_use_case_instance.execute = AsyncMock(return_value=[balance])
 
+        # Setup mock app_context factories
         mock_app_context = MagicMock()
+        mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo_instance
+        mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case_instance
         mock_app_context.localization_service.get_text.return_value = "text"
+        
         await cmd_sale_new_order(mock_callback, mock_state, mock_session, app_context=mock_app_context)
         
         mock_send.assert_called_once()
@@ -94,6 +98,7 @@ async def test_cq_trade_choose_token_buy(mock_session, mock_callback, mock_state
 
 @pytest.mark.asyncio
 async def test_cmd_swap_01(mock_session, mock_callback, mock_state):
+    """Test cmd_swap_01 using DI-based mocking (no patches for repositories/services)."""
     balance = MagicMock()
     balance.asset_code = "XLM"
     balance.balance = "100.0"
@@ -101,22 +106,22 @@ async def test_cmd_swap_01(mock_session, mock_callback, mock_state):
     mock_wallet = MagicMock()
     mock_wallet.assets_visibility = "{}"
     
-    with patch("routers.swap.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.swap.StellarService"), \
-         patch("routers.swap.GetWalletBalance") as MockUseCase, \
-         patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
-        
-        # Setup mock repository
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
-        
-        # Setup mock use case
-        mock_use_case_instance = MockUseCase.return_value
-        mock_use_case_instance.execute = AsyncMock(return_value=[balance])
-        
-        mock_app_context = MagicMock()
-        mock_app_context.localization_service.get_text.return_value = "text"
-        
+    # Setup mock_app_context with DI
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    # Mock repository_factory
+    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo.get_default_wallet.return_value = mock_wallet
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    # Mock use_case_factory
+    mock_use_case = AsyncMock()
+    mock_use_case.execute.return_value = [balance]
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case
+    
+    # Only patch send_message (Telegram API - external)
+    with patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
         await cmd_swap_01(mock_callback, mock_state, mock_session, app_context=mock_app_context)
         
         mock_send.assert_called_once()
@@ -125,35 +130,38 @@ async def test_cmd_swap_01(mock_session, mock_callback, mock_state):
 
 @pytest.mark.asyncio
 async def test_cq_swap_choose_token_from(mock_session, mock_callback, mock_state):
+    """Test cq_swap_choose_token_from using DI-based mocking."""
     asset_data = [MagicMock(asset_code="USD", asset_issuer="GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA", balance="10.0")]
     mock_state.get_data.return_value = {"assets": "encoded_assets"}
     callback_data = SwapAssetFromCallbackData(answer="USD")
     
     mock_wallet = MagicMock()
     mock_wallet.assets_visibility = "{}"
+    mock_wallet.public_key = "GCPUBLIC"
     
-    with patch("routers.swap.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.swap.StellarService") as MockService, \
-         patch("routers.swap.GetWalletBalance") as MockUseCase, \
-         patch("routers.swap.stellar_check_receive_asset", return_value=["EUR"], new_callable=AsyncMock), \
+    # Setup mock_app_context with DI
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    # Mock repository_factory
+    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo.get_default_wallet.return_value = mock_wallet
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    # Mock stellar_service (external network call)
+    mock_app_context.stellar_service = AsyncMock()
+    mock_app_context.stellar_service.get_selling_offers.return_value = []
+    
+    # Mock use_case_factory
+    mock_use_case = AsyncMock()
+    mock_use_case.execute.return_value = asset_data
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case
+    
+    # Only patch external functions and Telegram send_message
+    with patch("routers.swap.stellar_check_receive_asset", return_value=["EUR"], new_callable=AsyncMock), \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.swap.jsonpickle.decode", return_value=asset_data):
-         
-        # Setup mock repository
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
         
-        # Setup mock service
-        mock_service_instance = MockService.return_value
-        mock_service_instance.get_selling_offers = AsyncMock(return_value=[])
-
-        # Setup mock use case
-        mock_use_case_instance = MockUseCase.return_value
-        mock_use_case_instance.execute = AsyncMock(return_value=asset_data)
-         
-        mock_app_context = MagicMock()
-        mock_app_context.localization_service.get_text.return_value = "text"
-
         await cq_swap_choose_token_from(mock_callback, callback_data, mock_state, mock_session, app_context=mock_app_context)
         
         mock_state.update_data.assert_called()
@@ -214,7 +222,10 @@ async def test_cmd_show_orders(mock_session, mock_callback, mock_state):
 
          
          mock_app_context = MagicMock()
+         mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo_instance
+         mock_app_context.stellar_service = mock_service
          mock_app_context.localization_service.get_text.return_value = "text"
+         
          await cmd_show_orders(mock_callback, mock_state, mock_session, app_context=mock_app_context)
          
          mock_send.assert_called_once()
@@ -286,9 +297,10 @@ async def test_cq_swap_choose_token_for(mock_session, mock_callback, mock_state)
 
 @pytest.mark.asyncio
 async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
+    """Test cmd_swap_sum using DI-based mocking."""
     mock_message.text = "10.0"
     mock_state.get_data.return_value = {
-        "send_asset_code": "XLM", "send_asset_issuer": None, # Native
+        "send_asset_code": "XLM", "send_asset_issuer": None,
         "receive_asset_code": "USD", "receive_asset_issuer": "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA",
         "cancel_offers": False, "xdr": None,
         "msg": "msg"
@@ -296,20 +308,26 @@ async def test_cmd_swap_sum(mock_session, mock_message, mock_state):
     
     mock_user = MagicMock(can_5000=1)
     
-    with patch("routers.swap.SqlAlchemyUserRepository") as MockUserRepo, \
-         patch("routers.swap.stellar_check_receive_sum", return_value=("9.5", False), new_callable=AsyncMock), \
-         patch("routers.swap.SwapAssets") as MockSwapAssets, \
+    # Setup mock_app_context with DI
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    # Mock repository_factory (for user repo)
+    mock_user_repo = AsyncMock()
+    mock_user_repo.get_by_id.return_value = mock_user
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
+    
+    # Mock use_case_factory (for swap use case)
+    mock_swap_use_case = AsyncMock()
+    mock_swap_use_case.execute.return_value = MagicMock(success=True, xdr="XDR_SWAP")
+    mock_app_context.use_case_factory.create_swap_assets.return_value = mock_swap_use_case
+    
+    # Only patch external stellar functions and Telegram send_message
+    with patch("routers.swap.stellar_check_receive_sum", return_value=("9.5", False), new_callable=AsyncMock), \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
-         
-        mock_user_repo = MockUserRepo.return_value
-        mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
-        mock_use_case = MockSwapAssets.return_value
-        mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP"))
-        mock_app_context = MagicMock()
-        mock_app_context.localization_service.get_text.return_value = "text"
-
+        
         await cmd_swap_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
-         
+        
         mock_state.update_data.assert_called()
         mock_send.assert_called_once()
 
@@ -331,6 +349,7 @@ async def test_cq_swap_strict_receive(mock_session, mock_callback, mock_state):
 
 @pytest.mark.asyncio
 async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
+    """Test cmd_swap_receive_sum using DI-based mocking."""
     mock_message.text = "10.0"
     mock_state.get_data.return_value = {
         "send_asset_code": "XLM", "send_asset_issuer": None,
@@ -341,21 +360,29 @@ async def test_cmd_swap_receive_sum(mock_session, mock_message, mock_state):
     
     mock_user = MagicMock(can_5000=1)
     
-    with patch("routers.swap.SqlAlchemyUserRepository") as MockUserRepo, \
-         patch("routers.swap.stellar_check_send_sum", return_value=("11.0", False), new_callable=AsyncMock), \
-         patch("routers.swap.SwapAssets") as MockSwapAssets, \
+    # Setup mock_app_context with DI
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    # Mock repository_factory (for user repo)
+    mock_user_repo = AsyncMock()
+    mock_user_repo.get_by_id.return_value = mock_user
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
+    
+    # Mock use_case_factory (for swap use case)
+    mock_swap_use_case = AsyncMock()
+    mock_swap_use_case.execute.return_value = MagicMock(success=True, xdr="XDR_SWAP_STRICT")
+    mock_app_context.use_case_factory.create_swap_assets.return_value = mock_swap_use_case
+    
+    # Only patch external stellar functions and Telegram send_message
+    with patch("routers.swap.stellar_check_send_sum", return_value=("11.0", False), new_callable=AsyncMock), \
          patch("routers.swap.send_message", new_callable=AsyncMock) as mock_send:
-         
-        mock_user_repo = MockUserRepo.return_value
-        mock_user_repo.get_by_id = AsyncMock(return_value=mock_user)
-        mock_use_case = MockSwapAssets.return_value
-        mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_SWAP_STRICT"))
-        mock_app_context = MagicMock()
-        mock_app_context.localization_service.get_text.return_value = "text"
-
+        
         await cmd_swap_receive_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
-         
-        _, kwargs = mock_use_case.execute.call_args
+        
+        # Verify use case was called with strict_receive=True
+        _, kwargs = mock_swap_use_case.execute.call_args
         assert kwargs.get('strict_receive') is True
-         
+        
         mock_state.update_data.assert_called()
+

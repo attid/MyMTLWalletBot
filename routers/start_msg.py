@@ -121,9 +121,9 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
 
         except Exception as ex:
             logger.info(['cmd_show_balance ', user_id, ex])
-            kb = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_wallet'),
+            kb = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_wallet', app_context=app_context),
                                               callback_data="ChangeWallet")]]
-            await send_message(session, user_id, my_gettext(user_id, 'load_error'),
+            await send_message(session, user_id, my_gettext(user_id, 'load_error', app_context=app_context),
                                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb), app_context=app_context)
             await clear_state(state)
             await state.update_data(last_message_id=0)
@@ -223,7 +223,7 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
 
     if send_file:
         photo = types.FSInputFile(send_file)
-        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg'),
+        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg', app_context=app_context),
                                                   callback_data="ManageAssetsMenu")]
         await bot.send_photo(user_id, photo=photo, caption=msg,
                                          reply_markup=get_kb_return(user_id, add_buttons))

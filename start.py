@@ -233,6 +233,10 @@ async def main():
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
     
+    # Create UseCaseFactory for DI
+    from infrastructure.factories.use_case_factory import UseCaseFactory
+    use_case_factory = UseCaseFactory(repository_factory, stellar_service)
+    
     app_context = AppContext(
         bot=bot,
         db_pool=db_pool,
@@ -242,7 +246,8 @@ async def main():
         repository_factory=repository_factory,
         stellar_service=stellar_service,
         localization_service=localization_service,
-        dispatcher=dp
+        dispatcher=dp,
+        use_case_factory=use_case_factory
     )
     
     dp["app_context"] = app_context

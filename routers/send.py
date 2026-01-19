@@ -102,7 +102,7 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
 
             if tmp_name is TELEGRAM_API_ERROR:
                 logger.error(f"cmd_send_token: Telegram API error when checking username for user_id={user_id}. Searched: {send_for}")
-                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error'), # Предполагается, что есть такой ключ в локализации
+                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error', app_context=app_context), # Предполагается, что есть такой ключ в локализации
                                    reply_markup=get_kb_return(message))
                 return # Прерываем выполнение, так как не можем проверить username
 
@@ -131,7 +131,7 @@ async def cmd_send_token(message: types.Message, state: FSMContext, session: Ses
         await stellar_check_account(send_address)
     except Exception as ex:
         logger.error(f"cmd_send_token: failed to resolve address. Searched: {send_for}, Exception: {ex}")
-        await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
+        await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
                            reply_markup=get_kb_return(message))
         return
 
@@ -233,7 +233,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
 
             if tmp_name is TELEGRAM_API_ERROR:
                 logger.error(f"StateSendFor: Telegram API error when checking username for user_id={user_id}. Searched: {send_for_input}")
-                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error'),
+                await send_message(session, message.chat.id, my_gettext(message.chat.id, 'telegram_api_error', app_context=app_context),
                                    reply_markup=get_kb_return(message))
                 return
 
@@ -253,7 +253,7 @@ async def cmd_send_for(message: Message, state: FSMContext, session: Session, ap
             logger.info(f"StateSendFor: username resolved: searched={send_for_input}, address={public_key}, user_id={user_id}")
         except Exception as ex:
             logger.error(f"StateSendFor: failed to resolve username. Searched: {send_for_input}, Exception: {ex}")
-            await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2'),
+            await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
                                reply_markup=get_kb_return(message))
             return
     else:
@@ -322,7 +322,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
     link = 'https://viewer.eurmtl.me/account/' + address
 
     link = f'<a href="{link}">{address}</a>{mtlap_stars}'
-    msg = my_gettext(message, 'choose_token', (link,))
+    msg = my_gettext(message, 'choose_token', (link,), app_context=app_context)
 
     kb_tmp = []
     for token in asset_list:
@@ -348,10 +348,10 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
     for asset in asset_list:
         if asset.asset_code == answer:
             if my_float(asset.balance) == 0.0:
-                await callback.answer(my_gettext(callback, "zero_sum"), show_alert=True)
+                await callback.answer(my_gettext(callback, "zero_sum", app_context=app_context), show_alert=True)
             else:
                 msg = my_gettext(callback, 'send_sum', (asset.asset_code,
-                                                        asset.balance))
+                                                        asset.balance), app_context=app_context)
 
                 # Get summ of tokens, blocked by Sell offers 
                 repo = app_context.repository_factory.get_wallet_repository(session)
@@ -449,10 +449,11 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     msg = my_gettext(
         message,
         'confirm_send',
-        (float2str(send_sum), send_asset_name, send_address + ' ' + mtlap_stars, send_memo)
+        (float2str(send_sum), send_asset_name, send_address + ' ' + mtlap_stars, send_memo),
+        app_context=app_context
     )
     if cancel_offers:
-        msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,))
+        msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset_name,), app_context=app_context)
 
     # Refactored to use Clean Architecture Use Case
     # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -490,7 +491,7 @@ async def cmd_send_04(session: Session, message: types.Message, state: FSMContex
     await state.update_data(xdr=xdr, operation='send', msg=None,
                             success_msg=my_gettext(message, 'confirm_send_success',
                                                    (float2str(send_sum), send_asset_name,
-                                                    send_address + ' ' + mtlap_stars, send_memo)))
+                                                    send_address + ' ' + mtlap_stars, send_memo), app_context=app_context))
 
     add_button_memo = federal_memo is None
     await send_message(session, message, msg,
@@ -519,7 +520,7 @@ async def cmd_create_account(user_id: int, state: FSMContext, session: Session, 
 
     send_sum = data.get('activate_sum', 5)
     send_address = data.get('send_address', 'None 0_0')
-    msg = my_gettext(user_id, 'confirm_activate', (send_address, send_sum))
+    msg = my_gettext(user_id, 'confirm_activate', (send_address, send_sum), app_context=app_context)
 
     # Refactored to use SendPayment Use Case with create_account=True
     # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository

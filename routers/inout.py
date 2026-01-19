@@ -373,7 +373,7 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     usdt_sum = int(send_sum) - usdt_out_fee
     await state.update_data(usdt_sum=usdt_sum, sun_fee=sun_fee)
 
-    msg = my_gettext(message, 'confirm_send', (float2str(send_sum), usdm_asset.code, send_address, send_memo))
+    msg = my_gettext(message, 'confirm_send', (float2str(send_sum), usdm_asset.code, send_address, send_memo), app_context=app_context)
     msg += f"\n you will receive {usdt_sum} USDT for this address <b>{data.get('usdt_address')}</b>"
 
     service = StellarService(horizon_url=config.horizon_url)
@@ -703,7 +703,7 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
 
     await notify_admin(bot, f"[USDT] Start processing {target_label}. db_balance={balance}", app_context=app_context)
     if balance <= 0:
-        await notify_admin(bot, f"[USDT] {target_label}: zero recorded balance, skipping", app_context)
+        await notify_admin(bot, f"[USDT] {target_label}: zero recorded balance, skipping", app_context=app_context)
         return False
 
     master_energy = master_energy or await get_account_energy()
@@ -712,7 +712,7 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
 
     if trx_balance < min_trx_needed:
         await send_trx_async(private_key_to=usdt_key, amount=float(min_trx_needed), private_key_from=tron_master_key)
-        await notify_admin(bot, f"[USDT] {target_label}: topped up TRX", app_context)
+        await notify_admin(bot, f"[USDT] {target_label}: topped up TRX", app_context=app_context)
         await asyncio.sleep(3)
 
     trx_balance = Decimal(str(await get_trx_balance(private_key=usdt_key)))
@@ -722,18 +722,18 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
             amount=float(trx_balance - min_trx_needed),
             private_key_from=usdt_key
         )
-        await notify_admin(bot, f"[USDT] {target_label}: returned extra TRX", app_context)
+        await notify_admin(bot, f"[USDT] {target_label}: returned extra TRX", app_context=app_context)
         await asyncio.sleep(1)
 
     account_energy = await get_account_energy(private_key=usdt_key)
     if account_energy.free_amount < 500:
-        await notify_admin(bot, f"[USDT] {target_label}: low free energy {account_energy.free_amount}", app_context)
+        await notify_admin(bot, f"[USDT] {target_label}: low free energy {account_energy.free_amount}", app_context=app_context)
         return False
 
     usdt_balance = Decimal(str(await get_usdt_balance(private_key=usdt_key)))
     transfer_amount = usdt_balance - Decimal('0.001')
     if transfer_amount <= 0:
-        await notify_admin(bot, f"[USDT] {target_label}: insufficient USDT for transfer ({usdt_balance})", app_context)
+        await notify_admin(bot, f"[USDT] {target_label}: insufficient USDT for transfer ({usdt_balance})", app_context=app_context)
         return False
 
     delegated = False
@@ -764,10 +764,10 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
             await notify_admin(
                 bot,
                 f"[USDT] {target_label}: sent {transfer_amount} (tx: {tx_hash}) | db_balance={balance} trx_balance={trx_balance}",
-                app_context
+                app_context=app_context
             )
             return True
-        await notify_admin(bot, f"[USDT] {target_label}: sending failed (tx: {tx_hash})", app_context)
+        await notify_admin(bot, f"[USDT] {target_label}: sending failed (tx: {tx_hash})", app_context=app_context)
         return False
     finally:
         if delegated:

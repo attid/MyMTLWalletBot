@@ -87,8 +87,8 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
             try:
                 wallet_repo = SqlAlchemyWalletRepository(session)
                 info = await wallet_repo.get_info(user_id, wallets[idx])
-                msg = f"{wallets[idx]} {info}\n" + my_gettext(callback,
-                                                              'your_balance', app_context=app_context) + '\n' + await stellar_get_balance_str(
+                msg = f"{wallets[idx]} {info}\n" + my_gettext(callback, 'your_balance',
+                                                              app_context=app_context) + '\n' + await stellar_get_balance_str(
                     session, user_id, wallets[idx])
             except:
                 msg = f'Error load. Please delete this'
