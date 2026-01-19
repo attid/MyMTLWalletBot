@@ -99,7 +99,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
     # new user ?
     if not user:
         await state.update_data(fsm_after_send=jsonpickle.dumps(cmd_show_balance))
-        await cmd_change_wallet(user_id, state, session)
+        await cmd_change_wallet(user_id, state, session, app_context=app_context)
     else:
         try:
             # start_time = datetime.now()
@@ -116,7 +116,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
                 keyboard = await get_kb_default(session, user_id, state, app_context=app_context)
                 await send_message(session, user_id, msg, reply_markup=keyboard,
                                    need_new_msg=need_new_msg,
-                                   parse_mode='HTML')
+                                   parse_mode='HTML', app_context=app_context)
                 await state.update_data(start_msg=msg)
 
         except Exception as ex:
@@ -182,10 +182,13 @@ USDT: {float2str(usdt_balance, True)}
     # Filter visible
     balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
     
+    # from infrastructure.utils.stellar_utils import my_float
+    from infrastructure.utils.stellar_utils import my_float
+
     balance_str = ''
     for balance in balances:
-        b_val = float(balance.balance)
-        s_liab = float(balance.selling_liabilities)
+        b_val = my_float(balance.balance)
+        s_liab = my_float(balance.selling_liabilities)
         
         if s_liab > 0:
             lock = float2str(s_liab, short=True)
@@ -195,7 +198,7 @@ USDT: {float2str(usdt_balance, True)}
         else:
             balance_str += f"{balance.asset_code} : {float2str(b_val, short=True)}\n"
             
-    if wallet.free_wallet == 1:
+    if wallet.is_free:
         balance_str += 'XLM : <a href="https://telegra.ph/XLM-05-28">?</a>\n'
 
     # msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
@@ -227,12 +230,12 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         await clear_last_message_id(user_id, app_context=app_context)
 
     elif resend_transaction:
-        await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id))
+        await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id), app_context=app_context)
     elif operation_id:
         keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id)
-        await send_message(None, user_id, msg, reply_markup=keyboard)
+        await send_message(None, user_id, msg, reply_markup=keyboard, app_context=app_context)
     else:
-        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id))
+        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id), app_context=app_context)
 
 
 # user_id = 123456
@@ -241,13 +244,13 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
 #   # Clear user state
 #  await dp.storage.set_state(fsm_storage_key, None) #workflow_data
 
-async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
+async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, app_context: AppContext = None):
     msg = my_gettext(user_id, 'setting_msg')
     buttons = []
     repo = SqlAlchemyWalletRepository(session)
     wallets = await repo.get_all_active(user_id)
     for wallet in wallets:
-        active_name = '📌 Active' if wallet.default_wallet == 1 else 'Set active'
+        active_name = '📌 Active' if wallet.is_default else 'Set active'
         buttons.append(
             [types.InlineKeyboardButton(text=f"{wallet.public_key[:4]}..{wallet.public_key[-4:]}",
                                         callback_data=WalletSettingCallbackData(action='NAME',
@@ -262,5 +265,5 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session):
     buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_new'), callback_data="AddNew")])
     buttons.append(get_return_button(user_id))
 
-    await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await state.update_data(wallets={wallet.id: wallet.public_key for wallet in wallets})

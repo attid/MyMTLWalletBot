@@ -149,3 +149,19 @@ async def test_process_remote_uri(mock_session, mock_state):
         
         mock_state.update_data.assert_called()
         mock_check.assert_called_once()
+
+def test_my_float():
+    from infrastructure.utils.stellar_utils import my_float
+    assert my_float("123.45") == 123.45
+    assert my_float("unlimited") == float('inf')
+    assert my_float(None) == 0.0
+    assert my_float(10) == 10.0
+
+def test_float2str():
+    from infrastructure.utils.common_utils import float2str
+    assert float2str(123.45678912) == "123.4567891"
+    assert float2str(123.45678912, short=True) == "123.46"
+    assert float2str(float('inf')) == "unlimited"
+    assert float2str('unlimited') == "unlimited"
+    assert float2str(0.00000001) == "0" # logic strips trailing zeros and truncates
+
