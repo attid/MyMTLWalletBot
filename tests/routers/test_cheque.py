@@ -18,6 +18,10 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from routers.cheque import router as cheque_router, ChequeCallbackData, StateCheque
 from db.models import ChequeStatus
 from core.domain.value_objects import PaymentResult, Balance
+from core.interfaces.repositories import IChequeRepository, IWalletRepository
+from core.domain.entities import Cheque, Wallet
+from core.use_cases.cheque.create_cheque import CreateCheque
+from core.use_cases.wallet.get_balance import GetWalletBalance
 from tests.conftest import (
     create_message_update,
     create_callback_update,
@@ -76,7 +80,7 @@ async def test_cmd_create_cheque_flow(mock_telegram, router_app_context, dp):
     assert "send_cheque_sum" in req["data"]["text"]
 
     # 2. Enter sum
-    mock_create_cheque = MagicMock()
+    mock_create_cheque = MagicMock(spec=CreateCheque)
     mock_create_cheque.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR"))
     router_app_context.use_case_factory.create_create_cheque.return_value = mock_create_cheque
 
@@ -98,11 +102,12 @@ async def test_cb_cheque_info(mock_telegram, router_app_context, dp):
     dp.include_router(cheque_router)
 
     # Mock cheque repository
-    mock_cheque = MagicMock()
+    mock_cheque = MagicMock(spec=Cheque)
     mock_cheque.status = ChequeStatus.CHEQUE.value
     mock_cheque.count = 10
+    mock_cheque.comment = "test comment"
     
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IChequeRepository)
     mock_repo.get_by_uuid = AsyncMock(return_value=mock_cheque)
     mock_repo.get_receive_count = AsyncMock(return_value=3)
     router_app_context.repository_factory.get_cheque_repository.return_value = mock_repo
@@ -131,20 +136,21 @@ async def test_cmd_invoice_yes(mock_telegram, mock_horizon, router_app_context, 
     # Setup Cheque (Invoice)
     valid_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
     
-    mock_cheque = MagicMock()
+    mock_cheque = MagicMock(spec=Cheque)
     mock_cheque.status = ChequeStatus.INVOICE.value
     mock_cheque.count = 5
     mock_cheque.asset = f"BTC:{valid_issuer}"
     mock_cheque.amount = 0.1
     mock_cheque.uuid = cheque_uuid
+    mock_cheque.comment = "invoice comment"
 
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IChequeRepository)
     mock_repo.get_by_uuid = AsyncMock(return_value=mock_cheque)
     mock_repo.get_receive_count = AsyncMock(return_value=0)
     router_app_context.repository_factory.get_cheque_repository.return_value = mock_repo
 
     # Setup Balance UseCase
-    mock_balance_uc = MagicMock()
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
     mock_balance = Balance(
         asset_code="EURMTL",
         asset_issuer="G...",
@@ -156,9 +162,9 @@ async def test_cmd_invoice_yes(mock_telegram, mock_horizon, router_app_context, 
     router_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
 
     # Setup Wallet Repo
-    mock_wallet = MagicMock()
+    mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
-    mock_wallet_repo = MagicMock()
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
     mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     router_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
     
@@ -193,14 +199,15 @@ async def test_inline_query_cheques(mock_telegram, router_app_context, dp):
     dp.include_router(cheque_router)
 
     # Mock cheque repository
-    mock_cheque = MagicMock()
+    mock_cheque = MagicMock(spec=Cheque)
     mock_cheque.uuid = "uuid-inline"
     mock_cheque.status = ChequeStatus.CHEQUE.value
     mock_cheque.amount = 5.0
     mock_cheque.count = 1
     mock_cheque.comment = "InlineC"
+    mock_cheque.asset = "EURMTL:G..."
     
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IChequeRepository)
     mock_repo.get_available = AsyncMock(return_value=[mock_cheque])
     router_app_context.repository_factory.get_cheque_repository.return_value = mock_repo
 

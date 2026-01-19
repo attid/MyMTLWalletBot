@@ -17,6 +17,11 @@ from tests.conftest import (
     create_message_update,
     get_telegram_request,
 )
+from core.interfaces.repositories import IWalletRepository, IUserRepository
+from core.use_cases.wallet.add_wallet import AddWallet
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from core.interfaces.services import IWalletSecretService, ITonService
+from core.domain.entities import User, Wallet
 
 @pytest.fixture(autouse=True)
 def cleanup_router():
@@ -37,11 +42,11 @@ def setup_add_wallet_mocks(router_app_context, mock_horizon):
 
         def _setup_defaults(self):
             # Wallet Repo
-            self.wallet_repo = MagicMock()
+            self.wallet_repo = MagicMock(spec=IWalletRepository)
             self.wallet_repo.count_free_wallets = AsyncMock(return_value=0)
             
             # Master wallet mock
-            self.master_wallet = MagicMock()
+            self.master_wallet = MagicMock(spec=Wallet)
             self.master_wallet.public_key = "GAXLST7ZHHXGQGIIRJYICL4PRDFB4Q7KVL65HX6BN6DELPYOJEHZSPSG"
             self.master_wallet.secret_key = "ENC_MASTER"
             self.master_wallet.is_free = False
@@ -50,13 +55,13 @@ def setup_add_wallet_mocks(router_app_context, mock_horizon):
             self.ctx.repository_factory.get_wallet_repository.return_value = self.wallet_repo
 
             # Use Cases
-            self.add_wallet_uc = MagicMock()
+            self.add_wallet_uc = MagicMock(spec=AddWallet)
             self.add_wallet_uc.execute = AsyncMock()
             self.ctx.use_case_factory.create_add_wallet.return_value = self.add_wallet_uc
 
             # User Repo (for cmd_show_balance)
-            self.user_repo = MagicMock()
-            self.user_repo.get_by_id = AsyncMock(return_value=MagicMock(lang='en'))
+            self.user_repo = MagicMock(spec=IUserRepository)
+            self.user_repo.get_by_id = AsyncMock(return_value=MagicMock(spec=User, lang='en'))
             self.ctx.repository_factory.get_user_repository.return_value = self.user_repo
 
             # Configure mock_horizon for master wallet
@@ -67,15 +72,16 @@ def setup_add_wallet_mocks(router_app_context, mock_horizon):
             self.ctx.encryption_service.decrypt = MagicMock(return_value="SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV") # Valid secret for GAXL...
 
             # TON Service
+            self.ctx.ton_service = MagicMock(spec=ITonService)
             self.ctx.ton_service.generate_wallet = MagicMock(return_value=(MagicMock(address=MagicMock(to_str=lambda **kwargs: "TON_ADDR")), ["w1", "w2"]))
 
             # Balance Use Case (for cmd_show_balance)
-            self.balance_uc = MagicMock()
+            self.balance_uc = MagicMock(spec=GetWalletBalance)
             self.balance_uc.execute = AsyncMock(return_value=[])
             self.ctx.use_case_factory.create_get_wallet_balance.return_value = self.balance_uc
 
             # Secret Service (for cmd_show_balance)
-            self.secret_service = MagicMock()
+            self.secret_service = MagicMock(spec=IWalletSecretService)
             self.secret_service.is_ton_wallet = AsyncMock(return_value=False) # Must be AsyncMock!
             self.ctx.use_case_factory.create_wallet_secret_service.return_value = self.secret_service
 

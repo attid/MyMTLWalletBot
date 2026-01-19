@@ -11,10 +11,13 @@ import datetime
 import jsonpickle
 
 from routers.wallet_setting import router as wallet_setting_router, AssetVisibilityCallbackData, DelAssetCallbackData
-from core.domain.entities import Wallet
+from core.domain.entities import Wallet, AddressBookEntry
 from core.domain.value_objects import Balance, PaymentResult
 from tests.conftest import TEST_BOT_TOKEN
 from infrastructure.services.localization_service import LocalizationService
+from core.interfaces.repositories import IWalletRepository, IAddressBookRepository
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from core.use_cases.payment.send_payment import SendPayment
 
 class MockDbMiddleware(BaseMiddleware):
     def __init__(self, session, app_context):
@@ -83,7 +86,7 @@ async def test_cmd_wallet_setting(mock_telegram, bot, dp, mock_session, mock_app
     
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.is_free = True
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IWalletRepository)
     mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
 
@@ -111,11 +114,11 @@ async def test_asset_visibility_menu(mock_telegram, bot, dp, mock_session, mock_
     # Setup Wallet and Balances
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.assets_visibility = "{}"
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IWalletRepository)
     mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
     
-    mock_balance_uc = MagicMock()
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
     mock_balance_uc.execute = AsyncMock(return_value=[
         Balance(asset_code="EURMTL", asset_issuer="G...", balance="10", asset_type="credit_alphanum12"),
         Balance(asset_code="USDM", asset_issuer="G...", balance="5", asset_type="credit_alphanum4")
@@ -146,12 +149,12 @@ async def test_asset_visibility_toggle(mock_telegram, bot, dp, mock_session, moc
     
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.assets_visibility = "{}"
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IWalletRepository)
     mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
     
     # For redraw
-    mock_balance_uc = MagicMock()
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
     mock_balance_uc.execute = AsyncMock(return_value=[])
     mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
 
@@ -183,7 +186,7 @@ async def test_cmd_delete_asset_list(mock_telegram, bot, dp, mock_session, mock_
     user_id = 123
     mock_app_context.bot = bot
     
-    mock_balance_uc = MagicMock()
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
     mock_balance_uc.execute = AsyncMock(return_value=[
         Balance(asset_code="BTCMTL", asset_issuer="G...", balance="0.0", asset_type="credit_alphanum12")
     ])
@@ -220,7 +223,7 @@ async def test_cq_delete_asset_execute(mock_telegram, mock_horizon, horizon_serv
     public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.public_key = public_key
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IWalletRepository)
     mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
     
@@ -260,17 +263,17 @@ async def test_buy_address_flow(mock_telegram, bot, dp, mock_session, mock_app_c
     mock_wallet.is_free = True
     mock_wallet.public_key = "GFREE"
     
-    mock_repo = MagicMock()
-    mock_repo.get_default_wallet = AsyncMock(side_effect=lambda id: mock_wallet if id != 0 else MagicMock(public_key="GMASTER"))
+    mock_repo = MagicMock(spec=IWalletRepository)
+    mock_repo.get_default_wallet = AsyncMock(side_effect=lambda id: mock_wallet if id != 0 else MagicMock(spec=Wallet, public_key="GMASTER"))
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
     
-    mock_balance_uc = MagicMock()
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
     mock_balance_uc.execute = AsyncMock(return_value=[
         Balance(asset_code="EURMTL", asset_issuer="G...", balance="50.0", asset_type="credit_alphanum12")
     ])
     mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
     
-    mock_pay_uc = MagicMock()
+    mock_pay_uc = MagicMock(spec=SendPayment)
     mock_pay_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_BUY"))
     mock_app_context.use_case_factory.create_send_payment.return_value = mock_pay_uc
 
@@ -294,12 +297,12 @@ async def test_address_book_view(mock_telegram, bot, dp, mock_session, mock_app_
     user_id = 123
     mock_app_context.bot = bot
     
-    mock_entry = MagicMock()
+    mock_entry = MagicMock(spec=AddressBookEntry)
     mock_entry.id = 1
     mock_entry.address = "GADDR"
     mock_entry.name = "My Friend"
     
-    mock_repo = MagicMock()
+    mock_repo = MagicMock(spec=IAddressBookRepository)
     mock_repo.get_all = AsyncMock(return_value=[mock_entry])
     mock_app_context.repository_factory.get_addressbook_repository.return_value = mock_repo
 
