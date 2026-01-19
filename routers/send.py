@@ -183,7 +183,7 @@ async def cmd_start_eurmtl(message: types.Message, state: FSMContext, session: S
     await send_message(session, message.from_user.id, 'Loading')
 
     # if user not exist
-    if not check_user_id(session, message.from_user.id):
+    if not await check_user_id(session, message.from_user.id):
         await send_message(session, message.from_user.id, 'You dont have wallet. Please run /start')
         return
 

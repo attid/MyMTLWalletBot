@@ -56,7 +56,7 @@ async def test_cmd_language(mock_session, mock_callback):
 async def test_callbacks_lang(mock_session, mock_callback, mock_state):
     callback_data = LangCallbackData(action="ru")
     
-    with patch("routers.common_setting.change_user_lang") as mock_change, \
+    with patch("routers.common_setting.change_user_lang", new_callable=AsyncMock) as mock_change, \
          patch("routers.common_setting.cmd_show_balance", new_callable=AsyncMock) as mock_balance, \
          patch("other.lang_tools.get_user_id", return_value=123):
         

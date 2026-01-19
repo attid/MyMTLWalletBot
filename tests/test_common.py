@@ -46,7 +46,7 @@ def mock_bot():
 async def test_cmd_start(mock_session, mock_message, mock_state, mock_bot):
     with patch("routers.common_start.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.common_start.clear_state", new_callable=AsyncMock) as mock_clear, \
-         patch("routers.common_start.check_user_lang", return_value="en"), \
+         patch("routers.common_start.check_user_lang", new_callable=AsyncMock, return_value="en"), \
          patch("routers.common_start.cmd_show_balance", new_callable=AsyncMock) as mock_balance, \
          patch("routers.common_start.check_update_username", new_callable=AsyncMock) as mock_check_username, \
          patch("routers.common_start.check_update_username", new_callable=AsyncMock) as mock_check_username:
