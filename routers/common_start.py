@@ -103,7 +103,7 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         )
         
         # db_add_user_if_not_exists(session, message.from_user.id, message.from_user.username)
-        await cmd_language(session, message.from_user.id, l10n)
+        await cmd_language(session, message.from_user.id, l10n, app_context=app_context)
     else:
         await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         await cmd_show_balance(session, message.from_user.id, state, app_context=app_context)
@@ -164,7 +164,7 @@ def get_kb_donate(chat_id: int) -> types.InlineKeyboardMarkup:
             tmp_buttons.append(
                 types.InlineKeyboardButton(text=button, callback_data=button))
         kb_buttons.append(tmp_buttons)
-    kb_buttons.append(get_return_button(chat_id))
+    kb_buttons.append(get_return_button(chat_id, app_context=app_context))
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=kb_buttons)
     return keyboard
@@ -206,7 +206,7 @@ async def cmd_donate_message(message: types.Message, state: FSMContext, session:
     await cmd_donate(session, message.from_user.id, state, app_context=app_context)
 
 
-async def cmd_after_donate(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
+async def cmd_after_donate(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
     data = await state.get_data()
     donate_sum = data.get('donate_sum')
     admin_id = app_context.admin_id
@@ -318,7 +318,7 @@ async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session
         await user_repo.update(db_user)
 
     msg = my_gettext(callback, 'limits', app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000 if db_user else 0), app_context=app_context)
+    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000 if db_user else 0, app_context=app_context), app_context=app_context)
     await callback.answer()
     session.commit()
 

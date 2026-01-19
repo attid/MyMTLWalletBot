@@ -39,7 +39,7 @@ async def check_user_lang(session: Session, user_id: int):
     return lang
 
 
-def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], text: str, param: tuple = (), app_context: AppContext = None) -> str:
+def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int, str], text: str, param: tuple = (), *, app_context: AppContext) -> str:
     # Resolve service
     service = None
     if app_context and app_context.localization_service:

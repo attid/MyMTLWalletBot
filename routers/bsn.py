@@ -257,7 +257,7 @@ def format_bsn_row(bsn_row: BSNRow) -> str:
     return f"{action_map[bsn_row.action_type]} {warn}<code>{tag}</code>: {value}{old_value}\n"
 
 
-def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Message, int, str], app_context: AppContext = None) -> str:
+def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Message, int, str], *, app_context: AppContext) -> str:
     # Use localized string if app_context available, otherwise fallback (though my_gettext handles it if we pass it correctly)
     # But wait, make_tag_message is a helper. my_gettext is used inside.
     # Note: my_gettext signature: (user_id_or_obj, key, args, app_context)
@@ -280,7 +280,7 @@ def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Mes
 
 
 def get_bsn_kb(user_id: typing.Union[CallbackQuery, Message, int, str],
-               send_enabled: bool = False, app_context: AppContext = None) -> "InlineKeyboardMarkup":
+               send_enabled: bool = False, *, app_context: AppContext) -> "InlineKeyboardMarkup":
     builder = InlineKeyboardBuilder()
     if send_enabled:
         builder.button(text=my_gettext(user_id, 'kb_send', app_context=app_context), callback_data=SEND_CALLBACK_DATA)
@@ -289,7 +289,7 @@ def get_bsn_kb(user_id: typing.Union[CallbackQuery, Message, int, str],
     return builder.as_markup()
 
 
-async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session: "Session", app_context: AppContext = None) -> None:
+async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session: "Session", app_context: AppContext) -> None:
     if tag:
         tag_value = tag.split(' ', 1)
         if len(tag_value) == 2:
@@ -311,7 +311,7 @@ async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session:
             await message.answer(my_gettext(message, 'bsn_tag_value', (tag,), app_context=app_context))
 
 
-def parse_exception(exc: Exception, user_id: typing.Union[CallbackQuery, Message, int, str], app_context: AppContext = None) -> str:
+def parse_exception(exc: Exception, user_id: typing.Union[CallbackQuery, Message, int, str], *, app_context: AppContext) -> str:
     if isinstance(exc, EmptyTag):
         return my_gettext(user_id, 'bsn_empty_tag_error', (exc.raw_tag,), app_context=app_context)
     if isinstance(exc, LengthError):

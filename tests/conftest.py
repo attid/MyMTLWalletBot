@@ -20,6 +20,22 @@ def dp():
     return dp
 
 @pytest.fixture
+def mock_app_context():
+    """
+    Создаёт стандартный mock AppContext для DI-based тестов.
+    См. tests/README.md для правил тестирования.
+    """
+    ctx = MagicMock()
+    ctx.localization_service = MagicMock()
+    ctx.localization_service.get_text.return_value = "text"
+    ctx.stellar_service = AsyncMock()
+    ctx.repository_factory = MagicMock()
+    ctx.bot = AsyncMock()
+    ctx.admin_id = 123456
+    return ctx
+
+
+@pytest.fixture
 async def mock_server():
     """Starts a local mock Telegram server."""
     routes = web.RouteTableDef()

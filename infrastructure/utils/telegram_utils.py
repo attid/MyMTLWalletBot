@@ -20,7 +20,7 @@ TELEGRAM_API_ERROR: Any = object()
 
 
 async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
-                       reply_markup=None, need_new_msg=None, parse_mode='HTML', app_context: AppContext = None):
+                       reply_markup=None, need_new_msg=None, parse_mode='HTML', *, app_context: AppContext):
     # app_context MUST be provided or global_data used as fallback (TEMPORARY)
     # Removing global_data completely means we crash if app_context is None.
     # Assuming app_context is always passed now.
@@ -57,7 +57,7 @@ async def send_message(session: Session | None, user_id: Union[types.CallbackQue
 
 
 async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,
-                        parse_mode='HTML', app_context: AppContext = None):
+                        parse_mode='HTML', *, app_context: AppContext):
     # msg = msg + my_gettext(chat_id, 'send_xdr', app_context=app_context)
     data = await state.get_data()
     tools = data.get('tools')

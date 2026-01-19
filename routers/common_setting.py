@@ -24,7 +24,7 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService):
+async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService, *, app_context: AppContext):
     buttons = []
 
     for lang in l10n.lang_dict:
@@ -33,15 +33,15 @@ async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService
                                        callback_data=LangCallbackData(action=lang).pack())
         ])
 
-    buttons.append(get_return_button(chat_id))
+    buttons.append(get_return_button(chat_id, app_context=app_context))
 
     await send_message(session, chat_id, 'Choose language',
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
 
 
 @router.callback_query(F.data == "ChangeLang")
 async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session, l10n: LocalizationService, app_context: AppContext):
-    await cmd_language(session, callback.from_user.id, l10n)
+    await cmd_language(session, callback.from_user.id, l10n, app_context=app_context)
 
 
 @router.callback_query(LangCallbackData.filter())

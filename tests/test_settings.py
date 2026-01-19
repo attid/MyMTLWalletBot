@@ -48,8 +48,11 @@ async def test_cmd_language(mock_session, mock_callback):
         
         l10n = MagicMock()
         l10n.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
+        
+        app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = 'text'
 
-        await cmd_language(mock_session, 123, l10n)
+        await cmd_language(mock_session, 123, l10n, app_context=app_context)
         mock_send.assert_called_once()
 
 @pytest.mark.asyncio

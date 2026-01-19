@@ -55,14 +55,14 @@ usdt_in_fee = 0
 
 @router.callback_query(F.data == "InOut")
 async def cmd_inout(callback: types.CallbackQuery, session: Session, app_context: AppContext):
-    msg = my_gettext(callback, "inout")
+    msg = my_gettext(callback, "inout", app_context=app_context)
     buttons = [[types.InlineKeyboardButton(text='USDT TRC20',
                                            callback_data="USDT_TRC20")],
                [types.InlineKeyboardButton(text='BTC lightning',
                                            callback_data="BTC")],
                [types.InlineKeyboardButton(text='STARTS',
                                            callback_data="STARTS")],
-               get_return_button(callback)]
+               get_return_button(callback, app_context=app_context)]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
@@ -231,7 +231,7 @@ async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session
         await state.set_state(StateInOut.sending_usdt_address)
 
 
-async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None):
+async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
     await state.update_data(out_pay_usdt=user_id)
 
     message_text = (f"Ваша заявка #{user_id}\n"
@@ -249,7 +249,7 @@ async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext,
     await cmd_after_send_usdt_task(session, user_id, state, app_context)
 
 
-async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None):
+async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     async with new_wallet_lock:
         data = await state.get_data()
@@ -351,7 +351,7 @@ async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: 
     await message.delete()
 
 
-async def cmd_send_usdt(session: Session, message: types.Message, state: FSMContext, app_context: AppContext = None):
+async def cmd_send_usdt(session: Session, message: types.Message, state: FSMContext, *, app_context: AppContext):
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
@@ -441,7 +441,7 @@ async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: 
     await callback.answer()
 
 
-async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None):
+async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
     user_repo = SqlAlchemyUserRepository(session)
     btc_uuid, btc_date = await user_repo.get_btc_uuid(user_id)
     if btc_uuid and btc_date and btc_date > datetime.now():
@@ -677,14 +677,14 @@ async def cmd_balance(message: types.Message, session: Session, app_context: App
         await message.answer("У вас нет доступа к этой команде.")
 
 
-async def notify_admin(bot: Bot, text: str, app_context: AppContext = None):
+async def notify_admin(bot: Bot, text: str, *, app_context: AppContext):
     admin_id = app_context.admin_id
     await bot.send_message(chat_id=admin_id, text=text)
 
 @safe_catch_async
 async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None = None,
                               username: str | None = None, master_energy: EnergyObject | None = None, 
-                              app_context: AppContext = None) -> bool:
+                              app_context: AppContext) -> bool:
     if user_id is None and username is None:
         raise ValueError("user_id or username must be provided")
 
@@ -775,7 +775,7 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
 
 @safe_catch_async
 async def process_first_usdt_balance(session: Session, bot: Bot,
-                                     master_energy: EnergyObject | None = None, app_context: AppContext = None) -> tuple[bool, str]:
+                                     master_energy: EnergyObject | None = None, *, app_context: AppContext) -> tuple[bool, str]:
     balances = db_get_usdt_balances(session)
     if not balances:
         return False, "Список USDT-балансов пуст."

@@ -219,7 +219,7 @@ async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session
     await callback.answer()
 
 
-async def cheque_after_send(session: Session, user_id: int, state: FSMContext, app_context: AppContext = None, **kwargs):
+async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)

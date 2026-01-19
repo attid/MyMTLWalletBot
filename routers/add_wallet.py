@@ -183,7 +183,7 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
         await callback.answer(f"Error: {e}", show_alert=True)
 
 
-async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: FSMContext, msg='', app_context: AppContext = None):
+async def cmd_show_add_wallet_choose_pin(session: Session, user_id: int, state: FSMContext, msg='', *, app_context: AppContext):
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_pin', app_context=app_context),
                                     callback_data="PIN")],

@@ -58,7 +58,7 @@ async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session
     await callback.answer()
 
 
-async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None, app_context: AppContext = None):
+async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None, *, app_context: AppContext):
     data = await state.get_data()
     user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
     simple_account = user_account[:4] + '..' + user_account[-4:]
@@ -208,7 +208,7 @@ async def cmd_password_from_pin(message: types.Message, state: FSMContext, sessi
         pass
 
 
-async def sign_xdr(session: Session, state, user_id, app_context: AppContext = None):
+async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext):
     data = await state.get_data()
     current_state = await state.get_state()
     pin = data.get('pin', '')
@@ -328,7 +328,7 @@ async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Sessi
     await message.delete()
 
 
-async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext, app_context: AppContext = None):
+async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext, *, app_context: AppContext):
     try:
         data = await state.get_data()
         part_xdr = data.get('part_xdr')

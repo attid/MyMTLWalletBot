@@ -37,10 +37,12 @@ async def test_cmd_wallet_setting(mock_session, mock_callback, mock_state):
     app_context.repository_factory.get_wallet_repository.return_value = mock_repo
 
     with patch("routers.wallet_setting.my_gettext", return_value="msg"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send:
          
         l10n = MagicMock()
         l10n.get_text.return_value = 'text'
+        app_context.localization_service.get_text.return_value = 'text'
         await cmd_wallet_setting(mock_callback, mock_state, mock_session, app_context, l10n)
         
         mock_send.assert_called_once()
@@ -85,10 +87,13 @@ async def test_send_private_key(mock_session, mock_state):
     
     with patch("routers.wallet_setting.EncryptionService"), \
          patch("routers.wallet_setting.GetWalletSecrets") as MockUseCase, \
-         patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send:
+         patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.wallet_setting.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"):
          
         mock_use_case = MockUseCase.return_value
         mock_use_case.execute = AsyncMock(return_value=mock_secrets)
+        app_context.localization_service.get_text.return_value = 'text'
         
         await send_private_key(mock_session, user_id, mock_state, app_context)
         

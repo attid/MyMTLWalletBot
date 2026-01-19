@@ -71,6 +71,7 @@ async def test_cb_set_limit(mock_session, mock_callback, mock_state):
     with patch("routers.common_start.SqlAlchemyUserRepository") as MockRepo, \
          patch("routers.common_start.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.common_start.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("other.lang_tools.get_user_id", return_value=123):
         
         mock_repo_instance = MockRepo.return_value
@@ -79,6 +80,7 @@ async def test_cb_set_limit(mock_session, mock_callback, mock_state):
         mock_callback.data = "OffLimits"
         
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = "text"
         await cb_set_limit(mock_callback, mock_state, mock_session, app_context)
         
         assert mock_user.can_5000 == 1
@@ -123,8 +125,8 @@ async def test_cmd_show_balance(mock_session, mock_state):
         mock_repo_instance = MockRepo.return_value
         mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
         
-        
-        await cmd_show_balance(mock_session, 123, mock_state)
+        app_context = MagicMock()
+        await cmd_show_balance(mock_session, 123, mock_state, app_context=app_context)
         mock_send.assert_called_once()
 
 # --- tests for routers/inout.py ---
@@ -133,10 +135,11 @@ async def test_cmd_show_balance(mock_session, mock_state):
 async def test_cmd_inout(mock_session, mock_callback):
     with patch("routers.inout.send_message", new_callable=AsyncMock) as mock_send, \
          patch("routers.inout.my_gettext", return_value="text"), \
-         patch("routers.inout.my_gettext", return_value="text"), \
+         patch("keyboards.common_keyboards.my_gettext", return_value="text"), \
          patch("other.lang_tools.get_user_id", return_value=123):
         
         app_context = MagicMock()
+        app_context.localization_service.get_text.return_value = "text"
         await cmd_inout(mock_callback, mock_session, app_context)
         mock_send.assert_called_once()
 

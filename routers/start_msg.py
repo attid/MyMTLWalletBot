@@ -28,7 +28,7 @@ class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"
     idx: int
 
 
-async def get_kb_default(session: Session, chat_id: int, state: FSMContext, app_context: AppContext = None) -> types.InlineKeyboardMarkup:
+async def get_kb_default(session: Session, chat_id: int, state: FSMContext, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     data = await state.get_data()
 
     if data.get('use_ton', False):
@@ -93,7 +93,7 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext, app_
 
 
 async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
-                           refresh_callback: types.CallbackQuery = None, app_context: AppContext = None, **kwargs):
+                           refresh_callback: types.CallbackQuery = None, *, app_context: AppContext, **kwargs):
     user_repo = SqlAlchemyUserRepository(session)
     user = await user_repo.get_by_id(user_id)
     # new user ?
@@ -129,7 +129,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             await state.update_data(last_message_id=0)
 
 
-async def get_start_text(session, state, user_id, app_context: AppContext = None):
+async def get_start_text(session, state, user_id, *, app_context: AppContext):
     from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     
@@ -215,7 +215,7 @@ USDT: {float2str(usdt_balance, True)}
 
 async def cmd_info_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int],
                            msg: str, send_file=None, resend_transaction=None, operation_id: str = None,
-                           public_key: str = None, wallet_id: int = None, app_context: AppContext = None):
+                           public_key: str = None, wallet_id: int = None, *, app_context: AppContext):
     user_id = get_user_id(user_id)
     
     bot = app_context.bot
@@ -248,8 +248,8 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
 #   # Clear user state
 #  await dp.storage.set_state(fsm_storage_key, None) #workflow_data
 
-async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, app_context: AppContext = None):
-    msg = my_gettext(user_id, 'setting_msg')
+async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
+    msg = my_gettext(user_id, 'setting_msg', app_context=app_context)
     buttons = []
     repo = SqlAlchemyWalletRepository(session)
     wallets = await repo.get_all_active(user_id)
@@ -266,8 +266,8 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, a
                                         callback_data=WalletSettingCallbackData(action='DELETE',
                                                                                 idx=wallet.id).pack())
              ])
-    buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_new'), callback_data="AddNew")])
-    buttons.append(get_return_button(user_id))
+    buttons.append([types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_add_new', app_context=app_context), callback_data="AddNew")])
+    buttons.append(get_return_button(user_id, app_context=app_context))
 
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await state.update_data(wallets={wallet.id: wallet.public_key for wallet in wallets})
