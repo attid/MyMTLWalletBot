@@ -89,12 +89,15 @@ async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext,
     user_id = callback.from_user.id
 
     from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
-    secret_service = SqlAlchemyWalletSecretService(session)
+    if app_context.use_case_factory:
+        secret_service = app_context.use_case_factory.create_wallet_secret_service(session)
+    else:
+        secret_service = SqlAlchemyWalletSecretService(session)
     
     if await secret_service.is_ton_wallet(user_id):
         try:
             mnemonic = await secret_service.get_ton_mnemonic(user_id)
-            ton_service = TonService()
+            ton_service = app_context.ton_service or TonService()
             ton_service.from_mnemonic(mnemonic)
 
             await send_message(session, user_id, "Sending transaction...", app_context=app_context)
@@ -177,12 +180,15 @@ async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMCon
     user_id = callback.from_user.id
 
     from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
-    secret_service = SqlAlchemyWalletSecretService(session)
+    if app_context.use_case_factory:
+        secret_service = app_context.use_case_factory.create_wallet_secret_service(session)
+    else:
+        secret_service = SqlAlchemyWalletSecretService(session)
     
     if await secret_service.is_ton_wallet(user_id):
         try:
             mnemonic = await secret_service.get_ton_mnemonic(user_id)
-            ton_service = TonService()
+            ton_service = app_context.ton_service or TonService()
             ton_service.from_mnemonic(mnemonic)
 
             await send_message(session, user_id, "Sending transaction...", app_context=app_context)

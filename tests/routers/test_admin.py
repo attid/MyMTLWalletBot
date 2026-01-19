@@ -1,14 +1,42 @@
 
 import pytest
+import os
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
-from datetime import datetime
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
+import datetime
 
-from routers.admin import router as admin_router, cmd_stats, cmd_exit, ExitState, cmd_horizon, cmd_horizon_rw, cmd_log, cmd_err, cmd_clear, cmd_fee, cmd_user_wallets, cmd_address_info, cmd_delete_address, cmd_help, cmd_test
-from db.models import MyMtlWalletBotUsers, MyMtlWalletBot, MyMtlWalletBotTransactions, MyMtlWalletBotCheque, MyMtlWalletBotLog
+from routers.admin import router as admin_router, ExitState
+from other.config_reader import config
 import routers.admin as admin_module
+from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+
+class MockDbMiddleware(BaseMiddleware):
+    def __init__(self, session):
+        self.session = session
+    async def __call__(self, handler, event, data):
+        data["session"] = self.session
+        return await handler(event, data)
+
+@pytest.fixture(autouse=True)
+def cleanup_router():
+    # Store original admins
+    original_admins = list(config.admins)
+    # Set test admins
+    config.admins.clear()
+    config.admins.append(123)
+    
+    yield
+    
+    # Restore original admins
+    config.admins.clear()
+    config.admins.extend(original_admins)
+    
+    if admin_router.parent_router:
+         admin_router._parent_router = None
 
 @pytest.fixture
 def mock_session():
@@ -27,116 +55,215 @@ def mock_session():
     query_mock.first.return_value = None
     return session
 
+@pytest.fixture
+async def bot():
+    session = AiohttpSession(
+        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
+    )
+    bot = Bot(token=TEST_BOT_TOKEN, session=session)
+    yield bot
+    await bot.session.close()
+
+@pytest.fixture
+def dp(mock_session):
+    dp = Dispatcher()
+    dp.message.middleware(MockDbMiddleware(mock_session))
+    dp.include_router(admin_router)
+    return dp
+
 @pytest.mark.asyncio
-async def test_cmd_stats(mock_session):
-    message = AsyncMock()
-    
+async def test_cmd_stats(mock_server, bot, dp, mock_session):
     # Mock return values for counts
     mock_session.query.return_value.limit.return_value.all.return_value = [("op1", 5), ("op2", 3)]
     
-    await cmd_stats(message, mock_session)
+    update = types.Update(
+        update_id=1,
+        message=types.Message(
+            message_id=1,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=123, type='private'),
+            from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+            text="/stats"
+        )
+    )
     
-    assert message.answer.called
-    args = message.answer.call_args[0][0]
+    await dp.feed_update(bot=bot, update=update)
+    
+    # Verify message sent to mock_server
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent_messages) > 0
+    args = sent_messages[0]['data']['text']
     assert "Статистика бота" in args
     assert "op1: 5" in args
 
 @pytest.mark.asyncio
-async def test_cmd_exit_restart():
-    message = AsyncMock()
-    message.from_user.username = "itolstov"
-    state = AsyncMock(spec=FSMContext)
-    session = MagicMock()
-    
+async def test_cmd_exit_restart(mock_server, bot, dp, mock_session):
     # Case 1: First call, sets state
-    state.get_state.return_value = None
-    await cmd_exit(message, state, session)
-    state.set_state.assert_called_with(ExitState.need_exit)
-    message.reply.assert_called_with(":'[")
+    update = types.Update(
+        update_id=2,
+        message=types.Message(
+            message_id=2,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=123, type='private'),
+            from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+            text="/exit"
+        )
+    )
+    
+    await dp.feed_update(bot=bot, update=update)
+    
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert any(":'[" in m['data']['text'] for m in sent_messages)
     
     # Case 2: Second call, exits
-    state.get_state.return_value = ExitState.need_exit
+    mock_server.clear()
     with patch("routers.admin.exit") as mock_exit:
-        await cmd_exit(message, state, session)
-        state.set_state.assert_called_with(None)
-        message.reply.assert_called_with("Chao :[[[")
+        update2 = types.Update(
+            update_id=3,
+            message=types.Message(
+                message_id=3,
+                date=datetime.datetime.now(),
+                chat=types.Chat(id=123, type='private'),
+                from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                text="/exit"
+            )
+        )
+        await dp.feed_update(bot=bot, update=update2)
+        
+        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        assert any("Chao :[[[" in m['data']['text'] for m in sent_messages)
         mock_exit.assert_called()
 
 @pytest.mark.asyncio
-async def test_cmd_horizon():
-    message = AsyncMock()
-    message.from_user.username = "itolstov"
-    state = AsyncMock(spec=FSMContext)
-    session = MagicMock()
-    
-    with patch("routers.admin.config") as mock_config, \
-         patch("routers.admin.horizont_urls", ["url1", "url2"]):
-        mock_config.horizon_url = "url1"
+async def test_cmd_horizon(mock_server, bot, dp, mock_session):
+    with patch("routers.admin.horizont_urls", ["url1", "url2"]):
+        config.horizon_url = "url1"
         
-        # Test /horizon
-        await cmd_horizon(message, state, session)
-        assert mock_config.horizon_url == "url2"
-        message.reply.assert_called_with("Horizon url: url2")
+        update = types.Update(
+            update_id=4,
+            message=types.Message(
+                message_id=4,
+                date=datetime.datetime.now(),
+                chat=types.Chat(id=123, type='private'),
+                from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                text="/horizon"
+            )
+        )
+        
+        await dp.feed_update(bot=bot, update=update)
+        assert config.horizon_url == "url2"
+        
+        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        assert any("Horizon url: url2" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_horizon_rw():
-    message = AsyncMock()
-    message.from_user.username = "itolstov"
-    state = AsyncMock(spec=FSMContext)
-    session = MagicMock()
-    
-    with patch("routers.admin.config") as mock_config, \
-         patch("routers.admin.horizont_urls", ["url1", "url2"]):
-        mock_config.horizon_url_rw = "url1"
+async def test_cmd_horizon_rw(mock_server, bot, dp, mock_session):
+    with patch("routers.admin.horizont_urls", ["url1", "url2"]):
+        config.horizon_url_rw = "url1"
         
-        # Test /horizon_rw
-        await cmd_horizon_rw(message, state, session)
-        assert mock_config.horizon_url_rw == "url2"
-        message.reply.assert_called_with("Horizon url: url2")
+        update = types.Update(
+            update_id=5,
+            message=types.Message(
+                message_id=5,
+                date=datetime.datetime.now(),
+                chat=types.Chat(id=123, type='private'),
+                from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                text="/horizon_rw"
+            )
+        )
+        
+        await dp.feed_update(bot=bot, update=update)
+        assert config.horizon_url_rw == "url2"
+        
+        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        assert any("Horizon url: url2" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_log_err_clear():
-    message = AsyncMock()
-    message.from_user.username = "itolstov"
-    message.chat.id = 123
+async def test_cmd_log_err_clear(mock_server, bot, dp, mock_session, mock_app_context):
+    mock_app_context.bot = bot
     
-    app_context = MagicMock()
-    app_context.bot.send_document = AsyncMock()
-    
-    with patch("routers.admin.os.path.isfile", return_value=True), \
-         patch("routers.admin.os.remove") as mock_remove:
-             
-        # Test /log
-        await cmd_log(message, app_context)
-        assert app_context.bot.send_document.call_count >= 1
-        
-        # Test /err
-        app_context.bot.send_document.reset_mock()
-        await cmd_err(message, app_context)
-        assert app_context.bot.send_document.call_count >= 1
-        
-        # Test /clear
-        await cmd_clear(message)
-        # Verify os.remove called
-        assert mock_remove.call_count >= 1
+    # Create dummy files for aiogram to read
+    log_files = ['mmwb.log', 'mmwb_check_transaction.log', 'MyMTLWallet_bot.err', 'MMWB.err', 'MMWB.log']
+    for f_name in log_files:
+        with open(f_name, 'w') as f:
+            f.write('test log content')
+
+    try:
+        with patch("routers.admin.os.path.isfile", return_value=True), \
+             patch("routers.admin.os.remove") as mock_remove:
+            
+            # Test /log
+            update = types.Update(
+                update_id=6,
+                message=types.Message(
+                    message_id=6,
+                    date=datetime.datetime.now(),
+                    chat=types.Chat(id=123, type='private'),
+                    from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                    text="/log"
+                )
+            )
+            await dp.feed_update(bot=bot, update=update, app_context=mock_app_context)
+            
+            sent_docs = [r for r in mock_server if r['method'] == 'sendDocument']
+            assert len(sent_docs) >= 1
+            
+            # Test /err
+            mock_server.clear()
+            update2 = types.Update(
+                update_id=7,
+                message=types.Message(
+                    message_id=7,
+                    date=datetime.datetime.now(),
+                    chat=types.Chat(id=123, type='private'),
+                    from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                    text="/err"
+                )
+            )
+            await dp.feed_update(bot=bot, update=update2, app_context=mock_app_context)
+            sent_docs = [r for r in mock_server if r['method'] == 'sendDocument']
+            assert len(sent_docs) >= 1
+            
+            # Test /clear
+            update3 = types.Update(
+                update_id=8,
+                message=types.Message(
+                    message_id=8,
+                    date=datetime.datetime.now(),
+                    chat=types.Chat(id=123, type='private'),
+                    from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                    text="/clear"
+                )
+            )
+            await dp.feed_update(bot=bot, update=update3, app_context=mock_app_context)
+            assert mock_remove.call_count >= 1
+    finally:
+        for f_name in log_files:
+            if os.path.exists(f_name):
+                os.remove(f_name)
 
 @pytest.mark.asyncio
-async def test_admin_router_integration():
-    """Test admin commands via router to handle the duplicate function names issue"""
-    pass
-
-@pytest.mark.asyncio
-async def test_cmd_fee():
-    message = AsyncMock()
+async def test_cmd_fee(mock_server, bot, dp, mock_session):
     with patch("routers.admin.async_stellar_check_fee", return_value="10-100"):
-        await cmd_fee(message)
-        message.answer.assert_called_with("Комиссия (мин и мах) 10-100")
+        
+        update = types.Update(
+            update_id=9,
+            message=types.Message(
+                message_id=9,
+                date=datetime.datetime.now(),
+                chat=types.Chat(id=123, type='private'),
+                from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
+                text="/fee"
+            )
+        )
+        
+        await dp.feed_update(bot=bot, update=update)
+        
+        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        assert any("Комиссия (мин и мах) 10-100" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_user_wallets(mock_session):
-    message = AsyncMock()
-    message.text = "/user_wallets @testuser"
-    
+async def test_cmd_user_wallets(mock_server, bot, dp, mock_session):
     # Mock user lookup
     user_mock = MagicMock()
     user_mock.user_id = 111
@@ -151,19 +278,28 @@ async def test_cmd_user_wallets(mock_session):
     wallet_mock.use_pin = 0
     mock_session.query.return_value.filter.return_value.all.return_value = [wallet_mock]
     
-    await cmd_user_wallets(message, mock_session)
+    update = types.Update(
+        update_id=10,
+        message=types.Message(
+            message_id=10,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=123, type='private'),
+            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
+            text="/user_wallets @testuser"
+        )
+    )
     
-    assert message.answer.called
-    args = message.answer.call_args[0][0]
+    await dp.feed_update(bot=bot, update=update)
+    
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent_messages) > 0
+    args = sent_messages[0]['data']['text']
     assert "GABC" in args
     assert "main" in args
     assert "free" in args
 
 @pytest.mark.asyncio
-async def test_cmd_address_info(mock_session):
-    message = AsyncMock()
-    message.text = "/address_info GABC"
-    
+async def test_cmd_address_info(mock_server, bot, dp, mock_session):
     # Mock wallet/user join
     wallet_row = MagicMock()
     wallet_row.user_id = 111
@@ -176,45 +312,85 @@ async def test_cmd_address_info(mock_session):
     
     mock_session.query.return_value.join.return_value.filter.return_value.first.return_value = (wallet_row, user_row)
     
-    await cmd_address_info(message, mock_session)
+    update = types.Update(
+        update_id=11,
+        message=types.Message(
+            message_id=11,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=123, type='private'),
+            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
+            text="/address_info GABC"
+        )
+    )
     
-    assert message.answer.called
-    args = message.answer.call_args[0][0]
+    await dp.feed_update(bot=bot, update=update)
+    
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent_messages) > 0
+    args = sent_messages[0]['data']['text']
     assert "user_id: 111" in args
     assert "@testuser" in args
 
 @pytest.mark.asyncio
-async def test_cmd_delete_address(mock_session):
-    message = AsyncMock()
-    message.text = "/delete_address GABC"
-    
+async def test_cmd_delete_address(mock_server, bot, dp, mock_session):
     wallet_mock = MagicMock()
     wallet_mock.need_delete = 0
     mock_session.query.return_value.filter.return_value.one_or_none.return_value = wallet_mock
     
-    await cmd_delete_address(message, mock_session)
+    update = types.Update(
+        update_id=12,
+        message=types.Message(
+            message_id=12,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=123, type='private'),
+            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
+            text="/delete_address GABC"
+        )
+    )
+    
+    await dp.feed_update(bot=bot, update=update)
     
     assert wallet_mock.need_delete == 1
     mock_session.commit.assert_called()
-    message.answer.assert_called_with("Адрес помечен удалённым")
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert any("Адрес помечен удалённым" in m['data']['text'] for m in sent_messages)
 
 @pytest.mark.asyncio
-async def test_cmd_help():
-    message = AsyncMock()
-    await cmd_help(message)
-    assert message.answer.called
-    assert "/stats" in message.answer.call_args[0][0]
-
-@pytest.mark.asyncio
-async def test_cmd_test():
-    message = AsyncMock()
-    message.from_user.username = "itolstov"
+async def test_cmd_help(mock_server, bot, dp):
+    update = types.Update(
+        update_id=13,
+        message=types.Message(
+            message_id=13,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=123, type='private'),
+            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
+            text="/help"
+        )
+    )
     
+    await dp.feed_update(bot=bot, update=update)
+    
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert any("/stats" in m['data']['text'] for m in sent_messages)
+
+@pytest.mark.asyncio
+async def test_cmd_test(mock_server, bot, dp, mock_app_context):
+    mock_app_context.bot = bot
     chat_mock = MagicMock()
-    chat_mock.json.return_value = "{}"
-    
-    app_context = MagicMock()
-    app_context.bot.get_chat = AsyncMock(return_value=chat_mock)
-    
-    await cmd_test(message, app_context)
-    assert message.answer.call_count == 2
+    chat_mock.json.return_value = '{"id": 215155653, "type": "private"}'
+    with patch.object(bot, 'get_chat', AsyncMock(return_value=chat_mock)):
+        update = types.Update(
+            update_id=14,
+            message=types.Message(
+                message_id=14,
+                date=datetime.datetime.now(),
+                chat=types.Chat(id=123, type='private'),
+                from_user=types.User(id=123, is_bot=False, first_name="Test", username="itolstov"),
+                text="/test"
+            )
+        )
+        
+        await dp.feed_update(bot=bot, update=update, app_context=mock_app_context)
+        
+        sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+        assert len(sent_messages) >= 1

@@ -402,3 +402,20 @@ class StellarService(IStellarService):
     async def send_xdr_async(self, xdr: str):
         from other.stellar_tools import async_stellar_send
         return await async_stellar_send(xdr)
+    
+    def generate_keypair(self):
+        from stellar_sdk import Keypair
+        return Keypair.random()
+
+    def get_keypair_from_secret(self, secret_key: str):
+        from stellar_sdk import Keypair
+        return Keypair.from_secret(secret_key)
+
+    def generate_mnemonic(self) -> str:
+        from stellar_sdk import Keypair
+        return Keypair.generate_mnemonic_phrase()
+
+    def get_keypair_from_mnemonic(self, mnemonic: str):
+        from stellar_sdk import Keypair
+        return Keypair.from_mnemonic_phrase(mnemonic)
+

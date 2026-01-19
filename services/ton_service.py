@@ -2,7 +2,7 @@
 import asyncio
 import base64
 from decimal import Decimal
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from urllib.parse import urlparse, parse_qs
 
 from tonutils.client import ToncenterV3Client
@@ -18,7 +18,9 @@ NANOS = Decimal(10) ** 9
 USDT_UNITS = Decimal(10) ** USDT_DECIMALS
 
 
-class TonService:
+from core.interfaces.services import ITonService
+
+class TonService(ITonService):
     """
     Lightweight service on top of tonutils:
     - create/import a wallet
@@ -45,6 +47,14 @@ class TonService:
         wallet, pub, prv, mnemonic = WalletV5R1.create(self.client)
         self.wallet = wallet
         self.mnemonic = " ".join(mnemonic)
+
+    def generate_wallet(self) -> Tuple[WalletV5R1, List[str]]:
+        """
+        Generate a new TON wallet returning (wallet_obj, mnemonic) without storing state.
+        """
+        wallet, pub, prv, mnemonic = WalletV5R1.create(self.client)
+        return wallet, mnemonic
+
 
     def from_mnemonic(self, mnemonic: str):
         """

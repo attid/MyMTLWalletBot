@@ -103,7 +103,13 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
                                                       answer=token.asset_code).pack()
                                                   )])
     kb_tmp.append(get_return_button(callback, app_context=app_context))
-    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp),
+        app_context=app_context,
+    )
     await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
 
@@ -165,8 +171,13 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                                                                   answer=receive_asset).pack()
                                                               )])
                 kb_tmp.append(get_return_button(callback, app_context=app_context))
-                await send_message(session, callback, msg,
-                                   reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
+                await send_message(
+                    session,
+                    callback,
+                    msg,
+                    reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp),
+                    app_context=app_context,
+                )
 
 
 @router.callback_query(SwapAssetForCallbackData.filter())
@@ -210,7 +221,7 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
             # Use swap confirm keyboard with strict receive button
             from keyboards.common_keyboards import get_kb_swap_confirm
             keyboard = get_kb_swap_confirm(callback.from_user.id, data, app_context=app_context)
-            await send_message(session, callback, msg, reply_markup=keyboard)
+            await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 # Handle "Specify exact amount to receive" button
@@ -225,7 +236,13 @@ async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContex
     msg = my_gettext(callback, "enter_strict_receive_sum", (
         data.get('receive_asset_code'),
     ), app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
 
 
 @router.callback_query(StateSwapToken.swap_sum, F.data == "CancelOffers")
@@ -241,7 +258,7 @@ async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
     # Update message with the same text and changed button checkbox state
     msg = data['msg']
     keyboard = get_kb_offers_cancel(callback.from_user.id, data, app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=keyboard)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
 
 
 @router.message(StateSwapToken.swap_sum)
@@ -254,7 +271,13 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         if db_user and db_user.can_5000 == 0 and send_sum > 5000:
             data = await state.get_data()
             msg0 = my_gettext(message, 'need_update_limits', app_context=app_context)
-            await send_message(session, message, msg0 + data['msg'], reply_markup=get_kb_return(message, app_context=app_context))
+            await send_message(
+                session,
+                message,
+                msg0 + data['msg'],
+                reply_markup=get_kb_return(message, app_context=app_context),
+                app_context=app_context,
+            )
             await message.delete()
             return
     except:
@@ -295,7 +318,14 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
              # Fallback
              logger.error(f"SwapAssets failed: {result.error_message}")
              keyboard = get_kb_offers_cancel(message.from_user.id, data, app_context=app_context)
-             await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + f"\n{result.error_message}", reply_markup=keyboard)
+             await send_message(
+                 session,
+                 message,
+                 my_gettext(message, 'bad_sum', app_context=app_context)
+                 + f"\n{result.error_message}",
+                 reply_markup=keyboard,
+                 app_context=app_context,
+             )
              await message.delete()
              return
 
@@ -324,12 +354,23 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
             msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,), app_context=app_context)
 
         await state.update_data(xdr=xdr, operation='swap', msg=None)
-        await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+        await send_message(
+            session,
+            message,
+            msg,
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
         keyboard = get_kb_offers_cancel(message.from_user.id, data, app_context=app_context)
-        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=keyboard)
+        await send_message(
+            session,
+            message,
+            my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+            reply_markup=keyboard,
+            app_context=app_context,
+        )
 
 # Handle input of amount to receive (strict receive)
 @router.message(StateSwapToken.swap_receive_sum)
@@ -342,7 +383,13 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         if db_user and db_user.can_5000 == 0 and receive_sum > 5000:
             data = await state.get_data()
             msg0 = my_gettext(message, 'need_update_limits', app_context=app_context)
-            await send_message(session, message, msg0, reply_markup=get_kb_return(message, app_context=app_context))
+            await send_message(
+                session,
+                message,
+                msg0,
+                reply_markup=get_kb_return(message, app_context=app_context),
+                app_context=app_context,
+            )
             await message.delete()
             return
     except:
@@ -367,7 +414,13 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         max_send_amount = my_round(my_float(send_sum) * 1.001, 7)
         if my_float(max_send_amount) == 0.0:
             keyboard = get_kb_return(message, app_context=app_context)
-            await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context), reply_markup=keyboard)
+            await send_message(
+                session,
+                message,
+                my_gettext(message, 'bad_sum', app_context=app_context),
+                reply_markup=keyboard,
+                app_context=app_context,
+            )
             await message.delete()
             return
 
@@ -405,7 +458,13 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
             need_alert = False
         except Exception as ex:
             keyboard = get_kb_return(message, app_context=app_context)
-            await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + f"\n{ex}", reply_markup=keyboard)
+            await send_message(
+                session,
+                message,
+                my_gettext(message, 'bad_sum', app_context=app_context) + f"\n{ex}",
+                reply_markup=keyboard,
+                app_context=app_context,
+            )
             await message.delete()
             return
 
@@ -423,9 +482,21 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         )
 
         await state.update_data(xdr=xdr, operation='swap', msg=None)
-        await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+        await send_message(
+            session,
+            message,
+            msg,
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
         keyboard = get_kb_return(message, app_context=app_context)
-        await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context), reply_markup=keyboard)
+        await send_message(
+            session,
+            message,
+            my_gettext(message, 'bad_sum', app_context=app_context),
+            reply_markup=keyboard,
+            app_context=app_context,
+        )
         await message.delete()

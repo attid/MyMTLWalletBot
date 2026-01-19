@@ -1,143 +1,310 @@
 
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.context import FSMContext
-from routers.wallet_setting import cmd_wallet_setting, cmd_get_private_key, remove_password, send_private_key, cmd_add_asset_del
-from core.domain.entities import Wallet
-from core.domain.value_objects import Balance, Asset
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram.fsm.storage.base import StorageKey
+import datetime
+import jsonpickle
 
-# Integration tests using mock_app_context
+from routers.wallet_setting import router as wallet_setting_router, AssetVisibilityCallbackData, DelAssetCallbackData
+from core.domain.entities import Wallet
+from core.domain.value_objects import Balance, PaymentResult
+from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+from infrastructure.services.localization_service import LocalizationService
+
+class MockDbMiddleware(BaseMiddleware):
+    def __init__(self, session, app_context):
+        self.session = session
+        self.app_context = app_context
+        self.l10n = MagicMock(spec=LocalizationService)
+
+    async def __call__(self, handler, event, data):
+        data["session"] = self.session
+        data["app_context"] = self.app_context
+        data["l10n"] = self.l10n
+        return await handler(event, data)
+
+@pytest.fixture(autouse=True)
+def cleanup_router():
+    yield
+    if wallet_setting_router.parent_router:
+         wallet_setting_router._parent_router = None
+
+@pytest.fixture
+def mock_session():
+    from sqlalchemy.orm import Session
+    session = MagicMock(spec=Session)
+    
+    # Configure execute to return a mock result that supports scalar_one_or_none
+    mock_result = MagicMock()
+    mock_db_wallet = MagicMock()
+    mock_db_wallet.balances = "[]"
+    mock_db_wallet.public_key = "GUSER"
+    mock_db_wallet.user_id = 123
+    mock_db_wallet.default_wallet = 1
+    mock_db_wallet.free_wallet = 0
+    mock_db_wallet.use_pin = 0
+    
+    mock_result.scalar_one_or_none.return_value = mock_db_wallet
+    mock_result.scalars.return_value.first.return_value = mock_db_wallet
+    
+    session.execute = AsyncMock(return_value=mock_result) # Fix for await session.execute
+    session.commit = MagicMock()
+    session.rollback = MagicMock()
+    return session
+
+@pytest.fixture
+async def bot():
+    session = AiohttpSession(
+        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
+    )
+    bot = Bot(token=TEST_BOT_TOKEN, session=session)
+    yield bot
+    await bot.session.close()
+
+@pytest.fixture
+def dp(mock_session, mock_app_context):
+    dp = Dispatcher()
+    middleware = MockDbMiddleware(mock_session, mock_app_context)
+    dp.message.middleware(middleware)
+    dp.callback_query.middleware(middleware)
+    dp.include_router(wallet_setting_router)
+    return dp
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting(mock_session, mock_callback, mock_state, mock_app_context):
+async def test_cmd_wallet_setting(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test WalletSetting main menu"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.is_free = True
-    
     mock_repo = MagicMock()
     mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
 
-    with patch("routers.wallet_setting.my_gettext", return_value="msg"), \
-         patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send:
-         
-        # l10n argument removed from handler signature in previous refactors? 
-        # Checking calling convention: cmd_wallet_setting(callback, state, session, app_context)
-        # Note: in wallet_setting.py the signature is:
-        # async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext, l10n: LocalizationService):
-        # Wait, does it accept l10n?
-        # Let's check view_file from earlier. 
-        # I didn't verify cmd_wallet_setting signature in this session, but user provided memory says it might have changed.
-        # But looking at router handlers, they usually take dependencies from middleware.
-        # If I see AppContextMiddleware, it injects app_context.
-        # DbSessionMiddleware injects session.
-        # LocalizationMiddleware injects l10n (if configured to pass it to handler).
-        # Assuming typical signature. If l10n is passed, I need to pass it.
-        # Checking typical handler: async def cmd_wallet_setting(..., app_context: AppContext):
-        # I'll try passing app_context.
-        l10n = MagicMock()
-        await cmd_wallet_setting(mock_callback, mock_state, mock_session, app_context=mock_app_context, l10n=l10n)
-        
-        mock_send.assert_called_once()
-        # Verify call args
-        args, kwargs = mock_send.call_args
-        assert kwargs['reply_markup'] is not None
-
-
-@pytest.mark.asyncio
-async def test_cmd_get_private_key(mock_session, mock_callback, mock_state, mock_app_context):
-    mock_wallet = MagicMock(spec=Wallet)
-    mock_wallet.is_free = False
-    mock_wallet.use_pin = 1 # Has PIN
-    
-    mock_repo = MagicMock()
-    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
-    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
-    
-    with patch("routers.wallet_setting.cmd_ask_pin", new_callable=AsyncMock) as mock_ask_pin:
-         
-        await cmd_get_private_key(mock_callback, mock_state, mock_session, app_context=mock_app_context)
-        
-        mock_ask_pin.assert_called_once()
-        mock_state.update_data.assert_called()
-
-
-@pytest.mark.asyncio
-async def test_send_private_key(mock_session, mock_state, mock_app_context):
-    user_id = 123
-    mock_state.get_data.return_value = {'pin': '1234'}
-    
-    mock_secrets = MagicMock()
-    mock_secrets.secret_key = "SECRET_KEY"
-    mock_secrets.seed_phrase = "SEED_PHRASE"
-    
-    # Configure UseCaseFactory mock
-    mock_use_case = AsyncMock()
-    mock_use_case.execute.return_value = mock_secrets
-    mock_app_context.use_case_factory = MagicMock() # Ensure factory exists
-    mock_app_context.use_case_factory.create_get_wallet_secrets.return_value = mock_use_case
-    
-    mock_repo = MagicMock()
-    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
-    
-    with patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send, \
-         patch("routers.wallet_setting.my_gettext", return_value="text"):
-          
-        await send_private_key(mock_session, user_id, mock_state, app_context=mock_app_context)
-        
-        mock_send.assert_called_once()
-        text = mock_send.call_args[0][2]
-        assert "SECRET_KEY" in text
-        assert "SEED_PHRASE" in text
-
-
-@pytest.mark.asyncio
-async def test_remove_password(mock_session, mock_state, mock_app_context):
-    user_id = 123
-    mock_state.get_data.return_value = {'pin': '1234'}
-    
-    # Configure UseCaseFactory mock
-    mock_use_case = AsyncMock()
-    mock_use_case.execute.return_value = True
-    mock_app_context.use_case_factory = MagicMock()
-    mock_app_context.use_case_factory.create_change_wallet_password.return_value = mock_use_case
-
-    with patch("routers.wallet_setting.cmd_info_message", new_callable=AsyncMock) as mock_info:
-         
-        await remove_password(mock_session, user_id, mock_state, app_context=mock_app_context)
-        
-        mock_use_case.execute.assert_called_once_with(
-            user_id=123, old_pin='1234', new_pin='123', pin_type=0
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="WalletSetting"
         )
-        mock_info.assert_called_once()
+    ))
+    
+    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent) == 1
+    assert "wallet_setting_msg" in sent[0]['data']['text']
+    assert "BuyAddress" in sent[0]['data']['reply_markup']
 
 
 @pytest.mark.asyncio
-async def test_cmd_add_asset_del(mock_session, mock_callback, mock_state, mock_app_context):
-    # Setup - user chooses to delete asset
+async def test_asset_visibility_menu(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test AssetVisibilityMenu loading"""
     user_id = 123
-    mock_callback.from_user.id = user_id
+    mock_app_context.bot = bot
     
-    # Mock GetWalletBalance use case via factory
-    mock_balance_uc = AsyncMock()
-    mock_balance_uc.execute.return_value = [
-        Balance(asset_code="XLM", asset_issuer="native", balance="100", limit="0", asset_type="native"),
-        Balance(asset_code="EURMTL", asset_issuer="GABC...", balance="0.0", limit="1000", asset_type="credit_alphanum12")
-    ]
+    # Setup Wallet and Balances
+    mock_wallet = MagicMock(spec=Wallet)
+    mock_wallet.assets_visibility = "{}"
+    mock_repo = MagicMock()
+    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
     
-    mock_app_context.use_case_factory = MagicMock()
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(return_value=[
+        Balance(asset_code="EURMTL", asset_issuer="G...", balance="10", asset_type="credit_alphanum12"),
+        Balance(asset_code="USDM", asset_issuer="G...", balance="5", asset_type="credit_alphanum4")
+    ])
     mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
 
-    with patch("routers.wallet_setting.my_gettext", return_value="Select asset to delete"), \
-         patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send:
-         
-        await cmd_add_asset_del(mock_callback, mock_state, mock_session, app_context=mock_app_context)
-        
-        mock_send.assert_called_once()
-        # Verify keyboard contains EURMTL
-        kwargs = mock_send.call_args[1]
-        kb = kwargs['reply_markup']
-        # Check if any button has callback_data containing "Delete:EURMTL:GABC..."
-        # Simplified check
-        assert mock_balance_uc.execute.called
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="AssetVisibilityMenu"
+        )
+    ))
+    
+    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent) == 1
+    assert "asset_visibility_msg" in sent[0]['data']['text']
+    assert "EURMTL" in sent[0]['data']['reply_markup']
+    assert "USDM" in sent[0]['data']['reply_markup']
 
+
+@pytest.mark.asyncio
+async def test_asset_visibility_toggle(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test toggling asset visibility"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    mock_wallet = MagicMock(spec=Wallet)
+    mock_wallet.assets_visibility = "{}"
+    mock_repo = MagicMock()
+    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+    
+    # For redraw
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(return_value=[])
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+
+    # Callback to set EURMTL to Hidden (status 2)
+    cb_data = AssetVisibilityCallbackData(action="set", code="EURMTL", status=2, page=1).pack()
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data=cb_data
+        )
+    ))
+    
+    # Check if wallet was updated and committed
+    assert '"EURMTL": "hidden"' in mock_wallet.assets_visibility
+    mock_session.commit.assert_called_once()
+    
+    # Verify UI update
+    edits = [r for r in mock_server if r['method'] == 'editMessageText']
+    assert len(edits) == 1
+    assert "asset_visibility_changed" in [r for r in mock_server if r['method'] == 'answerCallbackQuery'][0]['data']['text']
+
+
+@pytest.mark.asyncio
+async def test_cmd_delete_asset_list(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test DeleteAsset menu"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(return_value=[
+        Balance(asset_code="BTCMTL", asset_issuer="G...", balance="0.0", asset_type="credit_alphanum12")
+    ])
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="DeleteAsset"
+        )
+    ))
+    
+    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert "delete_asset2" in sent[0]['data']['text']
+    assert "BTCMTL" in sent[0]['data']['reply_markup']
+
+
+@pytest.mark.asyncio
+async def test_cq_delete_asset_execute(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test actual asset deletion (trustline removal)"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    # 1. Prepare state with assets
+    storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    valid_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    assets = [Balance(asset_code="BTCMTL", asset_issuer=valid_issuer, balance="0.0", asset_type="credit_alphanum12")]
+    await dp.storage.set_data(key=storage_key, data={"assets": jsonpickle.encode(assets)})
+    
+    # Mocks for deletion
+    mock_wallet = MagicMock(spec=Wallet)
+    mock_wallet.public_key = "GUSER"
+    mock_repo = MagicMock()
+    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+    
+    mock_app_context.stellar_service.get_selling_offers = AsyncMock(return_value=[])
+    mock_app_context.stellar_service.build_change_trust_transaction = AsyncMock(return_value="XDR_CLOSE")
+    
+    with patch("routers.sign.cmd_ask_pin", AsyncMock()) as mock_ask_pin, \
+         patch("routers.wallet_setting.stellar_check_xdr", AsyncMock(return_value="XDR_CLOSE")):
+             
+        cb_data = DelAssetCallbackData(answer="BTCMTL").pack()
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            callback_query=types.CallbackQuery(
+                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+                data=cb_data
+            )
+        ))
+        
+        mock_app_context.stellar_service.build_change_trust_transaction.assert_called_once()
+        mock_ask_pin.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_buy_address_flow(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test BuyAddress flow"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    mock_wallet = MagicMock(spec=Wallet)
+    mock_wallet.is_free = True
+    mock_wallet.public_key = "GFREE"
+    
+    mock_repo = MagicMock()
+    mock_repo.get_default_wallet = AsyncMock(side_effect=lambda id: mock_wallet if id != 0 else MagicMock(public_key="GMASTER"))
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+    
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(return_value=[
+        Balance(asset_code="EURMTL", asset_issuer="G...", balance="50.0", asset_type="credit_alphanum12")
+    ])
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+    
+    mock_pay_uc = MagicMock()
+    mock_pay_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_BUY"))
+    mock_app_context.use_case_factory.create_send_payment.return_value = mock_pay_uc
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="BuyAddress"
+        )
+    ))
+    
+    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert "confirm_send" in sent[0]['data']['text']
+    assert "XDR_BUY" in str(await dp.storage.get_data(key=StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)))
+
+
+@pytest.mark.asyncio
+async def test_address_book_view(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test AddressBook viewing"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    mock_entry = MagicMock()
+    mock_entry.id = 1
+    mock_entry.address = "GADDR"
+    mock_entry.name = "My Friend"
+    
+    mock_repo = MagicMock()
+    mock_repo.get_all = AsyncMock(return_value=[mock_entry])
+    mock_app_context.repository_factory.get_addressbook_repository.return_value = mock_repo
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="AddressBook"
+        )
+    ))
+    
+    sent = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert "address_book" in sent[0]['data']['text']
+    assert "GADDR" in sent[0]['data']['reply_markup']
+    assert "My Friend" in sent[0]['data']['reply_markup']

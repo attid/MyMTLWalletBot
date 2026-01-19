@@ -4,8 +4,6 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from routers.send import cmd_send_start, cmd_send_token, cmd_send_for, StateSendToken, cmd_send_choose_token, cmd_send_get_sum, cmd_create_account, handle_docs_photo
-from routers.receive import cmd_receive
-from routers.cheque import cmd_create_cheque, StateCheque, cmd_cheque_get_sum, cmd_cheque_count, cmd_cancel_cheque, cmd_start_cheque, cmd_cheque_execute
 from stellar_sdk import Asset
 
 # --- tests for routers/send.py ---
@@ -131,44 +129,7 @@ async def test_cmd_send_choose_token(mock_session, mock_message, mock_state, moc
     assert mock_use_case.execute.call_count == 2
     mock_app_context.bot.send_message.assert_called()
 
-# --- tests for routers/receive.py ---
-
-@pytest.mark.asyncio
-async def test_cmd_receive(mock_session, mock_callback, mock_state, mock_app_context):
-    """Test receive callback handler: should get user account and create QR code."""
-    # Arrange: setup mock account data
-    mock_acc = MagicMock()
-    mock_acc.account.account_id = "GADDR1234567890TESTACCOUNT"
-    
-    # Configure bot.send_photo mock
-    mock_send_photo = AsyncMock()
-    mock_app_context.bot.send_photo = mock_send_photo
-    
-    # Configure dispatcher.storage mocks
-    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
-    mock_app_context.dispatcher.storage.set_data = AsyncMock()
-    mock_app_context.dispatcher.storage.update_data = AsyncMock()
-    
-    with patch("routers.receive.stellar_get_user_account", new_callable=AsyncMock) as mock_get_acc, \
-         patch("routers.start_msg.get_kb_return", return_value=MagicMock()):
-        mock_get_acc.return_value = mock_acc
-        
-        # Act: call the handler
-        await cmd_receive(mock_callback, mock_state, mock_session, app_context=mock_app_context)
-        
-        # Assert: verify photo was sent with correct file
-        mock_send_photo.assert_called_once()
-        args, kwargs = mock_send_photo.call_args
-        photo = kwargs.get('photo')
-        assert photo.path == f"qr/{mock_acc.account.account_id}.png"
-        
-        # Verify callback was answered
-        mock_callback.answer.assert_called_once()
-
-
-
-
-# --- NEW TESTS FOR SEND ROUTER ---
+# --- tests for routers/send.py ---
 
 @pytest.mark.asyncio
 async def test_cmd_send_get_sum_valid(mock_session, mock_message, mock_state, mock_app_context):

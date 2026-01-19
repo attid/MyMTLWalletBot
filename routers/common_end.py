@@ -70,7 +70,7 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                     await state.update_data(memo=my_account.memo, federal_memo=True)
 
                 await state.set_state(None)
-                await cmd_send_choose_token(message, state, session)
+                await cmd_send_choose_token(message, state, session, app_context=app_context)
                 return
 
     # if message.from_user.username == "itolstov":

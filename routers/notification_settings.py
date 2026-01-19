@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from loguru import logger
 from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
 from infrastructure.utils.telegram_utils import send_message
-from db.models import NotificationFilter
 from other.lang_tools import my_gettext
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.persistence.sqlalchemy_notification_repository import SqlAlchemyNotificationRepository
@@ -73,7 +72,7 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
     await callback.answer()
 
 
-@router.callback_query(F.data == "toggle_token")
+@router.callback_query(F.data == "toggle_token_notify")
 async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_data = await state.get_data()
 
@@ -107,7 +106,7 @@ async def change_amount_callback(callback: types.CallbackQuery, state: FSMContex
     await send_notification_settings_menu(callback, state, session, app_context=app_context)
 
 
-@router.callback_query(F.data == "toggle_wallets")
+@router.callback_query(F.data == "toggle_wallets_notify")
 async def toggle_wallets_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_data = await state.get_data()
     await state.update_data(for_all_wallets=not user_data.get('for_all_wallets'))
@@ -172,9 +171,9 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 @router.callback_query(F.data == "NotificationSettings")
 async def notification_settings_callback(callback: types.CallbackQuery, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
-    # We can use simple query here or add count method to repo
-    # For simplicity reusing session for count as it's not core business logic
-    filters_count = session.query(NotificationFilter).filter(NotificationFilter.user_id == user_id).count()
+    repo = app_context.repository_factory.get_notification_repository(session)
+    filters = await repo.get_by_user_id(user_id)
+    filters_count = len(filters)
 
     text = my_gettext(user_id, 'notification_settings_info', (filters_count,), app_context=app_context)
     buttons = [

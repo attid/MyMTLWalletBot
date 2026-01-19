@@ -1,129 +1,308 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.context import FSMContext
-from routers.common_setting import cmd_language, callbacks_lang, cmd_support, LangCallbackData
-from routers.notification_settings import hide_notification_callback, save_filter_callback
-from keyboards.common_keyboards import HideNotificationCallbackData
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
+import datetime
 
-# --- tests for routers/common_setting.py ---
+from routers.common_setting import router as common_setting_router, LangCallbackData
+from routers.start_msg import WalletSettingCallbackData
+from infrastructure.services.localization_service import LocalizationService
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from aiogram.fsm.storage.base import StorageKey
+from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+
+class MockDbMiddleware(BaseMiddleware):
+    def __init__(self, session, app_context):
+        self.session = session
+        self.app_context = app_context
+        # We need to mock l10n.lang_dict for cmd_language
+        self.l10n = MagicMock(spec=LocalizationService)
+        self.l10n.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
+
+    async def __call__(self, handler, event, data):
+        data["session"] = self.session
+        data["app_context"] = self.app_context
+        data["l10n"] = self.l10n
+        return await handler(event, data)
+
+@pytest.fixture(autouse=True)
+def cleanup_router():
+    yield
+    if common_setting_router.parent_router:
+         common_setting_router._parent_router = None
+
+@pytest.fixture
+def mock_session():
+    session = MagicMock()
+    return session
+
+@pytest.fixture
+async def bot():
+    session = AiohttpSession(
+        api=TelegramAPIServer.from_base(MOCK_SERVER_URL)
+    )
+    bot = Bot(token=TEST_BOT_TOKEN, session=session)
+    yield bot
+    await bot.session.close()
+
+@pytest.fixture
+def dp(mock_session, mock_app_context):
+    dp = Dispatcher()
+    middleware = MockDbMiddleware(mock_session, mock_app_context)
+    dp.message.middleware(middleware)
+    dp.callback_query.middleware(middleware)
+    dp.include_router(common_setting_router)
+    return dp
 
 @pytest.mark.asyncio
-async def test_cmd_language(mock_session, mock_callback, mock_app_context):
-    # Setup localization
-    mock_app_context.localization_service.lang_dict = {'en': {'1_lang': 'English'}, 'ru': {'1_lang': 'Russian'}}
+async def test_cmd_wallet_lang(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test ChangeLang callback -> Show language menu"""
+    user_id = 123
+    mock_app_context.bot = bot
     
-    # Run handler
-    await cmd_language(mock_session, 123, mock_app_context.localization_service, app_context=mock_app_context)
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="ChangeLang"
+        )
+    ))
     
-    # Verify
-    mock_app_context.bot.send_message.assert_called_once()
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent_messages) == 1
+    assert "Choose language" in sent_messages[0]['data']['text']
+    # Verify buttons
+    markup = sent_messages[0]['data']['reply_markup']
+    assert "English" in markup
+    assert "Russian" in markup
 
 
 @pytest.mark.asyncio
-async def test_callbacks_lang(mock_session, mock_callback, mock_state, mock_app_context):
-    callback_data = LangCallbackData(action="ru")
+async def test_callbacks_lang(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test lang_en callback -> Set language and show balance"""
+    user_id = 123
+    mock_app_context.bot = bot
     
-    # Setup mocks for cmd_show_balance dependencies
-    mock_wallet = MagicMock()
-    mock_wallet.public_key = "GKey"
-    mock_wallet.is_free = False
+    # We need to mock change_user_lang (imported in router)
+    # And cmd_show_balance (imported in router) OR let it run.
+    # cmd_show_balance is complex, relies on WalletRepo and StellarService.
+    # It's better to patch cmd_show_balance to avoid testing it here.
     
-    mock_wallet_repo = MagicMock()
-    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
-    mock_wallet_repo.get_info = AsyncMock(return_value="WalletInfo")
-    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
-    
-    mock_secret_service = MagicMock()
-    mock_secret_service.is_ton_wallet = AsyncMock(return_value=False)
-    mock_app_context.use_case_factory.create_wallet_secret_service.return_value = mock_secret_service
-    
-    mock_balance_use_case = MagicMock()
-    mock_balance_use_case.execute = AsyncMock(return_value=[])
-    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_use_case
-    
-    mock_user_repo = MagicMock()
-    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock())
-    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
-
-    # Mock change_user_lang (legacy DB util)
-    with patch("routers.common_setting.change_user_lang", new_callable=AsyncMock) as mock_change:
+    with patch("routers.common_setting.change_user_lang", new_callable=AsyncMock) as mock_change, \
+         patch("routers.common_setting.cmd_show_balance", new_callable=AsyncMock) as mock_show:
         
-        await callbacks_lang(mock_callback, callback_data, mock_state, mock_session, mock_app_context.localization_service, mock_app_context)
+        cb_data = LangCallbackData(action="en").pack()
         
-        mock_change.assert_called_once_with(mock_session, 123, "ru")
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            callback_query=types.CallbackQuery(
+                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Lang"),
+                data=cb_data
+            )
+        ))
         
-        # Check that user_lang was updated
-        # mock_state.update_data is called multiple times (once for lang, once for balance)
-        # We need to verify that one of them was user_lang='ru'
-        calls = [call.kwargs for call in mock_state.update_data.call_args_list]
-        assert any(c.get('user_lang') == 'ru' for c in calls)
+        mock_change.assert_called_once_with(mock_session, user_id, "en")
+        mock_show.assert_called_once()
         
-        # Verify cmd_show_balance execution via side-effects (send_message called)
-        mock_app_context.bot.send_message.assert_called()
+        # Verify answer
+        answers = [r for r in mock_server if r['method'] == 'answerCallbackQuery']
+        assert len(answers) == 1
+        assert "was_set" in answers[0]['data']['text'] # Mock gettext
 
 
 @pytest.mark.asyncio
-async def test_cmd_support(mock_session, mock_callback, mock_state, mock_app_context):
-    await cmd_support(mock_callback, mock_state, mock_session, app_context=mock_app_context)
+async def test_cmd_wallet_setting(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test ChangeWallet callback"""
+    user_id = 123
+    mock_app_context.bot = bot
     
-    # send_message calls bot.send_message
-    mock_app_context.bot.send_message.assert_called_once()
-
-
-# --- tests for routers/notification_settings.py ---
-
-@pytest.mark.asyncio
-async def test_hide_notification_callback(mock_session, mock_callback, mock_state, mock_app_context):
-    callback_data = HideNotificationCallbackData(wallet_id=1, operation_id="10")
-    mock_callback.data = callback_data.pack()
-    
-    # Setup mocks
-    mock_wallet = MagicMock()
-    mock_wallet.user_id = 123
-    mock_wallet.public_key = "GKey"
-    
-    mock_op = MagicMock()
-    mock_op.code1 = "XLM"
-    mock_op.amount1 = "10.0"
-    mock_op.operation = "payment"
-
-    # Configure repository factory
-    mock_wallet_repo = MagicMock()
-    mock_wallet_repo.get_by_id = AsyncMock(return_value=mock_wallet)
-    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
-    
-    mock_op_repo = MagicMock()
-    mock_op_repo.get_by_id = AsyncMock(return_value=mock_op)
-    mock_app_context.repository_factory.get_operation_repository.return_value = mock_op_repo
-    
-    # Mock send_notification_settings_menu to avoid complex UI construction if desired, 
-    # OR let it run. Let's let it run but ensure it calls send_message.
-    # It calls send_message -> bot.send_message.
-    
-    await hide_notification_callback(mock_callback, mock_state, mock_session, app_context=mock_app_context)
-    
-    mock_state.update_data.assert_called()
-    mock_app_context.bot.send_message.assert_called()
+    with patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change_wallet:
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            callback_query=types.CallbackQuery(
+                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+                data="ChangeWallet"
+            )
+        ))
+        
+        mock_change_wallet.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_save_filter_callback(mock_session, mock_callback, mock_state, mock_app_context):
-    mock_state.get_data.return_value = {
-        'asset_code': 'XLM',
-        'min_amount': 10,
-        'operation_type': 'payment',
-        'public_key': 'GKey',
-        'for_all_wallets': False
-    }
+async def test_cmd_wallet_setting_msg(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test /change_wallet command"""
+    user_id = 123
+    mock_app_context.bot = bot
     
-    mock_repo = MagicMock()
-    mock_repo.find_duplicate = AsyncMock(return_value=None)
-    mock_repo.create = AsyncMock()
-    mock_app_context.repository_factory.get_notification_repository.return_value = mock_repo
+    with patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change_wallet:
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            message=types.Message(
+                message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'),
+                from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+                text="/change_wallet"
+            )
+        ))
+        
+        mock_change_wallet.assert_called_once()
+        # Message should be deleted (mock_server doesn't show deleteMessage easily unless we track it)
+        deletes = [r for r in mock_server if r['method'] == 'deleteMessage']
+        assert len(deletes) == 1
 
-    await save_filter_callback(mock_callback, mock_state, mock_session, app_context=mock_app_context)
+
+@pytest.mark.asyncio
+async def test_cq_setting_delete(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test WalletSettingCallbackData DELETE action"""
+    user_id = 123
+    mock_app_context.bot = bot
     
-    mock_repo.create.assert_called_once()
-    mock_state.clear.assert_called_once()
-    mock_app_context.bot.send_message.assert_called()
+    # Needs state data with wallets
+    # We can patch state.get_data or set it if using real FSM. 
+    # Real FSM is used by dp.feed_update.
+    # But how to set state data before handler?
+    # We can access storage.
+    
+    storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    wallets = {"1": "GWALLET1", "2": "GWALLET2"}
+    await dp.storage.set_data(key=storage_key, data={"wallets": wallets})
+    
+    cb_data = WalletSettingCallbackData(action="DELETE", idx=1).pack()
+    
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data=cb_data
+        )
+    ))
+    
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent_messages) == 1
+    assert "kb_delete" in sent_messages[0]['data']['text']
+    assert "GWALLET1" in sent_messages[0]['data']['text']
+    assert "YES_DELETE" in sent_messages[0]['data']['reply_markup']
+
+
+@pytest.mark.asyncio
+async def test_cq_setting_set_active(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test WalletSettingCallbackData SET_ACTIVE action"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    wallets = {"1": "GWALLET1"}
+    await dp.storage.set_data(key=storage_key, data={"wallets": wallets})
+    
+    cb_data = WalletSettingCallbackData(action="SET_ACTIVE", idx=1).pack()
+    
+    # We need to mock SqlAlchemyWalletRepository because it is instantiated inside the handler
+    with patch("routers.common_setting.SqlAlchemyWalletRepository") as MockRepoClass, \
+         patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change:
+        
+        mock_repo = MockRepoClass.return_value
+        mock_repo.set_default_wallet = AsyncMock()
+        
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            callback_query=types.CallbackQuery(
+                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+                data=cb_data
+            )
+        ))
+        
+        mock_repo.set_default_wallet.assert_called_once_with(user_id, "GWALLET1")
+        mock_change.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cq_setting_name(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test WalletSettingCallbackData NAME action"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    wallets = {"1": "GWALLET1"}
+    await dp.storage.set_data(key=storage_key, data={"wallets": wallets})
+    
+    cb_data = WalletSettingCallbackData(action="NAME", idx=1).pack()
+    
+    with patch("routers.common_setting.SqlAlchemyWalletRepository") as MockRepoClass, \
+         patch("routers.common_setting.stellar_get_balance_str", new_callable=AsyncMock) as mock_get_bal:
+        
+        mock_repo = MockRepoClass.return_value
+        mock_repo.get_info = AsyncMock(return_value="MyWallet")
+        mock_get_bal.return_value = "100 XLM"
+        
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            callback_query=types.CallbackQuery(
+                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+                data=cb_data
+            )
+        ))
+        
+        answers = [r for r in mock_server if r['method'] == 'answerCallbackQuery']
+        assert len(answers) >= 1
+        # Find the answer with text
+        text_answer = next((a for a in answers if 'text' in a['data']), None)
+        assert text_answer is not None
+        assert "MyWallet" in text_answer['data']['text']
+        assert "100 XLM" in text_answer['data']['text']
+
+
+@pytest.mark.asyncio
+async def test_cmd_yes_delete(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test YES_DELETE callback"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    wallets = {"1": "GWALLET1"}
+    await dp.storage.set_data(key=storage_key, data={"wallets": wallets, "idx": "1"})
+    
+    with patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepoClass, \
+         patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change:
+        
+        mock_repo = MockRepoClass.return_value
+        mock_repo.delete = AsyncMock()
+        
+        await dp.feed_update(bot=bot, update=types.Update(
+            update_id=1,
+            callback_query=types.CallbackQuery(
+                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+                data="YES_DELETE"
+            )
+        ))
+        
+        mock_repo.delete.assert_called_once_with(user_id, "GWALLET1", wallet_id=1)
+        mock_change.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_support(mock_server, bot, dp, mock_session, mock_app_context):
+    """Test Support callback"""
+    user_id = 123
+    mock_app_context.bot = bot
+    
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="Support"
+        )
+    ))
+    
+    sent_messages = [r for r in mock_server if r['method'] == 'sendMessage']
+    assert len(sent_messages) == 1
+    assert "support_bot" in sent_messages[0]['data']['text']

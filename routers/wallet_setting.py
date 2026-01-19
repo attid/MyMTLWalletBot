@@ -25,7 +25,7 @@ from loguru import logger
 # from other.global_data import global_data
 from other.lang_tools import check_user_id
 from infrastructure.utils.stellar_utils import public_issuer, get_good_asset_list
-from other.stellar_tools import eurmtl_asset
+from other.stellar_tools import eurmtl_asset, stellar_check_xdr
 # Legacy imports removed: stellar_get_balances, stellar_add_trust, stellar_get_user_account,
 # stellar_is_free_wallet, stellar_pay, stellar_get_user_keypair,
 # stellar_change_password, stellar_unfree_wallet, have_free_xlm,
@@ -230,7 +230,7 @@ async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMCon
     message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=1)
 
     await callback.answer()
-    await send_message(session, callback, message_text, reply_markup=reply_markup)
+    await send_message(session, callback, message_text, reply_markup=reply_markup, app_context=app_context)
 
 
 ########################################################################################################################
@@ -344,78 +344,145 @@ async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, se
                                                   )])
     kb_tmp.append(get_return_button(callback, app_context=app_context))
     msg = my_gettext(callback, 'delete_asset2', app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
+    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp), app_context=app_context)
     await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
 
 
 @router.callback_query(DelAssetCallbackData.filter())
+
+
 async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data: DelAssetCallbackData,
+
+
                                     state: FSMContext, session: Session, app_context: AppContext):
+
+
     answer = callback_data.answer
+
+
     data = await state.get_data()
+
+
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
 
+
+
+
+
     asset = list(filter(lambda x: x.asset_code == answer, asset_list))
+
+
     if asset:
-        await state.update_data(send_asset_code=asset[0].asset_code,
-                                send_asset_issuer=asset[0].asset_issuer)
-        asset_obj = Asset(asset[0].asset_code, asset[0].asset_issuer)
-        if await stellar_has_asset_offers(session, callback.from_user.id, asset_obj):
-     # NOTE: stellar_has_asset_offers logic should be refactored too, but leaving import for now if failed to move above?
-     # Wait, I removed the import. I need to fix logic here.
-            repo = app_context.repository_factory.get_wallet_repository(session)
-            service = app_context.stellar_service
-            wallet = await repo.get_default_wallet(callback.from_user.id)
-            offers = await service.get_selling_offers(wallet.public_key)
-            has_offers = any(o['selling']['asset_code'] == asset[0].asset_code and o['selling']['asset_issuer'] == asset[0].asset_issuer for o in offers)
-            
-            if has_offers:
-                await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers', app_context=app_context),
-                                   reply_markup=get_kb_return(callback))
-        asset_obj = asset[0] # Get the Balance object directly
+
+
+        asset_obj = asset[0]
+
+
         await state.update_data(send_asset_code=asset_obj.asset_code,
+
+
                                 send_asset_issuer=asset_obj.asset_issuer)
-        # NOTE: stellar_has_asset_offers logic should be refactored too, but leaving import for now if failed to move above?
-        # Wait, I removed the import. I need to fix logic here.
-        repo = app_context.repository_factory.get_wallet_repository(session)
-        service = app_context.stellar_service
-        wallet = await repo.get_default_wallet(callback.from_user.id)
-        offers = await service.get_selling_offers(wallet.public_key)
-        has_offers = any(o['selling']['asset_code'] == asset_obj.asset_code and o['selling']['asset_issuer'] == asset_obj.asset_issuer for o in offers)
+
+
         
+
+
+        repo = app_context.repository_factory.get_wallet_repository(session)
+
+
+        service = app_context.stellar_service
+
+
+        wallet = await repo.get_default_wallet(callback.from_user.id)
+
+
+        offers = await service.get_selling_offers(wallet.public_key)
+
+
+        has_offers = any(o['selling']['asset_code'] == asset_obj.asset_code and o['selling']['asset_issuer'] == asset_obj.asset_issuer for o in offers)
+
+
+        
+
+
         if has_offers:
+
+
             await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers', app_context=app_context),
-                               reply_markup=get_kb_return(callback))
+
+
+                               reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
+
+
             await callback.answer()
+
+
             return
 
-        # Refactored: Close asset = Change Trust (Limit 0)
-        # Refactored: Close asset = Change Trust (Limit 0)
-        # Using StellarService directly for Change Trust operation (Limit 0 to remove trustline)
-        repo = app_context.repository_factory.get_wallet_repository(session)
-        wallet = await repo.get_default_wallet(callback.from_user.id)
-        service = app_context.stellar_service
-        
+
+
+
+
+        # Close asset = Change Trust (Limit 0)
+
+
         tx = await service.build_change_trust_transaction(
+
+
             source_public_key=wallet.public_key,
+
+
             asset_code=asset_obj.asset_code,
+
+
             asset_issuer=asset_obj.asset_issuer,
+
+
             limit="0"
+
+
         )
+
+
         
-        from other.stellar_tools import stellar_check_xdr
+
+
         from routers.sign import cmd_ask_pin
+
+
         
+
+
         xdr = await stellar_check_xdr(tx)
+
+
         if xdr:
+
+
             await state.update_data(xdr=xdr)
+
+
             await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
+
+
             
-        return # The rest of the original code is now handled by cmd_ask_pin and subsequent signing.
+
+
+        return
+
+
     else:
+
+
         await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
+
+
         logger.info(f'error add asset {callback.from_user.id} {answer}')
+
+
+
+
 
     await callback.answer()
 
@@ -598,7 +665,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session, *
              asset_issuer=asset_issuer
          )
          
-    from other.stellar_tools import stellar_check_xdr
+    
     from routers.sign import cmd_ask_pin
     
     xdr = await stellar_check_xdr(tx)
@@ -674,6 +741,7 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
     elif pin_type == 10:
         await callback.answer('You have read only account', show_alert=True)
     elif pin_type == 0:
+        is_free = wallet.is_free if wallet else False
         if is_free:
             await callback.answer('You have free account. Please buy it first.', show_alert=True)
         else:
@@ -687,13 +755,11 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
 async def send_private_key(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
-    data = await state.get_data()
-    pin = data.get('pin', '')
     secrets_use_case = app_context.use_case_factory.create_get_wallet_secrets(session)
     
     secrets = await secrets_use_case.execute(user_id, pin)
     if not secrets:
-        await send_message(session, user_id, "Error: Incorrect PIN", reply_markup=get_kb_del_return(user_id))
+        await send_message(session, user_id, "Error: Incorrect PIN", reply_markup=get_kb_del_return(user_id, app_context=app_context), app_context=app_context)
         return
 
     message = f'Your private key is <code>{secrets.secret_key}</code>'
@@ -712,7 +778,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
     wallet = await repo.get_default_wallet(callback.from_user.id)
     is_free = wallet.is_free if wallet else False
     if is_free:
-        await cmd_buy_private_key(callback, state, session)
+        await cmd_buy_private_key(callback, state, session, app_context=app_context)
         # await callback.answer('You have free account. Please buy it first.')
     else:
         # pin_type logic using existing wallet
@@ -723,7 +789,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
         else:
             await state.update_data(fsm_func=jsonpickle.dumps(send_private_key))
             await state.set_state(PinState.sign)
-            await cmd_ask_pin(session, callback.from_user.id, state)
+            await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
             await callback.answer()
 
 
@@ -732,7 +798,7 @@ async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, *, ap
     buy_address = data.get('buy_address')
     admin_id = app_context.admin_id
     await send_message(session, user_id=admin_id, msg=f'{user_id} buy {buy_address}', need_new_msg=True,
-                       reply_markup=get_kb_return(user_id))
+                       reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
     
     # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = app_context.repository_factory.get_wallet_repository(session)
@@ -755,7 +821,6 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
         father_wallet = await repo.get_default_wallet(0)
         father_key = father_wallet.public_key
         await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
-        await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
         # Refactored to use UseCaseFactory
         balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         balances = await balance_use_case.execute(user_id=callback.from_user.id)
@@ -777,7 +842,7 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
             pay_use_case = app_context.use_case_factory.create_send_payment(session)
             result = await pay_use_case.execute(
                 user_id=callback.from_user.id,
-                destination=father_key,
+                destination_address=father_key,
                 amount=config.wallet_cost,
                 asset=DomainAsset(code=eurmtl_asset.code, issuer=eurmtl_asset.issuer),
                 memo=memo
@@ -787,7 +852,7 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
             msg = my_gettext(callback, 'confirm_send', (config.wallet_cost, eurmtl_asset.code, father_key, memo), app_context=app_context)
             msg = f"For buy {public_key}\n{msg}"
 
-            await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
+            await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
     else:
         await callback.answer('You can`t buy. You have you oun account. But you can donate /donate', show_alert=True)
 
@@ -818,14 +883,14 @@ async def cmd_edit_address_book(session: Session, user_id: int, app_context: App
     buttons.append(get_return_button(user_id, app_context=app_context))
 
     await send_message(session, user_id, my_gettext(user_id, 'address_book', app_context=app_context),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
 
 
 @router.callback_query(F.data == "AddressBook")
 async def cb_edit_address_book(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await callback.answer()
     await state.set_state(StateAddressBook.sending_new)
-    await cmd_edit_address_book(session, callback.from_user.id)
+    await cmd_edit_address_book(session, callback.from_user.id, app_context=app_context)
 
 
 @router.message(StateAddressBook.sending_new, F.text)
@@ -833,17 +898,17 @@ async def cmd_send_for(message: types.Message, state: FSMContext, session: Sessi
     await message.delete()
     if len(message.text) > 5 and message.text.find(' ') != -1:
         arr = message.text.split(' ')
-        from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
-        addressbook_repo = SqlAlchemyAddressBookRepository(session)
+        # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+        addressbook_repo = app_context.repository_factory.get_addressbook_repository(session)
         await addressbook_repo.create(message.from_user.id, arr[0], ' '.join(arr[1:]))
-    await cmd_edit_address_book(session, message.from_user.id)
+    await cmd_edit_address_book(session, message.from_user.id, app_context=app_context)
 
 
 @router.callback_query(AddressBookCallbackData.filter())
-async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCallbackData,
+async def cq_setting_address_book(callback: types.CallbackQuery, callback_data: AddressBookCallbackData,
                      state: FSMContext, session: Session, app_context: AppContext):
-    from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
-    addressbook_repo = SqlAlchemyAddressBookRepository(session)
+    # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
+    addressbook_repo = app_context.repository_factory.get_addressbook_repository(session)
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
@@ -855,7 +920,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCa
 
     if answer == 'Delete':
         await addressbook_repo.delete(idx, user_id)
-        await cmd_edit_address_book(session, user_id)
+        await cmd_edit_address_book(session, user_id, app_context=app_context)
 
     await callback.answer()
 
@@ -866,7 +931,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: AddressBookCa
 
 @router.callback_query(F.data == "ManageData")
 async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    repo = SqlAlchemyWalletRepository(session)
+    repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     account_id = wallet.public_key
     buttons = [
@@ -878,7 +943,7 @@ async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, 
         [types.InlineKeyboardButton(text='Return', callback_data="Return")]
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, "There you can manage your data:", reply_markup=keyboard)
+    await send_message(session, callback, "There you can manage your data:", reply_markup=keyboard, app_context=app_context)
 
 
 @router.callback_query(MDCallbackData.filter())
@@ -891,12 +956,12 @@ async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: 
         "Authorization": f"Bearer {config.eurmtl_key}",
         "Content-Type": "application/json"
     }
-    json = {
+    json_payload = {
         "uuid": uuid_callback,
         "user_id": callback.from_user.id
     }
     status, json_data = await get_web_request('POST', url=f"https://eurmtl.me/remote/get_mmwb_transaction",
-                                              headers=headers, json=json, return_type='json')
+                                              headers=headers, json=json_payload, return_type='json')
 
     if json_data is not None:
         if 'message' in json_data:
@@ -905,11 +970,44 @@ async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: 
         xdr = json_data['xdr']
         await state.update_data(xdr=xdr)
         msg = await get_web_decoded_xdr(xdr)
-        await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback),
-                           parse_mode=SULGUK_PARSE_MODE)
+        await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context),
+                           parse_mode=SULGUK_PARSE_MODE, app_context=app_context)
     else:
         await callback.answer("Error getting data", show_alert=True)
 
-########################################################################################################################
-########################################################################################################################
-########################################################################################################################
+
+async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext, app_context: AppContext):
+    """Helper function to process WalletConnect URI"""
+    await clear_state(state)
+    await clear_state(state)
+    await clear_last_message_id(user_id, app_context=app_context)
+    # Get user's default address
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await repo.get_default_wallet(user_id)
+
+    if wallet:
+        address = wallet.public_key
+        try:
+            user_info = {
+                "user_id": user_id,
+                "address": address
+            }
+            await publish_pairing_request(wc_uri, address, user_info)
+            await send_message(
+                session,
+                user_id,
+                my_gettext(user_id, 'wc_pairing_initiated', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
+            )
+        except Exception as e:
+            logger.error(f"Failed to publish WC pairing request for user {user_id}: {e}")
+            await send_message(
+                session,
+                user_id,
+                my_gettext(user_id, 'wc_pairing_error', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
+            )
+    else:
+        await send_message(
+            session,
+            user_id,
+            my_gettext(user_id, 'default_wallet_not_found', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
+        )

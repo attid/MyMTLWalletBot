@@ -13,7 +13,6 @@ from infrastructure.utils.stellar_utils import my_float
 from other.config_reader import config
 from other.grist_tools import load_fest_info
 from infrastructure.services.app_context import AppContext
-from infrastructure.services.localization_service import LocalizationService
 from sqlalchemy.orm import Session
 
 router = Router()
@@ -188,7 +187,7 @@ async def cmd_fest_get_sum(message: Message, state: FSMContext, session: Session
     else:
         keyboard = get_kb_return(message.from_user.id, app_context=app_context)
         await send_message(session, message, f"{my_gettext(message, 'bad_sum', app_context=app_context)}\n{data['msg']}",
-                           reply_markup=keyboard)
+                           reply_markup=keyboard, app_context=app_context)
 
 
 @router.callback_query(F.data == "Fest2024")
@@ -209,7 +208,7 @@ async def cmd_fest(callback: types.CallbackQuery, session: Session, state: FSMCo
     kb_tmp.append(get_return_button(callback, app_context=app_context))
     await send_message(session, callback, msg + long_line(),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp),
-                       need_new_msg=True)
+                       need_new_msg=True, app_context=app_context)
 
 
 @router.callback_query(SendLevel24.filter())
@@ -231,7 +230,7 @@ async def cmd_fest_level_24(callback: types.CallbackQuery, callback_data: SendLe
     # if seller.get('msg') is not None:
     #     msg = seller['msg'] + '\n\n' + msg
 
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback.from_user.id, app_context=app_context))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback.from_user.id, app_context=app_context), app_context=app_context)
     await state.update_data(msg=msg, level_1=level_1)
 
 

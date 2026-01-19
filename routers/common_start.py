@@ -97,7 +97,11 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         await cmd_show_balance(session, message.from_user.id, state, app_context=app_context)
         await check_update_username(
-            session, message.from_user.id, message.from_user.username, state
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            state,
+            app_context=app_context,
         )
 
 
@@ -114,7 +118,11 @@ async def cb_return(callback: types.CallbackQuery, state: FSMContext, session: S
         await cmd_show_balance(session, callback.message.chat.id, state, app_context=app_context)
         await callback.answer()
     await check_update_username(
-        session, callback.from_user.id, callback.from_user.username, state
+        session,
+        callback.from_user.id,
+        callback.from_user.username,
+        state,
+        app_context=app_context,
     )
 
 
@@ -129,7 +137,11 @@ async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, ses
     await cmd_show_balance(session, callback.message.chat.id, state, app_context=app_context)
     await callback.answer()
     await check_update_username(
-        session, callback.from_user.id, callback.from_user.username, state
+        session,
+        callback.from_user.id,
+        callback.from_user.username,
+        state,
+        app_context=app_context,
     )
 
 
@@ -141,7 +153,7 @@ async def cmd_about(message: types.Message, session: Session, app_context: AppCo
     await send_message(session, message.from_user.id, msg, reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
 
 
-def get_kb_donate(chat_id: int) -> types.InlineKeyboardMarkup:
+def get_kb_donate(chat_id: int, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     buttons_list = [["1", "5", "10", "50"],
                     ["100", "300", "1000"]]
 
@@ -175,7 +187,13 @@ async def cmd_donate(session: Session, user_id, state: FSMContext, app_context: 
           f'Top 5 donators you can see at /about list'
     await state.set_state(SettingState.send_donate_sum)
     await state.update_data(max_sum=eurmtl_balance, msg=msg)
-    await send_message(session, user_id, msg, reply_markup=get_kb_donate(user_id), app_context=app_context)
+    await send_message(
+        session,
+        user_id,
+        msg,
+        reply_markup=get_kb_donate(user_id, app_context=app_context),
+        app_context=app_context,
+    )
 
 
 @router.callback_query(F.data == "Donate")
@@ -194,11 +212,23 @@ async def cmd_after_donate(session: Session, user_id: int, state: FSMContext, *,
     data = await state.get_data()
     donate_sum = data.get('donate_sum')
     admin_id = app_context.admin_id
-    await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
-                       reply_markup=get_kb_return(user_id), app_context=app_context)
+    await send_message(
+        session,
+        user_id=admin_id,
+        msg=f'{user_id} donate {donate_sum}',
+        need_new_msg=True,
+        reply_markup=get_kb_return(user_id, app_context=app_context),
+        app_context=app_context,
+    )
     
-    await send_message(session, user_id=admin_id, msg=f'{user_id} donate {donate_sum}', need_new_msg=True,
-                       reply_markup=get_kb_return(user_id), app_context=app_context)
+    await send_message(
+        session,
+        user_id=admin_id,
+        msg=f'{user_id} donate {donate_sum}',
+        need_new_msg=True,
+        reply_markup=get_kb_return(user_id, app_context=app_context),
+        app_context=app_context,
+    )
     
     add_donation = app_context.use_case_factory.create_add_donation(session)
     await add_donation.execute(user_id, donate_sum)
@@ -248,14 +278,31 @@ async def get_donate_sum(session: Session, user_id, donate_sum, state: FSMContex
                 await state.update_data(xdr=xdr, donate_sum=donate_sum, fsm_after_send=jsonpickle.dumps(cmd_after_donate))
                 msg = my_gettext(user_id, 'confirm_send', (donate_sum, EURMTL_ASSET.code, father_key, memo), app_context=app_context)
                 msg = f"For donate\n{msg}"
-                await send_message(session, user_id, msg, reply_markup=get_kb_yesno_send_xdr(user_id), app_context=app_context)
+                await send_message(
+                    session,
+                    user_id,
+                    msg,
+                    reply_markup=get_kb_yesno_send_xdr(user_id, app_context=app_context),
+                    app_context=app_context,
+                )
             else:
-                await send_message(session, user_id, f"Error: {result.error_message}", reply_markup=get_kb_return(user_id), app_context=app_context)
+                await send_message(
+                    session,
+                    user_id,
+                    f"Error: {result.error_message}",
+                    reply_markup=get_kb_return(user_id, app_context=app_context),
+                    app_context=app_context,
+                )
 
     except Exception as ex:
         # logger.error(["get_donate_sum", ex])
-        await send_message(session, user_id, my_gettext(user_id, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            user_id,
+            my_gettext(user_id, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
+            reply_markup=get_kb_return(user_id, app_context=app_context),
+            app_context=app_context,
+        )
 
 
 @router.callback_query(SettingState.send_donate_sum)
@@ -286,7 +333,13 @@ async def cb_set_default(callback: types.CallbackQuery, state: FSMContext, sessi
     user = await user_repo.get_by_id(callback.from_user.id)
     default_addr = user.default_address if user else None
     msg = my_gettext(callback, 'set_default', (default_addr,), app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
@@ -300,7 +353,17 @@ async def cb_set_limit(callback: types.CallbackQuery, state: FSMContext, session
         await user_repo.update(db_user)
 
     msg = my_gettext(callback, 'limits', app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_limits(callback.from_user.id, db_user.can_5000 if db_user else 0, app_context=app_context), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=get_kb_limits(
+            callback.from_user.id,
+            db_user.can_5000 if db_user else 0,
+            app_context=app_context,
+        ),
+        app_context=app_context,
+    )
     await callback.answer()
     session.commit()
 
@@ -323,7 +386,13 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: Se
     user = await user_repo.get_by_id(message.from_user.id)
     default_addr = user.default_address if user else None
     msg = my_gettext(message, 'set_default', (default_addr,), app_context=app_context)
-    await send_message(session, message, msg, reply_markup=get_kb_return(message), app_context=app_context)
+    await send_message(
+        session,
+        message,
+        msg,
+        reply_markup=get_kb_return(message, app_context=app_context),
+        app_context=app_context,
+    )
 
     await message.delete()
 
@@ -336,11 +405,22 @@ async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session:
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback, app_context=app_context)
     await callback.answer()
     await check_update_username(
-        session, callback.from_user.id, callback.from_user.username, state
+        session,
+        callback.from_user.id,
+        callback.from_user.username,
+        state,
+        app_context=app_context,
     )
 
 
-async def check_update_username(session: Session, user_id: int, user_name: str, state: FSMContext):
+async def check_update_username(
+    session: Session,
+    user_id: int,
+    user_name: str,
+    state: FSMContext,
+    *,
+    app_context: AppContext,
+):
     """
         Check if the username in the database matches the real telegram-user name.
         If not, then update in the database and in FSM-state.

@@ -257,7 +257,7 @@ def format_bsn_row(bsn_row: BSNRow) -> str:
     return f"{action_map[bsn_row.action_type]} {warn}<code>{tag}</code>: {value}{old_value}\n"
 
 
-def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Message, int, str], *, app_context: AppContext) -> str:
+def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Message, int, str], app_context: AppContext) -> str:
     # Use localized string if app_context available, otherwise fallback (though my_gettext handles it if we pass it correctly)
     # But wait, make_tag_message is a helper. my_gettext is used inside.
     # Note: my_gettext signature: (user_id_or_obj, key, args, app_context)
@@ -280,7 +280,7 @@ def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Mes
 
 
 def get_bsn_kb(user_id: typing.Union[CallbackQuery, Message, int, str],
-               send_enabled: bool = False, *, app_context: AppContext) -> "InlineKeyboardMarkup":
+               app_context: AppContext, send_enabled: bool = False) -> "InlineKeyboardMarkup":
     builder = InlineKeyboardBuilder()
     if send_enabled:
         builder.button(text=my_gettext(user_id, 'kb_send', app_context=app_context), callback_data=SEND_CALLBACK_DATA)
@@ -311,7 +311,7 @@ async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session:
             await message.answer(my_gettext(message, 'bsn_tag_value', (tag,), app_context=app_context))
 
 
-def parse_exception(exc: Exception, user_id: typing.Union[CallbackQuery, Message, int, str], *, app_context: AppContext) -> str:
+def parse_exception(exc: Exception, user_id: typing.Union[CallbackQuery, Message, int, str], app_context: AppContext) -> str:
     if isinstance(exc, EmptyTag):
         return my_gettext(user_id, 'bsn_empty_tag_error', (exc.raw_tag,), app_context=app_context)
     if isinstance(exc, LengthError):
@@ -375,7 +375,7 @@ async def process_tags(message: "Message", state: "FSMContext", session: "Sessio
     await state.update_data(tags=jsonpickle.dumps(tags))
     await clear_last_message_id(message.chat.id, app_context=app_context)
     await send_message(session, user_id=message, msg=make_tag_message(tags, message.from_user.id, app_context),
-                       reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty(), app_context), app_context=app_context)
+                       reply_markup=get_bsn_kb(message.from_user.id, app_context, not tags.is_empty()), app_context=app_context)
 
 
 @bsn_router.message(Command("bsn", ignore_case=True))
@@ -388,7 +388,7 @@ async def bsn_mode_command(message: "Message", state: "FSMContext", command: "Co
         await parse_tag(tag=tag, bsn_data=tags, message=message, session=session, app_context=app_context)
     await clear_last_message_id(message.chat.id, app_context=app_context)
     await send_message(session, user_id=message, msg=make_tag_message(tags, message.from_user.id, app_context),
-                       reply_markup=get_bsn_kb(message.from_user.id, not tags.is_empty(), app_context), app_context=app_context)
+                       reply_markup=get_bsn_kb(message.from_user.id, app_context, not tags.is_empty()), app_context=app_context)
     await state.set_state(BSNStates.waiting_for_tags)
     await state.update_data(tags=jsonpickle.dumps(tags))
 

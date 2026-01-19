@@ -67,6 +67,11 @@ class IUseCaseFactory(ABC):
         """Create ProcessStellarUri use case."""
         pass
 
+    @abstractmethod
+    def create_add_wallet(self, session: Any):
+        """Create AddWallet use case."""
+        pass
+
 
 class UseCaseFactory(IUseCaseFactory):
     """
@@ -136,3 +141,8 @@ class UseCaseFactory(IUseCaseFactory):
         from core.use_cases.stellar.process_uri import ProcessStellarUri
         repo = self.repository_factory.get_wallet_repository(session)
         return ProcessStellarUri(repo, self.stellar_service)
+
+    def create_add_wallet(self, session: Any):
+        from core.use_cases.wallet.add_wallet import AddWallet
+        repo = self.repository_factory.get_wallet_repository(session)
+        return AddWallet(repo)

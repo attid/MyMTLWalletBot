@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from core.domain.value_objects import Asset
 
 class IStellarService(ABC):
@@ -133,6 +135,51 @@ class IStellarService(ABC):
     ) -> List[Asset]:
         """Find a strict send payment path."""
         pass
+
+    @abstractmethod
+    def generate_keypair(self) -> Any:
+        """Generate a random keypair."""
+        pass
+
+    @abstractmethod
+    def get_keypair_from_secret(self, secret_key: str) -> Any:
+        """Get keypair from secret key."""
+        pass
+
+    @abstractmethod
+    def generate_mnemonic(self) -> str:
+        """Generate a random mnemonic phrase."""
+        pass
+
+    @abstractmethod
+    def get_keypair_from_mnemonic(self, mnemonic: str) -> Any:
+        """Get keypair from mnemonic phrase."""
+        pass
+
+
+class ITonService(ABC):
+    @abstractmethod
+    def create_wallet(self):
+        """Create a new TON wallet (Stateful)."""
+        pass
+    
+    @abstractmethod
+    def generate_wallet(self) -> Tuple[Any, List[str]]:
+        """Generate a new TON wallet returning (wallet_obj, mnemonic) without storing state."""
+        pass
+    
+    @property
+    @abstractmethod
+    def wallet(self):
+        """Get the wallet object."""
+        pass
+        
+    @property
+    @abstractmethod
+    def mnemonic(self) -> List[str]:
+        """Get the mnemonic phrase."""
+        pass
+
 
 
 class IEncryptionService(ABC):
