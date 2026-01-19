@@ -48,6 +48,7 @@ class Cheque:
     count: int
     comment: Optional[str]
     status: int
+    asset: Optional[str] = "EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
 
 @dataclass
 class ChequeHistory:

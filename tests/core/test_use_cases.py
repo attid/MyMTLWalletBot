@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from core.interfaces.repositories import IUserRepository, IWalletRepository
 from core.domain.entities import User, Wallet
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.user.register import RegisterUser
@@ -8,7 +9,7 @@ from infrastructure.services.stellar_service import StellarService
 @pytest.mark.asyncio
 async def test_get_wallet_balance_success(mock_horizon, horizon_server_config):
     # Setup Mocks
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     # Mock Data
@@ -37,7 +38,7 @@ async def test_get_wallet_balance_success(mock_horizon, horizon_server_config):
 
 @pytest.mark.asyncio
 async def test_get_wallet_balance_with_address(mock_horizon, horizon_server_config):
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     public_key = "GOTHER1234567890"
     
@@ -58,7 +59,7 @@ async def test_get_wallet_balance_with_address(mock_horizon, horizon_server_conf
 
 @pytest.mark.asyncio
 async def test_get_wallet_balance_no_wallet(horizon_server_config):
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     mock_wallet_repo.get_default_wallet.return_value = None
     
@@ -70,8 +71,8 @@ async def test_get_wallet_balance_no_wallet(horizon_server_config):
 @pytest.mark.asyncio
 async def test_register_new_user():
     # Setup Mocks
-    mock_user_repo = AsyncMock()
-    mock_wallet_repo = AsyncMock()
+    mock_user_repo = AsyncMock(spec=IUserRepository)
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     
     # Scenario: New User
     mock_user_repo.get_by_id.return_value = None
@@ -91,8 +92,8 @@ async def test_register_new_user():
 @pytest.mark.asyncio
 async def test_register_existing_user():
     # Setup Mocks
-    mock_user_repo = AsyncMock()
-    mock_wallet_repo = AsyncMock()
+    mock_user_repo = AsyncMock(spec=IUserRepository)
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     
     # Scenario: Existing User and Wallet
     existing_user = User(id=20, username="exist", language="en")

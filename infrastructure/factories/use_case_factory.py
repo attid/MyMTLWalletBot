@@ -72,6 +72,21 @@ class IUseCaseFactory(ABC):
         """Create AddWallet use case."""
         pass
 
+    @abstractmethod
+    def create_create_cheque(self, session: Any):
+        """Create CreateCheque use case."""
+        pass
+
+    @abstractmethod
+    def create_claim_cheque(self, session: Any):
+        """Create ClaimCheque use case."""
+        pass
+
+    @abstractmethod
+    def create_cancel_cheque(self, session: Any):
+        """Create CancelCheque use case."""
+        pass
+
 
 class UseCaseFactory(IUseCaseFactory):
     """
@@ -146,3 +161,21 @@ class UseCaseFactory(IUseCaseFactory):
         from core.use_cases.wallet.add_wallet import AddWallet
         repo = self.repository_factory.get_wallet_repository(session)
         return AddWallet(repo)
+
+    def create_create_cheque(self, session: Any):
+        from core.use_cases.cheque.create_cheque import CreateCheque
+        repo = self.repository_factory.get_wallet_repository(session)
+        return CreateCheque(repo, self.stellar_service)
+
+    def create_claim_cheque(self, session: Any):
+        from core.use_cases.cheque.claim_cheque import ClaimCheque
+        repo = self.repository_factory.get_wallet_repository(session)
+        user_repo = self.repository_factory.get_user_repository(session)
+        cheque_repo = self.repository_factory.get_cheque_repository(session)
+        return ClaimCheque(repo, user_repo, cheque_repo, self.stellar_service)
+
+    def create_cancel_cheque(self, session: Any):
+        from core.use_cases.cheque.cancel_cheque import CancelCheque
+        repo = self.repository_factory.get_wallet_repository(session)
+        cheque_repo = self.repository_factory.get_cheque_repository(session)
+        return CancelCheque(repo, cheque_repo, self.stellar_service)

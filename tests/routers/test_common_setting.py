@@ -13,6 +13,10 @@ from infrastructure.services.localization_service import LocalizationService
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from aiogram.fsm.storage.base import StorageKey
 from tests.conftest import TEST_BOT_TOKEN
+from core.interfaces.repositories import IUserRepository, IWalletRepository
+from core.interfaces.services import IWalletSecretService
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from core.domain.entities import User, Wallet
 
 class MockDbMiddleware(BaseMiddleware):
     def __init__(self, session, app_context):
@@ -93,29 +97,29 @@ async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_con
     # It's better to patch cmd_show_balance to avoid testing it here.
     
     # Configure mock user repo for update_lang
-    mock_user_repo = MagicMock()
+    mock_user_repo = MagicMock(spec=IUserRepository)
     mock_user_repo.update_lang = AsyncMock()
     mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
 
     # For cmd_show_balance (it uses user_repo.get_by_id and get_start_text -> get_wallet_repo)
-    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock(lang="en"))
+    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock(spec=User, lang="en"))
     
     # Mocking cmd_show_balance internal calls (it is complex)
     # Ideally we should let it run if dependencies are mocked.
     # cmd_show_balance calls get_start_text calls create_wallet_secret_service, get_wallet_repository
     
-    mock_secret = AsyncMock()
-    mock_secret.is_ton_wallet.return_value = False
+    mock_secret = MagicMock(spec=IWalletSecretService)
+    mock_secret.is_ton_wallet = AsyncMock(return_value=False)
     mock_app_context.use_case_factory.create_wallet_secret_service.return_value = mock_secret
     
-    mock_wallet_repo = MagicMock()
-    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(public_key="GKEY", assets_visibility=None, is_free=False))
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(spec=Wallet, public_key="GKEY", assets_visibility=None, is_free=False))
     mock_wallet_repo.get_info = AsyncMock(return_value="")
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
     
     # And get_wallet_balance use case
-    mock_balance_uc = AsyncMock()
-    mock_balance_uc.execute.return_value = []
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
+    mock_balance_uc.execute = AsyncMock(return_value=[])
     mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
 
     cb_data = LangCallbackData(action="en").pack()
@@ -145,10 +149,10 @@ async def test_cmd_wallet_setting(mock_telegram, bot, dp, mock_session, mock_app
     mock_app_context.bot = bot
     
     # cmd_change_wallet calls get_wallet_repository.get_all_active
-    mock_wallet_repo = MagicMock()
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
     # Return mock wallets
-    w1 = MagicMock(id=1, public_key="GKEY1", is_default=True)
-    w2 = MagicMock(id=2, public_key="GKEY2", is_default=False)
+    w1 = MagicMock(spec=Wallet, id=1, public_key="GKEY1", is_default=True)
+    w2 = MagicMock(spec=Wallet, id=2, public_key="GKEY2", is_default=False)
     mock_wallet_repo.get_all_active = AsyncMock(return_value=[w1, w2])
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
 
@@ -171,7 +175,7 @@ async def test_cmd_wallet_setting_msg(mock_telegram, bot, dp, mock_session, mock
     mock_app_context.bot = bot
     
     # cmd_change_wallet calls get_wallet_repository.get_all_active
-    mock_wallet_repo = MagicMock()
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
     mock_wallet_repo.get_all_active = AsyncMock(return_value=[])
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
 
@@ -239,7 +243,7 @@ async def test_cq_setting_set_active(mock_telegram, bot, dp, mock_session, mock_
     # We need to mock SqlAlchemyWalletRepository because it is instantiated inside the handler
     # SET_ACTIVE calls set_default_wallet and then cmd_change_wallet (which calls get_all_active)
     
-    mock_wallet_repo = MagicMock()
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
     mock_wallet_repo.set_default_wallet = AsyncMock()
     mock_wallet_repo.get_all_active = AsyncMock(return_value=[])
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
@@ -271,12 +275,12 @@ async def test_cq_setting_name(mock_telegram, bot, dp, mock_session, mock_app_co
     
     # NAME calls get_info, get_default_wallet, use_case_balance
     
-    mock_wallet_repo = MagicMock()
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
     mock_wallet_repo.get_info = AsyncMock(return_value="MyWallet")
-    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(is_free=False, assets_visibility=None))
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(spec=Wallet, is_free=False, assets_visibility=None))
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
     
-    mock_balance_uc = AsyncMock()
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
     from other.mytypes import Balance
     bal = Balance(asset_code="XLM", balance="100.0", selling_liabilities="0.0", asset_issuer="native")
     mock_balance_uc.execute.return_value = [bal]
@@ -313,7 +317,7 @@ async def test_cmd_yes_delete(mock_telegram, bot, dp, mock_session, mock_app_con
     
     # YES_DELETE calls repo.delete then repo.get_all_active (via cmd_change_wallet)
     
-    mock_wallet_repo = MagicMock()
+    mock_wallet_repo = MagicMock(spec=IWalletRepository)
     mock_wallet_repo.delete = AsyncMock()
     mock_wallet_repo.get_all_active = AsyncMock(return_value=[])
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo

@@ -24,7 +24,10 @@ from tests.conftest import (
     create_message_update,
     get_telegram_request,
 )
-
+from core.interfaces.repositories import IWalletRepository, IUserRepository
+from core.use_cases.wallet.get_balance import GetWalletBalance
+from core.use_cases.payment.send_payment import SendPayment
+from core.domain.entities import User, Wallet
 
 @pytest.fixture(autouse=True)
 def cleanup_router():
@@ -47,25 +50,25 @@ def setup_send_mocks(router_app_context):
 
         def _setup_defaults(self):
             # Default wallet mock
-            self.wallet = MagicMock()
+            self.wallet = MagicMock(spec=Wallet)
             self.wallet.public_key = "GUSER1234567890123456789012345678901234567890123456"
             self.wallet.is_free = False
 
-            wallet_repo = MagicMock()
+            wallet_repo = MagicMock(spec=IWalletRepository)
             wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
             self.ctx.repository_factory.get_wallet_repository.return_value = wallet_repo
 
             # Default user mock
-            self.user = MagicMock()
+            self.user = MagicMock(spec=User)
             self.user.can_5000 = 1
             self.user.lang = 'en'
 
-            user_repo = MagicMock()
+            user_repo = MagicMock(spec=IUserRepository)
             user_repo.get_by_id = AsyncMock(return_value=self.user)
             self.ctx.repository_factory.get_user_repository.return_value = user_repo
 
             # Default balance use case
-            balance_uc = MagicMock()
+            balance_uc = MagicMock(spec=GetWalletBalance)
             balance_uc.execute = AsyncMock(return_value=[
                 Balance(asset_code="XLM", balance="100.0", asset_issuer=None, asset_type="native"),
                 Balance(asset_code="EURMTL", balance="50.0",
@@ -75,13 +78,13 @@ def setup_send_mocks(router_app_context):
             self.ctx.use_case_factory.create_get_wallet_balance.return_value = balance_uc
 
             # Default send payment use case
-            send_uc = MagicMock()
+            send_uc = MagicMock(spec=SendPayment)
             send_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_PAYMENT"))
             self.ctx.use_case_factory.create_send_payment.return_value = send_uc
 
         def set_balances(self, balances: list):
             """Configure user balances."""
-            balance_uc = MagicMock()
+            balance_uc = MagicMock(spec=GetWalletBalance)
             balance_uc.execute = AsyncMock(return_value=balances)
             self.ctx.use_case_factory.create_get_wallet_balance.return_value = balance_uc
 
@@ -91,7 +94,7 @@ def setup_send_mocks(router_app_context):
 
         def set_payment_result(self, success: bool, xdr: str = None, error: str = None):
             """Configure payment result."""
-            send_uc = MagicMock()
+            send_uc = MagicMock(spec=SendPayment)
             send_uc.execute = AsyncMock(return_value=PaymentResult(
                 success=success, xdr=xdr, error_message=error
             ))

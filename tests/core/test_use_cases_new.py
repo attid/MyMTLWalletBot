@@ -1,6 +1,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from core.interfaces.repositories import IUserRepository, IWalletRepository
 from core.use_cases.wallet.add_wallet import AddWallet
 from core.use_cases.user.update_profile import UpdateUserProfile
 from core.use_cases.user.manage_user import DeleteUser, AddDonation
@@ -8,7 +9,7 @@ from core.domain.entities import Wallet, User
 
 @pytest.fixture
 def mock_wallet_repo():
-    repo = MagicMock()
+    repo = MagicMock(spec=IWalletRepository)
     repo.count_free_wallets = AsyncMock()
     repo.create = AsyncMock()
     repo.set_default_wallet = AsyncMock()
@@ -17,7 +18,7 @@ def mock_wallet_repo():
 
 @pytest.fixture
 def mock_user_repo():
-    repo = MagicMock()
+    repo = MagicMock(spec=IUserRepository)
     repo.get_by_id = AsyncMock()
     repo.update = AsyncMock()
     repo.delete = AsyncMock()

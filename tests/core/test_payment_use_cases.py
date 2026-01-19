@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock
+from core.interfaces.repositories import IWalletRepository
 from core.domain.entities import Wallet
 from core.domain.value_objects import Asset
 from core.use_cases.payment.send_payment import SendPayment
@@ -8,7 +9,7 @@ from infrastructure.services.stellar_service import StellarService
 @pytest.mark.asyncio
 async def test_send_payment_success(mock_horizon, horizon_server_config):
     # Setup Mocks
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     user_id = 123
@@ -39,7 +40,7 @@ async def test_send_payment_success(mock_horizon, horizon_server_config):
     
 @pytest.mark.asyncio
 async def test_send_payment_negative_amount(horizon_server_config):
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     use_case = SendPayment(mock_wallet_repo, stellar_service)
     dest_key = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
@@ -51,7 +52,7 @@ async def test_send_payment_negative_amount(horizon_server_config):
 @pytest.mark.asyncio
 async def test_send_payment_dest_not_found(mock_horizon, horizon_server_config):
     # Setup Mocks
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     user_id = 123
@@ -79,7 +80,7 @@ async def test_send_payment_dest_not_found(mock_horizon, horizon_server_config):
 
 @pytest.mark.asyncio
 async def test_send_payment_create_account(mock_horizon, horizon_server_config):
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     user_id = 123
@@ -109,7 +110,7 @@ async def test_send_payment_create_account(mock_horizon, horizon_server_config):
 async def test_create_cheque_success(mock_horizon, horizon_server_config):
     from core.use_cases.cheque.create_cheque import CreateCheque
     
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     user_id = 123

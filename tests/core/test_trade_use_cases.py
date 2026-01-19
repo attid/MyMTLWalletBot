@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock
+from core.interfaces.repositories import IWalletRepository
 from core.domain.entities import Wallet
 from core.domain.value_objects import Asset
 from core.use_cases.trade.swap_assets import SwapAssets
@@ -8,7 +9,7 @@ from infrastructure.services.stellar_service import StellarService
 
 @pytest.mark.asyncio
 async def test_swap_assets_success(mock_horizon, horizon_server_config):
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     user_id = 123
@@ -36,7 +37,7 @@ async def test_swap_assets_success(mock_horizon, horizon_server_config):
 
 @pytest.mark.asyncio
 async def test_manage_offer_success(mock_horizon, horizon_server_config):
-    mock_wallet_repo = AsyncMock()
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
     stellar_service = StellarService(horizon_url=horizon_server_config["url"])
     
     user_id = 123

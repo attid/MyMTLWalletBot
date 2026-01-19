@@ -8,7 +8,16 @@ import socket
 import random
 sys.path.append(os.getcwd())
 from aiohttp import web
-from aiogram import Dispatcher
+from aiogram import Dispatcher, Bot
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message, CallbackQuery
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.interfaces.services import IStellarService
+from core.interfaces.repositories import IUserRepository, IWalletRepository, IRepositoryFactory, IAddressBookRepository, IChequeRepository, INotificationRepository, IOperationRepository, IMessageRepository
+from infrastructure.factories.use_case_factory import IUseCaseFactory
+from infrastructure.services.localization_service import LocalizationService
+from core.domain.entities import User, Wallet, Cheque
 
 TEST_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 
@@ -50,16 +59,16 @@ def mock_app_context():
     См. tests/README.md для правил тестирования.
     """
     ctx = MagicMock()
-    ctx.localization_service = MagicMock()
-    # Improve my_gettext mock to return the key itself for easier testing
-    ctx.localization_service.get_text.side_effect = lambda chat_id, key, param=None, **kwargs: key
-    ctx.stellar_service = AsyncMock()
-    ctx.repository_factory = MagicMock()
-    ctx.use_case_factory = MagicMock()
-    ctx.bot = AsyncMock()
+    ctx.localization_service = MagicMock(spec=LocalizationService)
+    # Improve get_text mock to return the key itself for easier testing
+    ctx.localization_service.get_text.side_effect = lambda user_id, key, params=(): key
+    ctx.stellar_service = AsyncMock(spec=IStellarService)
+    ctx.repository_factory = MagicMock(spec=IRepositoryFactory)
+    ctx.use_case_factory = MagicMock(spec=IUseCaseFactory)
+    ctx.bot = AsyncMock(spec=Bot)
     
     # Mock dispatcher storage
-    ctx.dispatcher = MagicMock()
+    ctx.dispatcher = MagicMock(spec=Dispatcher)
     ctx.dispatcher.storage = MagicMock()
     ctx.dispatcher.storage.get_data = AsyncMock(return_value={})
     ctx.dispatcher.storage.update_data = AsyncMock()
@@ -427,7 +436,7 @@ async def mock_telegram(telegram_server_config):
 
 @pytest.fixture
 def mock_session():
-    session = AsyncMock()
+    session = AsyncMock(spec=AsyncSession)
     # Mock execute result
     result = MagicMock()
     result.scalars.return_value.all.return_value = []
@@ -439,22 +448,22 @@ def mock_session():
 
 @pytest.fixture
 def mock_state():
-    state = AsyncMock()
+    state = AsyncMock(spec=FSMContext)
     state.get_data.return_value = {}
     return state
 
 @pytest.fixture
 def mock_callback():
-    callback = AsyncMock()
+    callback = AsyncMock(spec=CallbackQuery)
     callback.from_user.id = 123
     callback.from_user.username = "user"
-    callback.message = AsyncMock()
+    callback.message = AsyncMock(spec=Message)
     callback.message.chat.id = 123
     return callback
 
 @pytest.fixture
 def mock_message():
-    message = AsyncMock()
+    message = AsyncMock(spec=Message)
     message.from_user.id = 123
     message.chat.id = 123
     message.text = "test_text"
