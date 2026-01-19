@@ -21,8 +21,8 @@ router.message.filter(F.chat.type == "private")
 async def hide_notification_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     data = HideNotificationCallbackData.unpack(callback.data)
 
-    wallet_repo = SqlAlchemyWalletRepository(session)
-    op_repo = SqlAlchemyOperationRepository(session)
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    op_repo = app_context.repository_factory.get_operation_repository(session)
 
     
     wallet = await wallet_repo.get_by_id(data.wallet_id)
@@ -69,7 +69,7 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
     ]
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
-    await send_message(session, callback, text, reply_markup=keyboard)
+    await send_message(session, callback, text, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
@@ -81,7 +81,7 @@ async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext
     if user_data.get('asset_code'):
         await state.update_data(asset_code=None)
     else:
-        op_repo = SqlAlchemyOperationRepository(session)
+        op_repo = app_context.repository_factory.get_operation_repository(session)
         operation = await op_repo.get_by_id(user_data.get('operation_id'))
         await state.update_data(asset_code=operation.code1)
 
@@ -130,7 +130,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
         user_data,
     )
 
-    repo = SqlAlchemyNotificationRepository(session)
+    repo = app_context.repository_factory.get_notification_repository(session)
     
     existing_filter = await repo.find_duplicate(
         user_id=user_id,
@@ -151,7 +151,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
             existing_filter.operation_type,
         )
         await send_message(session, callback, my_gettext(user_id, 'filter_already_exists', app_context=app_context),
-                           reply_markup=get_kb_return(user_id, app_context=app_context))
+                           reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
         await callback.answer()
         return
 
@@ -165,7 +165,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 
     await state.clear()
     await send_message(session, callback, my_gettext(user_id, 'filter_saved', app_context=app_context),
-                       reply_markup=get_kb_return(user_id, app_context=app_context))
+                       reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
     await callback.answer()
 
 
@@ -184,16 +184,16 @@ async def notification_settings_callback(callback: types.CallbackQuery, session:
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    await send_message(session, callback, text, reply_markup=keyboard)
+    await send_message(session, callback, text, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
 @router.callback_query(F.data == "delete_all_filters")
 async def delete_all_filters_callback(callback: types.CallbackQuery, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
-    repo = SqlAlchemyNotificationRepository(session)
+    repo = app_context.repository_factory.get_notification_repository(session)
     await repo.delete_all_by_user(user_id)
 
     await send_message(session, callback, my_gettext(user_id, 'all_filters_deleted', app_context=app_context),
-                       reply_markup=get_kb_return(user_id, app_context=app_context))
+                       reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
     await callback.answer()

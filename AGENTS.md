@@ -15,7 +15,7 @@ Run commands from the repo root so relative imports and path-based config resolv
 Adhere to PEP8 (4 spaces, ≤100 chars) and keep business logic async-friendly—avoid blocking calls inside handlers. Modules, functions, and JSON keys use `snake_case`; classes remain `PascalCase`; router instances are exported as `router`. Log via `loguru.logger`, reuse existing middleware for DB/throttling, and place human-facing copy inside `langs/*.json` (HTML markup only).
 
 ## Testing Guidelines
-A formal `tests/` suite is still emerging; add new coverage with `pytest`/`pytest-asyncio`, mocking external ledgers and Redis. Prefer scenario tests that drive routers via `dp.feed_update()` plus unit tests for helpers in `other/`. Exercise scheduler jobs and middleware in isolation, and log manual Telegram checks in the PR when automated coverage is not feasible.
+A formal `tests/` suite is still emerging; add new coverage with `pytest`/`pytest-asyncio`, mocking external ledgers and Redis. Prefer scenario tests that drive routers via `dp.feed_update()` plus unit tests for helpers in `other/`. **Any router tests without `mock_server` are considered invalid.** Exercise scheduler jobs and middleware in isolation, and log manual Telegram checks in the PR when automated coverage is not feasible.
 
 ## Commit & Pull Request Guidelines
 Follow the current convention: emoji + tag + scope (`🐛 fix(routers/send.py): memo fallback`) with subjects ≤72 chars and descriptive bodies. Each PR should state the problem, highlight risky areas, list test evidence, and link the relevant ticket. Attach screenshots or transcript snippets for UI-visible changes and note any config, migration, or deploy steps.

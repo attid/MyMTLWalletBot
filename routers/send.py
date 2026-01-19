@@ -371,7 +371,7 @@ async def cb_send_choose_token(callback: types.CallbackQuery, callback_data: Sen
                 data = await state.get_data()  # Get updated data
 
                 await state.set_state(StateSendToken.sending_sum)
-                keyboard = get_kb_offers_cancel(callback.from_user.id, data)
+                keyboard = get_kb_offers_cancel(callback.from_user.id, data, app_context=app_context)
                 await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
     return True
 

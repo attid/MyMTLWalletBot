@@ -22,12 +22,8 @@ from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import (my_gettext, send_message, cmd_show_sign, long_line)
 from other.web_tools import get_web_request, get_web_decoded_xdr
 from keyboards.common_keyboards import get_kb_return, get_return_button
-# from other.global_data import global_data
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
-from other.stellar_tools import (stellar_change_password, stellar_user_sign, stellar_check_xdr,
-                                 async_stellar_send, stellar_get_user_account, stellar_get_user_keypair,
-                                 stellar_is_free_wallet)
 
 
 class PinState(StatesGroup):
@@ -54,13 +50,15 @@ kb_cash = {}
 async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     await state.set_state(PinState.sign_and_send)
 
-    await cmd_ask_pin(session, callback.from_user.id, state)
+    await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
     await callback.answer()
 
 
 async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None, *, app_context: AppContext):
     data = await state.get_data()
-    user_account = (await stellar_get_user_account(session, chat_id)).account.account_id
+    # Use DI
+    user_account_obj = await app_context.stellar_service.get_user_account(session, chat_id)
+    user_account = user_account_obj.account.account_id
     simple_account = user_account[:4] + '..' + user_account[-4:]
     wallet_connect_info = data.get("wallet_connect_info")
     if msg is None:
@@ -86,7 +84,7 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
             msg += my_gettext(chat_id, 'confirm_send_mini_xdr', app_context=app_context)
         if wallet_connect_info:
             msg += wallet_connect_info
-        await send_message(session, chat_id, msg, reply_markup=get_kb_pin(data))
+        await send_message(session, chat_id, msg, reply_markup=get_kb_pin(data, app_context=app_context), app_context=app_context)
 
     if pin_type == 2:  # password
         msg = my_gettext(chat_id, "send_password", (simple_account,), app_context=app_context)
@@ -95,7 +93,7 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
         if wallet_connect_info:
             msg += wallet_connect_info
         await state.set_state(PinState.ask_password)
-        await send_message(session, chat_id, msg, reply_markup=get_kb_return(chat_id))
+        await send_message(session, chat_id, msg, reply_markup=get_kb_return(chat_id, app_context=app_context), app_context=app_context)
 
     if pin_type == 0:  # no password
         await state.update_data(pin=str(chat_id))
@@ -105,17 +103,19 @@ async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=Non
         if wallet_connect_info:
             msg += wallet_connect_info
         await send_message(session, chat_id, msg,
-                           reply_markup=get_kb_nopassword(chat_id))
+                           reply_markup=get_kb_nopassword(chat_id, app_context=app_context), app_context=app_context)
 
     if pin_type == 10:  # ro
         await state.update_data(pin='ro')
         msg = my_gettext(chat_id, "your_xdr", (data['xdr'],), app_context=app_context)
         await cmd_show_sign(session, chat_id, state,
                             msg,
-                            use_send=False, xdr_uri=data['xdr'])
+                            use_send=False, xdr_uri=data['xdr'], app_context=app_context)
 
 
-def get_kb_pin(data: dict) -> types.InlineKeyboardMarkup:
+def get_kb_pin(data: dict, app_context: AppContext) -> types.InlineKeyboardMarkup:
+    # Need to consider if caching is safe with app_context if it matters...
+    # Assuming user_lang is enough key.
     if data['user_lang'] in kb_cash:
         return kb_cash[data['user_lang']]
     else:
@@ -134,7 +134,7 @@ def get_kb_pin(data: dict) -> types.InlineKeyboardMarkup:
                     types.InlineKeyboardButton(text=button, callback_data=PinCallbackData(action=button).pack()))
             kb_buttons.append(tmp_buttons)
 
-        kb_buttons.append(get_return_button(data['user_lang']))
+        kb_buttons.append(get_return_button(data['user_lang'], app_context=app_context))
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=kb_buttons)
         kb_cash[data['user_lang']] = keyboard
         return keyboard
@@ -151,11 +151,12 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
     if answer in '1234567890ABCDEF':
         pin += answer
         await state.update_data(pin=pin)
-        await cmd_ask_pin(session, user_id, state)
+        await cmd_ask_pin(session, user_id, state, app_context=app_context)
         await query.answer(''.ljust(len(pin), '*'))
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
-                stellar_get_user_keypair(session, user_id, pin)  # test pin
+                # Use DI
+                await app_context.stellar_service.get_user_keypair(session, user_id, pin)  # test pin
                 await sign_xdr(session, state, user_id, app_context=app_context)
             except:
                 pass
@@ -163,7 +164,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
     if answer == 'Del':
         pin = pin[:len(pin) - 1]
         await state.update_data(pin=pin)
-        await cmd_ask_pin(session, user_id, state)
+        await cmd_ask_pin(session, user_id, state, app_context=app_context)
         await query.answer(''.ljust(len(pin), '*'))
 
     if answer == 'Enter':
@@ -178,15 +179,17 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
             pin_type = data.get('pin_type', '')
 
             if pin == pin2:
-                stellar_change_password(session, user_id, str(user_id), pin, pin_type)
-                await cmd_show_balance(session, user_id, state)
+                # Use DI
+                await app_context.stellar_service.change_password(session, user_id, str(user_id), pin, pin_type)
+                await cmd_show_balance(session, user_id, state, app_context=app_context)
             else:
                 await state.update_data(pin2='', pin='')
                 await state.set_state(PinState.set_pin)
                 await query.answer(my_gettext(user_id, "bad_passwords", app_context=app_context), show_alert=True)
         if current_state in (PinState.sign, PinState.sign_and_send):  # sign and send
             try:
-                stellar_get_user_keypair(session, user_id, pin)  # test pin
+                # Use DI
+                await app_context.stellar_service.get_user_keypair(session, user_id, pin)  # test pin
                 await sign_xdr(session, state, user_id, app_context=app_context)
             except:
                 await query.answer(my_gettext(user_id, "bad_password", app_context=app_context), show_alert=True)
@@ -202,7 +205,8 @@ async def cmd_password_from_pin(message: types.Message, state: FSMContext, sessi
     await message.delete()
     await cmd_ask_pin(session, user_id, state, app_context=app_context)
     try:
-        stellar_get_user_keypair(session, user_id, pin)  # test pin
+        # Use DI
+        await app_context.stellar_service.get_user_keypair(session, user_id, pin)  # test pin
         await sign_xdr(session, state, user_id, app_context=app_context)
     except:
         pass
@@ -216,9 +220,6 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
     xdr = data.get('xdr')
     fsm_func = data.get('fsm_func')
     fsm_after_send = data.get('fsm_after_send')
-    # buy_address = data.get('buy_address')
-    # usdt_address = data.get('usdt_address')
-    # donate = data.get('donate')
     try:
         if user_id > 0:
             if fsm_func:
@@ -231,17 +232,20 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
                 
                 await fsm_func(session, user_id, state, **kwargs)
             else:
-                xdr = await stellar_user_sign(session, xdr, user_id, str(pin))
+                # Use DI
+                xdr = await app_context.stellar_service.user_sign(session, xdr, user_id, str(pin))
                 await state.set_state(None)
                 await state.update_data(xdr=xdr)
                 if current_state == PinState.sign_and_send:
                     await state.update_data(
                         try_sent_xdr=(datetime.now() + timedelta(minutes=5)).strftime('%d.%m.%Y %H:%M:%S'))
                     await cmd_info_message(session, user_id,
-                                           my_gettext(user_id, "try_send", app_context=app_context)
+                                           my_gettext(user_id, "try_send", app_context=app_context),
+                                           app_context=app_context
                                            )
                     # save_xdr_to_send(user_id, xdr)
-                    resp = await async_stellar_send(xdr)
+                    # Use DI
+                    resp = await app_context.stellar_service.send_xdr_async(xdr)
                     resp = MyResponse.from_dict(resp)
                     await state.update_data(try_sent_xdr=None)
                     link_msg = ''
@@ -254,7 +258,7 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
                     if success_msg:
                         msg = msg + '\n\n' + success_msg
 
-                    await cmd_info_message(session, user_id, msg)
+                    await cmd_info_message(session, user_id, msg, app_context=app_context)
                     if success_msg:
                         await state.update_data(last_message_id=0)
 
@@ -270,7 +274,8 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
                 if current_state == PinState.sign:
                     await cmd_show_sign(session, user_id, state,
                                         my_gettext(user_id, "your_xdr_sign", (xdr,), app_context=app_context),
-                                        use_send=True)
+                                        use_send=True,
+                                        app_context=app_context)
                 
                 log_queue = app_context.log_queue
                 log_queue.put_nowait(LogQuery(
@@ -284,31 +289,31 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
         msg = f"{ex.title}, error {ex.status}, {extras}"
         logger.info(['BadRequestError', msg, current_state])
         await cmd_info_message(session, user_id,
-                               f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True)
+                               f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True, app_context=app_context)
         await state.update_data(try_sent_xdr=None)
     except BaseHorizonError as ex:
         extras = ex.extras.get('result_codes', 'no extras') if ex.extras else ex.detail
         msg = f"{ex.title}, error {ex.status}, {extras}"
         logger.info(['BaseHorizonError', msg, current_state])
         await cmd_info_message(session, user_id,
-                               f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True)
+                               f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True, app_context=app_context)
         await state.update_data(try_sent_xdr=None)
     except TimeoutError as ex:
         logger.info(['TimeoutError', ex, current_state])
-        await cmd_info_message(session, user_id, 'timeout error =( ')
+        await cmd_info_message(session, user_id, 'timeout error =( ', app_context=app_context)
     except Exception as ex:
         logger.info(['ex', ex, current_state])
-        await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password", app_context=app_context))
+        await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password", app_context=app_context), app_context=app_context)
     from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = SqlAlchemyWalletRepository(session)
     await repo.reset_balance_cache(user_id)
     await state.update_data(pin='')
 
 
-def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
+def get_kb_nopassword(chat_id: int, app_context: AppContext) -> types.InlineKeyboardMarkup:
     buttons = [[types.InlineKeyboardButton(text=my_gettext(chat_id, 'kb_yes_do', app_context=app_context),
                                            callback_data=PinCallbackData(action="Enter").pack())],
-               get_return_button(chat_id)]
+               get_return_button(chat_id, app_context=app_context)]
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
@@ -316,7 +321,7 @@ def get_kb_nopassword(chat_id: int) -> types.InlineKeyboardMarkup:
 
 @router.callback_query(F.data == "Sign")
 async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    await cmd_show_sign(session, callback.from_user.id, state, my_gettext(callback, 'send_xdr', app_context=app_context))
+    await cmd_show_sign(session, callback.from_user.id, state, my_gettext(callback, 'send_xdr', app_context=app_context), app_context=app_context)
     await state.set_state(StateSign.sending_xdr)
     await state.update_data(part_xdr='')
     await callback.answer()
@@ -351,8 +356,9 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
             await state.update_data(part_xdr='')
 
         ####
-        is_free = await stellar_is_free_wallet(session, user_id)
-        xdr = await stellar_check_xdr(check_xdr, for_free_account=is_free)
+        # Use DI
+        is_free = await app_context.stellar_service.is_free_wallet(session, user_id)
+        xdr = await app_context.stellar_service.check_xdr(check_xdr, for_free_account=is_free)
         if xdr:
             await state.update_data(xdr=xdr)
             if check_xdr.find('eurmtl.me/sign_tools') > -1:
@@ -363,7 +369,7 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
             raise Exception('Bad xdr')
     except Exception as ex:
         logger.info(['my_state == MyState.StateSign', ex])
-        await cmd_show_sign(session, user_id, state, my_gettext(user_id, 'bad_xdr', (check_xdr,), app_context=app_context))
+        await cmd_show_sign(session, user_id, state, my_gettext(user_id, 'bad_xdr', (check_xdr,), app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "SendTr")
@@ -389,14 +395,14 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                             # Если есть return_url, отправляем только SUCCESS с кнопкой возврата
                             from keyboards.common_keyboards import get_kb_return_url
                             await send_message(session, callback.from_user.id, f'SUCCESS',
-                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
                         else:
-                            await cmd_info_message(session, callback, f'SUCCESS')
+                            await cmd_info_message(session, callback, f'SUCCESS', app_context=app_context)
                     else:
-                        await cmd_info_message(session, callback, f'ERROR')
+                        await cmd_info_message(session, callback, f'ERROR', app_context=app_context)
                 except Exception as ex:
                     logger.info(['cmd_show_send_tr', callback, ex])
-                    await cmd_info_message(session, callback, my_gettext(callback, 'send_error', app_context=app_context))
+                    await cmd_info_message(session, callback, my_gettext(callback, 'send_error', app_context=app_context), app_context=app_context)
             elif wallet_connect:
                 try:
                     wallet_connect_func = jsonpickle.loads(wallet_connect)
@@ -425,32 +431,34 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                         if return_url:
                             from keyboards.common_keyboards import get_kb_return_url
                             await send_message(session, callback.from_user.id, f'SUCCESS',
-                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
                             return
                         else:
-                            await cmd_info_message(session, callback, f'SUCCESS\n{msgs}')
+                            await cmd_info_message(session, callback, f'SUCCESS\n{msgs}', app_context=app_context)
                     else:
-                        await cmd_info_message(session, callback, f'ERROR\n{msgs}')
+                        await cmd_info_message(session, callback, f'ERROR\n{msgs}', app_context=app_context)
                     # else:
                     #     await cmd_info_message(session, callback, status)
 
                 except Exception as ex:
                     logger.info(['cmd_show_send_tr', callback, ex])
-                    await cmd_info_message(session, callback, my_gettext(callback, 'send_error', app_context=app_context))
+                    await cmd_info_message(session, callback, my_gettext(callback, 'send_error', app_context=app_context), app_context=app_context)
         else:
             await cmd_info_message(session, callback,
                                    my_gettext(callback, "try_send", app_context=app_context),
+                                   app_context=app_context
                                    )
             # save_xdr_to_send(callback.from_user.id, xdr)
-            await async_stellar_send(xdr)
+            # Use DI
+            await app_context.stellar_service.send_xdr_async(xdr)
             return_url = data.get('return_url')
             if return_url:
                 from keyboards.common_keyboards import get_kb_return_url
                 await send_message(session, callback.from_user.id, f'SUCCESS',
-                                   reply_markup=get_kb_return_url(callback.from_user.id, return_url))
+                                   reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
                 return
             else:
-                await cmd_info_message(session, callback, my_gettext(callback, 'send_good', app_context=app_context), )
+                await cmd_info_message(session, callback, my_gettext(callback, 'send_good', app_context=app_context), app_context=app_context)
     except BaseHorizonError as ex:
         logger.info(['send BaseHorizonError', ex])
         msg = f"{ex.title}, error {ex.status}"
@@ -465,13 +473,13 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
         if error_hint:
             msg = f"{msg}\n<b>{error_hint}</b>"
         await cmd_info_message(session, callback, f"{my_gettext(callback, 'send_error', app_context=app_context)}\n{msg}",
-                               resend_transaction=True)
+                               resend_transaction=True, app_context=app_context)
     except Exception as ex:
         logger.exception(['send unknown error', ex])
         msg = 'unknown error'
         data[xdr] = xdr
         await cmd_info_message(session, callback, f"{my_gettext(callback, 'send_error', app_context=app_context)}\n{msg}",
-                               resend_transaction=True)
+                               resend_transaction=True, app_context=app_context)
 
 
 @router.message(PinState.ask_password)
@@ -488,7 +496,7 @@ async def cmd_password_set(message: types.Message, state: FSMContext, session: S
     await state.set_state(PinState.ask_password_set2)
     await message.delete()
     await send_message(session, message, my_gettext(message, 'resend_password', app_context=app_context),
-                       reply_markup=get_kb_return(message.from_user.id))
+                       reply_markup=get_kb_return(message.from_user.id, app_context=app_context), app_context=app_context)
 
 
 @router.message(PinState.ask_password_set2)
@@ -500,15 +508,16 @@ async def cmd_password_set2(message: types.Message, state: FSMContext, session: 
     if data['pin'] == message.text:
         await state.set_state(None)
         pin_type = data.get('pin_type', '')
-        stellar_change_password(session, user_id, str(user_id), pin, pin_type)
-        await cmd_show_balance(session, user_id, state)
+        # Use DI
+        await app_context.stellar_service.change_password(session, user_id, str(user_id), pin, pin_type)
+        await cmd_show_balance(session, user_id, state, app_context=app_context)
         await state.update_data(pin2='', pin='')
         await message.delete()
     else:
         await message.delete()
         await state.set_state(PinState.ask_password_set)
         await send_message(session, message, my_gettext(message, 'bad_passwords', app_context=app_context),
-                           reply_markup=get_kb_return(message.from_user.id))
+                           reply_markup=get_kb_return(message.from_user.id, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "ReSend")
@@ -517,9 +526,10 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: 
     xdr = data.get('xdr')
     user_id = callback.from_user.id
     try:
-        await cmd_info_message(session, user_id, my_gettext(user_id, "resend", app_context=app_context), )
-        await async_stellar_send(xdr)
-        await cmd_info_message(session, user_id, my_gettext(user_id, "send_good", app_context=app_context), )
+        await cmd_info_message(session, user_id, my_gettext(user_id, "resend", app_context=app_context), app_context=app_context)
+        # Use DI
+        await app_context.stellar_service.send_xdr_async(xdr)
+        await cmd_info_message(session, user_id, my_gettext(user_id, "send_good", app_context=app_context), app_context=app_context)
     except BaseHorizonError as ex:
         logger.info(['ReSend BaseHorizonError', ex])
         msg = f"{ex.title}, error {ex.status}"
@@ -533,13 +543,13 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: 
                 error_hint = ""
         if error_hint:
             msg = f"{msg}\n<b>{error_hint}</b>"
-        await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True)
+        await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True, app_context=app_context)
     except Exception as ex:
         logger.info(['ReSend unknown error', ex])
         msg = 'unknown error'
         data = await state.get_data()
         data[xdr] = xdr
-        await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True)
+        await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True, app_context=app_context)
 
 
 @router.callback_query(F.data == "Decode")
@@ -550,4 +560,5 @@ async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, sessi
     msg = await get_web_decoded_xdr(xdr)
 
     # msg = msg.replace("&nbsp;", "\u00A0")
-    await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True, parse_mode=SULGUK_PARSE_MODE)
+    await cmd_show_sign(session, callback.from_user.id, state, msg[:4000], use_send=True, parse_mode=SULGUK_PARSE_MODE, app_context=app_context)
+

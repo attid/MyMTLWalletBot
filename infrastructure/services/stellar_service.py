@@ -372,3 +372,33 @@ class StellarService(IStellarService):
             # logger not imported, silent fail or print
             print(f"Error extracting path: {e}")
             return []
+
+    # Wrappers for other.stellar_tools functions to enable DI in routers/sign.py
+    
+    async def check_xdr(self, xdr: str, for_free_account: bool = False) -> Optional[str]:
+        from other.stellar_tools import stellar_check_xdr
+        return await stellar_check_xdr(xdr, for_free_account)
+
+    async def user_sign(self, session, xdr: str, user_id: int, pin: str) -> str:
+        from other.stellar_tools import stellar_user_sign
+        return await stellar_user_sign(session, xdr, user_id, pin)
+        
+    async def get_user_keypair(self, session, user_id: int, pin: str):
+        from other.stellar_tools import stellar_get_user_keypair
+        return await stellar_get_user_keypair(session, user_id, pin)
+
+    async def get_user_account(self, session, user_id: int):
+        from other.stellar_tools import stellar_get_user_account
+        return await stellar_get_user_account(session, user_id)
+
+    async def is_free_wallet(self, session, user_id: int) -> bool:
+        from other.stellar_tools import stellar_is_free_wallet
+        return await stellar_is_free_wallet(session, user_id)
+
+    async def change_password(self, session, user_id: int, user_id_str: str, pin: str, pin_type: int):
+        from other.stellar_tools import stellar_change_password
+        return stellar_change_password(session, user_id, user_id_str, pin, pin_type)
+
+    async def send_xdr_async(self, xdr: str):
+        from other.stellar_tools import async_stellar_send
+        return await async_stellar_send(xdr)
