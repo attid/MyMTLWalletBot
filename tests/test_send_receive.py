@@ -11,67 +11,125 @@ from stellar_sdk import Asset
 # --- tests for routers/send.py ---
 
 @pytest.mark.asyncio
-async def test_cmd_send_start(mock_session, mock_callback, mock_state, mock_app_context):
-    """Test send start handler: should display send menu."""
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_send_start(123, mock_state, mock_session, app_context=mock_app_context)
-        mock_send.assert_called_once()
-        # Verify app_context is passed to send_message
-        _, kwargs = mock_send.call_args
-        assert kwargs.get('app_context') is mock_app_context, "app_context must be passed to send_message"
+async def test_cmd_send_start(mock_session, mock_state, mock_app_context):
+    """Test send start command: should set state to sending_for and send prompt."""
+    from routers.send import cmd_send_start
+    user_id = 123
+    
+    # Configure mock_app_context for send_message utility
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
+    
+    await cmd_send_start(user_id, mock_state, mock_session, app_context=mock_app_context)
+    
+    mock_state.set_state.assert_called_with(StateSendToken.sending_for)
+    # Verify bot.send_message was called (via local send_message utility)
+    mock_app_context.bot.send_message.assert_called()
 
 @pytest.mark.asyncio
 async def test_cmd_send_token(mock_session, mock_message, mock_state, mock_app_context):
-    """Test send token handler: should process token selection and proceed to next step."""
-    send_asset = MagicMock(spec=Asset)
-    send_asset.code = "XLM"
-    send_asset.issuer = None
+    """Test send token handler: should update state and proceed to confirmation."""
+    from routers.send import cmd_send_token
+    from stellar_sdk import Asset
     
-    with patch("routers.send.stellar_check_account", new_callable=AsyncMock), \
-         patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04:
-         
+    send_asset = Asset("XLM")
+    
+    # Unified state management
+    state_data = {}
+    async def update_data(**kwargs):
+        state_data.update(kwargs)
+        return state_data
+    mock_state.update_data.side_effect = update_data
+    mock_state.get_data.side_effect = lambda: state_data
+
+    # Configure mock_app_context for send_message and use cases
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
+    
+    # Mock SendPayment use case (called inside cmd_send_04)
+    mock_send_payment = MagicMock()
+    mock_send_payment.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR"))
+    mock_app_context.use_case_factory.create_send_payment.return_value = mock_send_payment
+
+    valid_address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    with patch("routers.send.stellar_check_account", new_callable=AsyncMock):
         await cmd_send_token(mock_message, mock_state, mock_session, 
-                             send_for="GAR...", send_asset=send_asset, send_sum=10.0, send_memo="memo", app_context=mock_app_context)
+                             valid_address, send_asset, 10.0, app_context=mock_app_context)
         
-        mock_state.update_data.assert_called()
-        mock_send_04.assert_called_once()
+        assert state_data['send_sum'] == 10.0
+        assert state_data['send_asset_code'] == "XLM"
+        assert state_data['send_address'] == valid_address
+        # Verify complete flow via cmd_send_04 reached bot.send_message
+        mock_app_context.bot.send_message.assert_called()
 
 @pytest.mark.asyncio
 async def test_cmd_send_for(mock_session, mock_message, mock_state, mock_app_context):
-    """Test send for handler: should display address input form."""
-    # Configure repository factory
+    """Test send for handler: should resolve address and proceed to token choice."""
+    from routers.send import cmd_send_for
+    valid_address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    mock_message.text = valid_address
+    
+    # Unified state management
+    state_data = {}
+    async def update_data(**kwargs):
+        state_data.update(kwargs)
+        return state_data
+    mock_state.update_data.side_effect = update_data
+    mock_state.get_data.side_effect = lambda: state_data
+
+    # Configure mock_app_context
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
+    
+    # Mock repository
     mock_wallet_repo = MagicMock()
     mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(is_free=False))
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
     
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_send_for(mock_message, mock_state, mock_session, mock_app_context)
-        mock_send.assert_called_once()
+    # Mock balance use case (called inside cmd_send_choose_token)
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(return_value=[])
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+
+    with patch("routers.send.stellar_check_account", new_callable=AsyncMock) as mock_check:
+        mock_check.return_value = MagicMock(account_id=valid_address)
+        await cmd_send_for(mock_message, mock_state, mock_session, app_context=mock_app_context)
+        
+        assert state_data['send_address'] == valid_address
+        # Verify flow reached token choice UI
+        mock_app_context.bot.send_message.assert_called()
 
 @pytest.mark.asyncio
-async def test_cmd_send_choose_token(mock_session, mock_callback, mock_state, mock_app_context):
+async def test_cmd_send_choose_token(mock_session, mock_message, mock_state, mock_app_context):
     """Test choose token handler: should display available balances for sending."""
+    from routers.send import cmd_send_choose_token
     mock_bal = MagicMock()
     mock_bal.asset_code = "XLM"
     mock_bal.balance = "100.0"
     
-    # Mock state data including send_address
-    mock_state.get_data.return_value = {"send_address": "GADDR..."}
+    # Unified state management
+    state_data = {"send_address": "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"}
+    mock_state.get_data.side_effect = lambda: state_data
+    mock_state.update_data.side_effect = lambda **kwargs: state_data.update(kwargs) or state_data
+
+    # Configure mock_app_context
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
     
     # Configure use_case_factory to return mock GetWalletBalance use case
     mock_use_case = MagicMock()
     mock_use_case.execute = AsyncMock(return_value=[mock_bal])
     mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case
     
-    mock_message = MagicMock()
-    mock_message.from_user.id = 123
+    await cmd_send_choose_token(mock_message, mock_state, mock_session, app_context=mock_app_context)
     
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_send_choose_token(mock_message, mock_state, mock_session, app_context=mock_app_context)
-        mock_send.assert_called_once()
-        
-        # Verify balance use case was called twice (user + recipient)
-        assert mock_use_case.execute.call_count == 2
+    # Verify balance use case was called twice (user + recipient)
+    assert mock_use_case.execute.call_count == 2
+    mock_app_context.bot.send_message.assert_called()
 
 # --- tests for routers/receive.py ---
 
@@ -114,95 +172,153 @@ async def test_cmd_receive(mock_session, mock_callback, mock_state, mock_app_con
 
 @pytest.mark.asyncio
 async def test_cmd_send_get_sum_valid(mock_session, mock_message, mock_state, mock_app_context):
-    """Test send get sum handler with valid amount."""
+    """Test get sum handler: should update state and proceed to confirmation."""
+    from routers.send import cmd_send_get_sum
     mock_message.text = "10.5"
-    mock_state.get_data.return_value = {"send_asset_code": "XLM", "send_asset_issuer": "GKB..."}
     
-    mock_user = MagicMock()
-    mock_user.can_5000 = 1
+    # Unified state management for valid sum test
+    sum_valid_state_data = {
+        'msg': 'prompt', 
+        'send_asset_code': 'MTL', 
+        'send_asset_issuer': 'G...',
+        'send_address': 'GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'
+    }
+    async def update_sum_data(**kwargs):
+        sum_valid_state_data.update(kwargs)
+        return sum_valid_state_data
+    mock_state.update_data.side_effect = update_sum_data
+    mock_state.get_data.side_effect = lambda: sum_valid_state_data
     
-    # Configure repository
-    mock_repo_instance = MagicMock()
-    mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
-    mock_app_context.repository_factory.get_user_repository.return_value = mock_repo_instance
+    # Configure mock_app_context with repository
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock(can_5000=1))
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
     
-    with patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04:
-        await cmd_send_get_sum(mock_message, mock_state, mock_session, mock_app_context)
-        mock_state.update_data.assert_called_with(send_sum=10.5)
-        mock_send_04.assert_called_once()
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
+    
+    # Mock SendPayment use case
+    mock_send_payment = MagicMock()
+    mock_send_payment.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR"))
+    mock_app_context.use_case_factory.create_send_payment.return_value = mock_send_payment
 
+    await cmd_send_get_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
+    
+    assert sum_valid_state_data['send_sum'] == 10.5
+    mock_app_context.bot.send_message.assert_called()
 
 @pytest.mark.asyncio
 async def test_cmd_send_get_sum_limit_exceeded(mock_session, mock_message, mock_state, mock_app_context):
-    """Test send get sum handler when amount exceeds limit."""
+    """Test get sum handler: should block if sum exceeds limit."""
+    from routers.send import cmd_send_get_sum
     mock_message.text = "6000"
-    mock_state.get_data.return_value = {"msg": "previous_msg"}
     
-    mock_user = MagicMock()
-    mock_user.can_5000 = 0
+    # Unified state management
+    state_data = {'msg': 'prompt'}
+    async def update_data(**kwargs):
+        state_data.update(kwargs)
+        return state_data
+    mock_state.update_data.side_effect = update_data
+    mock_state.get_data.side_effect = lambda: state_data
     
     # Configure repository
-    mock_repo_instance = MagicMock()
-    mock_repo_instance.get_by_id = AsyncMock(return_value=mock_user)
-    mock_app_context.repository_factory.get_user_repository.return_value = mock_repo_instance
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock(can_5000=0))
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
     
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_send_get_sum(mock_message, mock_state, mock_session, mock_app_context)
-        
-        mock_send.assert_called_once()
-        mock_state.update_data.assert_not_called()
-
+    # Configure mock_app_context
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
+    
+    await cmd_send_get_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
+    
+    # Verify bot.send_message was called with warning
+    mock_app_context.bot.send_message.assert_called()
+    # Check that state was NOT updated with a valid sum
+    assert state_data.get('send_sum') is None
 
 @pytest.mark.asyncio
 async def test_cmd_get_memo(mock_session, mock_callback, mock_state, mock_app_context):
-    """Test get memo handler: should set state to sending_memo."""
+    """Test get memo handler: should set state to sending_memo and prompt for input."""
     from routers.send import cmd_get_memo
     
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_get_memo(mock_callback, mock_state, mock_session, mock_app_context)
-        
-        mock_state.set_state.assert_called_with(StateSendToken.sending_memo)
-        mock_send.assert_called_once()
+    # Configure mock_app_context for send_message
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
+    
+    await cmd_get_memo(mock_callback, mock_state, mock_session, mock_app_context)
+    
+    mock_state.set_state.assert_called_with(StateSendToken.sending_memo)
+    mock_app_context.bot.send_message.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_cmd_send_memo(mock_session, mock_message, mock_state, mock_app_context):
-    """Test send memo handler: should truncate memo to 28 bytes."""
+    """Test send memo handler: should truncate memo and proceed to confirmation."""
     from routers.send import cmd_send_memo
-    mock_message.text = "A" * 30
+    # 30 chars
+    long_memo = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcd" 
+    mock_message.text = long_memo
+    mock_state.get_data = AsyncMock(return_value={
+        'send_sum': 100, 
+        'send_asset_code': 'XLM', 
+        'send_asset_issuer': None,
+        'send_address': 'GADDR'
+    })
+
+    # Configure mock_app_context
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
     
-    with patch("routers.send.cmd_send_04", new_callable=AsyncMock) as mock_send_04, \
-         patch("routers.send.cut_text_to_28_bytes", return_value="A"*28) as mock_cut:
-        
-        await cmd_send_memo(mock_message, mock_state, mock_session, mock_app_context)
-        
-        mock_cut.assert_called_with("A"*30)
-        mock_state.update_data.assert_called_with(memo="A"*28)
-        mock_send_04.assert_called_once()
+    # Mock SendPayment use case
+    mock_send_payment = MagicMock()
+    mock_send_payment.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR"))
+    mock_app_context.use_case_factory.create_send_payment.return_value = mock_send_payment
+
+    await cmd_send_memo(mock_message, mock_state, mock_session, mock_app_context)
+    
+    # Verify memo was truncated (real cut_text_to_28_bytes runs)
+    expected_memo = long_memo[:28] 
+    mock_state.update_data.assert_any_call(memo=expected_memo)
+    # Verify bot.send_message was called
+    mock_app_context.bot.send_message.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_cmd_create_account(mock_session, mock_state, mock_app_context):
     """Test create account handler: should create Stellar account with initial balance."""
+    from routers.send import cmd_create_account
     user_id = 123
-    mock_state.get_data.return_value = {"activate_sum": 10, "send_address": "GNEW"}
+    
+    # Unified state management
+    state_data = {"activate_sum": 10, "send_address": "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"}
+    mock_state.get_data.side_effect = lambda: state_data
+    mock_state.update_data.side_effect = lambda **kwargs: state_data.update(kwargs) or state_data
+
+    # Configure mock_app_context
+    mock_app_context.dispatcher.storage.get_data = AsyncMock(return_value={})
+    mock_app_context.dispatcher.storage.update_data = AsyncMock()
+    mock_app_context.bot.id = 12345
 
     # Configure use_case_factory to return mock SendPayment use case
     mock_use_case = MagicMock()
     mock_use_case.execute = AsyncMock(return_value=MagicMock(success=True, xdr="XDR_CREATE"))
     mock_app_context.use_case_factory.create_send_payment.return_value = mock_use_case
 
-    with patch("routers.send.send_message", new_callable=AsyncMock) as mock_send:
-        await cmd_create_account(user_id, mock_state, mock_session, app_context=mock_app_context)
-        
-        # Verify use case was called with create_account=True
-        mock_use_case.execute.assert_called_once()
-        _, kwargs = mock_use_case.execute.call_args
-        assert kwargs.get('create_account') is True
-        assert kwargs.get('amount') == 10.0
-        
-        mock_state.update_data.assert_called()
-        mock_send.assert_called()
+    await cmd_create_account(user_id, mock_state, mock_session, app_context=mock_app_context)
+    
+    # Verify use case was called with create_account=True
+    mock_use_case.execute.assert_called_once()
+    _, kwargs = mock_use_case.execute.call_args
+    assert kwargs.get('create_account') is True
+    assert kwargs.get('amount') == 10.0
+    
+    assert state_data['xdr'] == "XDR_CREATE"
+    mock_app_context.bot.send_message.assert_called()
 
 
 @pytest.mark.asyncio
