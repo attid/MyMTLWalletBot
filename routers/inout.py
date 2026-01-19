@@ -246,7 +246,7 @@ async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext,
 
     await send_message(session, user_id, message_text, reply_markup=keyboard, app_context=app_context)
 
-    await cmd_after_send_usdt_task(session, user_id, state, app_context)
+    await cmd_after_send_usdt_task(session, user_id, state, app_context=app_context)
 
 
 async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
@@ -295,7 +295,7 @@ async def cmd_usdt_out_check(callback: types.CallbackQuery, state: FSMContext, s
                               show_alert=True)
         return
 
-    await cmd_after_send_usdt_task(session, callback.from_user.id, state, app_context)
+    await cmd_after_send_usdt_task(session, callback.from_user.id, state, app_context=app_context)
 
 
 @router.message(StateInOut.sending_usdt_address)
@@ -347,7 +347,7 @@ async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: 
     else:
         await state.update_data(send_sum=send_sum)
         await state.set_state(None)
-        await cmd_send_usdt(session, message, state, app_context)
+        await cmd_send_usdt(session, message, state, app_context=app_context)
     await message.delete()
 
 
@@ -437,7 +437,7 @@ async def cmd_receive_btc(callback: types.CallbackQuery, session: Session, app_c
 
 @router.callback_query(F.data == "BTC_IN")
 async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    await cmd_show_btc_in(session, callback.from_user.id, state, app_context)
+    await cmd_show_btc_in(session, callback.from_user.id, state, app_context=app_context)
     await callback.answer()
 
 
@@ -494,7 +494,7 @@ async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: S
             await state.set_state(None)
             user_repo = SqlAlchemyUserRepository(session)
             await user_repo.set_btc_uuid(message.from_user.id, order_uuid)
-            await cmd_show_btc_in(session, message.from_user.id, state, app_context)
+            await cmd_show_btc_in(session, message.from_user.id, state, app_context=app_context)
     await message.delete()
 
 
@@ -701,7 +701,7 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
         user_name=username
     )
 
-    await notify_admin(bot, f"[USDT] Start processing {target_label}. db_balance={balance}", app_context)
+    await notify_admin(bot, f"[USDT] Start processing {target_label}. db_balance={balance}", app_context=app_context)
     if balance <= 0:
         await notify_admin(bot, f"[USDT] {target_label}: zero recorded balance, skipping", app_context)
         return False

@@ -549,4 +549,4 @@ async def cmd_cheques(message: types.Message, state: FSMContext, session: Sessio
             "send_uuid": cheque.uuid,
         }
         await state.update_data(data)
-        await cheque_after_send(session, message.from_user.id, state, app_context)
+        await cheque_after_send(session, message.from_user.id, state, app_context=app_context)
