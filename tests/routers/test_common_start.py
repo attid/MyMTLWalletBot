@@ -59,6 +59,13 @@ def setup_common_start_mocks(router_app_context):
             self.secret_service = AsyncMock()
             self.secret_service.is_ton_wallet.return_value = False
             self.ctx.use_case_factory.create_wallet_secret_service.return_value = self.secret_service
+            
+            # Stellar Service Mocks (Added for new user flow)
+            self.ctx.stellar_service.generate_mnemonic = MagicMock(return_value="word1 word2 word3")
+            self.mock_kp = MagicMock()
+            self.mock_kp.public_key = "PUB_KEY"
+            self.mock_kp.secret = "SEC_KEY"
+            self.ctx.stellar_service.get_keypair_from_mnemonic = MagicMock(return_value=self.mock_kp)
 
             # Balance Use Case
             self.balances = [
@@ -127,8 +134,8 @@ async def test_cmd_start_new_user(mock_telegram, router_app_context, setup_commo
 
     # Verify registration called
     setup_common_start_mocks.register_uc.execute.assert_called_once()
-    # Verify encryption called
-    setup_common_start_mocks.ctx.encryption_service.encrypt.assert_called_once()
+    # Verify encryption called (once for secret, once for seed)
+    assert setup_common_start_mocks.ctx.encryption_service.encrypt.call_count == 2
     # Verify language selection triggered
     mock_lang.assert_called_once()
 

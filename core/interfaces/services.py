@@ -169,16 +169,14 @@ class ITonService(ABC):
         pass
     
     @property
-    @abstractmethod
     def wallet(self):
         """Get the wallet object."""
-        pass
+        return None
         
     @property
-    @abstractmethod
     def mnemonic(self) -> Optional[str]:
         """Get the mnemonic phrase."""
-        pass
+        return None
 
 
 

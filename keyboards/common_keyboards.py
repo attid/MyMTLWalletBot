@@ -60,11 +60,13 @@ def get_kb_del_return(user_id: Union[InlineKeyboardMarkup, InlineKeyboardButton,
 
 def get_kb_yesno_send_xdr(chat_id, add_button_memo=False, *, app_context: AppContext):
     buttons = [
-        [InlineKeyboardButton(text=my_gettext(chat_id, 'kb_sign', app_context=app_context), callback_data="Sign"),
-         InlineKeyboardButton(text=my_gettext(chat_id, 'kb_cancel', app_context=app_context), callback_data="Return")]
+        [InlineKeyboardButton(text=my_gettext(chat_id, 'kb_yes', app_context=app_context), callback_data="Yes_send_xdr"),
+         InlineKeyboardButton(text=my_gettext(chat_id, 'kb_no', app_context=app_context), callback_data="Return")]
     ]
     if add_button_memo:
-        buttons.insert(0, [InlineKeyboardButton(text=my_gettext(chat_id, 'kb_add_memo', app_context=app_context), callback_data="Memo")])
+        buttons.append([InlineKeyboardButton(text=my_gettext(chat_id, 'kb_add_memo', app_context=app_context), callback_data="Memo")])
+
+    buttons.append(get_return_button(chat_id, app_context=app_context))
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

@@ -177,7 +177,7 @@ async def cmd_send_sale_sum(message: types.Message, state: FSMContext, session: 
         await message.delete()
     else:
         await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await message.delete()
 
 
@@ -197,7 +197,7 @@ async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session:
         await message.delete()
     else:
         await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await message.delete()
 
 
@@ -266,7 +266,7 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext, *, app_con
         xdr = result.xdr
     else:
         logger.error(f"ManageOffer failed: {result.error_message}")
-        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message, app_context=app_context))
+        await send_message(session, message, f"Error: {result.error_message}", reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         return
 
     # if delete_order:
@@ -417,7 +417,7 @@ async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: 
         await message.delete()
     else:
         await send_message(session, message, my_gettext(message, 'bad_sum', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await message.delete()
 
 
