@@ -30,14 +30,15 @@ async def test_cmd_wallet_setting(mock_session, mock_callback, mock_state):
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.is_free = True
     
-    with patch("routers.wallet_setting.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.wallet_setting.my_gettext", return_value="msg"), \
+    # Configure AppContext mock
+    app_context = MagicMock()
+    mock_repo = MagicMock()
+    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+
+    with patch("routers.wallet_setting.my_gettext", return_value="msg"), \
          patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send:
          
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
-        
-        app_context = MagicMock()
         l10n = MagicMock()
         l10n.get_text.return_value = 'text'
         await cmd_wallet_setting(mock_callback, mock_state, mock_session, app_context, l10n)
@@ -55,13 +56,14 @@ async def test_cmd_get_private_key(mock_session, mock_callback, mock_state):
     mock_wallet.is_free = False
     mock_wallet.use_pin = 1 # Has PIN
     
-    with patch("routers.wallet_setting.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.wallet_setting.cmd_ask_pin", new_callable=AsyncMock) as mock_ask_pin:
+    # Configure AppContext mock
+    app_context = MagicMock()
+    mock_repo = MagicMock()
+    mock_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+    
+    with patch("routers.wallet_setting.cmd_ask_pin", new_callable=AsyncMock) as mock_ask_pin:
          
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
-        
-        app_context = MagicMock()
         await cmd_get_private_key(mock_callback, mock_state, mock_session, app_context)
         
         mock_ask_pin.assert_called_once()
@@ -76,15 +78,19 @@ async def test_send_private_key(mock_session, mock_state):
     mock_secrets.secret_key = "SECRET_KEY"
     mock_secrets.seed_phrase = "SEED_PHRASE"
     
-    with patch("routers.wallet_setting.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.wallet_setting.EncryptionService"), \
+    # Configure AppContext mock
+    app_context = MagicMock()
+    mock_repo = MagicMock()
+    app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+    
+    with patch("routers.wallet_setting.EncryptionService"), \
          patch("routers.wallet_setting.GetWalletSecrets") as MockUseCase, \
          patch("routers.wallet_setting.send_message", new_callable=AsyncMock) as mock_send:
          
         mock_use_case = MockUseCase.return_value
         mock_use_case.execute = AsyncMock(return_value=mock_secrets)
         
-        await send_private_key(mock_session, user_id, mock_state)
+        await send_private_key(mock_session, user_id, mock_state, app_context)
         
         mock_send.assert_called_once()
         assert "SECRET_KEY" in mock_send.call_args[0][2]
@@ -95,15 +101,19 @@ async def test_remove_password(mock_session, mock_state):
     user_id = 123
     mock_state.get_data.return_value = {'pin': '1234'}
     
-    with patch("routers.wallet_setting.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.wallet_setting.EncryptionService"), \
+    # Configure AppContext mock
+    app_context = MagicMock()
+    mock_repo = MagicMock()
+    app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+
+    with patch("routers.wallet_setting.EncryptionService"), \
          patch("routers.wallet_setting.ChangeWalletPassword") as MockUseCase, \
          patch("routers.wallet_setting.cmd_info_message", new_callable=AsyncMock) as mock_info:
          
         mock_use_case = MockUseCase.return_value
         mock_use_case.execute = AsyncMock(return_value=True)
         
-        await remove_password(mock_session, user_id, mock_state)
+        await remove_password(mock_session, user_id, mock_state, app_context)
         
         mock_use_case.execute.assert_called_once_with(
             user_id=123, old_pin='1234', new_pin='123', pin_type=0

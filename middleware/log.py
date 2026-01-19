@@ -8,6 +8,7 @@ from db.models import MyMtlWalletBotLog
 # LogQuery should be moved, but for now assuming it's still there or imported from new location if moved.
 # The plan said "Move LogQuery to infrastructure/models.py". I haven't done that yet.
 # I will keep importing from global_data for now but will prepare for removal.
+class LogButtonClickCallbackMiddleware(BaseMiddleware):
     async def __call__(
             self,
             handler: Callable[[CallbackQuery, Dict[str, Any]], Awaitable[Any]],

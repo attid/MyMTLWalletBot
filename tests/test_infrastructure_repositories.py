@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from db.models import Base
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -8,19 +8,23 @@ from core.domain.entities import User, Wallet
 
 # Use in-memory SQLite for integration tests
 @pytest.fixture(scope="module")
-def db_engine():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+async def db_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     yield engine
-    Base.metadata.drop_all(engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
 
 @pytest.fixture
-def db_session(db_engine):
-    Session = sessionmaker(bind=db_engine)
-    session = Session()
-    yield session
-    session.rollback()
-    session.close()
+async def db_session(db_engine):
+    async_session = sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with async_session() as session:
+        yield session
+        await session.rollback()
 
 @pytest.mark.asyncio
 async def test_user_repository(db_session):
@@ -57,15 +61,9 @@ async def test_wallet_repository(db_session):
 
     # Test Create Wallet
     wallet = Wallet(id=0, user_id=456, public_key="GABC123", is_default=True, is_free=True)
-    # Note: id=0 is ignored/autoincremented by DB usually, let's see how SqlAlchemy handles it 
-    # if we pass it explicitly. Usually we shouldn't pass ID for new entities if it's autoincrement.
-    # But our Entity construction requires ID. 
-    # In implementation of create, we construct DB model.
-    # If using autoincrement, we shouldn't set ID on DB model.
-    # In `SqlAlchemyWalletRepository.create`, we didn't specify `id` in constructor of `MyMtlWalletBot`.
-    # So it should auto-increment.
     
-    created_wallet = await repo_create_helper(wallet_repo, wallet)
+    # Verify create works
+    created_wallet = await wallet_repo.create(wallet)
     assert created_wallet.id is not None
     assert created_wallet.public_key == "GABC123"
     assert created_wallet.is_default is True
@@ -84,7 +82,3 @@ async def test_wallet_repository(db_session):
     default_wallet = await wallet_repo.get_default_wallet(456)
     assert default_wallet is not None
     assert default_wallet.public_key == "GABC123"
-
-async def repo_create_helper(repo, wallet):
-    # Helper to clean up calling convention if needed
-    return await repo.create(wallet)
