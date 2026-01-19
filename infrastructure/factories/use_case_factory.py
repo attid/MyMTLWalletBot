@@ -42,6 +42,31 @@ class IUseCaseFactory(ABC):
         """Create SendPayment use case."""
         pass
 
+    @abstractmethod
+    def create_register_user(self, session: Any):
+        """Create RegisterUser use case."""
+        pass
+
+    @abstractmethod
+    def create_update_user_profile(self, session: Any):
+        """Create UpdateUserProfile use case."""
+        pass
+
+    @abstractmethod
+    def create_add_donation(self, session: Any):
+        """Create AddDonation use case."""
+        pass
+    
+    @abstractmethod
+    def create_wallet_secret_service(self, session: Any):
+        """Create WalletSecretService."""
+        pass
+
+    @abstractmethod
+    def create_process_stellar_uri(self, session: Any):
+        """Create ProcessStellarUri use case."""
+        pass
+
 
 class UseCaseFactory(IUseCaseFactory):
     """
@@ -86,3 +111,28 @@ class UseCaseFactory(IUseCaseFactory):
         from core.use_cases.payment.send_payment import SendPayment
         repo = self.repository_factory.get_wallet_repository(session)
         return SendPayment(repo, self.stellar_service)
+
+    def create_register_user(self, session: Any):
+        from core.use_cases.user.register import RegisterUser
+        user_repo = self.repository_factory.get_user_repository(session)
+        wallet_repo = self.repository_factory.get_wallet_repository(session)
+        return RegisterUser(user_repo, wallet_repo)
+
+    def create_update_user_profile(self, session: Any):
+        from core.use_cases.user.update_profile import UpdateUserProfile
+        repo = self.repository_factory.get_user_repository(session)
+        return UpdateUserProfile(repo)
+
+    def create_add_donation(self, session: Any):
+        from core.use_cases.user.manage_user import AddDonation
+        repo = self.repository_factory.get_user_repository(session)
+        return AddDonation(repo)
+
+    def create_wallet_secret_service(self, session: Any):
+        from infrastructure.services.wallet_secret_service import SqlAlchemyWalletSecretService
+        return SqlAlchemyWalletSecretService(session)
+
+    def create_process_stellar_uri(self, session: Any):
+        from core.use_cases.stellar.process_uri import ProcessStellarUri
+        repo = self.repository_factory.get_wallet_repository(session)
+        return ProcessStellarUri(repo, self.stellar_service)
