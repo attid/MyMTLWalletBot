@@ -124,7 +124,7 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             kb = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_change_wallet'),
                                               callback_data="ChangeWallet")]]
             await send_message(session, user_id, my_gettext(user_id, 'load_error'),
-                               reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb))
+                               reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb), app_context=app_context)
             await clear_state(state)
             await state.update_data(last_message_id=0)
 
