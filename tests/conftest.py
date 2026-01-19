@@ -8,11 +8,16 @@ sys.path.append(os.getcwd())
 from aiohttp import web
 from aiogram import Dispatcher
 
-# Constants for Mock Server
+# Constants for Mock Telegram Server
 MOCK_SERVER_PORT = 8081
 MOCK_SERVER_HOST = "localhost"
 MOCK_SERVER_URL = f"http://{MOCK_SERVER_HOST}:{MOCK_SERVER_PORT}"
 TEST_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+
+# Constants for Mock Horizon Server
+MOCK_HORIZON_PORT = 8082
+MOCK_HORIZON_HOST = "localhost"
+MOCK_HORIZON_URL = f"http://{MOCK_HORIZON_HOST}:{MOCK_HORIZON_PORT}"
 
 @pytest.fixture
 def dp():
@@ -436,6 +441,119 @@ def mock_message():
     message.text = "test_text"
     return message
 
+
+# --- Common Router Test Fixtures ---
+
+from aiogram import Bot
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
+
+
+class RouterTestMiddleware(BaseMiddleware):
+    """
+    Standard middleware for router tests.
+    Injects session and app_context into handler data.
+    """
+    def __init__(self, app_context):
+        self.app_context = app_context
+
+    async def __call__(self, handler, event, data):
+        session = MagicMock()
+        session.execute = AsyncMock()
+        session.commit = MagicMock()
+        session.rollback = MagicMock()
+
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        result.scalar_one_or_none.return_value = None
+        result.scalar.return_value = None
+        result.all.return_value = []
+        session.execute.return_value = result
+
+        data["session"] = session
+        data["app_context"] = self.app_context
+        return await handler(event, data)
+
+
+@pytest.fixture
+async def router_bot(mock_server):
+    """Creates a Bot instance connected to mock Telegram server."""
+    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
+    bot = Bot(token=TEST_BOT_TOKEN, session=session)
+    yield bot
+    await bot.session.close()
+
+
+@pytest.fixture
+async def router_app_context(mock_app_context, router_bot):
+    """
+    Standard app_context for router tests.
+    Combines mock_app_context with real bot connected to mock_server.
+    """
+    mock_app_context.bot = router_bot
+    mock_app_context.dispatcher = Dispatcher()
+    return mock_app_context
+
+
+def create_callback_update(user_id: int, callback_data: str, update_id: int = 1,
+                           message_id: int = 1, username: str = "test") -> "types.Update":
+    """Helper to create callback query updates for tests."""
+    import datetime
+    from aiogram import types
+
+    return types.Update(
+        update_id=update_id,
+        callback_query=types.CallbackQuery(
+            id=f"cb{update_id}",
+            from_user=types.User(id=user_id, is_bot=False, first_name="Test", username=username),
+            chat_instance="ci1",
+            message=types.Message(
+                message_id=message_id,
+                date=datetime.datetime.now(),
+                chat=types.Chat(id=user_id, type='private'),
+                text="msg"
+            ),
+            data=callback_data
+        )
+    )
+
+
+def create_message_update(user_id: int, text: str, update_id: int = 1,
+                          message_id: int = 1, username: str = "test") -> "types.Update":
+    """Helper to create message updates for tests."""
+    import datetime
+    from aiogram import types
+
+    return types.Update(
+        update_id=update_id,
+        message=types.Message(
+            message_id=message_id,
+            date=datetime.datetime.now(),
+            chat=types.Chat(id=user_id, type='private'),
+            from_user=types.User(id=user_id, is_bot=False, first_name="Test", username=username),
+            text=text
+        )
+    )
+
+
+def get_telegram_request(mock_server: list, method: str, last: bool = True):
+    """
+    Get request(s) sent to mock Telegram server.
+
+    Args:
+        mock_server: List of received requests from mock_server fixture
+        method: Telegram API method name (e.g. "sendMessage", "answerCallbackQuery")
+        last: If True, return only the last matching request. Otherwise return all.
+
+    Returns:
+        Single request dict if last=True, list of requests otherwise, or None if not found.
+    """
+    matching = [r for r in mock_server if r["method"] == method]
+    if not matching:
+        return None
+    return matching[-1] if last else matching
+
 @pytest.fixture(autouse=True)
 def mock_global_data_autouse():
     """Automatically mocks global_data in common locations."""
@@ -478,3 +596,333 @@ def mock_global_data_autouse():
     
     p3.stop()
     p2.stop()
+
+
+# --- Mock Horizon Server ---
+
+# Default test data for Horizon responses
+DEFAULT_TEST_ACCOUNT = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+
+
+@pytest.fixture
+async def mock_horizon():
+    """
+    Starts a local mock Stellar Horizon server.
+
+    Usage in tests:
+        async def test_something(mock_horizon, ...):
+            # Configure responses
+            mock_horizon.set_account_balances("GXXX", [{"asset_code": "XLM", "balance": "100"}])
+
+            # Run test - StellarService will hit mock server
+            ...
+
+            # Check what was sent to Horizon
+            assert mock_horizon.get_requests("accounts") == [...]
+    """
+    routes = web.RouteTableDef()
+
+    # Storage for received requests and configurable responses
+    class HorizonMockState:
+        def __init__(self):
+            self.requests = []
+            self.accounts = {}  # account_id -> account data
+            self.offers = {}    # account_id -> list of offers
+            self.paths = []     # configured paths for strict-send/receive
+            self.transaction_response = {"successful": True, "hash": "abc123"}
+
+        def set_account(self, account_id: str, balances: list = None, sequence: str = "123456789",
+                       signers: list = None, data: dict = None):
+            """Configure account response."""
+            self.accounts[account_id] = {
+                "id": account_id,
+                "account_id": account_id,
+                "sequence": sequence,
+                "balances": balances or [
+                    {"asset_type": "native", "balance": "100.0000000"}
+                ],
+                "signers": signers or [
+                    {"key": account_id, "weight": 1, "type": "ed25519_public_key"}
+                ],
+                "thresholds": {"low_threshold": 0, "med_threshold": 0, "high_threshold": 0},
+                "data": data or {},
+                "flags": {"auth_required": False, "auth_revocable": False, "auth_immutable": False},
+                "paging_token": account_id
+            }
+
+        def set_offers(self, account_id: str, offers: list):
+            """Configure offers response for account."""
+            self.offers[account_id] = offers
+
+        def set_paths(self, paths: list):
+            """Configure paths response for strict-send/receive."""
+            self.paths = paths
+
+        def set_transaction_response(self, successful: bool = True, hash: str = "abc123",
+                                     error: str = None):
+            """Configure transaction submit response."""
+            self.transaction_response = {
+                "successful": successful,
+                "hash": hash,
+                "ledger": 12345,
+                "envelope_xdr": "AAAA...",
+                "result_xdr": "AAAA...",
+            }
+            if error:
+                self.transaction_response["extras"] = {"result_codes": {"transaction": error}}
+
+        def get_requests(self, endpoint: str = None):
+            """Get received requests, optionally filtered by endpoint."""
+            if endpoint:
+                return [r for r in self.requests if r["endpoint"] == endpoint]
+            return self.requests
+
+        def clear(self):
+            """Clear all state."""
+            self.requests.clear()
+            self.accounts.clear()
+            self.offers.clear()
+            self.paths.clear()
+
+    state = HorizonMockState()
+
+    # Set up default test account
+    state.set_account(DEFAULT_TEST_ACCOUNT, balances=[
+        {"asset_type": "native", "balance": "100.0000000"},
+        {"asset_type": "credit_alphanum12", "asset_code": "EURMTL",
+         "asset_issuer": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+         "balance": "1000.0000000"}
+    ])
+
+    @routes.get("/accounts/{account_id}")
+    async def get_account(request):
+        account_id = request.match_info['account_id']
+        state.requests.append({
+            "endpoint": "accounts",
+            "method": "GET",
+            "account_id": account_id,
+            "params": dict(request.query)
+        })
+
+        if account_id in state.accounts:
+            return web.json_response(state.accounts[account_id])
+
+        # Return default account structure
+        return web.json_response({
+            "id": account_id,
+            "account_id": account_id,
+            "sequence": "123456789",
+            "balances": [{"asset_type": "native", "balance": "100.0000000"}],
+            "signers": [{"key": account_id, "weight": 1, "type": "ed25519_public_key"}],
+            "thresholds": {"low_threshold": 0, "med_threshold": 0, "high_threshold": 0},
+            "data": {},
+            "flags": {"auth_required": False, "auth_revocable": False, "auth_immutable": False},
+            "paging_token": account_id
+        })
+
+    @routes.get("/accounts/{account_id}/offers")
+    async def get_account_offers(request):
+        account_id = request.match_info['account_id']
+        state.requests.append({
+            "endpoint": "offers",
+            "method": "GET",
+            "account_id": account_id,
+            "params": dict(request.query)
+        })
+
+        offers = state.offers.get(account_id, [])
+        return web.json_response({
+            "_embedded": {
+                "records": offers
+            }
+        })
+
+    @routes.get("/offers")
+    async def get_offers(request):
+        """General offers endpoint with query params."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "offers",
+            "method": "GET",
+            "params": params
+        })
+
+        seller = params.get("seller")
+        offers = state.offers.get(seller, []) if seller else []
+        return web.json_response({
+            "_embedded": {
+                "records": offers
+            }
+        })
+
+    @routes.post("/transactions")
+    async def submit_transaction(request):
+        if request.content_type == 'application/json':
+            data = await request.json()
+        else:
+            data = await request.post()
+
+        state.requests.append({
+            "endpoint": "transactions",
+            "method": "POST",
+            "data": dict(data)
+        })
+
+        if state.transaction_response.get("successful", True):
+            return web.json_response(state.transaction_response)
+        else:
+            return web.json_response(state.transaction_response, status=400)
+
+    @routes.get("/paths/strict-send")
+    async def strict_send_paths(request):
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "paths/strict-send",
+            "method": "GET",
+            "params": params
+        })
+
+        # Return configured paths or empty
+        if state.paths:
+            return web.json_response({
+                "_embedded": {
+                    "records": state.paths
+                }
+            })
+
+        # Default: return a simple path
+        return web.json_response({
+            "_embedded": {
+                "records": [{
+                    "source_asset_type": params.get("source_asset_type", "native"),
+                    "source_asset_code": params.get("source_asset_code"),
+                    "source_asset_issuer": params.get("source_asset_issuer"),
+                    "source_amount": params.get("source_amount", "10.0000000"),
+                    "destination_asset_type": "credit_alphanum12",
+                    "destination_asset_code": "EURMTL",
+                    "destination_asset_issuer": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                    "destination_amount": "9.5000000",
+                    "path": []
+                }]
+            }
+        })
+
+    @routes.get("/paths/strict-receive")
+    async def strict_receive_paths(request):
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "paths/strict-receive",
+            "method": "GET",
+            "params": params
+        })
+
+        if state.paths:
+            return web.json_response({
+                "_embedded": {
+                    "records": state.paths
+                }
+            })
+
+        return web.json_response({
+            "_embedded": {
+                "records": [{
+                    "source_asset_type": "native",
+                    "source_amount": "10.5000000",
+                    "destination_asset_type": params.get("destination_asset_type", "credit_alphanum12"),
+                    "destination_asset_code": params.get("destination_asset_code"),
+                    "destination_asset_issuer": params.get("destination_asset_issuer"),
+                    "destination_amount": params.get("destination_amount", "10.0000000"),
+                    "path": []
+                }]
+            }
+        })
+
+    @routes.get("/fee_stats")
+    async def fee_stats(request):
+        state.requests.append({
+            "endpoint": "fee_stats",
+            "method": "GET"
+        })
+        return web.json_response({
+            "last_ledger": "12345",
+            "last_ledger_base_fee": "100",
+            "ledger_capacity_usage": "0.5",
+            "fee_charged": {
+                "max": "200",
+                "min": "100",
+                "mode": "100",
+                "p10": "100",
+                "p20": "100",
+                "p30": "100",
+                "p40": "100",
+                "p50": "100",
+                "p60": "100",
+                "p70": "100",
+                "p80": "100",
+                "p90": "100",
+                "p95": "100",
+                "p99": "100"
+            },
+            "max_fee": {
+                "max": "10000",
+                "min": "100",
+                "mode": "100",
+                "p10": "100",
+                "p20": "100",
+                "p30": "100",
+                "p40": "100",
+                "p50": "100",
+                "p60": "100",
+                "p70": "100",
+                "p80": "100",
+                "p90": "100",
+                "p95": "100",
+                "p99": "1000"
+            }
+        })
+
+    @routes.get("/")
+    async def root(request):
+        """Root endpoint - Horizon info."""
+        state.requests.append({"endpoint": "root", "method": "GET"})
+        return web.json_response({
+            "horizon_version": "mock-2.0.0",
+            "core_version": "mock-v19.0.0",
+            "network_passphrase": "Test SDF Network ; September 2015"
+        })
+
+    # Catch-all for debugging unhandled endpoints
+    @routes.get("/{path:.*}")
+    async def catch_all_get(request):
+        path = request.match_info['path']
+        print(f"[MockHorizon] Unhandled GET: /{path}")
+        state.requests.append({
+            "endpoint": f"UNHANDLED:{path}",
+            "method": "GET",
+            "params": dict(request.query)
+        })
+        return web.json_response({"error": f"Mock endpoint not implemented: GET /{path}"}, status=404)
+
+    @routes.post("/{path:.*}")
+    async def catch_all_post(request):
+        path = request.match_info['path']
+        print(f"[MockHorizon] Unhandled POST: /{path}")
+        state.requests.append({
+            "endpoint": f"UNHANDLED:{path}",
+            "method": "POST"
+        })
+        return web.json_response({"error": f"Mock endpoint not implemented: POST /{path}"}, status=404)
+
+    app = web.Application()
+    app.add_routes(routes)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, MOCK_HORIZON_HOST, MOCK_HORIZON_PORT)
+    await site.start()
+
+    print(f"[MockHorizon] Started on {MOCK_HORIZON_URL}")
+
+    yield state
+
+    await runner.cleanup()
+    print("[MockHorizon] Stopped")

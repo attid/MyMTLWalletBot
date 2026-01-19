@@ -56,7 +56,13 @@ async def cmd_mtlap_tools(callback: types.CallbackQuery, state: FSMContext, sess
                                     callback_data="MTLAPToolsRecommend")],
         get_return_button(user_id, app_context=app_context)
     ]
-    await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(
+        session,
+        user_id,
+        msg,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
@@ -76,7 +82,13 @@ async def cmd_mtlap_tools_recommend(callback: types.CallbackQuery, state: FSMCon
         existing = my_gettext(callback, 'recommend_none', app_context=app_context)
 
     msg = my_gettext(callback, 'recommend_prompt', (existing,), app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await state.set_state(MTLAPStateTools.recommend_for)
     await callback.answer()
 
@@ -95,7 +107,13 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
     account = await stellar_check_account(public_key)
     if not account:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'recommend_prompt', (existing,), app_context=app_context)
-        await send_message(session, message, msg, reply_markup=get_kb_return(message, app_context=app_context))
+        await send_message(
+            session,
+            message,
+            msg,
+            reply_markup=get_kb_return(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
         return
 
@@ -112,7 +130,13 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
     )
     await state.update_data(xdr=xdr)
     confirm_msg = my_gettext(message, 'recommend_confirm', (delegate, new_key), app_context=app_context)
-    await send_message(session, message, confirm_msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+    await send_message(
+        session,
+        message,
+        confirm_msg,
+        reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+        app_context=app_context,
+    )
     await message.delete()
 
 
@@ -138,7 +162,13 @@ async def cmd_mtlap_tools_delegate_a(callback: types.CallbackQuery, state: FSMCo
 
     msg = my_gettext(callback, 'delegate_start', (delegate,), app_context=app_context)
 
-    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
@@ -155,8 +185,13 @@ async def cmd_mtlap_tools_del_delegate_a(callback: types.CallbackQuery, state: F
             (await stellar_get_user_account(session, callback.from_user.id)).account.account_id,
             delegate, None)
         await state.update_data(xdr=xdr)
-        await send_message(session, callback, my_gettext(callback, 'delegate_delete', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context))
+        await send_message(
+            session,
+            callback,
+            my_gettext(callback, 'delegate_delete', (delegate,), app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context),
+            app_context=app_context,
+        )
 
         await callback.answer()
     else:
@@ -168,8 +203,13 @@ async def cmd_mtlap_tools_add_delegate_a(callback: types.CallbackQuery, state: F
     if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
-    await send_message(session, callback, my_gettext(callback, 'delegate_send_address', app_context=app_context),
-                       reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, 'delegate_send_address', app_context=app_context),
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await state.set_state(MTLAPStateTools.delegate_for_a)
     await callback.answer()
 
@@ -183,12 +223,17 @@ async def cmd_mtlap_send_add_delegate_for_a(message: types.Message, state: FSMCo
         xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
                                      "mtla_a_delegate", delegate)
         await state.update_data(xdr=xdr)
-        await send_message(session, message, my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+        await send_message(
+            session,
+            message,
+            my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'delegate_send_address', app_context=app_context)
-        await send_message(session, message, msg)
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
@@ -214,7 +259,13 @@ async def cmd_mtlap_tools_delegate_c(callback: types.CallbackQuery, state: FSMCo
 
     msg = my_gettext(callback, 'delegate_start', (delegate,), app_context=app_context)
 
-    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
@@ -231,8 +282,13 @@ async def cmd_mtlap_tools_del_delegate_c(callback: types.CallbackQuery, state: F
             (await stellar_get_user_account(session, callback.from_user.id)).account.account_id,
             delegate, None)
         await state.update_data(xdr=xdr)
-        await send_message(session, callback, my_gettext(callback, 'delegate_delete', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context))
+        await send_message(
+            session,
+            callback,
+            my_gettext(callback, 'delegate_delete', (delegate,), app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context),
+            app_context=app_context,
+        )
 
         await callback.answer()
     else:
@@ -244,10 +300,14 @@ async def cmd_mtlap_tools_add_delegate_c(callback: types.CallbackQuery, state: F
     if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
-    await send_message(session, callback, reply_markup=get_kb_return(callback, app_context=app_context),
-                       msg=my_gettext(callback, 'delegate_send_address', app_context=app_context) +
-                           my_gettext(callback, 'delegate_ready', app_context=app_context),
-                       )
+    await send_message(
+        session,
+        callback,
+        msg=my_gettext(callback, 'delegate_send_address', app_context=app_context)
+        + my_gettext(callback, 'delegate_ready', app_context=app_context),
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await state.set_state(MTLAPStateTools.delegate_for_c)
     await callback.answer()
 
@@ -263,12 +323,17 @@ async def cmd_mtlap_send_add_delegate_for_c(message: types.Message, state: FSMCo
         xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
                                      "mtla_c_delegate", delegate)
         await state.update_data(xdr=xdr)
-        await send_message(session, message, my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+        await send_message(
+            session,
+            message,
+            my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'delegate_send_address', app_context=app_context)
-        await send_message(session, message, msg)
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 ########################################################################################################################

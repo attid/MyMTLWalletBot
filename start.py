@@ -228,6 +228,7 @@ async def main():
     from infrastructure.services.stellar_service import StellarService
 
     from infrastructure.services.encryption_service import EncryptionService
+    from services.ton_service import TonService
     
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -235,6 +236,7 @@ async def main():
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
     encryption_service = EncryptionService()
+    ton_service = TonService()
     
     # Create UseCaseFactory for DI
     from infrastructure.factories.use_case_factory import UseCaseFactory
@@ -248,6 +250,7 @@ async def main():
         log_queue=log_queue,
         repository_factory=repository_factory,
         stellar_service=stellar_service,
+        ton_service=ton_service,
         encryption_service=encryption_service,
         localization_service=localization_service,
         dispatcher=dp,

@@ -7,10 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
 from sqlalchemy.orm import Session
-from cryptocode import decrypt, encrypt
-from stellar_sdk import Keypair
-
 from keyboards.common_keyboards import get_kb_return, get_return_button
+from routers.sign import cmd_ask_pin, PinState
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, my_gettext
@@ -20,7 +18,8 @@ from other.config_reader import config
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
+from infrastructure.services.app_context import AppContext
+from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from core.use_cases.wallet.add_wallet import AddWallet
 
 
@@ -48,7 +47,7 @@ async def cmd_add_new(callback: types.CallbackQuery, session: Session, app_conte
         get_return_button(callback, app_context=app_context)
     ]
     msg = my_gettext(callback, 'create_msg', app_context=app_context)
-    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))
+    await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
 
 
 @router.callback_query(F.data == "AddWalletHaveKey")
@@ -56,7 +55,7 @@ async def cq_add_have_key(callback: types.CallbackQuery, state: FSMContext, sess
     msg = my_gettext(callback, 'send_key', app_context=app_context)
     await state.update_data(msg=msg)
     await state.set_state(StateAddWallet.sending_private)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
 
 
 @router.message(StateAddWallet.sending_private)
@@ -64,13 +63,12 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
     try:
         args = message.text.split()
         secret_key = args[0]
-        kp = Keypair.from_secret(secret_key)
+        kp = app_context.stellar_service.get_keypair_from_secret(secret_key)
         public_key = kp.public_key
         
-        wallet_repo = SqlAlchemyWalletRepository(session)
-        add_wallet = AddWallet(wallet_repo)
+        add_wallet = app_context.use_case_factory.create_add_wallet(session)
         
-        encrypted_secret = encrypt(secret_key, str(message.from_user.id))
+        encrypted_secret = app_context.encryption_service.encrypt(secret_key, str(message.from_user.id))
         
         await add_wallet.execute(
             user_id=message.from_user.id,
@@ -90,14 +88,14 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
         logger.info(ex)
         data = await state.get_data()
         await send_message(session, message, my_gettext(message, 'bad_key', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "AddWalletNewKey")
 async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state: FSMContext, app_context: AppContext):
     # Check if user can add free wallet (via Use Case check/Repo limit)
-    wallet_repo = SqlAlchemyWalletRepository(session)
-    add_wallet = AddWallet(wallet_repo)
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    add_wallet = app_context.use_case_factory.create_add_wallet(session)
     
     # We can check limit first to fail fast, although execute() does it too.
     try:
@@ -115,14 +113,14 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
 
         async with new_wallet_lock:
              # 1. Generate keys
-             mnemonic = Keypair.generate_mnemonic_phrase()
-             kp = Keypair.from_mnemonic_phrase(mnemonic)
+             mnemonic = app_context.stellar_service.generate_mnemonic()
+             kp = app_context.stellar_service.get_keypair_from_mnemonic(mnemonic)
              
              # 2. Add to DB
              # Encrypt secrets
-             encrypted_secret = encrypt(kp.secret, str(callback.from_user.id))
+             encrypted_secret = app_context.encryption_service.encrypt(kp.secret, str(callback.from_user.id))
              # seed_key encrypted with OWN secret (legacy logic)
-             encrypted_seed = encrypt(mnemonic, kp.secret)
+             encrypted_seed = app_context.encryption_service.encrypt(mnemonic, kp.secret)
              
              await add_wallet.execute(
                  user_id=callback.from_user.id,
@@ -137,14 +135,14 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: Session, state:
              # 3. Fund and Trust (StellarService)
              await cmd_info_message(session, callback.message.chat.id, msg, app_context=app_context)
              
-             service = StellarService(config.horizon_url_rw)
+             service = app_context.stellar_service
              master_wallet = await wallet_repo.get_default_wallet(0)
              if not master_wallet:
                  logger.error("No master wallet found!")
-                 await send_message(session, callback, "Error: System wallet missing")
+                 await send_message(session, callback, "Error: System wallet missing", app_context=app_context)
                  return
                  
-             master_secret = decrypt(master_wallet.secret_key, '0')
+             master_secret = app_context.encryption_service.decrypt(master_wallet.secret_key, '0')
              
              # Create Account
              xdr = await service.build_payment_transaction(
@@ -204,7 +202,7 @@ async def cq_add_read_only(callback: types.CallbackQuery, state: FSMContext, ses
     msg = my_gettext(callback, 'add_read_only', app_context=app_context)
     await state.update_data(msg=msg)
     await state.set_state(StateAddWallet.sending_public)
-    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context))
+    await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
 
 
 @router.message(StateAddWallet.sending_public)
@@ -213,8 +211,7 @@ async def cmd_sending_public(message: types.Message, state: FSMContext, session:
         # await stellar_get_balances(session, message.from_user.id, public_key=message.text)
         public_key = message.text
         
-        wallet_repo = SqlAlchemyWalletRepository(session)
-        add_wallet = AddWallet(wallet_repo)
+        add_wallet = app_context.use_case_factory.create_add_wallet(session)
         
         # Legacy behavior: save public_key as secret_key too for RO wallets
         await add_wallet.execute(
@@ -235,7 +232,7 @@ async def cmd_sending_public(message: types.Message, state: FSMContext, session:
         logger.info(ex)
         data = await state.get_data()
         await send_message(session, message, my_gettext(message, 'bad_key', app_context=app_context) + '\n' + data['msg'],
-                           reply_markup=get_kb_return(message, app_context=app_context))
+                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "PIN")
@@ -250,7 +247,7 @@ async def cq_add_password(callback: types.CallbackQuery, state: FSMContext, sess
     await state.update_data(pin_type=2)
     await state.set_state(PinState.ask_password_set)
     await send_message(session, callback, my_gettext(callback, 'send_password', app_context=app_context),
-                       reply_markup=get_kb_return(callback, app_context=app_context))
+                       reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
 
 
 @router.callback_query(F.data == "NoPassword")
@@ -262,8 +259,8 @@ async def cq_add_read_only_no_password(callback: types.CallbackQuery, state: FSM
 @router.callback_query(F.data == "AddTonWallet")
 async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSMContext, app_context: AppContext):
     try:
-        wallet_repo = SqlAlchemyWalletRepository(session)
-        add_wallet = AddWallet(wallet_repo)
+        add_wallet = app_context.use_case_factory.create_add_wallet(session)
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         
         # Check limits effectively done by add_wallet.execute(is_free=True)?
         # But we need to generate keys first. It's safe to generate then fail if limit reached.
@@ -273,14 +270,11 @@ async def cq_add_ton(callback: types.CallbackQuery, session: Session, state: FSM
              await callback.answer(my_gettext(callback.message.chat.id, "max_wallets", app_context=app_context), show_alert=True)
              return
 
-        from services.ton_service import TonService
-
-        ton_service = TonService()
-        ton_service.create_wallet()
+        wallet_obj, mnemonic_list = app_context.ton_service.generate_wallet()
         
         # public_key: string representation
-        public_key = ton_service.wallet.address.to_str(is_bounceable=False)
-        seed_key = ton_service.mnemonic # List of strings? Or string?
+        public_key = wallet_obj.address.to_str(is_bounceable=False)
+        seed_key = mnemonic_list
         # ton_service.mnemonic type? 
         # Legacy: seed_key=ton_service.mnemonic passed to db_add_wallet.
         # If it's a list, db adapter probably handled it or it's a string.

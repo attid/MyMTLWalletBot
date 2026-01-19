@@ -4,7 +4,7 @@ from aiogram import types, Dispatcher, F
 from aiogram.methods import SendMessage, EditMessageText
 from aiogram.types import Update, Message, CallbackQuery, User, Chat
 from aiogram.fsm.storage.base import StorageKey
-from routers.sign import router, PinState, PinCallbackData
+from routers.sign import router, PinState, PinCallbackData, cmd_yes_send, cq_pin
 from infrastructure.services.app_context import AppContext
 from infrastructure.states import StateSign
 from other.mytypes import MyResponse
@@ -229,3 +229,23 @@ async def test_full_flow_mistake_pin_mock(mock_server, dp_with_router, mock_app_
         
     data = await dp_with_router.storage.get_data(state_key)
     assert data.get('pin') == "13"
+
+@pytest.mark.asyncio
+async def test_cmd_yes_send(mock_session, mock_callback, mock_app_context):
+    mock_state = AsyncMock()
+    with patch("routers.sign.cmd_ask_pin", new_callable=AsyncMock) as mock_ask:
+        await cmd_yes_send(mock_callback, mock_state, mock_session, mock_app_context)
+        mock_state.set_state.assert_called_with(PinState.sign_and_send)
+        mock_ask.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_cq_pin_digits(mock_session, mock_callback, mock_app_context):
+    mock_state = AsyncMock()
+    mock_state.get_data.return_value = {'pin': '12'}
+    callback_data = PinCallbackData(action="3")
+    
+    with patch("routers.sign.cmd_ask_pin", new_callable=AsyncMock) as mock_ask:
+        await cq_pin(mock_callback, callback_data, mock_state, mock_session, mock_app_context)
+        
+        mock_state.update_data.assert_called_with(pin='123')
+        mock_ask.assert_called_once()
