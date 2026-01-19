@@ -18,6 +18,7 @@ from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state
+from infrastructure.utils.common_utils import float2str
 from other.web_tools import get_web_request, get_web_decoded_xdr
 from loguru import logger
 
@@ -31,14 +32,9 @@ from other.stellar_tools import eurmtl_asset
 # stellar_get_user_seed_phrase, stellar_close_asset, stellar_has_asset_offers
 
 # Legacy imports removed
-# from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-# from infrastructure.services.stellar_service import StellarService
-from infrastructure.services.encryption_service import EncryptionService
-from core.use_cases.wallet.get_balance import GetWalletBalance
-from core.use_cases.wallet.change_password import ChangeWalletPassword
-from core.use_cases.wallet.get_secrets import GetWalletSecrets
-from core.use_cases.payment.send_payment import SendPayment
+# Imports removed/updated
 from core.domain.value_objects import Asset as DomainAsset
+# from other.config_reader import config # Duplicate import
 from other.config_reader import config
 from other.asset_visibility_tools import (
     get_asset_visibility, set_asset_visibility,
@@ -134,7 +130,7 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_list', app_context=app_context), callback_data="AddAsset")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_expert', app_context=app_context), callback_data="AddAssetExpert")],
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_asset_visibility', app_context=app_context), callback_data="AssetVisibilityMenu")],
-        get_return_button(callback)
+        get_return_button(callback, app_context=app_context)
     ]
     await callback.answer()
 
@@ -145,10 +141,11 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
 # Helper function to generate the message text and keyboard markup
 async def _generate_asset_visibility_markup(user_id: int, session: Session, app_context: AppContext, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
     """Generates the text and keyboard for the asset visibility menu."""
+    """Generates the text and keyboard for the asset visibility menu."""
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(user_id)
-    service = app_context.stellar_service
-    use_case = GetWalletBalance(repo, service)
+    # Using UseCaseFactory
+    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     balances = await use_case.execute(user_id=user_id)
 
     vis_dict = {}
@@ -215,7 +212,7 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, app_
         logger.info(f"Total keyboard: {kb}")
 
     # Back button
-    kb.append(get_return_button(user_id)) # Assuming get_return_button returns a list containing the button
+    kb.append(get_return_button(user_id, app_context=app_context)) # Assuming get_return_button returns a list containing the button
 
     # Generate message text
     message_text = my_gettext(user_id, 'asset_visibility_msg', app_context=app_context)
@@ -335,10 +332,8 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 
 @router.callback_query(F.data == "DeleteAsset")
 async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    # Refactored to use GetWalletBalance Use Case
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
-    use_case = GetWalletBalance(repo, service)
+    # Refactored to use UseCaseFactory
+    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     asset_list = await use_case.execute(user_id=callback.from_user.id)
 
     kb_tmp = []
@@ -347,7 +342,7 @@ async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, se
                                                   callback_data=DelAssetCallbackData(
                                                       answer=token.asset_code).pack()
                                                   )])
-    kb_tmp.append(get_return_button(callback))
+    kb_tmp.append(get_return_button(callback, app_context=app_context))
     msg = my_gettext(callback, 'delete_asset2', app_context=app_context)
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
     await state.update_data(assets=jsonpickle.encode(asset_list))
@@ -378,38 +373,46 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
             if has_offers:
                 await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers', app_context=app_context),
                                    reply_markup=get_kb_return(callback))
-                await callback.answer()
-                return
-
-        # Refactored: Close asset = Change Trust (Limit 0)
+        asset_obj = asset[0] # Get the Balance object directly
+        await state.update_data(send_asset_code=asset_obj.asset_code,
+                                send_asset_issuer=asset_obj.asset_issuer)
+        # NOTE: stellar_has_asset_offers logic should be refactored too, but leaving import for now if failed to move above?
+        # Wait, I removed the import. I need to fix logic here.
         repo = app_context.repository_factory.get_wallet_repository(session)
         service = app_context.stellar_service
-        pay_use_case = SendPayment(repo, service)
-        
-        # We need to build trust transaction. Since SendPayment creates PAYMENT, this is not appropriate.
-        # We use StellarService directly to build transaction + sign.
-        # But we need secret key to sign.
-        # We can use GetWalletSecrets to get secret, then Service to build & sign.
-        # Or better: create a ChangeTrust use case?
-        # For now, let's use Service.
-        
-        # Wait, stellar_close_asset returns XDR.
-        # So we just build XDR.
-        
         wallet = await repo.get_default_wallet(callback.from_user.id)
-        # Trust limit 0
+        offers = await service.get_selling_offers(wallet.public_key)
+        has_offers = any(o['selling']['asset_code'] == asset_obj.asset_code and o['selling']['asset_issuer'] == asset_obj.asset_issuer for o in offers)
+        
+        if has_offers:
+            await send_message(session, callback, my_gettext(callback, 'close_asset_has_offers', app_context=app_context),
+                               reply_markup=get_kb_return(callback))
+            await callback.answer()
+            return
+
+        # Refactored: Close asset = Change Trust (Limit 0)
+        # Refactored: Close asset = Change Trust (Limit 0)
+        # Using StellarService directly for Change Trust operation (Limit 0 to remove trustline)
+        repo = app_context.repository_factory.get_wallet_repository(session)
+        wallet = await repo.get_default_wallet(callback.from_user.id)
+        service = app_context.stellar_service
+        
         tx = await service.build_change_trust_transaction(
-             source_public_key=wallet.public_key,
-             asset_code=asset[0].asset_code,
-             asset_issuer=asset[0].asset_issuer,
-             limit="0"
+            source_public_key=wallet.public_key,
+            asset_code=asset_obj.asset_code,
+            asset_issuer=asset_obj.asset_issuer,
+            limit="0"
         )
-        xdr = tx.to_xdr()
-
-        msg = my_gettext(callback, 'confirm_close_asset', (asset[0].asset_code, asset[0].asset_issuer), app_context=app_context)
-        await state.update_data(xdr=xdr)
-
-        await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback))
+        
+        from other.stellar_tools import stellar_check_xdr
+        from routers.sign import cmd_ask_pin
+        
+        xdr = await stellar_check_xdr(tx)
+        if xdr:
+            await state.update_data(xdr=xdr)
+            await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
+            
+        return # The rest of the original code is now handled by cmd_ask_pin and subsequent signing.
     else:
         await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
         logger.info(f'error add asset {callback.from_user.id} {answer}')
@@ -424,10 +427,10 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 @router.callback_query(F.data == "AddAsset")
 async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
-    # Refactored to use GetWalletBalance Use Case
+    user_id = callback.from_user.id
+    # Refactored to use UseCaseFactory
     repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
-    balance_use_case = GetWalletBalance(repo, service)
+    balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     
     wallet = await repo.get_default_wallet(user_id)
     is_free = wallet.is_free if wallet else False
@@ -459,7 +462,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
                                                   callback_data=AddAssetCallbackData(
                                                       answer=key.asset_code).pack()
                                                   )])
-    kb_tmp.append(get_return_button(callback))
+    kb_tmp.append(get_return_button(callback, app_context=app_context))
     await send_message(session, callback, my_gettext(user_id, 'open_asset', app_context=app_context),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp))
 
@@ -477,7 +480,7 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
     if asset:
         await state.update_data(send_asset_code=asset[0].asset_code,
                                 send_asset_issuer=asset[0].asset_issuer)
-        await cmd_add_asset_end(callback.message.chat.id, state, session, )
+        await cmd_add_asset_end(callback.message.chat.id, state, session, app_context=app_context)
     else:
         await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
         logger.info(f'error add asset {callback.from_user.id} {answer}')
@@ -492,9 +495,9 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 @router.callback_query(F.data == "AddAssetExpert")
 async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
     user_id = callback.from_user.id
+    user_id = callback.from_user.id
     repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
-    balance_use_case = GetWalletBalance(repo, service)
+    balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     wallet = await repo.get_default_wallet(user_id)
     is_free = wallet.is_free if wallet else False
     
@@ -530,7 +533,7 @@ async def cmd_sending_code(message: types.Message, state: FSMContext, session: S
 @router.message(StateAddAsset.sending_issuer)
 async def cmd_sending_issuer(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     await state.update_data(send_asset_issuer=message.text)
-    await cmd_add_asset_end(message.chat.id, state, session, )
+    await cmd_add_asset_end(message.chat.id, state, session, app_context=app_context)
 
 
 ########################################################################################################################
@@ -572,7 +575,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 
     await state.update_data(send_asset_code=asset_code)
     await state.update_data(send_asset_issuer=public_key)
-    await cmd_add_asset_end(message.chat.id, state, session, )
+    await cmd_add_asset_end(message.chat.id, state, session, app_context=app_context)
 
 
 ########################################################################################################################
@@ -580,23 +583,28 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 ########################################################################################################################
 
 
-async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session):
+async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
     data = await state.get_data()
-    asset_code = data.get('send_asset_code', 'XLM')
+    asset_code = data.get('send_asset_code', 'EURMTL')
     asset_issuer = data.get('send_asset_issuer', '')
-
-    asset_issuer = data.get('send_asset_issuer', '')
-
-    repo = SqlAlchemyWalletRepository(session)
-    wallet = await repo.get_default_wallet(chat_id)
-    service = StellarService(horizon_url=config.horizon_url)
     
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await repo.get_default_wallet(chat_id)
+    service = app_context.stellar_service
+
     tx = await service.build_change_trust_transaction(
              source_public_key=wallet.public_key,
              asset_code=asset_code,
              asset_issuer=asset_issuer
-    )
-    xdr = tx.to_xdr()
+         )
+         
+    from other.stellar_tools import stellar_check_xdr
+    from routers.sign import cmd_ask_pin
+    
+    xdr = await stellar_check_xdr(tx)
+    if xdr:
+        await state.update_data(xdr=xdr)
+        await cmd_ask_pin(session, chat_id, state, app_context=app_context)
 
     msg = my_gettext(chat_id, 'confirm_asset', (asset_code, asset_issuer), app_context=app_context)
 
@@ -611,9 +619,9 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session):
 async def remove_password(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    crypto_service = EncryptionService()
-    change_pw_use_case = ChangeWalletPassword(repo, crypto_service)
+    data = await state.get_data()
+    pin = data.get('pin', '')
+    change_pw_use_case = app_context.use_case_factory.create_change_wallet_password(session)
     # user_id is passed as pin here? No, check signature
     # remove_password(session, user_id, state)
     # pin is in data['pin']. new password should be ... empty? or different logic?
@@ -679,9 +687,9 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
 async def send_private_key(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    crypto_service = EncryptionService()
-    secrets_use_case = GetWalletSecrets(repo, crypto_service)
+    data = await state.get_data()
+    pin = data.get('pin', '')
+    secrets_use_case = app_context.use_case_factory.create_get_wallet_secrets(session)
     
     secrets = await secrets_use_case.execute(user_id, pin)
     if not secrets:
@@ -747,10 +755,9 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
         father_wallet = await repo.get_default_wallet(0)
         father_key = father_wallet.public_key
         await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
-        # Refactored to use GetWalletBalance Use Case
-        # Imports already global
-        service = app_context.stellar_service
-        balance_use_case = GetWalletBalance(repo, service)
+        await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
+        # Refactored to use UseCaseFactory
+        balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         balances = await balance_use_case.execute(user_id=callback.from_user.id)
         eurmtl_balance = 0
         for balance in balances:
@@ -765,8 +772,9 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
             await callback.answer("You have free account. Please buy it first", show_alert=True)
             memo = f"{callback.from_user.id}*{public_key[len(public_key) - 4:]}"
             
+            
             # Send Payment
-            pay_use_case = SendPayment(repo, service)
+            pay_use_case = app_context.use_case_factory.create_send_payment(session)
             result = await pay_use_case.execute(
                 user_id=callback.from_user.id,
                 destination=father_key,
@@ -807,7 +815,7 @@ async def cmd_edit_address_book(session: Session, user_id: int, app_context: App
                                            )
             ]
         )
-    buttons.append(get_return_button(user_id))
+    buttons.append(get_return_button(user_id, app_context=app_context))
 
     await send_message(session, user_id, my_gettext(user_id, 'address_book', app_context=app_context),
                        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons))

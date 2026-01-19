@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram import types
 from aiogram.fsm.context import FSMContext
-from routers.trade import cmd_market, cmd_sale_new_order, cq_trade_choose_token_sell, cq_trade_choose_token_buy, StateSaleToken, SaleAssetCallbackData, BuyAssetCallbackData, cmd_send_sale_sum, cmd_send_sale_cost, cmd_show_orders, cb_edit_order, EditOrderCallbackData, cmd_delete_order, cmd_edit_sale_sum, cmd_edit_sale_cost
+from routers.trade import cmd_market, cmd_sale_new_order, cq_trade_choose_token_sell, cq_trade_choose_token_buy, StateSaleToken, SaleAssetCallbackData, BuyAssetCallbackData, cmd_send_sale_sum, cmd_send_sale_cost, cmd_show_orders, cb_edit_order, EditOrderCallbackData, cmd_delete_order, cmd_edit_sale_sum, cmd_edit_sale_cost, cmd_edit_order_amount, cmd_edit_order_price
 from routers.swap import cmd_swap_01, cq_swap_choose_token_from, SwapAssetFromCallbackData, cq_swap_choose_token_for, SwapAssetForCallbackData, cmd_swap_sum, StateSwapToken, cq_swap_strict_receive, cmd_swap_receive_sum
 from stellar_sdk import Asset
 import jsonpickle
@@ -28,25 +28,13 @@ async def test_cmd_sale_new_order(mock_session, mock_callback, mock_state):
     mock_wallet = MagicMock()
     mock_wallet.assets_visibility = "{}"
     
-    with patch("routers.trade.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.trade.StellarService"), \
-         patch("routers.trade.GetWalletBalance") as MockUseCase, \
-         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
-
-        # Setup mock repository
-        mock_repo_instance = MockRepo.return_value
-        mock_repo_instance.get_default_wallet = AsyncMock(return_value=mock_wallet)
-        
-        # Setup mock use case
-        mock_use_case_instance = MockUseCase.return_value
-        mock_use_case_instance.execute = AsyncMock(return_value=[balance])
-
-        # Setup mock app_context factories
-        mock_app_context = MagicMock()
-        mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo_instance
-        mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case_instance
-        mock_app_context.localization_service.get_text.return_value = "text"
-        
+    # Setup mock app_context factories
+    mock_app_context = MagicMock()
+    mock_app_context.repository_factory.get_wallet_repository.return_value.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value.execute = AsyncMock(return_value=[balance])
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
         await cmd_sale_new_order(mock_callback, mock_state, mock_session, app_context=mock_app_context)
         
         mock_send.assert_called_once()
@@ -204,28 +192,18 @@ async def test_cmd_send_sale_cost(mock_session, mock_message, mock_state):
 async def test_cmd_show_orders(mock_session, mock_callback, mock_state):
     mock_offers = [MagicMock(id=1, amount="10", price="0.5", selling=MagicMock(asset_code="XLM"), buying=MagicMock(asset_code="USD"))]
     
-    with patch("routers.trade.StellarService") as MockService, \
-         patch("routers.trade.SqlAlchemyWalletRepository") as MockRepo, \
-         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
-         
-         mock_repo_instance = MockRepo.return_value
-         mock_repo_instance.get_default_wallet = AsyncMock(return_value=MagicMock(public_key="PK"))
-         
-         mock_service = MockService.return_value
-         # Mock return value as DICT not MyOffer because service returns dicts
-         mock_service.get_selling_offers = AsyncMock(return_value=[{
-            'id': '1', 'amount': '10', 'price': '0.5', 
-            'selling': {'asset_code': 'XLM', 'asset_issuer': None, 'asset_type': 'native'}, 
-            'buying': {'asset_code': 'USD', 'asset_issuer': 'ISSUER', 'asset_type': 'credit_alphanum4'}
-         }])
-         
-
-         
-         mock_app_context = MagicMock()
-         mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo_instance
-         mock_app_context.stellar_service = mock_service
-         mock_app_context.localization_service.get_text.return_value = "text"
-         
+    mock_app_context = MagicMock()
+    mock_app_context.repository_factory.get_wallet_repository.return_value.get_default_wallet = AsyncMock(return_value=MagicMock(public_key="PK"))
+    
+    # Mock stellar service
+    mock_app_context.stellar_service.get_selling_offers = AsyncMock(return_value=[{
+        'id': '1', 'amount': '10', 'price': '0.5', 
+        'selling': {'asset_code': 'XLM', 'asset_issuer': None, 'asset_type': 'native'}, 
+        'buying': {'asset_code': 'USD', 'asset_issuer': 'ISSUER', 'asset_type': 'credit_alphanum4'}
+    }])
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    with patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send:
          await cmd_show_orders(mock_callback, mock_state, mock_session, app_context=mock_app_context)
          
          mock_send.assert_called_once()
@@ -263,6 +241,83 @@ async def test_cmd_delete_order(mock_session, mock_callback, mock_state):
         
         args, kwargs = mock_state.update_data.call_args
         assert kwargs.get('delete_order') is True
+        mock_xdr.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_cmd_edit_order_amount(mock_session, mock_callback, mock_state):
+    valid_issuer = "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
+    data = {
+        "offers": jsonpickle.encode([MagicMock(id=1, amount="10.0", price="0.5", selling=MagicMock(asset_code="XLM", asset_issuer=None), buying=MagicMock(asset_code="USD", asset_issuer=valid_issuer))]), 
+        "edit_offer_id": 1, 
+        "send_asset_code": "XLM", "send_asset_issuer": None,
+        "receive_asset_code": "USD", "receive_asset_issuer": valid_issuer
+    }
+    mock_state.get_data.return_value = data
+    
+    mock_app_context = MagicMock()
+    mock_balance = MagicMock(asset_code="XLM", balance="100.0")
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value.execute = AsyncMock(return_value=[mock_balance])
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    with patch("routers.trade.jsonpickle.decode", return_value=[MagicMock(id=1, amount="10.0", price="0.5", selling=MagicMock(asset_code="XLM"), buying=MagicMock(asset_code="USD", asset_issuer=valid_issuer))]), \
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.trade.stellar_get_market_link", return_value="link"):
+         
+        await cmd_edit_order_amount(mock_callback, mock_state, mock_session, app_context=mock_app_context)
+        
+        mock_state.set_state.assert_called_with(StateSaleToken.editing_amount)
+        mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_edit_sale_sum(mock_session, mock_message, mock_state):
+    mock_message.text = "20.0"
+    mock_state.get_data.return_value = {"receive_sum": "5.0", "send_sum": "10.0"}
+    
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    with patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
+        await cmd_edit_sale_sum(mock_message, mock_state, mock_session, app_context=mock_app_context)
+        
+        mock_state.update_data.assert_called()
+        mock_xdr.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_cmd_edit_order_price(mock_session, mock_callback, mock_state):
+    valid_issuer = "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA"
+    offer = MagicMock(id=1, amount="10.0", price="0.5", selling=MagicMock(asset_code="XLM", asset_issuer=None), buying=MagicMock(asset_code="USD", asset_issuer=valid_issuer))
+    data = {
+        "offers": jsonpickle.encode([offer]), 
+        "edit_offer_id": 1, 
+        "send_asset_code": "XLM", "send_asset_issuer": None,
+        "receive_asset_code": "USD", "receive_asset_issuer": valid_issuer
+    }
+    mock_state.get_data.return_value = data
+    
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    with patch("routers.trade.jsonpickle.decode", return_value=[offer]), \
+         patch("routers.trade.send_message", new_callable=AsyncMock) as mock_send, \
+         patch("routers.trade.stellar_get_market_link", return_value="link"):
+         
+        await cmd_edit_order_price(mock_callback, mock_state, mock_session, app_context=mock_app_context)
+        
+        mock_state.set_state.assert_called_with(StateSaleToken.editing_price)
+        mock_send.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_cmd_edit_sale_cost(mock_session, mock_message, mock_state):
+    mock_message.text = "10.0"
+    
+    mock_app_context = MagicMock()
+    mock_app_context.localization_service.get_text.return_value = "text"
+    
+    with patch("routers.trade.cmd_xdr_order", new_callable=AsyncMock) as mock_xdr:
+        await cmd_edit_sale_cost(mock_message, mock_state, mock_session, app_context=mock_app_context)
+        
+        mock_state.update_data.assert_called_with(receive_sum=10.0, msg=None)
         mock_xdr.assert_called_once()
 
 # --- NEW TESTS FOR SWAP ROUTER ---

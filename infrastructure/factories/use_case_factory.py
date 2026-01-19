@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from core.interfaces.repositories import IRepositoryFactory
-from core.interfaces.services import IStellarService
+from core.interfaces.services import IStellarService, IEncryptionService
 
 
 class IUseCaseFactory(ABC):
@@ -26,6 +26,21 @@ class IUseCaseFactory(ABC):
     def create_manage_offer(self, session: Any):
         """Create ManageOffer use case."""
         pass
+        
+    @abstractmethod
+    def create_change_wallet_password(self, session: Any):
+        """Create ChangeWalletPassword use case."""
+        pass
+
+    @abstractmethod
+    def create_get_wallet_secrets(self, session: Any):
+        """Create GetWalletSecrets use case."""
+        pass
+
+    @abstractmethod
+    def create_send_payment(self, session: Any):
+        """Create SendPayment use case."""
+        pass
 
 
 class UseCaseFactory(IUseCaseFactory):
@@ -37,9 +52,10 @@ class UseCaseFactory(IUseCaseFactory):
         result = await use_case.execute(...)
     """
 
-    def __init__(self, repository_factory: IRepositoryFactory, stellar_service: IStellarService):
+    def __init__(self, repository_factory: IRepositoryFactory, stellar_service: IStellarService, encryption_service: IEncryptionService):
         self.repository_factory = repository_factory
         self.stellar_service = stellar_service
+        self.encryption_service = encryption_service
 
     def create_get_wallet_balance(self, session: Any):
         from core.use_cases.wallet.get_balance import GetWalletBalance
@@ -55,3 +71,18 @@ class UseCaseFactory(IUseCaseFactory):
         from core.use_cases.trade.manage_offer import ManageOffer
         repo = self.repository_factory.get_wallet_repository(session)
         return ManageOffer(repo, self.stellar_service)
+
+    def create_change_wallet_password(self, session: Any):
+        from core.use_cases.wallet.change_password import ChangeWalletPassword
+        repo = self.repository_factory.get_wallet_repository(session)
+        return ChangeWalletPassword(repo, self.encryption_service)
+
+    def create_get_wallet_secrets(self, session: Any):
+        from core.use_cases.wallet.get_secrets import GetWalletSecrets
+        repo = self.repository_factory.get_wallet_repository(session)
+        return GetWalletSecrets(repo, self.encryption_service)
+
+    def create_send_payment(self, session: Any):
+        from core.use_cases.payment.send_payment import SendPayment
+        repo = self.repository_factory.get_wallet_repository(session)
+        return SendPayment(repo, self.stellar_service)

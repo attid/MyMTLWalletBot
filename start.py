@@ -227,15 +227,18 @@ async def main():
     from infrastructure.persistence.repository_factory import SqlAlchemyRepositoryFactory
     from infrastructure.services.stellar_service import StellarService
 
+    from infrastructure.services.encryption_service import EncryptionService
+    
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
     
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
+    encryption_service = EncryptionService()
     
     # Create UseCaseFactory for DI
     from infrastructure.factories.use_case_factory import UseCaseFactory
-    use_case_factory = UseCaseFactory(repository_factory, stellar_service)
+    use_case_factory = UseCaseFactory(repository_factory, stellar_service, encryption_service)
     
     app_context = AppContext(
         bot=bot,
@@ -245,6 +248,7 @@ async def main():
         log_queue=log_queue,
         repository_factory=repository_factory,
         stellar_service=stellar_service,
+        encryption_service=encryption_service,
         localization_service=localization_service,
         dispatcher=dp,
         use_case_factory=use_case_factory
