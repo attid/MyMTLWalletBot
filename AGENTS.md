@@ -1,13 +1,14 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`start.py` wires the Aiogram dispatcher, middleware, routers, APScheduler jobs, and background workers (`cheque_worker`, `usdt_worker`, etc.), so new components must be registered there. Functional flows reside in `routers/` (wallet ops, swaps, TON, admin), while shared logic sits in `middleware/`, `services/`, and `db/` (SQLAlchemy pool, models, requests). Cross-cutting helpers such as Stellar/TRON clients, localization, config readers, and global state live in `other/`. Localized strings are JSON files in `langs/`, assets/logs stay in `data/` and `logs/`, and deployment helpers live in `deploy/`.
+`start.py` wires the Aiogram dispatcher, middleware, routers, APScheduler jobs, Redis/FastStream broker, and background workers (`cheque_worker`, `usdt_worker`, `events_worker`, etc.), so new components must be registered there. Functional flows live in `routers/` (wallet ops, swap, send, TON, admin, URI), while shared HTTP/ledger logic sits in `other/` and `services/`. Database access is in `db/` (pool, models, requests) and `infrastructure/persistence/` (SQLAlchemy repositories). Domain/clean-architecture layers are in `core/` (entities, value objects, interfaces, use cases) and `infrastructure/` (services, factories, scheduler, monitoring, workers, utils). Cross-cutting middleware stays in `middleware/`, keyboards in `keyboards/`, and localization JSON in `langs/`. Assets/logs stay in `data/` and `logs/`, deployment scripts live in `deploy/`, and architecture notes live in `docs/clean_architecture/`.
 
 ## Build, Test, and Development Commands
-- `python -m venv .venv && source .venv/bin/activate`: expected Python 3.12 virtual environment.  
-- `pip install -r requirements.txt`: install Aiogram, SQLAlchemy, Tron/Stellar SDKs, FastStream, etc.  
+- `python3.12 -m venv .venv && source .venv/bin/activate`: expected Python 3.12 virtual environment.  
+- `pip install -r requirements.txt`: install Aiogram, SQLAlchemy, FastStream, Stellar/TRON SDKs, etc.  
 - `bash start.sh`: idempotent entry point that prepares the venv and launches the bot.  
 - `python start.py`: quick reload when the environment is already active.  
+- `uv run pytest tests/`: preferred test runner (see `tests/README.md`).  
 - `bash clean.sh`: strip `__pycache__` and `*.log` clutter before committing or packaging.  
 Run commands from the repo root so relative imports and path-based config resolve cleanly.
 
