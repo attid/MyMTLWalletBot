@@ -30,7 +30,9 @@ base_fee = BASE_FEE
 
 
 def my_float(s):
-    """Convert string to float, handling 'unlimited' case."""
+    """Convert string to float, handling 'unlimited' case and None."""
+    if s is None:
+        return 0.0
     if s == 'unlimited':
         return float('inf')
     return float(s)

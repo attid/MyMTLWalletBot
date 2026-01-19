@@ -1,4 +1,5 @@
 from typing import Optional
+import math
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Asset, PaymentResult
@@ -10,8 +11,8 @@ class SendPayment:
 
     async def execute(self, user_id: int, destination_address: str, asset: Asset, amount: float, memo: Optional[str] = None, cancel_offers: bool = False, create_account: bool = False) -> PaymentResult:
         # 1. Validation
-        if amount <= 0:
-            return PaymentResult(success=False, error_message="Amount must be positive")
+        if amount <= 0 or math.isinf(amount):
+            return PaymentResult(success=False, error_message="Amount must be positive and finite (not unlimited)")
         
         # 2. Get User Wallet (Source)
         source_wallet = await self.wallet_repository.get_default_wallet(user_id)

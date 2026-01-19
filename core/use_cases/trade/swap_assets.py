@@ -1,4 +1,5 @@
 from typing import Optional, List
+import math
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Asset, PaymentResult
@@ -18,8 +19,8 @@ class SwapAssets:
         strict_receive: bool = False,
         cancel_offers: bool = False
     ) -> PaymentResult:
-        if send_amount <= 0 or receive_amount <= 0:
-            return PaymentResult(success=False, error_message="Amounts must be positive")
+        if send_amount <= 0 or receive_amount <= 0 or math.isinf(send_amount) or math.isinf(receive_amount):
+            return PaymentResult(success=False, error_message="Amounts must be positive and finite")
             
         source_wallet = await self.wallet_repository.get_default_wallet(user_id)
         if not source_wallet:

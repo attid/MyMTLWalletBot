@@ -20,6 +20,8 @@ def float2str(f, short: bool = False) -> str:
         if f == 'unlimited':
             return f
         f = float(f)
+    if f == float('inf'):
+        return 'unlimited'
     if short and f > 0.01:
         s = "%.2f" % f
     else:
