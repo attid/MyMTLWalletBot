@@ -17,14 +17,14 @@ class SqlAlchemyWalletSecretService(IWalletSecretService):
     def __init__(self, session: Session):
         self.session = session
     
-    def _get_default_wallet(self, user_id: int) -> Optional[MyMtlWalletBot]:
+    async def _get_default_wallet(self, user_id: int) -> Optional[MyMtlWalletBot]:
         """Get the default wallet model for a user."""
         stmt = select(MyMtlWalletBot).where(
             MyMtlWalletBot.user_id == user_id,
             MyMtlWalletBot.default_wallet == 1,
             MyMtlWalletBot.need_delete == 0
         )
-        result = self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
     
     async def get_wallet_type(self, user_id: int) -> Optional[str]:
@@ -32,7 +32,7 @@ class SqlAlchemyWalletSecretService(IWalletSecretService):
         Get the wallet type identifier.
         Returns 'TON' for TON wallets, or the secret_key identifier for Stellar.
         """
-        wallet = self._get_default_wallet(user_id)
+        wallet = await self._get_default_wallet(user_id)
         if wallet:
             return wallet.secret_key
         return None
@@ -42,7 +42,7 @@ class SqlAlchemyWalletSecretService(IWalletSecretService):
         Get the TON wallet mnemonic (seed_key) for the user's default wallet.
         Returns None if not a TON wallet.
         """
-        wallet = self._get_default_wallet(user_id)
+        wallet = await self._get_default_wallet(user_id)
         if wallet and wallet.secret_key == 'TON':
             return wallet.seed_key
         return None
