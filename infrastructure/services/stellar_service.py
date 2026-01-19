@@ -312,8 +312,16 @@ class StellarService(IStellarService):
     async def build_manage_data_transaction(
         self,
         source_account_id: str,
-        data: Dict[str, Optional[str]]
+        data_name: str,
+        data_value: Optional[str] = None
     ) -> str:
+        """Build transaction for manage data operation.
+        
+        Args:
+            source_account_id: Source account public key
+            data_name: Name of the data entry
+            data_value: Value to set (None to delete)
+        """
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_account_id)
         
@@ -326,10 +334,10 @@ class StellarService(IStellarService):
         )
         transaction.set_timeout(180)
         
-        for key, value in data.items():
-            transaction.append_manage_data_op(data_name=key, data_value=value)
+        transaction.append_manage_data_op(data_name=data_name, data_value=data_value)
             
         return transaction.build().to_xdr()
+
 
     async def find_strict_send_path(
         self,
@@ -390,6 +398,10 @@ class StellarService(IStellarService):
     async def get_user_account(self, session, user_id: int):
         from other.stellar_tools import stellar_get_user_account
         return await stellar_get_user_account(session, user_id)
+
+    async def check_account(self, public_key: str):
+        from other.stellar_tools import stellar_check_account
+        return await stellar_check_account(public_key)
 
     async def is_free_wallet(self, session, user_id: int) -> bool:
         from other.stellar_tools import stellar_is_free_wallet

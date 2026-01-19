@@ -7,6 +7,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.orm import Session
+from stellar_sdk import Keypair
 
 from core.domain.value_objects import Asset as DomainAsset
 from infrastructure.services.app_context import AppContext
@@ -20,7 +21,7 @@ from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
 from infrastructure.utils.telegram_utils import send_message, clear_state
 
 from other.lang_tools import my_gettext, check_user_id, check_user_lang
-from other.stellar_tools import (stellar_get_balances, stellar_get_user_account,
+from other.stellar_tools import (stellar_get_balances, stellar_get_user_account
                                  )
 
 router = Router()
@@ -64,31 +65,20 @@ async def cmd_start(message: types.Message, state: FSMContext, session: Session,
         # Refactored to use Clean Architecture Use Case
         register_use_case = app_context.use_case_factory.create_register_user(session)
         
-        # We need to generate a keypair. For now, retaining reliance on stellar_tools or similar if needed,
-        # but RegisterUser expects keys.
-        # Existing db_add_user_if_not_exists generated keys internally or user_account used?
-        # db_add_user_if_not_exists called db.requests which usually generated keys.
-        # Let's see how we can bridge this. 
-        # For Phase 1, we can generate keys here using the old tool or a new one.
-        from other.stellar_tools import get_new_account
-        keypair = await get_new_account() 
-        # get_new_account returns object with public_key, secret_key.
-        # Wait, get_new_account implementation? I need to verify.
-        # Assuming it returns a Keypair object.
+        # Generate a new Stellar account
+        kp = Keypair.random()
+        public_key = kp.public_key
+        secret_key = kp.secret
         
-        # To avoid breaking if get_new_account is complex, let's allow RegisterUser to handle key gen if passed None?
-        # No, I implemented RegisterUser taking keys.
-        # Let's check stellar_tools.py in 'other' (I haven't read it but can infer or read).
-        # To be safe, I'll read stellar_tools.py briefly or assume usage.
-        # Actually, `db_add_user_if_not_exists` in `db/requests.py` is what I am replacing.
-        # It's better to read `db/requests.py` to see what it did for key generation.
+        # Encrypt the secret key
+        encrypted_secret = app_context.encryption_service.encrypt(secret_key, str(message.from_user.id))
         
         await register_use_case.execute(
              user_id=message.from_user.id,
              username=message.from_user.username,
              language='en', # Default
-             public_key=keypair.public_key,
-             secret_key=keypair.secret_key
+             public_key=public_key,
+             secret_key=encrypted_secret
         )
         
         # db_add_user_if_not_exists(session, message.from_user.id, message.from_user.username)

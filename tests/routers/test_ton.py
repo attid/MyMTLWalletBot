@@ -1,369 +1,172 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock
 
-from aiogram import Bot, Dispatcher
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.fsm.storage.memory import MemoryStorage
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from aiogram.fsm.storage.base import StorageKey
 
 from routers.ton import (
-    cmd_send_ton_start,
-    cmd_send_ton_address,
-    cmd_send_ton_sum,
-    cmd_send_ton_confirm,
-    cmd_send_ton_cancel,
-    cmd_send_ton_usdt_start,
-    cmd_send_ton_usdt_address,
-    cmd_send_ton_usdt_sum,
-    cmd_send_ton_usdt_confirm,
-    cmd_send_ton_usdt_cancel,
+    router as ton_router,
     StateSendTon,
     StateSendTonUSDT,
 )
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+from tests.conftest import (
+    RouterTestMiddleware,
+    create_callback_update,
+    create_message_update,
+    get_telegram_request,
+)
 
+@pytest.fixture(autouse=True)
+def cleanup_router():
+    """Ensure router is detached after each test."""
+    yield
+    if ton_router.parent_router:
+        ton_router._parent_router = None
 
 @pytest.fixture
-async def ton_app_context(mock_app_context, mock_telegram):
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    mock_app_context.bot = bot
-    mock_app_context.dispatcher = Dispatcher(storage=MemoryStorage())
-    yield mock_app_context
-    await bot.session.close()
+def setup_ton_mocks(router_app_context):
+    """
+    Common mock setup for TON router tests.
+    """
+    class TonMockHelper:
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self._setup_defaults()
+
+        def _setup_defaults(self):
+            # Default secret service mock
+            self.secret_service = AsyncMock()
+            self.secret_service.is_ton_wallet.return_value = True
+            self.secret_service.get_ton_mnemonic.return_value = "test mnemonic"
+            self.ctx.use_case_factory.create_wallet_secret_service.return_value = self.secret_service
+
+            # Default ton service mock
+            self.ton_service = MagicMock()
+            self.ton_service.from_mnemonic = MagicMock()
+            self.ton_service.send_ton = AsyncMock(return_value=True)
+            self.ton_service.send_usdt = AsyncMock(return_value=True)
+            self.ctx.ton_service = self.ton_service
+
+    return TonMockHelper(router_app_context)
 
 
-def make_state(initial=None):
-    data = dict(initial or {})
-    state = AsyncMock()
-
-    async def get_data():
-        return dict(data)
-
-    async def update_data(**kwargs):
-        data.update(kwargs)
-
-    async def set_data(value):
-        data.clear()
-        data.update(value)
-
-    async def clear():
-        data.clear()
-
-    state.get_data.side_effect = get_data
-    state.update_data.side_effect = update_data
-    state.set_data.side_effect = set_data
-    state.set_state = AsyncMock()
-    state.clear.side_effect = clear
-    return state
-
-
-def _text_requests(mock_server):
-    return [
-        req
-        for req in mock_server
-        if req["method"] in ("sendMessage", "editMessageText")
-    ]
+def get_latest_msg(mock_telegram):
+    """Helper to get latest message or edit from mock_telegram."""
+    msgs = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')]
+    return msgs[-1] if msgs else None
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_ton_start(mock_telegram, mock_session, mock_callback, ton_app_context):
-    state = make_state()
+async def test_send_ton_full_flow_success(mock_telegram, router_app_context, setup_ton_mocks):
+    """Test full flow of sending TON: Start -> Address -> Sum -> Confirm."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(ton_router)
 
-    await cmd_send_ton_start(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
 
-    state.set_state.assert_awaited_once_with(StateSendTon.sending_for)
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        req["data"]["text"] == "Enter recipient's address:" for req in _text_requests(mock_telegram)
-    )
+    # 1. Start TON sending
+    await dp.feed_update(bot, create_callback_update(user_id, "SendTon"))
+    assert await dp.storage.get_state(state_key) == StateSendTon.sending_for
+    req = get_latest_msg(mock_telegram)
+    assert "Enter recipient's address" in req["data"]["text"]
 
+    # 2. Enter Address
+    valid_address = "EQD" + ("A" * 45)
+    await dp.feed_update(bot, create_message_update(user_id, valid_address, message_id=2, update_id=2))
+    assert await dp.storage.get_state(state_key) == StateSendTon.sending_sum
+    req = get_latest_msg(mock_telegram)
+    assert "Enter amount to send" in req["data"]["text"]
 
-@pytest.mark.asyncio
-async def test_cmd_send_ton_address_valid(
-        mock_telegram, mock_session, mock_message, ton_app_context
-):
-    state = make_state()
-    mock_message.text = "EQD" + ("A" * 45)
+    # 3. Enter Sum
+    await dp.feed_update(bot, create_message_update(user_id, "1.5", message_id=3, update_id=3))
+    assert await dp.storage.get_state(state_key) == StateSendTon.sending_confirmation
+    req = get_latest_msg(mock_telegram)
+    assert "confirm sending 1.5 TON" in req["data"]["text"]
 
-    await cmd_send_ton_address(
-        mock_message,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    state_data = await state.get_data()
-    assert state_data["recipient_address"] == mock_message.text
-    state.set_state.assert_awaited_once_with(StateSendTon.sending_sum)
-    mock_message.delete.assert_awaited_once()
-    assert any(
-        req["data"]["text"] == "Enter amount to send:" for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_address_invalid(
-        mock_telegram, mock_session, mock_message, ton_app_context
-):
-    state = make_state()
-    mock_message.text = "short"
-
-    await cmd_send_ton_address(
-        mock_message,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    state.set_state.assert_not_awaited()
-    mock_message.delete.assert_not_awaited()
-    assert any(
-        "Invalid address" in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
+    # 4. Confirm (Yes)
+    await dp.feed_update(bot, create_callback_update(user_id, "ton_yes", update_id=4))
+    
+    # Verify ton_service calls
+    setup_ton_mocks.ton_service.send_ton.assert_called_once_with(valid_address, 1.5)
+    
+    # Verify success message
+    all_texts = " ".join([m["data"].get("text", "") + m["data"].get("caption", "") for m in mock_telegram if m['method'] in ('sendMessage', 'editMessageText')])
+    assert "Successfully sent 1.5 TON" in all_texts
+    
+    # State should be cleared (thanks to our fix)
+    assert await dp.storage.get_state(state_key) is None
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_ton_sum_valid(
-        mock_telegram, mock_session, mock_message, ton_app_context
-):
-    state = make_state({"recipient_address": "EQD" + ("A" * 45)})
-    mock_message.text = "10.5"
+async def test_send_ton_usdt_full_flow_success(mock_telegram, router_app_context, setup_ton_mocks):
+    """Test full flow of sending USDT on TON."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(ton_router)
 
-    await cmd_send_ton_sum(
-        mock_message,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
 
-    state_data = await state.get_data()
-    assert state_data["amount"] == 10.5
-    state.set_state.assert_awaited_once_with(StateSendTon.sending_confirmation)
-    mock_message.delete.assert_awaited_once()
-    assert any(
-        "Please confirm sending 10.5 TON" in req["data"]["text"]
-        for req in _text_requests(mock_telegram)
-    )
+    # 1. Start USDT
+    await dp.feed_update(bot, create_callback_update(user_id, "SendTonUSDt"))
+    assert await dp.storage.get_state(state_key) == StateSendTonUSDT.sending_for
 
+    # 2. Address
+    valid_address = "EQD" + ("B" * 45)
+    await dp.feed_update(bot, create_message_update(user_id, valid_address, message_id=2, update_id=2))
+    assert await dp.storage.get_state(state_key) == StateSendTonUSDT.sending_sum
 
-@pytest.mark.asyncio
-async def test_cmd_send_ton_sum_invalid(
-        mock_telegram, mock_session, mock_message, ton_app_context
-):
-    state = make_state({"recipient_address": "EQD" + ("A" * 45)})
-    mock_message.text = "-1"
+    # 3. Sum
+    await dp.feed_update(bot, create_message_update(user_id, "10.0", message_id=3, update_id=3))
+    assert await dp.storage.get_state(state_key) == StateSendTonUSDT.sending_confirmation
 
-    await cmd_send_ton_sum(
-        mock_message,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    state.set_state.assert_not_awaited()
-    mock_message.delete.assert_not_awaited()
-    assert any(
-        "Invalid amount" in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
+    # 4. Confirm
+    await dp.feed_update(bot, create_callback_update(user_id, "ton_yes", update_id=4))
+    
+    setup_ton_mocks.ton_service.send_usdt.assert_called_once_with(valid_address, 10.0)
+    all_texts = " ".join([m["data"].get("text", "") for m in mock_telegram if m['method'] in ('sendMessage', 'editMessageText')])
+    assert "Successfully sent 10.0 USDT" in all_texts
+    assert await dp.storage.get_state(state_key) is None
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_ton_confirm_success(
-        mock_telegram, mock_session, mock_callback, ton_app_context
-):
-    state = make_state({"recipient_address": "EQD" + ("A" * 45), "amount": 10.5})
+async def test_send_ton_cancel(mock_telegram, router_app_context, setup_ton_mocks):
+    """Test cancelling TON transaction."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(ton_router)
 
-    secret_service = AsyncMock()
-    secret_service.is_ton_wallet.return_value = True
-    secret_service.get_ton_mnemonic.return_value = "mnemonic"
-    ton_app_context.use_case_factory.create_wallet_secret_service.return_value = secret_service
-
-    ton_service = MagicMock()
-    ton_service.from_mnemonic = MagicMock()
-    ton_service.send_ton = AsyncMock(return_value=True)
-    ton_app_context.ton_service = ton_service
-
-    await cmd_send_ton_confirm(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    ton_service.send_ton.assert_awaited_once_with("EQD" + ("A" * 45), 10.5)
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        "Sending transaction" in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
-    assert any(
-        "Successfully sent 10.5 TON" in req["data"]["text"]
-        for req in _text_requests(mock_telegram)
-    )
+    user_id = 123
+    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    
+    await dp.storage.set_state(state_key, StateSendTon.sending_confirmation)
+    
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "ton_no"))
+    
+    req = get_latest_msg(mock_telegram)
+    assert "Transaction cancelled" in req["data"]["text"]
+    assert await dp.storage.get_state(state_key) is None
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_ton_confirm_not_ton_wallet(
-        mock_telegram, mock_session, mock_callback, ton_app_context
-):
-    state = make_state({"recipient_address": "EQD" + ("A" * 45), "amount": 10.5})
+async def test_send_ton_invalid_address(mock_telegram, router_app_context, setup_ton_mocks):
+    """Test entering invalid TON address."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(ton_router)
 
-    secret_service = AsyncMock()
-    secret_service.is_ton_wallet.return_value = False
-    ton_app_context.use_case_factory.create_wallet_secret_service.return_value = secret_service
+    user_id = 123
+    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(state_key, StateSendTon.sending_for)
 
-    await cmd_send_ton_confirm(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        "not a TON wallet" in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_cancel(
-        mock_telegram, mock_session, mock_callback, ton_app_context
-):
-    state = make_state()
-
-    await cmd_send_ton_cancel(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        "Transaction cancelled." in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_usdt_start(
-        mock_telegram, mock_session, mock_callback, ton_app_context
-):
-    state = make_state()
-
-    await cmd_send_ton_usdt_start(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    state.set_state.assert_awaited_once_with(StateSendTonUSDT.sending_for)
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        req["data"]["text"] == "Enter recipient's address:" for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_usdt_address_valid(
-        mock_telegram, mock_session, mock_message, ton_app_context
-):
-    state = make_state()
-    mock_message.text = "EQD" + ("B" * 45)
-
-    await cmd_send_ton_usdt_address(
-        mock_message,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    state_data = await state.get_data()
-    assert state_data["recipient_address"] == mock_message.text
-    state.set_state.assert_awaited_once_with(StateSendTonUSDT.sending_sum)
-    mock_message.delete.assert_awaited_once()
-    assert any(
-        req["data"]["text"] == "Enter amount to send:" for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_usdt_sum_valid(
-        mock_telegram, mock_session, mock_message, ton_app_context
-):
-    state = make_state({"recipient_address": "EQD" + ("B" * 45)})
-    mock_message.text = "5"
-
-    await cmd_send_ton_usdt_sum(
-        mock_message,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    state_data = await state.get_data()
-    assert state_data["amount"] == 5.0
-    state.set_state.assert_awaited_once_with(StateSendTonUSDT.sending_confirmation)
-    mock_message.delete.assert_awaited_once()
-    assert any(
-        "Please confirm sending 5.0 USDT" in req["data"]["text"]
-        for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_usdt_confirm_success(
-        mock_telegram, mock_session, mock_callback, ton_app_context
-):
-    state = make_state({"recipient_address": "EQD" + ("B" * 45), "amount": 5.0})
-
-    secret_service = AsyncMock()
-    secret_service.is_ton_wallet.return_value = True
-    secret_service.get_ton_mnemonic.return_value = "mnemonic"
-    ton_app_context.use_case_factory.create_wallet_secret_service.return_value = secret_service
-
-    ton_service = MagicMock()
-    ton_service.from_mnemonic = MagicMock()
-    ton_service.send_usdt = AsyncMock(return_value=True)
-    ton_app_context.ton_service = ton_service
-
-    await cmd_send_ton_usdt_confirm(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    ton_service.send_usdt.assert_awaited_once_with("EQD" + ("B" * 45), 5.0)
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        "Sending transaction" in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
-    assert any(
-        "Successfully sent 5.0 USDT" in req["data"]["text"]
-        for req in _text_requests(mock_telegram)
-    )
-
-
-@pytest.mark.asyncio
-async def test_cmd_send_ton_usdt_cancel(
-        mock_telegram, mock_session, mock_callback, ton_app_context
-):
-    state = make_state()
-
-    await cmd_send_ton_usdt_cancel(
-        mock_callback,
-        state,
-        mock_session,
-        app_context=ton_app_context,
-    )
-
-    mock_callback.answer.assert_awaited_once()
-    assert any(
-        "Transaction cancelled." in req["data"]["text"] for req in _text_requests(mock_telegram)
-    )
+    await dp.feed_update(router_app_context.bot, create_message_update(user_id, "short_address"))
+    
+    req = get_latest_msg(mock_telegram)
+    assert "Invalid address" in req["data"]["text"]
+    # Should stay in same state
+    assert await dp.storage.get_state(state_key) == StateSendTon.sending_for

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -92,27 +92,50 @@ async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_con
     # cmd_show_balance is complex, relies on WalletRepo and StellarService.
     # It's better to patch cmd_show_balance to avoid testing it here.
     
-    with patch("routers.common_setting.change_user_lang", new_callable=AsyncMock) as mock_change, \
-         patch("routers.common_setting.cmd_show_balance", new_callable=AsyncMock) as mock_show:
-        
-        cb_data = LangCallbackData(action="en").pack()
-        
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            callback_query=types.CallbackQuery(
-                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
-                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Lang"),
-                data=cb_data
-            )
-        ))
-        
-        mock_change.assert_called_once_with(mock_session, user_id, "en")
-        mock_show.assert_called_once()
-        
-        # Verify answer
-        answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
-        assert len(answers) == 1
-        assert "was_set" in answers[0]['data']['text'] # Mock gettext
+    # Configure mock user repo for update_lang
+    mock_user_repo = MagicMock()
+    mock_user_repo.update_lang = AsyncMock()
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
+
+    # For cmd_show_balance (it uses user_repo.get_by_id and get_start_text -> get_wallet_repo)
+    mock_user_repo.get_by_id = AsyncMock(return_value=MagicMock(lang="en"))
+    
+    # Mocking cmd_show_balance internal calls (it is complex)
+    # Ideally we should let it run if dependencies are mocked.
+    # cmd_show_balance calls get_start_text calls create_wallet_secret_service, get_wallet_repository
+    
+    mock_secret = AsyncMock()
+    mock_secret.is_ton_wallet.return_value = False
+    mock_app_context.use_case_factory.create_wallet_secret_service.return_value = mock_secret
+    
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(public_key="GKEY", assets_visibility=None, is_free=False))
+    mock_wallet_repo.get_info = AsyncMock(return_value="")
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    # And get_wallet_balance use case
+    mock_balance_uc = AsyncMock()
+    mock_balance_uc.execute.return_value = []
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+
+    cb_data = LangCallbackData(action="en").pack()
+    
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Lang"),
+            data=cb_data
+        )
+    ))
+    
+    mock_user_repo.update_lang.assert_called_once_with(user_id, "en")
+    # cmd_show_balance logic should have run
+    
+    # Verify answer
+    answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
+    assert len(answers) == 1
+    assert "was_set" in answers[0]['data']['text'] # Mock gettext
 
 
 @pytest.mark.asyncio
@@ -121,17 +144,24 @@ async def test_cmd_wallet_setting(mock_telegram, bot, dp, mock_session, mock_app
     user_id = 123
     mock_app_context.bot = bot
     
-    with patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change_wallet:
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            callback_query=types.CallbackQuery(
-                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
-                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
-                data="ChangeWallet"
-            )
-        ))
-        
-        mock_change_wallet.assert_called_once()
+    # cmd_change_wallet calls get_wallet_repository.get_all_active
+    mock_wallet_repo = MagicMock()
+    # Return mock wallets
+    w1 = MagicMock(id=1, public_key="GKEY1", is_default=True)
+    w2 = MagicMock(id=2, public_key="GKEY2", is_default=False)
+    mock_wallet_repo.get_all_active = AsyncMock(return_value=[w1, w2])
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="ChangeWallet"
+        )
+    ))
+    
+    mock_wallet_repo.get_all_active.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -140,20 +170,24 @@ async def test_cmd_wallet_setting_msg(mock_telegram, bot, dp, mock_session, mock
     user_id = 123
     mock_app_context.bot = bot
     
-    with patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change_wallet:
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            message=types.Message(
-                message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'),
-                from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
-                text="/change_wallet"
-            )
-        ))
-        
-        mock_change_wallet.assert_called_once()
-        # Message should be deleted (mock_server doesn't show deleteMessage easily unless we track it)
-        deletes = [r for r in mock_telegram if r['method'] == 'deleteMessage']
-        assert len(deletes) == 1
+    # cmd_change_wallet calls get_wallet_repository.get_all_active
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_all_active = AsyncMock(return_value=[])
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        message=types.Message(
+            message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'),
+            from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            text="/change_wallet"
+        )
+    ))
+    
+    mock_wallet_repo.get_all_active.assert_called_once()
+    # Message should be deleted (mock_server doesn't show deleteMessage easily unless we track it)
+    deletes = [r for r in mock_telegram if r['method'] == 'deleteMessage']
+    assert len(deletes) == 1
 
 
 @pytest.mark.asyncio
@@ -203,23 +237,24 @@ async def test_cq_setting_set_active(mock_telegram, bot, dp, mock_session, mock_
     cb_data = WalletSettingCallbackData(action="SET_ACTIVE", idx=1).pack()
     
     # We need to mock SqlAlchemyWalletRepository because it is instantiated inside the handler
-    with patch("routers.common_setting.SqlAlchemyWalletRepository") as MockRepoClass, \
-         patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change:
-        
-        mock_repo = MockRepoClass.return_value
-        mock_repo.set_default_wallet = AsyncMock()
-        
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            callback_query=types.CallbackQuery(
-                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
-                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
-                data=cb_data
-            )
-        ))
-        
-        mock_repo.set_default_wallet.assert_called_once_with(user_id, "GWALLET1")
-        mock_change.assert_called_once()
+    # SET_ACTIVE calls set_default_wallet and then cmd_change_wallet (which calls get_all_active)
+    
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.set_default_wallet = AsyncMock()
+    mock_wallet_repo.get_all_active = AsyncMock(return_value=[])
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data=cb_data
+        )
+    ))
+    
+    mock_wallet_repo.set_default_wallet.assert_called_once_with(user_id, "GWALLET1")
+    mock_wallet_repo.get_all_active.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -234,29 +269,36 @@ async def test_cq_setting_name(mock_telegram, bot, dp, mock_session, mock_app_co
     
     cb_data = WalletSettingCallbackData(action="NAME", idx=1).pack()
     
-    with patch("routers.common_setting.SqlAlchemyWalletRepository") as MockRepoClass, \
-         patch("routers.common_setting.stellar_get_balance_str", new_callable=AsyncMock) as mock_get_bal:
+    # NAME calls get_info, get_default_wallet, use_case_balance
+    
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_info = AsyncMock(return_value="MyWallet")
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=MagicMock(is_free=False, assets_visibility=None))
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+    
+    mock_balance_uc = AsyncMock()
+    from other.mytypes import Balance
+    bal = Balance(asset_code="XLM", balance="100.0", selling_liabilities="0.0", asset_issuer="native")
+    mock_balance_uc.execute.return_value = [bal]
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+
         
-        mock_repo = MockRepoClass.return_value
-        mock_repo.get_info = AsyncMock(return_value="MyWallet")
-        mock_get_bal.return_value = "100 XLM"
-        
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            callback_query=types.CallbackQuery(
-                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
-                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
-                data=cb_data
-            )
-        ))
-        
-        answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
-        assert len(answers) >= 1
-        # Find the answer with text
-        text_answer = next((a for a in answers if 'text' in a['data']), None)
-        assert text_answer is not None
-        assert "MyWallet" in text_answer['data']['text']
-        assert "100 XLM" in text_answer['data']['text']
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data=cb_data
+        )
+    ))
+    
+    answers = [r for r in mock_telegram if r['method'] == 'answerCallbackQuery']
+    assert len(answers) >= 1
+    # Find the answer with text
+    text_answer = next((a for a in answers if 'text' in a['data']), None)
+    assert text_answer is not None
+    assert "MyWallet" in text_answer['data']['text']
+    assert "XLM : 100" in text_answer['data']['text']
 
 
 @pytest.mark.asyncio
@@ -269,23 +311,24 @@ async def test_cmd_yes_delete(mock_telegram, bot, dp, mock_session, mock_app_con
     wallets = {"1": "GWALLET1"}
     await dp.storage.set_data(key=storage_key, data={"wallets": wallets, "idx": "1"})
     
-    with patch("infrastructure.persistence.sqlalchemy_wallet_repository.SqlAlchemyWalletRepository") as MockRepoClass, \
-         patch("routers.common_setting.cmd_change_wallet", new_callable=AsyncMock) as mock_change:
-        
-        mock_repo = MockRepoClass.return_value
-        mock_repo.delete = AsyncMock()
-        
-        await dp.feed_update(bot=bot, update=types.Update(
-            update_id=1,
-            callback_query=types.CallbackQuery(
-                id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
-                chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
-                data="YES_DELETE"
-            )
-        ))
-        
-        mock_repo.delete.assert_called_once_with(user_id, "GWALLET1", wallet_id=1)
-        mock_change.assert_called_once()
+    # YES_DELETE calls repo.delete then repo.get_all_active (via cmd_change_wallet)
+    
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.delete = AsyncMock()
+    mock_wallet_repo.get_all_active = AsyncMock(return_value=[])
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
+
+    await dp.feed_update(bot=bot, update=types.Update(
+        update_id=1,
+        callback_query=types.CallbackQuery(
+            id="cb", from_user=types.User(id=user_id, is_bot=False, first_name="T", username="t"),
+            chat_instance="ci", message=types.Message(message_id=1, date=datetime.datetime.now(), chat=types.Chat(id=user_id, type='private'), text="Menu"),
+            data="YES_DELETE"
+        )
+    ))
+    
+    mock_wallet_repo.delete.assert_called_once_with(user_id, "GWALLET1", wallet_id=1)
+    mock_wallet_repo.get_all_active.assert_called_once()
 
 
 @pytest.mark.asyncio

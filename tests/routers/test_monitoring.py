@@ -1,77 +1,88 @@
-
 import pytest
 from aiogram import Bot, Dispatcher, types
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
 from unittest.mock import MagicMock
 import datetime
 
 from routers.monitoring import router as monitoring_router
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
+from tests.conftest import (
+    RouterTestMiddleware,
+    get_telegram_request,
+)
 
 @pytest.fixture(autouse=True)
 def cleanup_router():
+    """Ensure router is detached after each test."""
     yield
     if monitoring_router.parent_router:
         monitoring_router._parent_router = None
 
-@pytest.mark.asyncio
-async def test_handle_monitoring_message(mock_telegram, dp):
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    
-    dp.include_router(monitoring_router)
-    
-    update = types.Update(
-        update_id=1,
+def create_channel_post_update(chat_id: int, text: str, update_id: int = 1, message_id: int = 1) -> types.Update:
+    """Helper to create channel post updates for monitoring tests."""
+    return types.Update(
+        update_id=update_id,
         channel_post=types.Message(
-            message_id=1,
+            message_id=message_id,
             date=datetime.datetime.now(),
-            chat=types.Chat(id=-1002263825546, type='channel', title="Channel"),
-            from_user=None, # channel posts don't always have from_user
-            text="#mmwb #skynet command=ping"
+            chat=types.Chat(id=chat_id, type='channel', title="Monitoring Channel"),
+            text=text
         )
     )
 
-    app_context = MagicMock()
-    app_context.bot = bot
-    app_context.dispatcher = dp
+@pytest.mark.asyncio
+async def test_handle_monitoring_ping_pong(mock_telegram, router_app_context):
+    """Test ping-pong monitor: should reply pong to ping command in specific channel."""
+    dp = router_app_context.dispatcher
+    dp.channel_post.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(monitoring_router)
 
-    await dp.feed_update(bot=bot, update=update, app_context=app_context)
+    # Specific channel ID from monitoring.py
+    channel_id = -1002263825546
+    ping_text = "#mmwb #skynet command=ping"
     
-    # Check if sendMessage was called with expected text
-    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
-    assert req is not None, "sendMessage should have been called"
+    update = create_channel_post_update(chat_id=channel_id, text=ping_text)
+    
+    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+    # Verify pong response
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
     assert req["data"]["text"] == "#skynet #mmwb command=pong"
-    
-    await bot.session.close()
+    assert int(req["data"]["chat_id"]) == channel_id
+
 
 @pytest.mark.asyncio
-async def test_handle_monitoring_message_ignore(mock_telegram, dp):
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    
+async def test_handle_monitoring_ignore_wrong_channel(mock_telegram, router_app_context):
+    """Test monitor: should ignore messages from other channels."""
+    dp = router_app_context.dispatcher
+    dp.channel_post.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(monitoring_router)
-    
-    update = types.Update(
-        update_id=2,
-        channel_post=types.Message(
-            message_id=2,
-            date=datetime.datetime.now(),
-            chat=types.Chat(id=-1002263825546, type='channel', title="Channel"),
-            from_user=None,
-            text="Just some text"
-        )
-    )
 
-    app_context = MagicMock()
-    app_context.bot = bot
-    app_context.dispatcher = dp
+    wrong_channel_id = -123456789
+    ping_text = "#mmwb #skynet command=ping"
+    
+    update = create_channel_post_update(chat_id=wrong_channel_id, text=ping_text)
+    
+    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
-    await dp.feed_update(bot=bot, update=update, app_context=app_context)
+    # Verify NO response
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is None
+
+
+@pytest.mark.asyncio
+async def test_handle_monitoring_ignore_wrong_text(mock_telegram, router_app_context):
+    """Test monitor: should ignore messages with wrong pattern."""
+    dp = router_app_context.dispatcher
+    dp.channel_post.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(monitoring_router)
+
+    channel_id = -1002263825546
+    wrong_text = "Hello world"
     
-    # Check that NO sendMessage was called
-    req = next((r for r in mock_telegram if r["method"] == "sendMessage"), None)
-    assert req is None, "sendMessage should NOT have been called"
+    update = create_channel_post_update(chat_id=channel_id, text=wrong_text)
     
-    await bot.session.close()
+    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+    # Verify NO response
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is None

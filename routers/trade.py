@@ -283,7 +283,7 @@ async def cmd_xdr_order(session: Session, message, state: FSMContext, *, app_con
     else:
         msg = my_gettext(message, 'confirm_sale', (send_sum, send_asset, receive_sum, receive_asset), app_context=app_context)
     await state.update_data(xdr=xdr, operation='trade', msg=None)
-    await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context))
+    await send_message(session, message, msg, reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
 
 
 # **************************************************************************
@@ -330,12 +330,12 @@ async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderC
         msg = f"{float(offer.amount)} {offer.selling.asset_code} -> ({float(offer.price)}) " \
               f"-> {float(offer.amount) * float(offer.price)} {offer.buying.asset_code}"
 
-        await send_message(session, callback, msg, reply_markup=get_kb_edir_order(callback.from_user.id, app_context=app_context), app_context=app_context)
+        await send_message(session, callback, msg, reply_markup=get_kb_edit_order(callback.from_user.id, app_context=app_context), app_context=app_context)
 
     await callback.answer()
 
 
-def get_kb_edir_order(user_id: int, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
+def get_kb_edit_order(user_id: int, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_edit_sum', app_context=app_context),
                                     callback_data="EditOrderAmount")],

@@ -6,8 +6,7 @@ from sqlalchemy.orm import Session
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from infrastructure.utils.telegram_utils import my_gettext, send_message
 from infrastructure.services.app_context import AppContext
-from other.stellar_tools import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
-    have_free_xlm
+
 
 
 RECOMMEND_PREFIX = "RecommendToMTLA"
@@ -73,7 +72,11 @@ async def cmd_mtlap_tools(callback: types.CallbackQuery, state: FSMContext, sess
 
 @router.callback_query(F.data == "MTLAPToolsRecommend")
 async def cmd_mtlap_tools_recommend(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    data = await stellar_get_data(session, callback.from_user.id)
+    # Get wallet and account data via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    account_details = await app_context.stellar_service.get_account_details(wallet.public_key)
+    data = account_details.get('data', {}) if account_details else {}
     recommendations, _ = _collect_recommendations(data)
 
     if recommendations:
@@ -96,7 +99,11 @@ async def cmd_mtlap_tools_recommend(callback: types.CallbackQuery, state: FSMCon
 @router.message(MTLAPStateTools.recommend_for)
 async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     public_key = message.text.strip()
-    user_data = await stellar_get_data(session, message.from_user.id)
+    # Get wallet and account data via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+    account_details = await app_context.stellar_service.get_account_details(wallet.public_key)
+    user_data = account_details.get('data', {}) if account_details else {}
     recommendations, max_index = _collect_recommendations(user_data)
 
     if recommendations:
@@ -104,8 +111,10 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
     else:
         existing = my_gettext(message, 'recommend_none', app_context=app_context)
 
-    account = await stellar_check_account(public_key)
-    if not account:
+    # Check if account exists via DI
+    delegate_exists = await app_context.stellar_service.check_account_exists(public_key)
+    
+    if not delegate_exists:
         msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'recommend_prompt', (existing,), app_context=app_context)
         await send_message(
             session,
@@ -122,14 +131,19 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
     else:
         new_key = f"{RECOMMEND_PREFIX}{max_index + 1}"
 
-    delegate = account.account.account.account_id
-    xdr = await cmd_gen_data_xdr(
-        (await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-        new_key,
-        delegate
+    # Get user's wallet public key via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+    source_account = wallet.public_key
+    
+    # Generate XDR for manage data operation via DI
+    xdr = await app_context.stellar_service.build_manage_data_transaction(
+        source_account_id=source_account,
+        data_name=new_key,
+        data_value=public_key
     )
     await state.update_data(xdr=xdr)
-    confirm_msg = my_gettext(message, 'recommend_confirm', (delegate, new_key), app_context=app_context)
+    confirm_msg = my_gettext(message, 'recommend_confirm', (public_key, new_key), app_context=app_context)
     await send_message(
         session,
         message,
@@ -146,7 +160,11 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
 
 @router.callback_query(F.data == "MTLAPToolsDelegateA")
 async def cmd_mtlap_tools_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    data = await stellar_get_data(session, callback.from_user.id)
+    # Get wallet and account data via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    account_details = await app_context.stellar_service.get_account_details(wallet.public_key)
+    data = account_details.get('data', {}) if account_details else {}
     delegate = None
     for name in data:
         if name == "mtla_a_delegate":
@@ -174,16 +192,28 @@ async def cmd_mtlap_tools_delegate_a(callback: types.CallbackQuery, state: FSMCo
 
 @router.callback_query(F.data == "MTLAPToolsDelDelegateA")
 async def cmd_mtlap_tools_del_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    data = await stellar_get_data(session, callback.from_user.id)
+    # Get wallet and account data via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    account_details = await app_context.stellar_service.get_account_details(wallet.public_key)
+    data = account_details.get('data', {}) if account_details else {}
     delegate = None
     for name in data:
         if name in ("mtlap_delegate", "mtla_delegate", "mtla_a_delegate"):
             delegate = name
             break
     if delegate:
-        xdr = await cmd_gen_data_xdr(
-            (await stellar_get_user_account(session, callback.from_user.id)).account.account_id,
-            delegate, None)
+        # Get user's wallet public key via DI
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+        wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+        source_account = wallet.public_key
+        
+        # Generate XDR for manage data operation (delete) via DI
+        xdr = await app_context.stellar_service.build_manage_data_transaction(
+            source_account_id=source_account,
+            data_name=delegate,
+            data_value=None
+        )
         await state.update_data(xdr=xdr)
         await send_message(
             session,
@@ -200,7 +230,10 @@ async def cmd_mtlap_tools_del_delegate_a(callback: types.CallbackQuery, state: F
 
 @router.callback_query(F.data == "MTLAPToolsAddDelegateA")
 async def cmd_mtlap_tools_add_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
+    # Check free XLM via state data
+    data = await state.get_data()
+    free_xlm = data.get("free_xlm", 0.0)
+    if free_xlm < 0.5:
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
     await send_message(
@@ -217,16 +250,26 @@ async def cmd_mtlap_tools_add_delegate_a(callback: types.CallbackQuery, state: F
 @router.message(MTLAPStateTools.delegate_for_a)
 async def cmd_mtlap_send_add_delegate_for_a(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     public_key = message.text
-    my_account = await stellar_check_account(public_key)
-    if my_account:
-        delegate = my_account.account.account.account_id
-        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                                     "mtla_a_delegate", delegate)
+    # Check if account exists via DI
+    account_exists = await app_context.stellar_service.check_account_exists(public_key)
+    
+    if account_exists:
+        # Get user's wallet public key via DI
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+        wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+        source_account = wallet.public_key
+        
+        # Generate XDR for manage data operation via DI
+        xdr = await app_context.stellar_service.build_manage_data_transaction(
+            source_account_id=source_account,
+            data_name="mtla_a_delegate",
+            data_value=public_key
+        )
         await state.update_data(xdr=xdr)
         await send_message(
             session,
             message,
-            my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
+            my_gettext(message, 'delegate_add', (public_key,), app_context=app_context),
             reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
             app_context=app_context,
         )
@@ -243,7 +286,11 @@ async def cmd_mtlap_send_add_delegate_for_a(message: types.Message, state: FSMCo
 
 @router.callback_query(F.data == "MTLAPToolsDelegateC")
 async def cmd_mtlap_tools_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    data = await stellar_get_data(session, callback.from_user.id)
+    # Get wallet and account data via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    account_details = await app_context.stellar_service.get_account_details(wallet.public_key)
+    data = account_details.get('data', {}) if account_details else {}
     delegate = None
     for name in data:
         if name == "mtla_c_delegate":
@@ -271,16 +318,28 @@ async def cmd_mtlap_tools_delegate_c(callback: types.CallbackQuery, state: FSMCo
 
 @router.callback_query(F.data == "MTLAPToolsDelDelegateC")
 async def cmd_mtlap_tools_del_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    data = await stellar_get_data(session, callback.from_user.id)
+    # Get wallet and account data via DI
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    account_details = await app_context.stellar_service.get_account_details(wallet.public_key)
+    data = account_details.get('data', {}) if account_details else {}
     delegate = None
     for name in data:
         if name in ("mtla_c_delegate",):
             delegate = name
             break
     if delegate:
-        xdr = await cmd_gen_data_xdr(
-            (await stellar_get_user_account(session, callback.from_user.id)).account.account_id,
-            delegate, None)
+        # Get user's wallet public key via DI
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+        wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+        source_account = wallet.public_key
+        
+        # Generate XDR for manage data operation (delete) via DI
+        xdr = await app_context.stellar_service.build_manage_data_transaction(
+            source_account_id=source_account,
+            data_name=delegate,
+            data_value=None
+        )
         await state.update_data(xdr=xdr)
         await send_message(
             session,
@@ -297,7 +356,10 @@ async def cmd_mtlap_tools_del_delegate_c(callback: types.CallbackQuery, state: F
 
 @router.callback_query(F.data == "MTLAPToolsAddDelegateC")
 async def cmd_mtlap_tools_add_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    if not await have_free_xlm(session=session, state=state, user_id=callback.from_user.id):
+    # Check free XLM via state data
+    data = await state.get_data()
+    free_xlm = data.get("free_xlm", 0.0)
+    if free_xlm < 0.5:
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
     await send_message(
@@ -316,12 +378,24 @@ async def cmd_mtlap_tools_add_delegate_c(callback: types.CallbackQuery, state: F
 async def cmd_mtlap_send_add_delegate_for_c(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
     public_key = message.text
     delegate = 'ready' if message.text.lower() == 'ready' else None
-    my_account = await stellar_check_account(public_key)
-    if my_account or delegate:
-        if my_account:
-            delegate = my_account.account.account.account_id
-        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                                     "mtla_c_delegate", delegate)
+    # Check if account exists via DI
+    account_exists = await app_context.stellar_service.check_account_exists(public_key) if not delegate else False
+    
+    if account_exists or delegate:
+        if not delegate:
+            delegate = public_key
+        
+        # Get user's wallet public key via DI
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+        wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+        source_account = wallet.public_key
+        
+        # Generate XDR for manage data operation via DI
+        xdr = await app_context.stellar_service.build_manage_data_transaction(
+            source_account_id=source_account,
+            data_name="mtla_c_delegate",
+            data_value=delegate
+        )
         await state.update_data(xdr=xdr)
         await send_message(
             session,

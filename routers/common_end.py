@@ -11,10 +11,10 @@ from routers.sign import cmd_check_xdr
 from infrastructure.utils.telegram_utils import clear_last_message_id, clear_state
 from other.gpt import gpt_check_message
 from infrastructure.utils.stellar_utils import (
-    find_stellar_addresses, find_stellar_federation_address, 
+    find_stellar_addresses, find_stellar_federation_address,
     extract_url, is_base64, is_valid_stellar_address
 )
-from other.stellar_tools import stellar_check_account
+
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -63,7 +63,7 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
             public_key, user_id = await user_repo.get_account_by_username('@' + message.forward_from.username)
 
         if public_key:
-            my_account = await stellar_check_account(public_key)
+            my_account = await app_context.stellar_service.check_account(public_key)
             if my_account:
                 await state.update_data(send_address=my_account.account_id)
                 if my_account.memo:

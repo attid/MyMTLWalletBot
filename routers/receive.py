@@ -16,13 +16,19 @@ from infrastructure.services.app_context import AppContext
 
 @router.callback_query(F.data == "Receive")
 async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await repo.get_default_wallet(callback.from_user.id)
+    
+    if not wallet:
+        await callback.answer(my_gettext(callback, "wallet_not_found", app_context=app_context), show_alert=True)
+        return
+
+    account_id = wallet.public_key
     msg = my_gettext(callback, "my_address", (account_id,), app_context=app_context)
     send_file = f'qr/{account_id}.png'
     create_beautiful_code(send_file, account_id)
 
     await cmd_info_message(session, callback, msg, send_file=send_file, app_context=app_context)
-    # await cmd_show_balance(session, callback.from_user.id, state, need_new_msg=True)
     await callback.answer()
 
 

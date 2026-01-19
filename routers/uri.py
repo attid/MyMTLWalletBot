@@ -39,10 +39,8 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
         # Process the URI
         uri_data = response.data['uri']
         
-        # Initialize repositories and services
-        wallet_repo = SqlAlchemyWalletRepository(session)
-        stellar_service = StellarService()
-        process_uri_uc = ProcessStellarUri(wallet_repo, stellar_service)
+        # Use DI via app_context
+        process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(session)
         
         # Process the URI
         result = await process_uri_uc.execute(uri_data, chat_id)
@@ -93,10 +91,8 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
     qr_data = message.text
 
     try:
-        # Initialize repositories and services
-        wallet_repo = SqlAlchemyWalletRepository(session)
-        stellar_service = StellarService()
-        process_uri_uc = ProcessStellarUri(wallet_repo, stellar_service)
+        # Use DI via app_context
+        process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(session)
         
         # Process the transaction URI
         result = await process_uri_uc.execute(qr_data, message.from_user.id)
@@ -129,13 +125,13 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
 async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext, app_context: AppContext):
     """Helper function to process WalletConnect URI"""
     await clear_state(state)
-    await clear_state(state)
     await clear_last_message_id(user_id, app_context=app_context)
-    # Get user's default address
-    user_account = await stellar_get_user_account(session, user_id)
+    # Get user's default address via repository
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await repo.get_default_wallet(user_id)
 
-    if user_account:
-        address = user_account.account.account_id
+    if wallet:
+        address = wallet.public_key
         try:
             user_info = {
                 "user_id": user_id,

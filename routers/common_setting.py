@@ -9,9 +9,8 @@ from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
 from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state
 # from other.global_data import global_data
-from other.lang_tools import change_user_lang
-from other.stellar_tools import stellar_get_balance_str
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+# from other.stellar_tools import stellar_get_balance_str
+# from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.services.localization_service import LocalizationService
 from infrastructure.services.app_context import AppContext
 
@@ -49,7 +48,9 @@ async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallb
                          session: Session, l10n: LocalizationService, app_context: AppContext):
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
-    await change_user_lang(session, callback.from_user.id, lang)
+    user_repo = app_context.repository_factory.get_user_repository(session)
+    await user_repo.update_lang(callback.from_user.id, lang)
+    # await change_user_lang(session, callback.from_user.id, lang)
     await state.update_data(user_lang=lang)
     await callback.answer(my_gettext(callback, 'was_set', (lang,), app_context=app_context))
     await cmd_show_balance(session, callback.from_user.id, state, app_context=app_context)
@@ -80,17 +81,52 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
             await state.update_data(idx=idx)
             await cmd_confirm_delete(session, user_id, state, app_context=app_context)
         if answer == 'SET_ACTIVE':
-            wallet_repo = SqlAlchemyWalletRepository(session)
+            wallet_repo = app_context.repository_factory.get_wallet_repository(session)
             await wallet_repo.set_default_wallet(user_id, wallets[idx])
             await cmd_change_wallet(callback.message.chat.id, state, session, app_context=app_context)
         if answer == 'NAME':
             try:
-                wallet_repo = SqlAlchemyWalletRepository(session)
+                wallet_repo = app_context.repository_factory.get_wallet_repository(session)
                 info = await wallet_repo.get_info(user_id, wallets[idx])
+                
+                # Replace legacy stellar_get_balance_str logic
+                use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+                balances = await use_case.execute(user_id, public_key=wallets[idx])
+                
+                # Formatting
+                from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE
+                from infrastructure.utils.stellar_utils import my_float
+                from infrastructure.utils.common_utils import float2str
+                
+                # We need visibility from wallet entity, but get_info returns just info string?
+                # Actually legacy get_default_wallet gives visibility setting.
+                # If checking NOT default wallet, legacy logic used DEFAULT wallet implementation?
+                # stellar_get_balance_str line 454: wallet = await repo.get_default_wallet(user_id)
+                # Yes, visibility is global setting for user (stored in default wallet or user settings)
+                
+                default_wallet = await wallet_repo.get_default_wallet(user_id)
+                vis_str = getattr(default_wallet, "assets_visibility", None)
+                balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
+                
+                balance_str = ''
+                for balance in balances:
+                    b_val = my_float(balance.balance)
+                    s_liab = my_float(balance.selling_liabilities)
+                    if s_liab > 0:
+                        lock = float2str(s_liab, short=True)
+                        full = float2str(b_val, short=True)
+                        free = float2str(b_val - s_liab, short=True)
+                        balance_str += f"{balance.asset_code} : {free} (+{lock}={full})\n"
+                    else:
+                        balance_str += f"{balance.asset_code} : {float2str(b_val, short=True)}\n"
+                
+                if default_wallet and default_wallet.is_free:
+                     balance_str += 'XLM : <a href="https://telegra.ph/XLM-05-28">?</a>\n'
+
                 msg = f"{wallets[idx]} {info}\n" + my_gettext(callback, 'your_balance',
-                                                              app_context=app_context) + '\n' + await stellar_get_balance_str(
-                    session, user_id, wallets[idx])
-            except:
+                                                              app_context=app_context) + '\n' + balance_str
+            except Exception as e:
+                logger.error(f"Error in NAME action: {e}")
                 msg = f'Error load. Please delete this'
             await callback.answer(msg[:200], show_alert=True)
     await callback.answer()
@@ -118,8 +154,8 @@ async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, sessi
     data = await state.get_data()
     idx = data.get('idx')
     wallets = data['wallets']
-    from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-    wallet_repo = SqlAlchemyWalletRepository(session)
+    # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     await wallet_repo.delete(callback.from_user.id, wallets[idx], wallet_id=int(idx))
     await callback.answer()
     await cmd_change_wallet(callback.message.chat.id, state, session, app_context=app_context)

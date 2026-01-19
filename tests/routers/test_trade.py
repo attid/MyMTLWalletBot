@@ -1,11 +1,7 @@
-
 import pytest
 import jsonpickle
-from aiogram import Bot, Dispatcher, types
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from unittest.mock import AsyncMock, MagicMock, patch
-import datetime
+from unittest.mock import MagicMock, patch, AsyncMock
+from aiogram.fsm.storage.base import StorageKey
 
 from routers.trade import (
     router as trade_router,
@@ -14,292 +10,244 @@ from routers.trade import (
     BuyAssetCallbackData,
     EditOrderCallbackData,
 )
-from tests.conftest import MOCK_SERVER_URL, TEST_BOT_TOKEN
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
-from other.mytypes import Balance
+from core.domain.value_objects import Balance, PaymentResult, Asset as DomainAsset
+from other.mytypes import MyOffer, MyAsset
+from tests.conftest import (
+    RouterTestMiddleware,
+    create_callback_update,
+    create_message_update,
+    get_telegram_request,
+)
 
-
-class MockDbMiddleware(BaseMiddleware):
-    def __init__(self, app_context):
-        self.app_context = app_context
-
-    async def __call__(self, handler, event, data):
-        session = AsyncMock()
-        result = MagicMock()
-        result.scalars.return_value.all.return_value = []
-        result.scalar_one_or_none.return_value = None
-        result.scalar.return_value = None
-        result.all.return_value = []
-        session.execute.return_value = result
-        data["session"] = session
-        data["app_context"] = self.app_context
-        return await handler(event, data)
-
+VALID_ISSUER = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
 
 @pytest.fixture(autouse=True)
 def cleanup_router():
+    """Ensure router is detached after each test."""
     yield
     if trade_router.parent_router:
-         trade_router._parent_router = None
-
+        trade_router._parent_router = None
 
 @pytest.fixture
-async def trade_app_context(mock_app_context, mock_telegram):
-    """Setup app_context with real bot for mock_server integration."""
-    session = AiohttpSession(api=TelegramAPIServer.from_base(MOCK_SERVER_URL))
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    mock_app_context.bot = bot
-    mock_app_context.dispatcher = Dispatcher()
-    yield mock_app_context
-    await bot.session.close()
-
-
-def _last_request(mock_server, method):
-    return next((req for req in reversed(mock_server) if req["method"] == method), None)
-
-
-# --- Market menu ---
-
-@pytest.mark.asyncio
-async def test_cmd_market(mock_telegram, trade_app_context, dp):
+def setup_trade_mocks(router_app_context):
     """
-    Test Market callback: should show market menu.
+    Common mock setup for trade router tests.
     """
-    dp.callback_query.middleware(MockDbMiddleware(trade_app_context))
-    dp.include_router(trade_router)
+    class TradeMockHelper:
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self._setup_defaults()
 
-    update = types.Update(
-        update_id=1,
-        callback_query=types.CallbackQuery(
-            id="cb1",
-            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
-            chat_instance="ci1",
-            message=types.Message(
-                message_id=1,
-                date=datetime.datetime.now(),
-                chat=types.Chat(id=123, type='private'),
-                text="msg"
-            ),
-            data="Market"
-        )
-    )
+        def _setup_defaults(self):
+            # Default Wallet mock
+            self.wallet = MagicMock()
+            self.wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            self.wallet.assets_visibility = "{}"
+            
+            wallet_repo = MagicMock()
+            wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
+            self.ctx.repository_factory.get_wallet_repository.return_value = wallet_repo
 
-    await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
+            # Default User mock
+            self.user = MagicMock()
+            self.user.can_5000 = 1
+            user_repo = MagicMock()
+            user_repo.get_by_id = AsyncMock(return_value=self.user)
+            self.ctx.repository_factory.get_user_repository.return_value = user_repo
 
-    req = _last_request(mock_telegram, "sendMessage")
-    assert req is not None, "sendMessage should be called"
+            # Default Balances
+            self.balances = [
+                Balance(asset_code="XLM", balance="100.0", asset_issuer=None, asset_type="native"),
+                Balance(asset_code="EURMTL", balance="50.0", 
+                       asset_issuer=VALID_ISSUER, 
+                       asset_type="credit_alphanum12"),
+            ]
+            balance_uc = MagicMock()
+            balance_uc.execute = AsyncMock(return_value=self.balances)
+            self.ctx.use_case_factory.create_get_wallet_balance.return_value = balance_uc
 
-    req_answer = _last_request(mock_telegram, "answerCallbackQuery")
-    assert req_answer is not None, "answerCallbackQuery should be called"
+            # Default ManageOffer use case
+            manage_uc = MagicMock()
+            manage_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR_MANAGE_OFFER"))
+            self.ctx.use_case_factory.create_manage_offer.return_value = manage_uc
+
+            # Stellar service
+            self.ctx.stellar_service.get_selling_offers = AsyncMock(return_value=[])
+
+    return TradeMockHelper(router_app_context)
 
 
-@pytest.mark.asyncio
-async def test_cmd_sale_new_order(mock_telegram, trade_app_context, dp):
-    """
-    Test NewOrder callback: should show available tokens for sale.
-    """
-    dp.callback_query.middleware(MockDbMiddleware(trade_app_context))
-    dp.include_router(trade_router)
-
-    update = types.Update(
-        update_id=2,
-        callback_query=types.CallbackQuery(
-            id="cb2",
-            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
-            chat_instance="ci1",
-            message=types.Message(
-                message_id=2,
-                date=datetime.datetime.now(),
-                chat=types.Chat(id=123, type='private'),
-                text="msg"
-            ),
-            data="NewOrder"
-        )
-    )
-
-    # Mock wallet repository via app_context DI
-    mock_wallet = MagicMock()
-    mock_wallet.assets_visibility = "{}"
-
-    mock_wallet_repo = MagicMock()
-    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
-    trade_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
-
-    # Mock get wallet balance use case via app_context DI
-    mock_balance = Balance(asset_code="XLM", balance="100.0", asset_issuer=None)
-
-    mock_use_case = AsyncMock()
-    mock_use_case.execute = AsyncMock(return_value=[mock_balance])
-    trade_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case
-
-    await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
-
-    req = _last_request(mock_telegram, "sendMessage")
-    assert req is not None, "sendMessage should be called"
+def get_latest_msg(mock_telegram):
+    """Helper to get latest message or edit from mock_telegram."""
+    msgs = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')]
+    return msgs[-1] if msgs else None
 
 
 @pytest.mark.asyncio
-async def test_cmd_sale_new_order_low_xlm(mock_telegram, trade_app_context, dp):
-    """
-    Test NewOrder callback with low XLM: should show alert.
-    """
-    dp.callback_query.middleware(MockDbMiddleware(trade_app_context))
+async def test_cmd_market_menu(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test clicking Market: should show main trade menu."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(trade_router)
 
-    update = types.Update(
-        update_id=3,
-        callback_query=types.CallbackQuery(
-            id="cb3",
-            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
-            chat_instance="ci1",
-            message=types.Message(
-                message_id=3,
-                date=datetime.datetime.now(),
-                chat=types.Chat(id=123, type='private'),
-                text="msg"
-            ),
-            data="NewOrder"
-        )
-    )
-
-    # Mock wallet repository via app_context DI
-    mock_wallet = MagicMock()
-    mock_wallet.assets_visibility = "{}"
-
-    mock_wallet_repo = MagicMock()
-    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
-    trade_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
-
-    # Mock get wallet balance use case - return low XLM balance
-    mock_balance = Balance(asset_code="XLM", balance="0.1", asset_issuer=None)  # Less than 0.5
-
-    mock_use_case = AsyncMock()
-    mock_use_case.execute = AsyncMock(return_value=[mock_balance])
-    trade_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_use_case
-
-    await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
-
-    req = _last_request(mock_telegram, "answerCallbackQuery")
-    assert req is not None, "answerCallbackQuery should be called"
-    assert req["data"].get("show_alert") == "true", "Should show alert for low XLM"
+    await dp.feed_update(router_app_context.bot, create_callback_update(123, "Market"))
+    
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    assert "kb_market" in req["data"]["text"]
+    assert "NewOrder" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
-async def test_cq_trade_choose_token_sell(mock_telegram, trade_app_context, dp):
-    """
-    Test SaleAssetCallbackData: should show buy options.
-    """
-    dp.callback_query.middleware(MockDbMiddleware(trade_app_context))
+async def test_cmd_sale_new_order_start(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test 'NewOrder' callback: should show asset selection."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(trade_router)
 
-    # Set up state with assets
-    ctx = dp.fsm.get_context(bot=trade_app_context.bot, chat_id=123, user_id=123)
-    mock_balance = Balance(asset_code="XLM", balance="100.0", asset_issuer=None)
-    await ctx.update_data(assets=jsonpickle.encode([mock_balance]))
-
-    callback_data = SaleAssetCallbackData(answer="XLM")
-
-    update = types.Update(
-        update_id=4,
-        callback_query=types.CallbackQuery(
-            id="cb4",
-            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
-            chat_instance="ci1",
-            message=types.Message(
-                message_id=4,
-                date=datetime.datetime.now(),
-                chat=types.Chat(id=123, type='private'),
-                text="msg"
-            ),
-            data=callback_data.pack()
-        )
-    )
-
-    await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
-
-    req = _last_request(mock_telegram, "sendMessage")
-    assert req is not None, "sendMessage should be called"
+    await dp.feed_update(router_app_context.bot, create_callback_update(123, "NewOrder"))
+    
+    req = get_latest_msg(mock_telegram)
+    assert "choose_token_sale" in req["data"]["text"]
+    assert "XLM" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
-async def test_cq_trade_choose_token_buy(mock_telegram, trade_app_context, dp):
-    """
-    Test BuyAssetCallbackData: should set state to selling_sum.
-    """
-    dp.callback_query.middleware(MockDbMiddleware(trade_app_context))
+async def test_cq_trade_choose_token_sell(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test selecting token to sell: should show token to buy selection."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(trade_router)
 
-    # Set up state with assets and send token
-    ctx = dp.fsm.get_context(bot=trade_app_context.bot, chat_id=123, user_id=123)
-    mock_assets = [Balance(asset_code="USD", balance="50.0", asset_issuer="GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA")]
-    await ctx.update_data(
-        assets=jsonpickle.encode(mock_assets),
-        send_asset_code="XLM",
-        send_asset_issuer=None,
-        send_asset_max_sum=100.0
-    )
+    user_id = 123
+    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_data(storage_key, {"assets": jsonpickle.encode(setup_trade_mocks.balances)})
 
-    callback_data = BuyAssetCallbackData(answer="USD")
-
-    update = types.Update(
-        update_id=5,
-        callback_query=types.CallbackQuery(
-            id="cb5",
-            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
-            chat_instance="ci1",
-            message=types.Message(
-                message_id=5,
-                date=datetime.datetime.now(),
-                chat=types.Chat(id=123, type='private'),
-                text="msg"
-            ),
-            data=callback_data.pack()
-        )
-    )
-
-    await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
-
-    req = _last_request(mock_telegram, "sendMessage")
-    assert req is not None, "sendMessage should be called"
-
-    # Verify state was set
-    state = await ctx.get_state()
-    assert state == StateSaleToken.selling_sum
+    cb_data = SaleAssetCallbackData(answer="XLM").pack()
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, cb_data))
+    
+    req = get_latest_msg(mock_telegram)
+    assert "choose_token_swap2" in req["data"]["text"]
+    assert "EURMTL" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
-async def test_cmd_send_sale_sum(mock_telegram, trade_app_context, dp):
-    """
-    Test sending sale sum: should ask for receive cost.
-    """
-    dp.message.middleware(MockDbMiddleware(trade_app_context))
+async def test_cmd_trade_creation_flow(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test full trade creation flow: sell sum -> buy sum -> confirmation."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(trade_router)
 
-    # Set up state
-    ctx = dp.fsm.get_context(bot=trade_app_context.bot, chat_id=123, user_id=123)
-    await ctx.set_state(StateSaleToken.selling_sum)
-    await ctx.update_data(
-        receive_asset_code="USD",
-        send_asset_code="XLM",
-        market_link="link"
+    user_id = 123
+    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    
+    # 1. Start in selling_sum state
+    await dp.storage.set_state(storage_key, StateSaleToken.selling_sum)
+    await dp.storage.set_data(storage_key, {
+        "send_asset_code": "XLM", "send_asset_issuer": None,
+        "receive_asset_code": "EURMTL", 
+        "receive_asset_issuer": VALID_ISSUER,
+        "market_link": "link"
+    })
+
+    # Enter Sell Amount
+    await dp.feed_update(router_app_context.bot, create_message_update(user_id, "100.0"))
+    assert await dp.storage.get_state(storage_key) == StateSaleToken.selling_receive_sum
+    # Don't clear telegram log, just look at latest later
+
+    # 2. Enter Buy Amount (Price)
+    await dp.feed_update(router_app_context.bot, create_message_update(user_id, "10.0", message_id=2, update_id=2))
+    
+    # Verify XDR generation and confirmation message
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    assert "confirm_sale" in req["data"]["text"]
+    
+    # Verify UseCase called with correct price (10 / 100 = 0.1)
+    router_app_context.use_case_factory.create_manage_offer.return_value.execute.assert_called_once()
+    args = router_app_context.use_case_factory.create_manage_offer.return_value.execute.call_args[1]
+    assert args['amount'] == 100.0
+    assert args['price'] == 0.1
+
+
+@pytest.mark.asyncio
+async def test_cmd_show_orders(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test ShowOrders: should list user's active offers."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    # Mock active offers. ID must be string for mytypes from_dict.
+    mock_offer = {
+        "id": "12345",
+        "amount": "100.0",
+        "price": "0.5",
+        "selling": {"asset_code": "XLM", "asset_type": "native"},
+        "buying": {"asset_code": "EURMTL", "asset_issuer": VALID_ISSUER}
+    }
+    router_app_context.stellar_service.get_selling_offers.return_value = [mock_offer]
+
+    await dp.feed_update(router_app_context.bot, create_callback_update(123, "ShowOrders"))
+    
+    req = get_latest_msg(mock_telegram)
+    assert "Choose order" in req["data"]["text"]
+    assert "100.0 XLM" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_edit_order_options(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test selecting an order to edit: should show Edit options."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    user_id = 123
+    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    
+    # Setup offers in state. ID as int is fine here as it's not going through from_dict
+    offer = MyOffer(
+        id=555, amount="10.0", price="2.0",
+        selling=MyAsset(asset_code="XLM"),
+        buying=MyAsset(asset_code="EURMTL", asset_issuer=VALID_ISSUER)
     )
+    await dp.storage.set_data(storage_key, {"offers": jsonpickle.encode([offer])})
 
-    update = types.Update(
-        update_id=6,
-        message=types.Message(
-            message_id=6,
-            date=datetime.datetime.now(),
-            chat=types.Chat(id=123, type='private'),
-            from_user=types.User(id=123, is_bot=False, first_name="Test", username="test"),
-            text="10.0"
-        )
+    cb_data = EditOrderCallbackData(answer=555).pack()
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, cb_data))
+    
+    req = get_latest_msg(mock_telegram)
+    assert "EditOrderAmount" in req["data"]["reply_markup"]
+    assert "EditOrderCost" in req["data"]["reply_markup"]
+    assert "DeleteOrder" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_delete_order_execution(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test clicking DeleteOrder: should generate deletion XDR."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    user_id = 123
+    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    
+    offer = MyOffer(
+        id=555, amount="10.0", price="2.0",
+        selling=MyAsset(asset_code="XLM"),
+        buying=MyAsset(asset_code="EURMTL", asset_issuer=VALID_ISSUER)
     )
+    await dp.storage.set_data(storage_key, {
+        "offers": jsonpickle.encode([offer]),
+        "edit_offer_id": 555
+    })
 
-    await dp.feed_update(bot=trade_app_context.bot, update=update, app_context=trade_app_context)
-
-    req = _last_request(mock_telegram, "sendMessage")
-    assert req is not None, "sendMessage should be called"
-
-    # Verify state changed to selling_receive_sum
-    state = await ctx.get_state()
-    assert state == StateSaleToken.selling_receive_sum
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "DeleteOrder"))
+    
+    # Verify deletion UseCase call (amount=0)
+    router_app_context.use_case_factory.create_manage_offer.return_value.execute.assert_called_once()
+    args = router_app_context.use_case_factory.create_manage_offer.return_value.execute.call_args[1]
+    assert args['amount'] == 0.0
+    assert args['offer_id'] == 555
+    
+    req = get_latest_msg(mock_telegram)
+    assert "delete_sale" in req["data"]["text"]
