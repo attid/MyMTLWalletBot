@@ -71,7 +71,7 @@ async def cmd_send_start(user_id: int, state: FSMContext, session: Session, app_
     # keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True,
     #                                     keyboard=[[types.KeyboardButtonRequestUser()]])
     # await send_message(session,user_id, msg, reply_markup=keyboard)
-    await send_message(session, user_id, msg, reply_markup=get_kb_send(user_id))
+    await send_message(session, user_id, msg, reply_markup=get_kb_send(user_id), app_context=app_context)
     await state.set_state(StateSendToken.sending_for)
 
 

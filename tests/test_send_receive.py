@@ -17,7 +17,9 @@ async def test_cmd_send_start(mock_session, mock_callback, mock_state):
         app_context.localization_service.get_text.return_value = 'text'
         await cmd_send_start(mock_callback, mock_state, mock_session, app_context)
         mock_send.assert_called_once()
-        # mock_callback.answer.assert_called_once() # Answer not called in cmd_send_start
+        # Verify app_context is passed to send_message
+        _, kwargs = mock_send.call_args
+        assert kwargs.get('app_context') is app_context, "app_context must be passed to send_message"
 
 @pytest.mark.asyncio
 async def test_cmd_send_token(mock_session, mock_message, mock_state):
