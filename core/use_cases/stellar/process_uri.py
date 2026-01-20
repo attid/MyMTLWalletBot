@@ -1,5 +1,5 @@
 import urllib.parse
-from typing import Dict, Any, Optional
+from typing import Optional
 from stellar_sdk import Network, TransactionBuilder
 from stellar_sdk.sep import stellar_uri
 

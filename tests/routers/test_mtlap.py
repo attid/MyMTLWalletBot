@@ -19,7 +19,6 @@ from aiogram.fsm.storage.base import StorageKey
 
 from routers.mtlap import (
     MTLAPStateTools,
-    RECOMMEND_PREFIX,
     router as mtlap_router,
 )
 from tests.conftest import (

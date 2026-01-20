@@ -11,7 +11,6 @@ TRANSACTION_ERROR_CODES = {
     "tx_too_late": "Transaction is too late (time bounds)",
     "tx_too_early": "Transaction is not yet valid (time bounds)",
     "tx_missing_operation": "No operations in transaction",
-    "tx_bad_auth": "Too few valid signatures or wrong network",
 }
 
 OPERATION_ERROR_CODES = {
@@ -33,20 +32,6 @@ OPERATION_ERROR_CODES = {
     "op_invalid_amount": "Invalid amount",
     "op_src_no_trust": "Source account has no trustline",
     "op_src_not_authorized": "Source account not authorized",
-    "op_no_trust": "Destination has no trustline",
-    "op_not_authorized": "Destination not authorized",
-    "op_underfunded": "Insufficient funds for the operation",
-    "op_line_full": "Trustline limit exceeded for destination",
-    "op_no_issuer": "Asset issuer not found",
-    "op_offer_not_found": "Offer not found",
-    "op_bad_auth": "Too few valid signatures or wrong network",
-    "op_bad_auth_extra": "Unused signatures attached to operation",
-    "op_account_merge_seqnum_needed": "Account merge needs a valid sequence number",
-    "op_low_reserve": "Not enough XLM to meet the minimum reserve",
-    "op_malformed": "Malformed operation",
-    "op_already_exists": "Object already exists",
-    "op_no_issuer": "Asset issuer not found",
-    "op_invalid_amount": "Invalid amount",
 }
 
 def get_stellar_error_message(result_codes: dict) -> str:

@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from unittest.mock import MagicMock, AsyncMock
 from routers.cheque import get_kb_return
 from infrastructure.services.app_context import AppContext

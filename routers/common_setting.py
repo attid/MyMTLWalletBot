@@ -137,7 +137,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
                                                               app_context=app_context) + '\n' + balance_str
             except Exception as e:
                 logger.error(f"Error in NAME action: {e}")
-                msg = f'Error load. Please delete this'
+                msg = 'Error load. Please delete this'
             await callback.answer(msg[:200], show_alert=True)
     await callback.answer()
 

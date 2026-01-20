@@ -1,8 +1,6 @@
-from datetime import datetime
-from aiogram import Router, types, Bot
+from aiogram import Router, types
 from aiogram import F
 import re
-from loguru import logger
 
 router = Router()
 

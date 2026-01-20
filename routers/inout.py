@@ -4,6 +4,7 @@ import jsonpickle  # type: ignore
 from asyncio import sleep
 from decimal import Decimal
 from datetime import datetime, timedelta
+from loguru import logger
 from aiogram import Router, types, F, Bot
 from aiogram.enums import ContentType
 from aiogram.filters import Command, CommandObject
@@ -16,13 +17,26 @@ from routers.start_msg import cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id
 from infrastructure.utils.common_utils import get_user_id
 from infrastructure.services.app_context import AppContext
-from infrastructure.services.localization_service import LocalizationService
 from other.lang_tools import my_gettext
 from infrastructure.utils.stellar_utils import my_float, usdm_asset, satsmtl_asset, eurmtl_asset
 from infrastructure.utils.common_utils import float2str
 from core.domain.value_objects import Asset as DomainAsset
-from other.config_reader import config
-from other.tron_tools import *
+from other.tron_tools import (
+    tron_get_public,
+    create_trc_private_key,
+    get_usdt_balance,
+    check_unconfirmed_usdt_transactions,
+    tron_master_key,
+    send_usdt_async,
+    check_valid_trx,
+    get_usdt_transfer_fee,
+    tron_master_address,
+    get_trx_balance,
+    send_trx_async,
+    get_account_energy,
+    EnergyObject,
+    delegate_energy
+)
 from other.locks import new_wallet_lock
 from other.thothpay_tools import thoth_create_order, thoth_check_order
 
@@ -140,7 +154,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     user_balances = await balance_use_case.execute(user_id=callback.from_user.id)
     if not any(b.asset_code == 'USDM' for b in user_balances):
-        await callback.answer(text=f"You don't have a trust line to USDM, continuation is not possible",
+        await callback.answer(text="You don't have a trust line to USDM, continuation is not possible",
                               show_alert=True)
         return
     async with new_wallet_lock:
@@ -154,7 +168,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         full_usdt_balance = int(await get_usdt_balance(private_key=user_tron_private_key))
         income_usdt_balance = int(full_usdt_balance - usdt_old_sum)
         if income_usdt_balance < min_usdt_sum:
-            await callback.answer(text=f"USDT account balance unchanged", show_alert=True)
+            await callback.answer(text="USDT account balance unchanged", show_alert=True)
             return
         usdm_sum = 0.0
         master_balances = await balance_use_case.execute(user_id=0)
@@ -162,7 +176,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         if master_usdm:
              usdm_sum = float(master_usdm.balance)
         if income_usdt_balance > max_usdt_sum + min_usdt_sum or income_usdt_balance > usdm_sum:
-            await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
+            await callback.answer(text="Amount exceeds the maximum payout limit, payment is not possible.",
                                   show_alert=True)
             return
         if await check_unconfirmed_usdt_transactions(private_key=user_tron_private_key):
@@ -333,7 +347,7 @@ async def cmd_send_get_address(message: types.Message, state: FSMContext, sessio
                            my_gettext(message, 'send_sum', ('USDM', float(usdm_balance)), app_context=app_context),
                            reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         await state.set_state(StateInOut.sending_usdt_sum)
-    except:
+    except Exception:
         data = await state.get_data()
         await send_message(session, message, f"{my_gettext(message, 'bad_key', app_context=app_context)}\n{data['msg']}",
                            reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
@@ -346,7 +360,7 @@ async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: 
         return
     try:
         send_sum = my_float(message.text)
-    except:
+    except Exception:
         send_sum = 0.0
 
     data = await state.get_data()
@@ -502,7 +516,7 @@ async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: A
     else:
         try:
             send_sum = int(message.text)
-        except:
+        except Exception:
             send_sum = 0
 
     assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
@@ -559,7 +573,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                 balances = await balance_use_case.execute(callback.from_user.id)
                 has_sats = any(b.asset_code == 'SATSMTL' for b in balances)
                 if not has_sats:
-                    await callback.answer(text=f"You don't have a trust line to SATSMTL, continuation is not possible",
+                    await callback.answer(text="You don't have a trust line to SATSMTL, continuation is not possible",
                                           show_alert=True)
                     return
                     
@@ -568,7 +582,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                 btc_balance = float(sats_obj.balance) if sats_obj else 0.0
                 
                 if sats_sum > max_btc_sum or sats_sum > btc_balance:
-                    await callback.answer(text=f"Amount exceeds the maximum payout limit, payment is not possible.",
+                    await callback.answer(text="Amount exceeds the maximum payout limit, payment is not possible.",
                                           show_alert=True)
                     return
                 # all is good ?
@@ -634,7 +648,7 @@ async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session
         return
     try:
         send_sum = int(message.text)
-    except:
+    except Exception:
         send_sum = 0
 
 
@@ -648,7 +662,7 @@ async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session
     await state.update_data(send_sum=send_sum)
     if 0 < send_sum < eurmtl_sum:
         await state.set_state(None)
-        msg = await bot.send_invoice(message.chat.id, title=f"{send_sum} EURMTL",
+        await bot.send_invoice(message.chat.id, title=f"{send_sum} EURMTL",
                                      description=f"{send_sum} EURMTL на ваш кошелек",
                                      payload="STARS",
                                      currency="XTR", provider_token='',
@@ -680,7 +694,7 @@ async def cmd_process_message_successful_payment(message: types.Message, session
         has_eurmtl = any(b.asset_code == 'EURMTL' for b in user_balances)
         
         if not has_eurmtl:
-            await message.answer(text=f"You don't have a trust line to EURMTL, continuation is not possible",
+            await message.answer(text="You don't have a trust line to EURMTL, continuation is not possible",
                                  show_alert=True)
             return
         await message.answer(text=f"Found pay for {round(send_sum) if send_sum else 0} EURMTL, wait transaction",

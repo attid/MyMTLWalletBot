@@ -1,7 +1,6 @@
 import asyncio
 from typing import Optional
 from aiogram import Bot, Dispatcher
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from infrastructure.services.localization_service import LocalizationService
 from core.interfaces.repositories import IRepositoryFactory
 from core.interfaces.services import IStellarService, IEncryptionService, ITonService

@@ -3,7 +3,6 @@ import pytest
 import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram import types
-from aiogram.fsm.storage.base import StorageKey
 import datetime
 
 from routers.common_end import (
@@ -12,7 +11,6 @@ from routers.common_end import (
 from core.domain.value_objects import Balance
 from tests.conftest import (
     RouterTestMiddleware,
-    get_telegram_request,
 )
 
 @pytest.fixture(autouse=True)

@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Tuple, Optional, List
 from urllib.parse import urlparse, parse_qs
 
+from core.interfaces.services import ITonService
 from tonutils.client import ToncenterV3Client
 from tonutils.wallet import WalletV5R1  # можно заменить на WalletV4R2
 from tonutils.wallet.messages import TransferJettonMessage
@@ -17,8 +18,6 @@ USDT_DECIMALS = 6
 NANOS = Decimal(10) ** 9
 USDT_UNITS = Decimal(10) ** USDT_DECIMALS
 
-
-from core.interfaces.services import ITonService
 
 class TonService(ITonService):
     """
@@ -224,8 +223,6 @@ class TonService(ITonService):
 
 # ---- пример запуска
 async def _demo():
-    api_key = ""
-
     test1_mnemonic = ""
 
     # EQAPuV7aIdtq8A6gVnlDuupO7wFBH3FMd7wh86eOyRny1uHC

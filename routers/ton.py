@@ -122,7 +122,7 @@ async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext,
                                    reply_markup=get_kb_return(callback.from_user.id, app_context=app_context), app_context=app_context)
 
         except Exception as e:
-            await send_message(session, user_id, f"An error occurred: ", app_context=app_context)
+            await send_message(session, user_id, "An error occurred: ", app_context=app_context)
             logger.warning(f"An error occurred: {e}")
     else:
         await send_message(session, user_id, "Your default wallet is not a TON wallet.", app_context=app_context)
@@ -225,7 +225,7 @@ async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMCon
                                    reply_markup=get_kb_return(callback.from_user.id, app_context=app_context), app_context=app_context)
 
         except Exception as e:
-            await send_message(session, user_id, f"An error occurred: ", app_context=app_context)
+            await send_message(session, user_id, "An error occurred: ", app_context=app_context)
             logger.warning(f"An error occurred: {e}")
     else:
         await send_message(session, user_id, "Your default wallet is not a TON wallet.",

@@ -1,19 +1,12 @@
-import uuid
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from stellar_sdk.sep import stellar_uri
-from stellar_sdk import Network, TransactionBuilder
 
 from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_state, clear_last_message_id
-from other.stellar_tools import stellar_user_sign, stellar_get_user_account
-from core.use_cases.stellar.process_uri import ProcessStellarUri
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
 from routers.sign import cmd_check_xdr
-from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_kb_send, get_kb_return
+from keyboards.common_keyboards import get_kb_return
 from other.web_tools import http_session_manager
 
 from other.faststream_tools import publish_pairing_request

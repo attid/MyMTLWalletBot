@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
 
 from other.lang_tools import my_gettext
-from other.lang_tools import my_gettext
 from other.web_tools import get_web_request
 from infrastructure.services.app_context import AppContext
 

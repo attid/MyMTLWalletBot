@@ -37,7 +37,7 @@ class SqlAlchemyOperationRepository(IOperationRepository):
         ).where(
             TOperations.dt > datetime.utcnow() - timedelta(minutes=minutes)
         ).where(
-            TOperations.arhived == None
+            TOperations.arhived.is_(None)
         ).order_by(TOperations.id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

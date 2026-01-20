@@ -1,5 +1,4 @@
-from typing import List, Union, cast, Any
-from urllib.parse import urlparse, parse_qs
+from typing import List, Union
 
 import jsonpickle  # type: ignore
 from aiogram import Router, types, F
@@ -10,10 +9,9 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from stellar_sdk import Asset, Network, TransactionBuilder
+from stellar_sdk import Asset
 from stellar_sdk.sep.federation import resolve_stellar_address
 from infrastructure.services.app_context import AppContext
-from infrastructure.services.localization_service import LocalizationService
 
 
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr, \
@@ -32,12 +30,11 @@ from routers.uri import handle_wc_uri
 from infrastructure.utils.common_utils import float2str
 from infrastructure.utils.stellar_utils import (
     parse_pay_stellar_uri, is_valid_stellar_address, my_float, 
-    cut_text_to_28_bytes, base_fee, eurmtl_asset
+    cut_text_to_28_bytes, eurmtl_asset
 )
 from other.stellar_tools import (
     stellar_check_account, get_first_balance_from_list
 )
-from other.config_reader import config
 
 
 class StateSendToken(StatesGroup):
@@ -442,7 +439,7 @@ async def cmd_send_get_sum(message: Message, state: FSMContext, session: AsyncSe
             await message.delete()
             return
 
-    except:
+    except Exception:
         send_sum = 0.0
 
     data = await state.get_data()

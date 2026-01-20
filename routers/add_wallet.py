@@ -12,7 +12,6 @@ from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, my_gettext
 from other.locks import new_wallet_lock
-from other.config_reader import config
 
 from infrastructure.services.app_context import AppContext
 

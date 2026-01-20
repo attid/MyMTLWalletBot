@@ -66,7 +66,7 @@ async def test_update_user_profile(mock_user_repo):
     mock_user_repo.get_by_id.return_value = existing_user
     mock_user_repo.update.return_value = existing_user # Returns updated user ideally
     
-    updated_user = await use_case.execute(user_id=123, username="new")
+    await use_case.execute(user_id=123, username="new")
     
     assert existing_user.username == "new" # Modified in place
     mock_user_repo.update.assert_called_once()

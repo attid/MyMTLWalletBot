@@ -1,6 +1,5 @@
 import pytest
-import jsonpickle  # type: ignore
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.notification_settings import (
@@ -10,7 +9,6 @@ from keyboards.common_keyboards import HideNotificationCallbackData
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
-    get_telegram_request,
 )
 
 @pytest.fixture(autouse=True)

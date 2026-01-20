@@ -1,8 +1,5 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.storage.base import StorageKey
-import datetime
 
 from routers.uri import router as uri_router
 from core.use_cases.stellar.process_uri import ProcessStellarUriResult

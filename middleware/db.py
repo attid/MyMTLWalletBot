@@ -1,8 +1,8 @@
-from typing import Callable, Awaitable, Dict, Any, Union
+from typing import Callable, Awaitable, Dict, Any
 
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
-from aiogram.types import TelegramObject, Message, CallbackQuery, InlineQuery
+from aiogram.types import TelegramObject
 
 from infrastructure.services.localization_service import LocalizationService
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository

@@ -1,8 +1,7 @@
 import asyncio
-from datetime import datetime
 from functools import wraps
 from time import time
-from typing import Callable, Any, Optional
+from typing import Callable, Optional
 
 from loguru import logger
 from aiogram import Bot
@@ -40,7 +39,7 @@ async def task_with_timeout(func: Callable, timeout: int, kill_on_timeout: bool,
                         chat_id=_admin_id,
                         text=f"Task {func.__name__} has been running for {minutes_passed} minute(s)."
                     )
-                except:
+                except Exception:
                     pass
 
     update_task = asyncio.create_task(send_update())

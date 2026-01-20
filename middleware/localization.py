@@ -31,7 +31,7 @@ class LocalizationMiddleware(BaseMiddleware):
            from infrastructure.utils.common_utils import get_user_id
            if isinstance(event, (Message, CallbackQuery)):
                user_id = get_user_id(event)
-        except:
+        except Exception:
            pass
 
         if isinstance(user_id, int) and user_id > 0:

@@ -1,4 +1,3 @@
-from aiogram import Dispatcher
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
 

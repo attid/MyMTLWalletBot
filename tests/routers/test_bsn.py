@@ -1,9 +1,7 @@
 
 import pytest
 import jsonpickle  # type: ignore
-from aiogram import Bot, Dispatcher, types
 from unittest.mock import AsyncMock, MagicMock, patch
-import datetime
 
 from routers.bsn import bsn_router, BSNStates, SEND_CALLBACK_DATA, BACK_CALLBACK_DATA, BSNData, BSNRow, Tag, Value, Key, Address, ActionType
 from tests.conftest import (

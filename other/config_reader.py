@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import Optional
 from environs import Env
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict

@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, and_
+from sqlalchemy import select, update
 from core.interfaces.repositories import IMessageRepository
 from db.models import MyMtlWalletBotMessages
 

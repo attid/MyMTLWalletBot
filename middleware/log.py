@@ -33,7 +33,6 @@ class LogButtonClickCallbackMiddleware(BaseMiddleware):
 
 #
 
-from sqlalchemy.exc import SQLAlchemyError
 @safe_catch_async
 async def log_worker(app_context: AppContext):
     while True:  # not queue.empty():
