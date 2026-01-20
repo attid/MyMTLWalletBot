@@ -415,6 +415,7 @@ async def cmd_refresh(callback: types.CallbackQuery, state: FSMContext, session:
     repo = app_context.repository_factory.get_wallet_repository(session)
     await repo.reset_balance_cache(callback.from_user.id)
     await cmd_show_balance(session, callback.from_user.id, state, refresh_callback=callback, app_context=app_context)
+    await session.commit()
     await callback.answer()
     await check_update_username(
         session,

@@ -29,8 +29,8 @@ class Wallet:
     secret_key: Optional[str] = None
     seed_key: Optional[str] = None
     balances: Optional[list] = None # List[Balance]
-    balances_event_id: int = 0
-    last_event_id: int = 0
+    balances_event_id: str = "0"
+    last_event_id: str = "0"
 
 @dataclass
 class AddressBookEntry:
