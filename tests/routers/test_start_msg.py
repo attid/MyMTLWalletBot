@@ -157,3 +157,30 @@ async def test_cmd_info_message_with_photo(mock_telegram, router_app_context, se
     
     # Verify old message deletion attempt
     assert any(r['method'] == 'deleteMessage' and int(r['data']['message_id']) == 999 for r in mock_telegram)
+
+
+@pytest.mark.asyncio
+async def test_get_start_text_custom_token(router_app_context, setup_start_mocks):
+    """
+    Mandatory test: Ensure custom tokens (e.g. UNLIMITED) are visible.
+    The user reported this token was missing, so we must ensure it appears if present in valid balances.
+    """
+    user_id = 123
+    state = AsyncMock()
+    state.get_data.return_value = {'show_more': True}
+    
+    # Add UNLIMITED token to balances
+    custom_balance = Balance(
+        asset_code="UNLIMITED", 
+        balance="1000.0", 
+        asset_issuer="G_UNLIMITED_ISSUER", 
+        asset_type="credit_alphanum12"
+    )
+    setup_start_mocks.balances.append(custom_balance)
+    
+    # Ensure UseCase returns updated balances
+    setup_start_mocks.balance_uc.execute.return_value = setup_start_mocks.balances
+    
+    text = await get_start_text(MagicMock(), state, user_id, app_context=router_app_context)
+    
+    assert "UNLIMITED : 1000" in text

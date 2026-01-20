@@ -231,6 +231,6 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             secret_key=db_wallet.secret_key,
             seed_key=db_wallet.seed_key,
             balances=balances,
-            balances_event_id=int(db_wallet.balances_event_id or 0),
-            last_event_id=int(db_wallet.last_event_id or 0)
+            balances_event_id=str(db_wallet.balances_event_id or "0"),
+            last_event_id=str(db_wallet.last_event_id or "0")
         )

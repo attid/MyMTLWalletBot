@@ -249,3 +249,31 @@ async def test_cq_swap_cancel_offers_toggle(mock_telegram, router_app_context, s
     # UI should be refreshed
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
+
+
+@pytest.mark.asyncio
+async def test_cmd_swap_start_custom_token(mock_telegram, router_app_context, setup_swap_mocks):
+    """
+    Mandatory test: Ensure custom tokens (e.g. UNLIMITED) are visible in SWAP list.
+    User requirement: 'my token should be here and in send and in swap'.
+    """
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+
+    # Add UNLIMITED token to balances
+    custom_balance = Balance(
+        asset_code="UNLIMITED", 
+        balance="1000.0", 
+        asset_issuer="G_UNLIMITED_ISSUER", 
+        asset_type="credit_alphanum12"
+    )
+    setup_swap_mocks.balances.append(custom_balance)
+    setup_swap_mocks.ctx.use_case_factory.create_get_wallet_balance.return_value.execute.return_value = setup_swap_mocks.balances
+
+    update = create_callback_update(user_id=123, callback_data="Swap")
+    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    assert "UNLIMITED" in req["data"]["reply_markup"]

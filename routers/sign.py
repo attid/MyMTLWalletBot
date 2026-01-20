@@ -306,6 +306,7 @@ async def sign_xdr(session: AsyncSession, state, user_id, *, app_context: AppCon
         await cmd_info_message(session, user_id, my_gettext(user_id, "bad_password", app_context=app_context), app_context=app_context)
     repo = app_context.repository_factory.get_wallet_repository(session)
     await repo.reset_balance_cache(user_id)
+    await session.commit()
     await state.update_data(pin='')
 
 

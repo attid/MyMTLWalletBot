@@ -51,7 +51,13 @@ def setup_common_start_mocks(router_app_context):
             self.wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
             self.wallet_repo.get_info = AsyncMock(return_value="[Info]")
             self.wallet_repo.reset_balance_cache = AsyncMock()
-            self.ctx.repository_factory.get_wallet_repository.return_value = self.wallet_repo
+            
+            # Capture session to verify commit
+            self.captured_session = None
+            def get_repo(session):
+                self.captured_session = session
+                return self.wallet_repo
+            self.ctx.repository_factory.get_wallet_repository.side_effect = get_repo
 
             # Secret Service
             self.secret_service = AsyncMock()
@@ -199,7 +205,10 @@ async def test_cb_set_limit_toggle(mock_telegram, router_app_context, setup_comm
 
 @pytest.mark.asyncio
 async def test_cmd_refresh_balances(mock_telegram, router_app_context, setup_common_start_mocks):
-    """Test Refresh button: should reset cache and show balance."""
+    """
+    Test Refresh button: should reset cache, show balance, AND COMMIT.
+    Commit is crucial to persist the cache reset and any balance updates.
+    """
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(start_router)
@@ -207,6 +216,11 @@ async def test_cmd_refresh_balances(mock_telegram, router_app_context, setup_com
     await dp.feed_update(router_app_context.bot, create_callback_update(123, "Refresh"))
     
     setup_common_start_mocks.wallet_repo.reset_balance_cache.assert_called_once()
+    
+    # Verify session.commit() was called
+    assert setup_common_start_mocks.captured_session is not None
+    setup_common_start_mocks.captured_session.commit.assert_called_once()
+    
     texts = get_all_texts(mock_telegram)
     assert "your_balance" in texts
 

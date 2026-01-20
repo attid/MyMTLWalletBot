@@ -101,6 +101,9 @@ class GetWalletBalance:
             asset_code = b.get('asset_code')
             asset_issuer = b.get('asset_issuer')
             
+            if asset_type == 'liquidity_pool_shares':
+                continue
+
             if asset_type == 'native':
                 asset_code = 'XLM'
                 # Add reserve to selling_liabilities for Native asset (XLM)

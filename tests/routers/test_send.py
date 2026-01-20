@@ -497,3 +497,47 @@ async def test_cb_send_choose_token_with_blocked_offers(mock_telegram, mock_hori
     # Verify state was set correctly
     state = await dp.storage.get_state(key=storage_key)
     assert state == StateSendToken.sending_sum
+
+
+@pytest.mark.asyncio
+async def test_cmd_send_for_custom_token(mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks):
+    """
+    Mandatory test: Ensure custom tokens (e.g. UNLIMITED) are visible in SEND list.
+    Prerequisite: Destination address must also trust/hold the token.
+    """
+    user_id = 123
+    send_address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    custom_code = "UNLIMITED"
+    custom_issuer = "G_UNLIMITED_ISSUER"
+
+    # 1. Setup Sender Balances (User has UNLIMITED)
+    setup_send_mocks.set_balances([
+        Balance(asset_code="XLM", balance="100.0", asset_issuer=None, asset_type="native"),
+        Balance(asset_code=custom_code, balance="1000.0", asset_issuer=custom_issuer, asset_type="credit_alphanum12")
+    ])
+
+    # 2. Setup Destination Account (Must trust UNLIMITED for it to appear)
+    # The routers/send.py logic checks collision between sender assets and receiver assets.
+    mock_horizon.set_account(send_address, balances=[
+        {"asset_type": "native", "balance": "10.0"},
+        {"asset_type": "credit_alphanum12", "asset_code": custom_code, 
+         "asset_issuer": custom_issuer, "balance": "0.0"} # Trustline exists
+    ])
+
+    # Setup router
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+
+    # Set state to sending_for
+    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_for)
+
+    # Send address
+    update = create_message_update(user_id, send_address)
+    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+    # Verify response contains UNLIMITED button
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    assert "choose_token" in req["data"]["text"]
+    assert custom_code in req["data"]["reply_markup"]
