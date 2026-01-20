@@ -42,6 +42,16 @@ class StellarService(IStellarService):
             print(f"Error checking account {account_id}: {e}")
             return False
 
+    async def get_assets_by_issuer(self, issuer_id: str) -> List[Dict[str, Any]]:
+        """Fetch assets issued by the given account ID."""
+        try:
+            async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+                 assets_resp = await server.assets().for_issuer(issuer_id).limit(200).call()
+                 return assets_resp['_embedded']['records']
+        except Exception as e:
+            print(f"Error fetching assets for issuer {issuer_id}: {e}")
+            return []
+
     async def build_payment_transaction(
         self, 
         source_account_id: str, 
