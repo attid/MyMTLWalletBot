@@ -1,4 +1,8 @@
 import asyncio
+import warnings
+
+# Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
+warnings.filterwarnings("ignore", message=".*has conflict with protected namespace .model_.")
 
 import uvloop
 from aiogram.client.default import DefaultBotProperties

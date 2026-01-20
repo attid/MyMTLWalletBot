@@ -32,9 +32,13 @@ class MockDbMiddleware(BaseMiddleware):
 
 @pytest.fixture(autouse=True)
 def cleanup_router():
+    # Detach before test in case it was left attached by previous test file
+    if wallet_setting_router._parent_router:
+        wallet_setting_router._parent_router = None
     yield
-    if wallet_setting_router.parent_router:
-         wallet_setting_router._parent_router = None
+    # Detach after test too for consistency
+    if wallet_setting_router._parent_router:
+        wallet_setting_router._parent_router = None
 
 @pytest.fixture
 def mock_session():

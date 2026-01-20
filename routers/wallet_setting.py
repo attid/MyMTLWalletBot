@@ -3,6 +3,7 @@ import jsonpickle  # type: ignore
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -306,6 +307,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
         wallet.assets_visibility = serialize_visibility(vis_dict)
         save_error = False
         try:
+            await repo.update(wallet)
             await session.commit()
         except Exception as e:
             await session.rollback()
@@ -320,6 +322,14 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
                 if callback.message and isinstance(callback.message, types.Message):
                     await callback.message.edit_text(message_text, reply_markup=reply_markup)
                 await callback.answer(my_gettext(callback, 'asset_visibility_changed', app_context=app_context))
+            except TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    # Ignore if the message is identical (e.g. user double clicked or state didn't change visually)
+                    # We still show the success toast, but no alert
+                    await callback.answer(my_gettext(callback, 'asset_visibility_changed', app_context=app_context))
+                else:
+                    logger.error(f"TelegramBadRequest editing message after asset visibility change: {e}")
+                    await callback.answer(my_gettext(callback, 'asset_visibility_changed', app_context=app_context) + " (UI update failed)", show_alert=True)
             except Exception as e:
                 logger.error(f"Error editing message after asset visibility change: {e}")
                 # If edit fails after save, at least inform user status was likely saved

@@ -47,7 +47,8 @@ class Settings(BaseSettings):
         env_file='.env',
         env_file_encoding='utf-8',
         extra='allow',
-        case_sensitive=False
+        case_sensitive=False,
+        protected_namespaces=()
     )
 
 
