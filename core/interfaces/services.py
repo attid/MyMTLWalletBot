@@ -19,6 +19,11 @@ class IStellarService(ABC):
         pass
 
     @abstractmethod
+    async def get_assets_by_issuer(self, issuer_id: str) -> List[Dict[str, Any]]:
+        """Retrieve assets issued by the account."""
+        pass
+
+    @abstractmethod
     async def submit_transaction(self, xdr: str) -> Dict[str, Any]:
         """Submit a signed transaction XDR to the Stellar network."""
         pass

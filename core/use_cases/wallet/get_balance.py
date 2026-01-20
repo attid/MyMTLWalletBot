@@ -123,6 +123,20 @@ class GetWalletBalance:
                 selling_liabilities=selling_liabilities
             ))
             
+        # 3.5 Get issuer tokens (self-issued assets)
+        # If user is an issuer, they don't see their own assets in account balances, 
+        # so we need to fetch them separately provided they have executed at least one operation.
+        issued_assets = await self.stellar_service.get_assets_by_issuer(target_key)
+        for record in issued_assets:
+            domain_balances.append(Balance(
+                balance='unlimited',  # Issuer has unlimited supply
+                asset_code=record['asset_code'],
+                asset_issuer=target_key,
+                asset_type=record['asset_type'],
+                buying_liabilities='0',
+                selling_liabilities='0'
+            ))
+
         # 4. Update Cache
         if wallet and not public_key:
             wallet.balances = domain_balances

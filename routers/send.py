@@ -347,7 +347,7 @@ async def cmd_send_choose_token(message: types.Message, state: FSMContext, sessi
         if my_float(token.balance) <= 0.0:
             continue
         for sender_token in sender_asset_list:
-            if token.asset_code == sender_token.asset_code:
+            if token.asset_code == sender_token.asset_code and token.asset_issuer == sender_token.asset_issuer:
                 kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                           callback_data=SendAssetCallbackData(
                                                               answer=token.asset_code).pack()
