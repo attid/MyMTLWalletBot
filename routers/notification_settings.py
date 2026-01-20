@@ -2,7 +2,7 @@ import asyncio
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
 from infrastructure.utils.telegram_utils import send_message
@@ -17,7 +17,8 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(HideNotificationCallbackData.filter())
-async def hide_notification_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def hide_notification_callback(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    assert callback.data is not None, "callback.data must not be None"
     data = HideNotificationCallbackData.unpack(callback.data)
 
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
@@ -44,7 +45,7 @@ async def hide_notification_callback(callback: types.CallbackQuery, state: FSMCo
 # Cancelling this tool call to add method first.
 
 
-async def send_notification_settings_menu(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def send_notification_settings_menu(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_data = await state.get_data()
     user_id = callback.from_user.id
 
@@ -55,13 +56,13 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
 
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'toggle_token_button',
-                                                   ('✅' if is_token_notify else '❌'), app_context=app_context),
+                                                   (('✅' if is_token_notify else '❌'),), app_context=app_context),
                                    callback_data="toggle_token_notify")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'change_amount_button', (user_data.get('min_amount', 0),), app_context=app_context),
                                     callback_data="change_amount")],
         [types.InlineKeyboardButton(
             text=my_gettext(user_id, 'toggle_wallets_button',
-                            ('✅' if is_wallets_notify else '❌'), app_context=app_context),
+                            (('✅' if is_wallets_notify else '❌'),), app_context=app_context),
             callback_data="toggle_wallets_notify")],
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'save_button', app_context=app_context), callback_data="save_filter")],
         get_return_button(user_id, app_context=app_context)
@@ -73,7 +74,7 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
 
 
 @router.callback_query(F.data == "toggle_token_notify")
-async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_data = await state.get_data()
 
     # Toggle between specific token and any token
@@ -81,8 +82,11 @@ async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext
         await state.update_data(asset_code=None)
     else:
         op_repo = app_context.repository_factory.get_operation_repository(session)
-        operation = await op_repo.get_by_id(user_data.get('operation_id'))
-        await state.update_data(asset_code=operation.code1)
+        operation_id = user_data.get('operation_id')
+        if operation_id:
+            operation = await op_repo.get_by_id(str(operation_id))
+            if operation:
+                await state.update_data(asset_code=operation.code1)
 
     await send_notification_settings_menu(callback, state, session, app_context=app_context)
 
@@ -91,7 +95,7 @@ amounts = [0, 1, 10, 100, 1000, 10000]
 
 
 @router.callback_query(F.data == "change_amount")
-async def change_amount_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def change_amount_callback(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_data = await state.get_data()
     current_amount = user_data.get('min_amount', 0)
 
@@ -107,14 +111,14 @@ async def change_amount_callback(callback: types.CallbackQuery, state: FSMContex
 
 
 @router.callback_query(F.data == "toggle_wallets_notify")
-async def toggle_wallets_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def toggle_wallets_callback(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_data = await state.get_data()
     await state.update_data(for_all_wallets=not user_data.get('for_all_wallets'))
     await send_notification_settings_menu(callback, state, session, app_context=app_context)
 
 
 @router.callback_query(F.data == "save_filter")
-async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_data = await state.get_data()
     user_id = callback.from_user.id
     public_key = None if user_data.get('for_all_wallets') else user_data.get('public_key')
@@ -130,13 +134,16 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
     )
 
     repo = app_context.repository_factory.get_notification_repository(session)
-    
+
+    min_amount: float = float(user_data.get('min_amount', 0))
+    operation_type: str = str(user_data.get('operation_type', ''))
+
     existing_filter = await repo.find_duplicate(
         user_id=user_id,
         public_key=public_key,
         asset_code=user_data.get('asset_code'),
-        min_amount=user_data.get('min_amount'),
-        operation_type=user_data.get('operation_type')
+        min_amount=min_amount,
+        operation_type=operation_type
     )
 
     if existing_filter:
@@ -158,8 +165,8 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
         user_id=user_id,
         public_key=public_key,
         asset_code=user_data.get('asset_code'),
-        min_amount=user_data.get('min_amount'),
-        operation_type=user_data.get('operation_type')
+        min_amount=min_amount,
+        operation_type=operation_type
     )
 
     await state.clear()
@@ -169,7 +176,7 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
 
 
 @router.callback_query(F.data == "NotificationSettings")
-async def notification_settings_callback(callback: types.CallbackQuery, session: Session, app_context: AppContext):
+async def notification_settings_callback(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
     user_id = callback.from_user.id
     repo = app_context.repository_factory.get_notification_repository(session)
     filters = await repo.get_by_user_id(user_id)
@@ -188,7 +195,7 @@ async def notification_settings_callback(callback: types.CallbackQuery, session:
 
 
 @router.callback_query(F.data == "delete_all_filters")
-async def delete_all_filters_callback(callback: types.CallbackQuery, session: Session, app_context: AppContext):
+async def delete_all_filters_callback(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
     user_id = callback.from_user.id
     repo = app_context.repository_factory.get_notification_repository(session)
     await repo.delete_all_by_user(user_id)

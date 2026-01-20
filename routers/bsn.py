@@ -2,12 +2,14 @@ import typing
 from collections import defaultdict
 from dataclasses import dataclass
 
-import jsonpickle
-from aiogram import F, Router
+import jsonpickle  # type: ignore
+from aiogram import F, Router, types
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
 # from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
 
 from other.config_reader import config
@@ -18,13 +20,9 @@ from infrastructure.utils.stellar_utils import base_fee, decode_data_value
 from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id, clear_state
+from infrastructure.utils.common_utils import get_user_id
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
-
-#if typing.TYPE_CHECKING:
-#    from aiogram.types import CallbackQuery, Message
-#    from aiogram.fsm.context import FSMContext
-#    from sqlalchemy.orm import Session
 
 bsn_router = Router()
 
@@ -152,7 +150,7 @@ class Tag:
 
         key = Key(letters)
         if key.lower() in keys_map:
-            key = keys_map[key.lower()]
+            key = Key(keys_map[key.lower()])
         num = int(digits) if digits else None
         return cls(key, num)
 
@@ -258,38 +256,37 @@ def format_bsn_row(bsn_row: BSNRow) -> str:
 
 
 def make_tag_message(bsn_data: BSNData, user_id: typing.Union[CallbackQuery, Message, int, str], app_context: AppContext) -> str:
-    # Use localized string if app_context available, otherwise fallback (though my_gettext handles it if we pass it correctly)
-    # But wait, make_tag_message is a helper. my_gettext is used inside.
-    # Note: my_gettext signature: (user_id_or_obj, key, args, app_context)
-    help_text = my_gettext(user_id, 'bsn_help_text', (DELETE_KEY,), app_context=app_context)
+    user_id_int: int = int(user_id) if isinstance(user_id, str) else get_user_id(user_id)
+    help_text = my_gettext(user_id_int, 'bsn_help_text', (DELETE_KEY,), app_context=app_context)
 
     if bsn_data.is_empty():
-        message = my_gettext(user_id, 'bsn_empty_message', app_context=app_context)
+        message = my_gettext(user_id_int, 'bsn_empty_message', app_context=app_context)
     else:
-        message = my_gettext(user_id, 'bsn_address_part', (bsn_data.address,), app_context=app_context)
+        message = my_gettext(user_id_int, 'bsn_address_part', (bsn_data.address,), app_context=app_context)
         flag = False
         for bsn_row in bsn_data.changed_items():
             if not bsn_row.tag.is_known_key:
                 flag = True
             message += format_bsn_row(bsn_row)
         if flag:
-            message += my_gettext(user_id, 'bsn_warning', app_context=app_context)
-        message += my_gettext(user_id, 'bsn_last_part', app_context=app_context)
+            message += my_gettext(user_id_int, 'bsn_warning', app_context=app_context)
+        message += my_gettext(user_id_int, 'bsn_last_part', app_context=app_context)
     message += help_text
     return message
 
 
 def get_bsn_kb(user_id: typing.Union[CallbackQuery, Message, int, str],
-               app_context: AppContext, send_enabled: bool = False) -> "InlineKeyboardMarkup":
+               app_context: AppContext, send_enabled: bool = False) -> InlineKeyboardMarkup:
+    user_id_int: int = int(user_id) if isinstance(user_id, str) else get_user_id(user_id)
     builder = InlineKeyboardBuilder()
     if send_enabled:
-        builder.button(text=my_gettext(user_id, 'kb_send', app_context=app_context), callback_data=SEND_CALLBACK_DATA)
-    builder.button(text=my_gettext(user_id, 'kb_back', app_context=app_context), callback_data=BACK_CALLBACK_DATA)
+        builder.button(text=my_gettext(user_id_int, 'kb_send', app_context=app_context), callback_data=SEND_CALLBACK_DATA)
+    builder.button(text=my_gettext(user_id_int, 'kb_back', app_context=app_context), callback_data=BACK_CALLBACK_DATA)
     builder.adjust(1, 1)
     return builder.as_markup()
 
 
-async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session: "Session", app_context: AppContext) -> None:
+async def parse_tag(*, tag: str, bsn_data: BSNData, message: Message, session: AsyncSession, app_context: AppContext) -> None:
     if tag:
         tag_value = tag.split(' ', 1)
         if len(tag_value) == 2:
@@ -299,7 +296,6 @@ async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session:
                 else:
                     key, value = tag_value
                     if value.startswith('@'):
-                        # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
                         user_repo = app_context.repository_factory.get_user_repository(session)
                         public_key, user_id = await user_repo.get_account_by_username(value)
                         if public_key:
@@ -312,33 +308,35 @@ async def parse_tag(*, tag: str, bsn_data: BSNData, message: "Message", session:
 
 
 def parse_exception(exc: Exception, user_id: typing.Union[CallbackQuery, Message, int, str], app_context: AppContext) -> str:
+    user_id_int: int = int(user_id) if isinstance(user_id, str) else get_user_id(user_id)
     if isinstance(exc, EmptyTag):
-        return my_gettext(user_id, 'bsn_empty_tag_error', (exc.raw_tag,), app_context=app_context)
+        return my_gettext(user_id_int, 'bsn_empty_tag_error', (exc.raw_tag,), app_context=app_context)
     if isinstance(exc, LengthError):
-        return my_gettext(user_id, 'bsn_length_error', (len(exc.value), exc.value), app_context=app_context)
+        return my_gettext(user_id_int, 'bsn_length_error', (len(exc.value), exc.value), app_context=app_context)
+    return str(exc)
 
 
 async def cmd_gen_data_xdr(bsn_data: BSNData, app_context: AppContext) -> str:
-    data = {}
+    data: dict[str, str | None] = {}
     for bsn_row in bsn_data.changed_items():
         if bsn_row.is_remove():
             data[str(bsn_row.tag)] = None
         else:
             data[str(bsn_row.tag)] = str(bsn_row.value)
-    
+
     return await app_context.stellar_service.build_manage_data_transaction(
         source_account_id=bsn_data.address,
         data=data
     )
 
 
-async def bsn_stellar_get_data(session: "Session", user_id: int, app_context: AppContext, public_key=None) -> BSNData:
+async def bsn_stellar_get_data(session: AsyncSession, user_id: int, app_context: AppContext, public_key=None) -> BSNData:
     if public_key:
         pk = public_key
     else:
          repo = app_context.repository_factory.get_wallet_repository(session)
          wallet = await repo.get_default_wallet(user_id)
-         pk = wallet.public_key
+         pk = wallet.public_key if wallet else ""
 
     account_details = await app_context.stellar_service.get_account_details(pk)
     if not account_details:
@@ -356,16 +354,19 @@ async def bsn_stellar_get_data(session: "Session", user_id: int, app_context: Ap
 
 
 @bsn_router.message(BSNStates.waiting_for_tags)
-async def process_tags(message: "Message", state: "FSMContext", session: "Session", app_context: AppContext):
+async def process_tags(message: Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None or message.chat is None:
+        return
     data = await state.get_data()
-    tags: BSNData = jsonpickle.loads(data.get('tags'))
+    tags_json = data.get('tags')
+    if not tags_json:
+        return
+    tags: BSNData = jsonpickle.loads(tags_json)
 
-    # Очищаем текст от префикса /bsn если он есть
     text = message.text
     if text.lower().startswith('/bsn'):
         text = text[5:].strip()
 
-    # Разбиваем текст на строки
     new_tags: list[str] = text.split('\n')
 
     for tag in new_tags:
@@ -379,8 +380,10 @@ async def process_tags(message: "Message", state: "FSMContext", session: "Sessio
 
 
 @bsn_router.message(Command("bsn", ignore_case=True))
-async def bsn_mode_command(message: "Message", state: "FSMContext", command: "CommandObject", session: "Session", app_context: AppContext,
+async def bsn_mode_command(message: Message, state: FSMContext, command: CommandObject, session: AsyncSession, app_context: AppContext,
                            **kwargs) -> None:
+    if message.from_user is None or message.chat is None:
+        return
     await clear_state(state)
     tags = await bsn_stellar_get_data(session, message.from_user.id, app_context=app_context)
     if command.args:
@@ -394,10 +397,15 @@ async def bsn_mode_command(message: "Message", state: "FSMContext", command: "Co
 
 
 @bsn_router.callback_query(BSNStates.waiting_for_tags, F.data == SEND_CALLBACK_DATA)
-async def finish_send_bsn(callback_query: "CallbackQuery", state: "FSMContext", session: "Session", app_context: AppContext, **kwargs) -> None:
+async def finish_send_bsn(callback_query: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext, **kwargs) -> None:
+    if callback_query.from_user is None:
+        return
     await state.set_state(None)
     data = await state.get_data()
-    bsn_data: BSNData = jsonpickle.loads(data.get('tags'))
+    tags_json = data.get('tags')
+    if not tags_json:
+        return
+    bsn_data: BSNData = jsonpickle.loads(tags_json)
     xdr = await cmd_gen_data_xdr(bsn_data, app_context=app_context)
     await state.update_data(tags=None)
     await state.update_data(xdr=xdr)
@@ -408,7 +416,9 @@ async def finish_send_bsn(callback_query: "CallbackQuery", state: "FSMContext", 
 
 
 @bsn_router.callback_query(BSNStates.waiting_for_tags, F.data == BACK_CALLBACK_DATA)
-async def finish_back_bsn(callback_query: "CallbackQuery", state: "FSMContext", session: "Session", app_context: AppContext, **kwargs) -> None:
+async def finish_back_bsn(callback_query: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext, **kwargs) -> None:
+    if callback_query.message is None or callback_query.message.chat is None:
+        return
     await state.set_state(None)
     await state.update_data(tags=None)
     await cmd_show_balance(session, callback_query.message.chat.id, state, app_context=app_context)

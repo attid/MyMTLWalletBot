@@ -41,11 +41,12 @@ class MTLGrist:
 
 
 class GristAPI:
-    def __init__(self, session_manager: HTTPSessionManager = None):
-        self.session_manager = session_manager
-        self.token = config.grist_token
-        if not self.session_manager:
+    def __init__(self, session_manager: Optional[HTTPSessionManager] = None):
+        if not session_manager:
             self.session_manager = HTTPSessionManager()
+        else:
+            self.session_manager = session_manager
+        self.token = config.grist_token
 
     async def fetch_data(self, table: GristTableConfig, sort: Optional[str] = None,
                          filter_dict: Optional[Dict[str, List[Any]]] = None) -> List[Dict[str, Any]]:
@@ -80,8 +81,11 @@ class GristAPI:
         response = await self.session_manager.get_web_request(method='GET', url=url, headers=headers)
 
         match response.status:
-            case 200 if response.data and "records" in response.data:
-                return [{'id': record['id'], **record['fields']} for record in response.data["records"]]
+            case 200:
+                if isinstance(response.data, dict) and "records" in response.data:
+                    return [{'id': record['id'], **record['fields']} for record in response.data["records"]]
+                else:
+                    raise Exception(f'Unexpected response format')
             case _:
                 raise Exception(f'Ошибка запроса: Статус {response.status}')
 

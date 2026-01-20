@@ -2,7 +2,7 @@ from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from routers.sign import cmd_check_xdr
 from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_last_message_id
@@ -42,7 +42,7 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data=="MTLTools")
-async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_id = callback.from_user.id
     msg = my_gettext(user_id, 'mtl_tools_msg', app_context=app_context)
 
@@ -66,7 +66,7 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session:Se
 ########################################################################################################################
 
 @router.callback_query(F.data=="MTLToolsDelegate")
-async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -88,7 +88,7 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.callback_query(F.data=="MTLToolsDelDelegate")
-async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -108,7 +108,7 @@ async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContex
 
 
 @router.callback_query(F.data=="MTLToolsAddDelegate")
-async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
@@ -119,7 +119,9 @@ async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContex
 
 
 @router.message(StateTools.delegate_for)
-async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None or message.from_user is None:
+        return
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
@@ -141,7 +143,7 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, s
 ########################################################################################################################
 
 @router.callback_query(F.data=="MTLToolsDonate")
-async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await stellar_get_data(session,callback.from_user.id)
     donates = {}
     idx = 0
@@ -181,7 +183,7 @@ async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, ses
 
 
 @router.callback_query(F.data=="AddDonate")
-async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
@@ -192,7 +194,9 @@ async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext,
 
 
 @router.message(StateTools.donate_address)
-async def cmd_send_add_donate_address(message: types.Message, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_send_add_donate_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None:
+        return
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
@@ -208,7 +212,7 @@ async def cmd_send_add_donate_address(message: types.Message, state: FSMContext,
 
 
 @router.message(StateTools.donate_name)
-async def cmd_send_add_donate_name(message: types.Message, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_send_add_donate_name(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     name = message.text
     if name:
         name = name.replace('=', '_').replace(':', '_')
@@ -224,7 +228,9 @@ async def cmd_send_add_donate_name(message: types.Message, state: FSMContext, se
 
 
 @router.message(StateTools.donate_persent)
-async def cmd_send_add_donate_percent(message: types.Message, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_send_add_donate_percent(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     if my_float(message.text):
         persent = my_float(message.text)
         data = await state.get_data()
@@ -242,7 +248,7 @@ async def cmd_send_add_donate_percent(message: types.Message, state: FSMContext,
 
 @router.callback_query(DonateCallbackData.filter())
 async def cq_donate_setting(callback: types.CallbackQuery, callback_data: DonateCallbackData,
-                      state: FSMContext, session:Session, app_context: AppContext):
+                      state: FSMContext, session: AsyncSession, app_context: AppContext):
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
@@ -266,7 +272,7 @@ async def cq_donate_setting(callback: types.CallbackQuery, callback_data: Donate
 ########################################################################################################################
 
 @router.callback_query(F.data=="MTLToolsAddBIM")
-async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await stellar_get_data(session,callback.from_user.id)
     bod_dict = {}
     idx = 0
@@ -302,7 +308,7 @@ async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, sessio
 
 
 @router.callback_query(F.data=="AddBIM")
-async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
@@ -313,7 +319,9 @@ async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, se
 
 
 @router.message(StateTools.bim_address)
-async def cmd_send_add_bim_address(message: types.Message, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_send_add_bim_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None:
+        return
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
@@ -329,7 +337,9 @@ async def cmd_send_add_bim_address(message: types.Message, state: FSMContext, se
 
 
 @router.message(StateTools.bim_name)
-async def cmd_send_add_bim_name(message: types.Message, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_send_add_bim_name(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     if message.text:
         name = message.text
         data = await state.get_data()
@@ -347,7 +357,7 @@ async def cmd_send_add_bim_name(message: types.Message, state: FSMContext, sessi
 
 @router.callback_query(BIMCallbackData.filter())
 async def cq_bim_setting(callback: types.CallbackQuery, callback_data: BIMCallbackData,
-                       state: FSMContext, session:Session, app_context: AppContext):
+                       state: FSMContext, session: AsyncSession, app_context: AppContext):
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
@@ -370,12 +380,14 @@ async def cq_bim_setting(callback: types.CallbackQuery, callback_data: BIMCallba
 ########################################################################################################################
 
 @router.callback_query(F.data=="MTLToolsUpdateMulti")
-async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContext, session:Session, app_context: AppContext):
+async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
     if not await check_account_id_from_grist(account_id):
         await callback.answer('Ваш адрес не найден в реестре', show_alert=True)
         return
     else:
+        if callback.message is None:
+            return
         await callback.message.answer('Сейчас будет сформирована транзакция.'
                                       'Внимательно ознакомьтесь с данные перед отправкой.')
         # get xdr

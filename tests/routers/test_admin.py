@@ -44,34 +44,46 @@ def setup_admin_mocks(router_app_context):
             self._setup_defaults()
 
         def _setup_defaults(self):
-            # Default query mock chain
-            self.query_mock = MagicMock()
-            self.query_mock.count.return_value = 10
-            self.query_mock.filter.return_value = self.query_mock
-            self.query_mock.distinct.return_value = self.query_mock
-            self.query_mock.group_by.return_value = self.query_mock
-            self.query_mock.order_by.return_value = self.query_mock
-            self.query_mock.limit.return_value = self.query_mock
-            self.query_mock.all.return_value = []
-            self.query_mock.one_or_none.return_value = None
-            self.query_mock.first.return_value = None
+            # Setup async session methods
+            self.mock_session.execute = AsyncMock()
+            self.mock_session.commit = AsyncMock()
             
-            self.mock_session.query.return_value = self.query_mock
+            # Default result mock
+            self.result_mock = MagicMock()
+            self.mock_session.execute.return_value = self.result_mock
+            
+            # Default return values
+            self.result_mock.scalar.return_value = 0
+            self.result_mock.scalars.return_value.all.return_value = []
+            self.result_mock.all.return_value = []
+            self.result_mock.scalar_one_or_none.return_value = None
+            
+            # Keep query_mock for complex setups if needed, 
+            # but usually we just configure result_mock for execute()
+            self.query_mock = MagicMock()
 
         def set_stats_data(self, top_ops):
             """Configure data for /stats command."""
-            limit_mock = MagicMock()
-            limit_mock.all.return_value = top_ops
-            self.query_mock.limit.return_value = limit_mock
+            # The last query in cmd_stats calls .all()
+            self.result_mock.all.return_value = top_ops
 
         def set_user_wallets(self, user, wallets):
             """Configure data for /user_wallets command."""
-            self.query_mock.filter.return_value.one_or_none.return_value = user
-            self.query_mock.filter.return_value.all.return_value = wallets
+            # First query fetches user via scalar_one_or_none
+            # Second query fetches wallets via scalars().all()
+            
+            # We need to distinguish between calls or just return what's needed.
+            # Since user fetch calls scalar_one_or_none and wallets fetch calls scalars().all(),
+            # we can set them independently on the same mock object since they use different methods.
+            self.result_mock.scalar_one_or_none.return_value = user
+            self.result_mock.scalars.return_value.all.return_value = wallets
 
         def set_address_info(self, wallet_user_tuple):
             """Configure data for /address_info command."""
-            self.query_mock.join.return_value.filter.return_value.first.return_value = wallet_user_tuple
+            # This is tricky because it calls scalar_one_or_none twice (for wallet and for user)
+            # wallet_user_tuple should be (wallet, user)
+            wallet, user = wallet_user_tuple
+            self.result_mock.scalar_one_or_none.side_effect = [wallet, user]
 
     helper = AdminMockHelper(router_app_context)
     
@@ -218,14 +230,14 @@ async def test_cmd_address_info(mock_telegram, router_app_context, setup_admin_m
     dp.include_router(admin_router)
 
     wallet = MagicMock(user_id=111, use_pin=0, free_wallet=0, need_delete=0)
-    user = MagicMock(user_name="testuser")
+    user = MagicMock(user_name="testuser", user_id=111)
     setup_admin_mocks.set_address_info((wallet, user))
 
     await dp.feed_update(bot=router_app_context.bot, update=create_message_update(123, "/address_info GABC"), app_context=router_app_context)
     
     req = get_telegram_request(mock_telegram, "sendMessage")
-    assert "user_id: 111" in req["data"]["text"]
-    assert "@testuser" in req["data"]["text"]
+    assert "ID: 111" in req["data"]["text"]
+    assert "testuser" in req["data"]["text"]
 
 
 @pytest.mark.asyncio
@@ -235,7 +247,7 @@ async def test_cmd_delete_address(mock_telegram, router_app_context, setup_admin
     dp.include_router(admin_router)
 
     wallet = MagicMock(need_delete=0)
-    setup_admin_mocks.query_mock.filter.return_value.one_or_none.return_value = wallet
+    setup_admin_mocks.result_mock.scalar_one_or_none.return_value = wallet
 
     await dp.feed_update(bot=router_app_context.bot, update=create_message_update(123, "/delete_address GABC"), app_context=router_app_context)
     

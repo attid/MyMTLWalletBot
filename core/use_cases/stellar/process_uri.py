@@ -91,7 +91,7 @@ class ProcessStellarUri:
                 base_fee = 10000 
                 
                 transaction = TransactionBuilder(
-                    source_account=source_account,
+                    source_account=source_account,  # type: ignore[arg-type]
                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
                     base_fee=base_fee,
                 )

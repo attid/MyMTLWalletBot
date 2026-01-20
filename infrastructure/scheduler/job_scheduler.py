@@ -1,5 +1,5 @@
 from aiogram import Dispatcher
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
 
 from db.db_pool import DatabasePool
 from infrastructure.workers.message_worker import cmd_send_message_1m

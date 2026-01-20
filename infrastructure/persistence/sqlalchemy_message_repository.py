@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, and_
 from core.interfaces.repositories import IMessageRepository
@@ -8,7 +8,7 @@ class SqlAlchemyMessageRepository(IMessageRepository):
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def enqueue(self, user_id: int, text: str, use_alarm: int = 0, update_id: int = None, button_json: str = None) -> None:
+    async def enqueue(self, user_id: int, text: str, use_alarm: int = 0, update_id: Optional[int] = None, button_json: Optional[str] = None) -> None:
         new_message = MyMtlWalletBotMessages(
             user_id=user_id, 
             user_message=text,

@@ -554,7 +554,7 @@ class Effects:
 
 
 @dataclass
-class Links:
+class ResponseLinks:
     links_self: Optional[Account] = None
     account: Optional[Account] = None
     ledger: Optional[Account] = None
@@ -565,7 +565,7 @@ class Links:
     transaction: Optional[Account] = None
 
     @staticmethod
-    def from_dict(obj: Any) -> 'Links':
+    def from_dict(obj: Any) -> 'ResponseLinks':
         assert isinstance(obj, dict)
         links_self = from_union([Account.from_dict, from_none], obj.get("self"))
         account = from_union([Account.from_dict, from_none], obj.get("account"))
@@ -575,7 +575,7 @@ class Links:
         precedes = from_union([Account.from_dict, from_none], obj.get("precedes"))
         succeeds = from_union([Account.from_dict, from_none], obj.get("succeeds"))
         transaction = from_union([Account.from_dict, from_none], obj.get("transaction"))
-        return Links(links_self, account, ledger, operations, effects, precedes, succeeds, transaction)
+        return ResponseLinks(links_self, account, ledger, operations, effects, precedes, succeeds, transaction)
 
     def to_dict(self) -> dict:
         result: dict = {}
@@ -673,7 +673,7 @@ class MyResponse:
     max_fee: Optional[int] = None
     memo: Optional[str] = None
     memo_bytes: Optional[str] = None
-    links: Optional[Links] = None
+    links: Optional[ResponseLinks] = None
     id: Optional[str] = None
     paging_token: Optional[str] = None
     successful: Optional[bool] = None
@@ -706,7 +706,7 @@ class MyResponse:
         max_fee = from_union([from_none, lambda x: int(from_str(x))], obj.get("max_fee"))
         memo = from_union([from_str, from_none], obj.get("memo"))
         memo_bytes = from_union([from_str, from_none], obj.get("memo_bytes"))
-        links = from_union([Links.from_dict, from_none], obj.get("_links"))
+        links = from_union([ResponseLinks.from_dict, from_none], obj.get("_links"))
         id = from_union([from_str, from_none], obj.get("id"))
         paging_token = from_union([from_str, from_none], obj.get("paging_token"))
         successful = from_union([from_bool, from_none], obj.get("successful"))
@@ -746,7 +746,7 @@ class MyResponse:
                                        self.max_fee)
         result["memo"] = from_union([from_str, from_none], self.memo)
         result["memo_bytes"] = from_union([from_str, from_none], self.memo_bytes)
-        result["_links"] = from_union([lambda x: to_class(Links, x), from_none], self.links)
+        result["_links"] = from_union([lambda x: to_class(ResponseLinks, x), from_none], self.links)
         result["id"] = from_union([from_str, from_none], self.id)
         result["paging_token"] = from_union([from_str, from_none], self.paging_token)
         result["successful"] = from_union([from_bool, from_none], self.successful)

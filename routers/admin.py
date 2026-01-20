@@ -8,8 +8,8 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import MyMtlWalletBotUsers, MyMtlWalletBot, MyMtlWalletBotTransactions, MyMtlWalletBotCheque, \
     MyMtlWalletBotLog
@@ -41,23 +41,30 @@ def _pin_label(use_pin: int) -> str:
 
 
 @router.message(Command(commands=["stats"]))
-async def cmd_stats(message: types.Message, session: Session):
-    user_count = session.query(MyMtlWalletBotUsers).count()
-    wallet_count = session.query(MyMtlWalletBot).count()
-    transaction_count = session.query(MyMtlWalletBotTransactions).count()
-    cheque_count = session.query(MyMtlWalletBotCheque).count()
-    log_count = session.query(MyMtlWalletBotLog).count()
+async def cmd_stats(message: types.Message, session: AsyncSession):
+    user_count = (await session.execute(select(func.count()).select_from(MyMtlWalletBotUsers))).scalar() or 0
+    wallet_count = (await session.execute(select(func.count()).select_from(MyMtlWalletBot))).scalar() or 0
+    transaction_count = (await session.execute(select(func.count()).select_from(MyMtlWalletBotTransactions))).scalar() or 0
+    cheque_count = (await session.execute(select(func.count()).select_from(MyMtlWalletBotCheque))).scalar() or 0
+    log_count = (await session.execute(select(func.count()).select_from(MyMtlWalletBotLog))).scalar() or 0
 
     # Активность за последние 24 часа и неделю
-    activity_24h = session.query(MyMtlWalletBotLog).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=1)).count()
-    activity_7d = session.query(MyMtlWalletBotLog).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)).count()
+    activity_24h = (await session.execute(select(func.count()).select_from(MyMtlWalletBotLog).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=1)))).scalar() or 0
+    activity_7d = (await session.execute(select(func.count()).select_from(MyMtlWalletBotLog).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)))).scalar() or 0
 
     # Уникальные пользователи за последние 24 часа и неделю
-    unique_users_24h = session.query(MyMtlWalletBotLog.user_id).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=1)).distinct().count()
-    unique_users_7d = session.query(MyMtlWalletBotLog.user_id).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)).distinct().count()
+    unique_users_24h = (await session.execute(select(func.count(MyMtlWalletBotLog.user_id.distinct())).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=1)))).scalar() or 0
+    unique_users_7d = (await session.execute(select(func.count(MyMtlWalletBotLog.user_id.distinct())).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)))).scalar() or 0
 
     # Топ 5 операций за неделю
-    top_operations = session.query(MyMtlWalletBotLog.log_operation_info, func.count(MyMtlWalletBotLog.log_operation_info).label('count')).filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7)).group_by(MyMtlWalletBotLog.log_operation_info).order_by(func.count(MyMtlWalletBotLog.log_operation_info).desc()).limit(5).all()
+    top_operations_query = (
+        select(MyMtlWalletBotLog.log_operation_info, func.count(MyMtlWalletBotLog.log_operation_info).label('count'))
+        .filter(MyMtlWalletBotLog.log_dt > datetime.now() - timedelta(days=7))
+        .group_by(MyMtlWalletBotLog.log_operation_info)
+        .order_by(func.count(MyMtlWalletBotLog.log_operation_info).desc())
+        .limit(5)
+    )
+    top_operations = (await session.execute(top_operations_query)).all()
     top_operations_str = "\n".join([f"{op}: {count}" for op, count in top_operations])
 
     stats_message = (
@@ -79,9 +86,9 @@ async def cmd_stats(message: types.Message, session: Session):
 
 @router.message(Command(commands=["exit"]))
 @router.message(Command(commands=["restart"]))
-async def cmd_exit(message: types.Message, state: FSMContext, session: Session):
+async def cmd_exit(message: types.Message, state: FSMContext, session: AsyncSession):
     my_state = await state.get_state()
-    if message.from_user.username == "itolstov":
+    if message.from_user and message.from_user.username == "itolstov":
         if my_state == ExitState.need_exit:
             await state.set_state(None)
             await message.reply("Chao :[[[")
@@ -94,8 +101,8 @@ async def cmd_exit(message: types.Message, state: FSMContext, session: Session):
 
 
 @router.message(Command(commands=["horizon"]))
-async def cmd_horizon(message: types.Message, state: FSMContext, session: Session):
-    if message.from_user.username == "itolstov":
+async def cmd_horizon(message: types.Message, state: FSMContext, session: AsyncSession):
+    if message.from_user and message.from_user.username == "itolstov":
         if config.horizon_url in horizont_urls:
             config.horizon_url = horizont_urls[(horizont_urls.index(config.horizon_url) + 1) % len(horizont_urls)]
         else:
@@ -105,8 +112,8 @@ async def cmd_horizon(message: types.Message, state: FSMContext, session: Sessio
 
 
 @router.message(Command(commands=["horizon_rw"]))
-async def cmd_horizon_rw(message: types.Message, state: FSMContext, session: Session):
-    if message.from_user.username == "itolstov":
+async def cmd_horizon_rw(message: types.Message, state: FSMContext, session: AsyncSession):
+    if message.from_user and message.from_user.username == "itolstov":
         if config.horizon_url_rw in horizont_urls:
             config.horizon_url_rw = horizont_urls[(horizont_urls.index(config.horizon_url_rw) + 1) % len(horizont_urls)]
         else:
@@ -129,20 +136,20 @@ async def cmd_delete_file(filename):
 
 @router.message(Command(commands=["log"]))
 async def cmd_log(message: types.Message, app_context: AppContext):
-    if message.from_user.username == "itolstov":
+    if message.from_user and message.from_user.username == "itolstov":
         await cmd_send_file(app_context.bot, message, 'mmwb.log')
         await cmd_send_file(app_context.bot, message, 'mmwb_check_transaction.log')
 
 
 @router.message(Command(commands=["err"]))
 async def cmd_err(message: types.Message, app_context: AppContext):
-    if message.from_user.username == "itolstov":
+    if message.from_user and message.from_user.username == "itolstov":
         await cmd_send_file(app_context.bot, message, 'MyMTLWallet_bot.err')
 
 
 @router.message(Command(commands=["clear"]))
 async def cmd_clear(message: types.Message):
-    if message.from_user.username == "itolstov":
+    if message.from_user and message.from_user.username == "itolstov":
         await cmd_delete_file('MMWB.err')
         await cmd_delete_file('MMWB.log')
 
@@ -153,7 +160,9 @@ async def cmd_fee(message: types.Message):
 
 
 @router.message(Command(commands=["user_wallets"]))
-async def cmd_user_wallets(message: types.Message, session: Session):
+async def cmd_user_wallets(message: types.Message, session: AsyncSession):
+    if not message.text:
+        return
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Использование: /user_wallets @username_or_id")
@@ -165,15 +174,15 @@ async def cmd_user_wallets(message: types.Message, session: Session):
         user_id = int(target)
     if user_id is None:
         user_name = target.lstrip('@').lower()
-        user = session.query(MyMtlWalletBotUsers).filter(
+        user = (await session.execute(select(MyMtlWalletBotUsers).filter(
             MyMtlWalletBotUsers.user_name == user_name
-        ).one_or_none()
+        ))).scalar_one_or_none()
         if user is None:
             await message.answer("Пользователь не найден")
             return
         user_id = user.user_id
 
-    wallets = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id).all()
+    wallets = (await session.execute(select(MyMtlWalletBot).filter(MyMtlWalletBot.user_id == user_id))).scalars().all()
     if not wallets:
         await message.answer("Кошельки не найдены")
         return
@@ -193,44 +202,39 @@ async def cmd_user_wallets(message: types.Message, session: Session):
 
 
 @router.message(Command(commands=["address_info"]))
-async def cmd_address_info(message: types.Message, session: Session):
+async def cmd_address_info(message: types.Message, session: AsyncSession):
+    if not message.text:
+        return
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Использование: /address_info address")
         return
 
     address = args[1]
-    wallet = session.query(MyMtlWalletBot, MyMtlWalletBotUsers).join(
-        MyMtlWalletBotUsers, MyMtlWalletBot.user_id == MyMtlWalletBotUsers.user_id, isouter=True
-    ).filter(MyMtlWalletBot.public_key == address).first()
-
+    wallet = (await session.execute(select(MyMtlWalletBot).filter(MyMtlWalletBot.public_key == address))).scalar_one_or_none()
     if wallet is None:
         await message.answer("Адрес не найден")
         return
 
-    wallet_row, user_row = wallet
-    pin_label = _pin_label(wallet_row.use_pin or 0)
-    free_label = "free" if wallet_row.free_wallet == 1 else "paid"
-    delete_label = "deleted" if wallet_row.need_delete == 1 else "active"
-    username = user_row.user_name if user_row else None
-    username_line = f"username: @{username}" if username else "username: -"
-    await message.answer(
-        f"user_id: {wallet_row.user_id}\n"
-        f"{username_line}\n"
-        f"pin: {pin_label}\n"
-        f"wallet: {free_label}, {delete_label}"
-    )
+    user = (await session.execute(select(MyMtlWalletBotUsers).filter(MyMtlWalletBotUsers.user_id == wallet.user_id))).scalar_one_or_none()
+    if user is None:
+        await message.answer(f"Владелец не найден (ID: {wallet.user_id})")
+        return
+
+    await message.answer(f"Владелец: {user.user_name} (ID: {user.user_id})")
 
 
 @router.message(Command(commands=["delete_address"]))
-async def cmd_delete_address(message: types.Message, session: Session):
+async def cmd_delete_address(message: types.Message, session: AsyncSession):
+    if not message.text:
+        return
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Использование: /delete_address address")
         return
 
     address = args[1]
-    wallet = session.query(MyMtlWalletBot).filter(MyMtlWalletBot.public_key == address).one_or_none()
+    wallet = (await session.execute(select(MyMtlWalletBot).filter(MyMtlWalletBot.public_key == address))).scalar_one_or_none()
     if wallet is None:
         await message.answer("Адрес не найден")
         return
@@ -240,7 +244,8 @@ async def cmd_delete_address(message: types.Message, session: Session):
         return
 
     wallet.need_delete = 1
-    session.commit()
+    await session.commit()
+    await message.answer("Адрес помечен удалённым")
     await message.answer("Адрес помечен удалённым")
 
 
@@ -259,7 +264,7 @@ async def cmd_help(message: types.Message):
 
 # @router.message(Command(commands=["update"]))
 # async def cmd_update(message: types.Message):
-#     if message.from_user.username == "itolstov":
+#     if message.from_user and message.from_user.username == "itolstov":
 #         for rec in fb.execsql('select distinct m.user_id, m.user_name from mymtlwalletbot_user m where m.user_id > 0'):
 #             try:
 #                 username = await bot.get_chat(rec[0])
@@ -275,7 +280,7 @@ async def cmd_help(message: types.Message):
 
 # @router.message(Command(commands=["update2"]))
 # async def cmd_update2(message: types.Message):
-#     if message.from_user.username == "itolstov":
+#     if message.from_user and message.from_user.username == "itolstov":
 #         select = fb.execsql('select distinct m.user_id, m.public_key from mymtlwalletbot m '
 #                             'where m.user_id > 0 and m.default_wallet = 1 and m.free_wallet = 1')
 #         await message.answer(str(len(select)))
@@ -291,7 +296,7 @@ async def cmd_help(message: types.Message):
 
 # @router.message(Command(commands=["update3"]))
 # async def cmd_update3(message: types.Message):
-#     if message.from_user.username == "itolstov":
+#     if message.from_user and message.from_user.username == "itolstov":
 #         select = fb.execsql('select distinct m.user_id, m.public_key, m.credit from mymtlwalletbot m '
 #                             'where m.user_id > 0 and m.default_wallet = 1 and m.free_wallet = 1 and m.credit = 3')
 #         await message.answer(str(len(select)))
@@ -301,7 +306,7 @@ async def cmd_help(message: types.Message):
 
 @router.message(Command(commands=["test"]))
 async def cmd_test(message: types.Message, app_context: AppContext):
-    if message.from_user.username == "itolstov":
+    if message.from_user and message.from_user.username == "itolstov":
         with suppress(TelegramBadRequest):
             chat = await app_context.bot.get_chat(215155653)
             await message.answer(chat.json())

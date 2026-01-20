@@ -82,6 +82,7 @@ class TonService(ITonService):
 
     async def _is_deployed(self) -> bool:
         """ Check if the wallet is deployed on the blockchain. """
+        assert self.wallet is not None, "Wallet must be initialized"
         acc = await self.client.get_raw_account(self.wallet.address.to_str())
         return bool(getattr(acc, "code", None))
 
@@ -90,6 +91,7 @@ class TonService(ITonService):
         """
         Returns the TON balance in TON units (Decimal).
         """
+        assert self.wallet is not None, "Wallet must be initialized"
         acc = await self.client.get_raw_account(self.wallet.address.to_str())
         # acc.balance — int in nanoTON (via V3 indexer)
         return self._to_ton(acc.balance)
@@ -98,6 +100,7 @@ class TonService(ITonService):
         """
         Returns the USDT balance (Decimal) with 6 decimals.
         """
+        assert self.wallet is not None, "Wallet must be initialized"
         #if not await self._is_deployed():
         #    return Decimal(0)
 
@@ -153,6 +156,7 @@ class TonService(ITonService):
         if await self._is_deployed():
             return
 
+        assert self.wallet is not None, "Wallet must be initialized"
         await self.wallet.deploy()
 
         for _ in range(30):
@@ -169,6 +173,7 @@ class TonService(ITonService):
         """
         await self.ensure_deployed()
 
+        assert self.wallet is not None, "Wallet must be initialized after ensure_deployed"
         tx_hash = await self.wallet.transfer(
             destination=to_address,
             amount=float(amount_ton),  # the library accepts float for convenience
@@ -183,6 +188,7 @@ class TonService(ITonService):
         Returns tx_hash (string).
         """
         await self.ensure_deployed()
+        assert self.wallet is not None, "Wallet must be initialized after ensure_deployed"
         tx_hash = await self.wallet.transfer_message(
             message=TransferJettonMessage(
                 destination=to_address,
@@ -207,6 +213,7 @@ class TonService(ITonService):
             boc = base64.urlsafe_b64decode(body_b64url + "=" * (-len(body_b64url) % 4))
             body = Cell.one_from_boc(boc)  # payload из BOC
 
+        assert self.wallet is not None, "Wallet must be initialized"
         tx = await self.wallet.transfer(
             destination=to_addr,
             amount=amount_nano / 1e9,  # в TON

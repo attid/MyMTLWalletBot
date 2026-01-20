@@ -24,7 +24,8 @@ class SqlAlchemyAddressBookRepository(IAddressBookRepository):
     async def get_by_id(self, entry_id: int, user_id: int) -> Optional[AddressBookEntry]:
         """Get a specific address book entry."""
         stmt = select(MyMtlWalletBotBook).where(
-            MyMtlWalletBotBook.id == entry_id,
+            MyMtlWalletBotBook.id == entry_id
+        ).where(
             MyMtlWalletBotBook.user_id == user_id
         )
         result = await self.session.execute(stmt)
@@ -47,7 +48,8 @@ class SqlAlchemyAddressBookRepository(IAddressBookRepository):
     async def delete(self, entry_id: int, user_id: int) -> None:
         """Delete an address book entry."""
         stmt = select(MyMtlWalletBotBook).where(
-            MyMtlWalletBotBook.id == entry_id,
+            MyMtlWalletBotBook.id == entry_id
+        ).where(
             MyMtlWalletBotBook.user_id == user_id
         )
         result = await self.session.execute(stmt)
@@ -57,9 +59,10 @@ class SqlAlchemyAddressBookRepository(IAddressBookRepository):
             await self.session.commit()
     
     def _to_entity(self, db_entry: MyMtlWalletBotBook) -> AddressBookEntry:
+        from typing import cast
         return AddressBookEntry(
-            id=db_entry.id,
-            user_id=db_entry.user_id,
-            address=db_entry.address,
-            name=db_entry.name
+            id=cast(int, db_entry.id),
+            user_id=cast(int, db_entry.user_id),
+            address=cast(str, db_entry.address),
+            name=cast(str, db_entry.name)
         )

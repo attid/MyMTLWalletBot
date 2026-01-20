@@ -19,7 +19,7 @@ def get_return_button(chat_id, text=None, callback=None, *, app_context: AppCont
     return [InlineKeyboardButton(text=text, callback_data=callback)]
 
 
-def get_kb_return(user_id: Union[InlineKeyboardMarkup, InlineKeyboardButton, int],
+def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int],
                   add_buttons=None, *, app_context: AppContext) -> InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
@@ -50,7 +50,7 @@ def get_hide_notification_keyboard(user_id: int, operation_id: str,
     return keyboard
 
 
-def get_kb_del_return(user_id: Union[InlineKeyboardMarkup, InlineKeyboardButton, int], *, app_context: AppContext) -> InlineKeyboardMarkup:
+def get_kb_del_return(user_id: Union[types.CallbackQuery, types.Message, int], *, app_context: AppContext) -> InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
     buttons = [get_return_button(user_id, text=my_gettext(user_id, 'kb_delete_and_return', app_context=app_context), callback='DeleteReturn', app_context=app_context)]
@@ -134,7 +134,8 @@ def get_kb_swap_confirm(user_id: int, data: dict, *, app_context: AppContext) ->
         btn_txt = my_gettext(
             user_id,
             'kb_cancel_offers',
-            (cancel_offers_state, data.get('send_asset_code'))
+            (cancel_offers_state, data.get('send_asset_code')),
+            app_context=app_context
         )
         btn = [types.InlineKeyboardButton(text=btn_txt, callback_data='CancelOffers')]
         buttons.append(btn)
@@ -215,7 +216,5 @@ def _is_valid_telegram_url(url: str) -> bool:
     except Exception:
         return False
 
-
-class HideNotificationCallbackData(CallbackData, prefix="hide_notification"):
-    operation_id: str
-    wallet_id: int
+if __name__ == "__main__":
+    pass

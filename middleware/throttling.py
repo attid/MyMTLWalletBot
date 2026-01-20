@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import *
 from aiogram import BaseMiddleware
-from aiogram.types import Message
+from aiogram.types import Message, TelegramObject, CallbackQuery
 import redis.asyncio.client
 import time
 from loguru import logger
@@ -53,8 +53,8 @@ class ThrottlingMiddleware(BaseMiddleware):
 
     async def __call__(
             self,
-            handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
-            event: Message,
+            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+            event: TelegramObject,
             data: Dict[str, Any]
     ) -> Any:
 
@@ -68,9 +68,25 @@ class ThrottlingMiddleware(BaseMiddleware):
 
     async def on_process_event(
             self,
-            event: Message,
+            event: TelegramObject,
             data: Dict[str, Any],
     ) -> Any:
+        if not isinstance(event, (Message, CallbackQuery)):
+            return
+
+        user = event.from_user
+        if not user:
+            return
+
+        chat_id = None
+        if isinstance(event, Message):
+            chat_id = event.chat.id
+        elif isinstance(event, CallbackQuery) and event.message:
+            chat_id = event.message.chat.id
+
+        if chat_id is None:
+            return
+
         # User level throttling
         user_limit = getattr(data["handler"].callback, "throttling_rate_limit", None)
         user_key = getattr(data["handler"].callback, "throttling_key", f"{self.prefix}_message")
@@ -82,10 +98,10 @@ class ThrottlingMiddleware(BaseMiddleware):
         # Use ThrottleManager.throttle method.
         try:
             if chat_limit is not None:
-                await self.throttle_manager.throttle(chat_key, rate=chat_limit, user_id=None, chat_id=event.chat.id)
+                await self.throttle_manager.throttle(chat_key, rate=chat_limit, user_id=None, chat_id=chat_id)
             if user_limit is not None:
-                await self.throttle_manager.throttle(user_key, rate=user_limit, user_id=event.from_user.id,
-                                                     chat_id=event.chat.id)
+                await self.throttle_manager.throttle(user_key, rate=user_limit, user_id=user.id,
+                                                     chat_id=chat_id)
         except Throttled as t:
             # Execute action
             await self.event_throttled(event, t)
@@ -94,13 +110,18 @@ class ThrottlingMiddleware(BaseMiddleware):
             raise CancelHandler()
 
     @staticmethod
-    async def event_throttled(event: Message, throttled: Throttled):
+    async def event_throttled(event: TelegramObject, throttled: Throttled):
+        if not isinstance(event, (Message, CallbackQuery)):
+            return
         # Calculate how many times is left till the block ends
         delta = throttled.rate - throttled.delta
 
         # Prevent flooding
         # if throttled.exceeded_count <= 2:
-        await event.answer(f'Too many events.\nTry again in {delta:.2f} seconds.')
+        if isinstance(event, Message):
+            await event.answer(f'Too many events.\nTry again in {delta:.2f} seconds.')
+        elif isinstance(event, CallbackQuery):
+            await event.answer(f'Too many events.\nTry again in {delta:.2f} seconds.', show_alert=True)
 
 
 class ThrottleManager:
@@ -112,7 +133,7 @@ class ThrottleManager:
     def __init__(self, redis: redis.asyncio.client.Redis):
         self.redis = redis
 
-    async def throttle(self, key: str, rate: float, user_id: int = None, chat_id: int = None):
+    async def throttle(self, key: str, rate: float, user_id: Optional[int] = None, chat_id: Optional[int] = None):
         if rate == 0:
             return True  # No throttling applied
 
@@ -122,12 +143,12 @@ class ThrottleManager:
         else:
             bucket_name = f'throttle_{key}_{chat_id}'
 
-        data = await self.redis.hmget(bucket_name, self.bucket_keys)
-        data = {
+        raw_data = await self.redis.hmget(bucket_name, self.bucket_keys)
+        data: Dict[str, Any] = {
             k: float(v.decode())
             if isinstance(v, bytes)
             else v
-            for k, v in zip(self.bucket_keys, data)
+            for k, v in zip(self.bucket_keys, raw_data)
             if v is not None
         }
 
@@ -141,11 +162,11 @@ class ThrottleManager:
         data["LAST_CALL"] = now
         data["DELTA"] = delta
         if not result:
-            data["EXCEEDED_COUNT"] += 1
+            data["EXCEEDED_COUNT"] = data.get("EXCEEDED_COUNT", 0) + 1
         else:
             data["EXCEEDED_COUNT"] = 1
 
-        await self.redis.hset(bucket_name, mapping=data)
+        await self.redis.hset(bucket_name, mapping=cast(Dict[str, Union[bytes, float, int, str]], data))  # type: ignore[arg-type]
 
         if not result:
             raise Throttled(key=key, chat=chat_id, user=user_id, **data)

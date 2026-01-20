@@ -97,10 +97,11 @@ class UseCaseFactory(IUseCaseFactory):
         result = await use_case.execute(...)
     """
 
-    def __init__(self, repository_factory: IRepositoryFactory, stellar_service: IStellarService, encryption_service: IEncryptionService):
+    def __init__(self, repository_factory: IRepositoryFactory, stellar_service: IStellarService, encryption_service: IEncryptionService, cheque_public_key: str):
         self.repository_factory = repository_factory
         self.stellar_service = stellar_service
         self.encryption_service = encryption_service
+        self.cheque_public_key = cheque_public_key
 
     def create_get_wallet_balance(self, session: Any):
         from core.use_cases.wallet.get_balance import GetWalletBalance
@@ -170,12 +171,12 @@ class UseCaseFactory(IUseCaseFactory):
     def create_claim_cheque(self, session: Any):
         from core.use_cases.cheque.claim_cheque import ClaimCheque
         repo = self.repository_factory.get_wallet_repository(session)
-        user_repo = self.repository_factory.get_user_repository(session)
         cheque_repo = self.repository_factory.get_cheque_repository(session)
-        return ClaimCheque(repo, user_repo, cheque_repo, self.stellar_service)
+        add_wallet = self.create_add_wallet(session)
+        return ClaimCheque(repo, cheque_repo, self.stellar_service, self.encryption_service, add_wallet, self.cheque_public_key)
 
     def create_cancel_cheque(self, session: Any):
         from core.use_cases.cheque.cancel_cheque import CancelCheque
         repo = self.repository_factory.get_wallet_repository(session)
         cheque_repo = self.repository_factory.get_cheque_repository(session)
-        return CancelCheque(repo, cheque_repo, self.stellar_service)
+        return CancelCheque(repo, cheque_repo, self.stellar_service, self.encryption_service, self.cheque_public_key)

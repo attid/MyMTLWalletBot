@@ -1,3 +1,4 @@
+from typing import Optional, List
 from contextlib import suppress
 import asyncio
 from decimal import Decimal
@@ -5,12 +6,11 @@ from decimal import Decimal
 import base58
 import requests
 from loguru import logger
-from tronpy import Tron, AsyncTron, exceptions
-from tronpy.keys import PrivateKey, is_address
-from tronpy.providers import HTTPProvider, AsyncHTTPProvider
+from tronpy import Tron, AsyncTron, exceptions  # type: ignore
+from tronpy.keys import PrivateKey, is_address, to_hex_address  # type: ignore
+from tronpy.providers import HTTPProvider, AsyncHTTPProvider  # type: ignore
 from other.config_reader import config
 from other.web_tools import get_web_request
-from tronpy.keys import to_hex_address
 from dataclasses import dataclass
 
 TRX_TO_SUN = 10 ** 6  # Константа для конвертации TRX в SUN
@@ -44,10 +44,10 @@ class EnergyObject:
     def energy_per_trx(self) -> float:
         return self.total_energy_limit / self.total_energy_weight
 
-    def calculate_energy_amount_in_trx(self, energy_amount: int = None) -> int:
+    def calculate_energy_amount_in_trx(self, energy_amount: Optional[int] = None) -> int:
         """Вычисляет количество TRX для указанного или текущего energy_amount."""
         if energy_amount is None:
-            energy_amount = self.energy_amount
+            energy_amount = int(self.energy_amount)
         return int(energy_amount / self.energy_per_trx) + 1
 
     @property
@@ -65,7 +65,6 @@ def create_trc_private_key():
 def show_balance(public_key):
     from tronpy import Tron
     from tronpy.providers import HTTPProvider
-
     client = Tron(HTTPProvider(api_key=api_key))  # Use mainnet(trongrid) with a single api_key
 
     s = client.get_account_balance(public_key)
@@ -204,9 +203,12 @@ def tron_hex_decode(hex_address):
     return encoded.decode('utf-8')
 
 
-async def send_trx_async(public_key_to=None, amount=0, private_key_from=tron_master_key, private_key_to=None):
+async def send_trx_async(public_key_to: Optional[str] = None, amount: float = 0, private_key_from: str = tron_master_key, private_key_to: Optional[str] = None):
     if private_key_to:
         public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+
+    if not public_key_to:
+        raise ValueError("public_key_to must be provided")
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         private_key = PrivateKey(bytes.fromhex(private_key_from))
@@ -222,10 +224,13 @@ async def send_trx_async(public_key_to=None, amount=0, private_key_from=tron_mas
         await txn_ret.wait()
 
 
-async def send_usdt_async(public_key_to=None, amount=0, private_key_from=tron_master_key, private_key_to=None,
-                          sun_fee=0):
+async def send_usdt_async(public_key_to: Optional[str] = None, amount: float = 0, private_key_from: str = tron_master_key, private_key_to: Optional[str] = None,
+                          sun_fee: int = 0):
     if private_key_to:
         public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+
+    if not public_key_to:
+        raise ValueError("public_key_to must be provided")
 
     if sun_fee == 0:
         sun_fee = 30_000_000  # 10m sum = 10 trx ~ 1.1 usdt
@@ -258,9 +263,12 @@ async def send_usdt_async(public_key_to=None, amount=0, private_key_from=tron_ma
             return False, transaction_hash
 
 
-async def get_usdt_balance(public_key=None, private_key=None):
+async def get_usdt_balance(public_key: Optional[str] = None, private_key: Optional[str] = None):
     if private_key:
         public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    if not public_key:
+        raise ValueError("Either public_key or private_key must be provided")
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         contract = await client.get_contract(usdt_contract)
@@ -276,9 +284,12 @@ def check_valid_trx(public_key):
         return False
 
 
-async def get_trx_balance(public_key=None, private_key=None):
+async def get_trx_balance(public_key: Optional[str] = None, private_key: Optional[str] = None):
     if private_key:
         public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    if not public_key:
+        raise ValueError("Either public_key or private_key must be provided")
 
     balance = 0
     with suppress(exceptions.AddressNotFound):
@@ -287,9 +298,12 @@ async def get_trx_balance(public_key=None, private_key=None):
     return balance
 
 
-async def get_last_usdt_transaction_sum(public_key=None, private_key=None):
+async def get_last_usdt_transaction_sum(public_key: Optional[str] = None, private_key: Optional[str] = None):
     if private_key:
         public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+
+    if not public_key:
+        raise ValueError("Either public_key or private_key must be provided")
 
     url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
           f"only_confirmed=true&limit=10&contract_address={usdt_contract}"
@@ -466,8 +480,7 @@ async def get_energy_fee() -> int:
 
 
 def test4():
-    from tronpy import Tron
-
+    from tronpy import Tron  
     client = Tron(HTTPProvider(api_key=api_key))
     contract = client.get_contract(usdt_contract)
 
@@ -542,7 +555,7 @@ async def set_allowance(amount=None, private_key=None):
         await txn_ret.wait()
 
 
-async def check_unconfirmed_usdt_transactions(public_key: str = None, private_key: str = None) -> bool:
+async def check_unconfirmed_usdt_transactions(public_key: str | None = None, private_key: str | None = None) -> bool:
     """
     Проверяет наличие неподтвержденных транзакций USDT.
 
@@ -614,8 +627,8 @@ async def get_tron_price_from_coingecko() -> float:
 
 async def delegate_energy(
     energy_object: EnergyObject,
-    public_key_to: str = None,
-    private_key_to: str = None,
+    public_key_to: Optional[str] = None,
+    private_key_to: Optional[str] = None,
     private_key_from: str = tron_master_key,
     undo: bool = False
 ):

@@ -19,7 +19,7 @@ class SqlAlchemyNotificationRepository(INotificationRepository):
             user_id=user_id,
             public_key=public_key,
             asset_code=asset_code,
-            min_amount=min_amount,
+            min_amount=float(min_amount),  # type: ignore
             operation_type=operation_type
         )
         self.session.add(new_filter)
@@ -34,10 +34,14 @@ class SqlAlchemyNotificationRepository(INotificationRepository):
     async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str], 
                            min_amount: float, operation_type: str) -> Optional[NotificationFilter]:
         stmt = select(NotificationFilter).where(
-            NotificationFilter.user_id == user_id,
-            NotificationFilter.public_key == public_key,
-            NotificationFilter.asset_code == asset_code,
-            NotificationFilter.min_amount == min_amount,
+            NotificationFilter.user_id == user_id
+        ).where(
+            NotificationFilter.public_key == public_key
+        ).where(
+            NotificationFilter.asset_code == asset_code
+        ).where(
+            NotificationFilter.min_amount == min_amount
+        ).where(
             NotificationFilter.operation_type == operation_type
         )
         result = await self.session.execute(stmt)

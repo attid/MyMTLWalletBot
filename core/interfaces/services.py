@@ -29,17 +29,18 @@ class IStellarService(ABC):
         source_account_id: str, 
         destination_account_id: str, 
         asset_code: str, 
-        asset_issuer: Optional[str], 
+        asset_issuer: str | None, 
         amount: str, 
-        memo: Optional[str] = None,
-        sequence: Optional[int] = None,
-        cancel_offers: bool = False
+        memo: str | None = None,
+        sequence: int | None = None,
+        cancel_offers: bool = False,
+        create_account: bool = False
     ) -> str:
         """Build a payment transaction XDR (unsigned)."""
         pass
     
     @abstractmethod
-    def check_account_exists(self, account_id: str) -> bool:
+    async def check_account_exists(self, account_id: str) -> bool:
         """Check if an account exists on the network."""
         pass
 
@@ -51,7 +52,7 @@ class IStellarService(ABC):
         send_amount: str,
         receive_asset: Asset,
         receive_amount: str,
-        path: List[Asset] = [],
+        path: list[Asset] = [],
         strict_receive: bool = False,
         cancel_offers: bool = False
     ) -> str:
@@ -77,7 +78,7 @@ class IStellarService(ABC):
         source_account_id: str,
         asset_code: str,
         asset_issuer: str,
-        limit: Optional[str] = None
+        limit: str | None = None
     ) -> str:
         """Build a change trust transaction."""
         pass
@@ -86,7 +87,7 @@ class IStellarService(ABC):
     async def build_manage_data_transaction(
         self,
         source_account_id: str,
-        data: Dict[str, Optional[str]]
+        data: dict[str, str | None]
     ) -> str:
         """Build a transaction to manage data entries.
         
@@ -97,7 +98,7 @@ class IStellarService(ABC):
         pass
     
     @abstractmethod
-    async def sign_transaction(self, transaction_envelope, secret: str) -> str:
+    async def sign_transaction(self, transaction_envelope: Any, secret: str) -> str:
         """Sign a transaction envelope with a secret key."""
         pass
 
@@ -107,22 +108,22 @@ class IStellarService(ABC):
         pass
         
     @abstractmethod
-    def create_payment_op(self, destination: str, asset_code: str, asset_issuer: Optional[str], amount: str, source: Optional[str] = None):
+    def create_payment_op(self, destination: str, asset_code: str, asset_issuer: str | None, amount: str, source: str | None = None) -> Any:
         """Create a payment operation."""
         pass
 
     @abstractmethod
-    def create_create_account_op(self, destination: str, starting_balance: str, source: Optional[str] = None):
+    def create_create_account_op(self, destination: str, starting_balance: str, source: str | None = None) -> Any:
         """Create a create account operation."""
         pass
 
     @abstractmethod
-    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: str = None, source: Optional[str] = None):
+    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: str | None = None, source: str | None = None) -> Any:
         """Create a change trust operation."""
         pass
 
     @abstractmethod
-    async def build_transaction(self, source_public_key: str, operations: list, memo: str = None):
+    async def build_transaction(self, source_public_key: str, operations: list[Any], memo: str | None = None) -> Any:
         """Build a transaction with multiple operations."""
         pass
 
@@ -132,7 +133,7 @@ class IStellarService(ABC):
         source_asset: Asset,
         source_amount: str,
         destination_asset: Asset
-    ) -> List[Asset]:
+    ) -> list[Asset]:
         """Find a strict send payment path."""
         pass
 
@@ -156,6 +157,46 @@ class IStellarService(ABC):
         """Get keypair from mnemonic phrase."""
         pass
 
+    @abstractmethod
+    async def check_xdr(self, xdr: str, for_free_account: bool = False) -> str | None:
+        """Check XDR validity."""
+        pass
+
+    @abstractmethod
+    async def user_sign(self, session: Any, xdr: str, user_id: int, pin: str) -> str:
+        """Sign XDR using user secrets."""
+        pass
+
+    @abstractmethod
+    async def get_user_keypair(self, session: Any, user_id: int, pin: str) -> Any:
+        """Get user keypair."""
+        pass
+
+    @abstractmethod
+    async def get_user_account(self, session: Any, user_id: int) -> Any:
+        """Get user account details."""
+        pass
+
+    @abstractmethod
+    async def check_account(self, public_key: str) -> Any:
+        """Check account details."""
+        pass
+
+    @abstractmethod
+    async def is_free_wallet(self, session: Any, user_id: int) -> bool:
+        """Check if wallet is free."""
+        pass
+
+    @abstractmethod
+    async def change_password(self, session: Any, user_id: int, user_id_str: str, pin: str, pin_type: int) -> Any:
+        """Change wallet password."""
+        pass
+
+    @abstractmethod
+    async def send_xdr_async(self, xdr: str) -> dict[str, Any]:
+        """Send transaction asynchronously."""
+        pass
+
 
 class ITonService(ABC):
     @abstractmethod
@@ -168,6 +209,21 @@ class ITonService(ABC):
         """Generate a new TON wallet returning (wallet_obj, mnemonic) without storing state."""
         pass
     
+    @abstractmethod
+    def from_mnemonic(self, mnemonic: str):
+        """Import a wallet from a mnemonic."""
+        pass
+
+    @abstractmethod
+    async def send_ton(self, to_address: str, amount_ton: Any, comment: str = "") -> str:
+        """Send TON."""
+        pass
+
+    @abstractmethod
+    async def send_usdt(self, to_address: str, amount_usdt: Any, comment: str = "") -> str:
+        """Send USDT."""
+        pass
+
     @property
     def wallet(self):
         """Get the wallet object."""

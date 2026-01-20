@@ -72,11 +72,9 @@ def cut_text_to_28_bytes(text: str) -> str:
 
 def is_valid_stellar_address(address: str) -> bool:
     """Validate Stellar address format."""
-    from stellar_sdk import StrKey, MuxedAccount
+    from stellar_sdk import StrKey
     try:
         if StrKey.is_valid_ed25519_public_key(address):
-            return True
-        if StrKey.is_valid_med25519_public_key(address):
             return True
         return False
     except Exception:
@@ -134,28 +132,37 @@ def decode_data_value(data_value: str):
 async def parse_pay_stellar_uri(uri_data: str):
     """
     Parse a Stellar payment URI (web+stellar:pay) and extract parameters.
-    
+
     Args:
         uri_data (str): The Stellar payment URI string
-        
+
     Returns:
         dict: Dictionary containing parsed payment parameters
     """
     from urllib.parse import urlparse, parse_qs
-    
+
     parsed = urlparse(uri_data)
     query_parameters = parse_qs(parsed.query)
 
     # Extract required parameters
-    destination = query_parameters.get("destination")[0]
-    amount = query_parameters.get("amount")[0]
-    asset_code = query_parameters.get("asset_code")[0]
-    asset_issuer = query_parameters.get("asset_issuer")[0]
+    destination_list = query_parameters.get("destination")
+    amount_list = query_parameters.get("amount")
+    asset_code_list = query_parameters.get("asset_code")
+    asset_issuer_list = query_parameters.get("asset_issuer")
+
+    if not (destination_list and amount_list and asset_code_list and asset_issuer_list):
+        raise ValueError("Missing required URI parameters")
+
+    destination = destination_list[0]
+    amount = amount_list[0]
+    asset_code = asset_code_list[0]
+    asset_issuer = asset_issuer_list[0]
 
     # Extract optional memo
-    memo = query_parameters.get("memo")
-    if memo:
-        memo = memo[0]
+    memo = None
+    memo_list = query_parameters.get("memo")
+    if memo_list:
+        memo = memo_list[0]
 
     return {
         'destination': destination,

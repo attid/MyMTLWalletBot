@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any
-from core.domain.entities import User, Wallet
+from typing import List, Optional, Any, TYPE_CHECKING, Callable
+from core.domain.entities import User, Wallet, AddressBookEntry, Cheque
+
+if TYPE_CHECKING:
+    from db.models import NotificationFilter, TOperations, MyMtlWalletBotMessages
 
 class IUserRepository(ABC):
     @abstractmethod
@@ -16,6 +19,11 @@ class IUserRepository(ABC):
     @abstractmethod
     async def update(self, user: User) -> User:
         """Update an existing user."""
+        pass
+
+    @abstractmethod
+    async def update_lang(self, user_id: int, lang: str):
+        """Update user language."""
         pass
 
     @abstractmethod
@@ -46,8 +54,8 @@ class IUserRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_usdt_key(self, user_id: int) -> tuple[Optional[str], int]:
-        """Get USDT address and amount."""
+    async def get_usdt_key(self, user_id: int, create_func: Optional[Callable] = None, user_name: Optional[str] = None) -> tuple[Optional[str], int]:
+        """Get or create user's USDT private key and balance."""
         pass
 
     @abstractmethod
@@ -123,7 +131,7 @@ class IWalletRepository(ABC):
         pass
 
     @abstractmethod
-    async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: int = None) -> None:
+    async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: Optional[int] = None) -> None:
         """Delete or soft-delete a wallet."""
         pass
     
@@ -185,12 +193,12 @@ class IChequeRepository(ABC):
         pass
     
     @abstractmethod
-    async def get_by_uuid(self, uuid: str, user_id: int = None) -> Optional['Cheque']:
+    async def get_by_uuid(self, uuid: str, user_id: Optional[int] = None) -> Optional['Cheque']:
         """Get a cheque by UUID."""
         pass
     
     @abstractmethod
-    async def get_receive_count(self, uuid: str, user_id: int = None) -> int:
+    async def get_receive_count(self, uuid: str, user_id: Optional[int] = None) -> int:
         """Get the number of times a cheque has been received."""
         pass
     
@@ -260,7 +268,7 @@ class IMessageRepository(ABC):
     """Interface for message queue operations."""
     
     @abstractmethod
-    async def enqueue(self, user_id: int, text: str, use_alarm: int = 0, update_id: int = None, button_json: str = None) -> None:
+    async def enqueue(self, user_id: int, text: str, use_alarm: int = 0, update_id: Optional[int] = None, button_json: Optional[str] = None) -> None:
         """Add a message to the send queue."""
         pass
     

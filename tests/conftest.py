@@ -6,9 +6,10 @@ import sys
 import os
 import socket
 import random
+from typing import Optional
 sys.path.append(os.getcwd())
 from aiohttp import web
-from aiogram import Dispatcher, Bot
+from aiogram import Dispatcher, Bot, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -489,8 +490,8 @@ class RouterTestMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         session = MagicMock()
         session.execute = AsyncMock()
-        session.commit = MagicMock()
-        session.rollback = MagicMock()
+        session.commit = AsyncMock()
+        session.rollback = AsyncMock()
 
         result = MagicMock()
         result.scalars.return_value.all.return_value = []
@@ -530,10 +531,9 @@ async def router_app_context(mock_app_context, router_bot, horizon_server_config
 
 
 def create_callback_update(user_id: int, callback_data: str, update_id: int = 1,
-                           message_id: int = 1, username: str = "test") -> "types.Update":
+                           message_id: int = 1, username: str = "test") -> types.Update:
     """Helper to create callback query updates for tests."""
     import datetime
-    from aiogram import types
 
     return types.Update(
         update_id=update_id,
@@ -553,10 +553,9 @@ def create_callback_update(user_id: int, callback_data: str, update_id: int = 1,
 
 
 def create_message_update(user_id: int, text: str, update_id: int = 1,
-                          message_id: int = 1, username: str = "test") -> "types.Update":
+                          message_id: int = 1, username: str = "test") -> types.Update:
     """Helper to create message updates for tests."""
     import datetime
-    from aiogram import types
 
     return types.Update(
         update_id=update_id,
@@ -665,8 +664,8 @@ async def mock_horizon(horizon_server_config):
             self.paths = []     # configured paths for strict-send/receive
             self.transaction_response = {"successful": True, "hash": "abc123"}
 
-        def set_account(self, account_id: str, balances: list = None, sequence: str = "123456789",
-                       signers: list = None, data: dict = None):
+        def set_account(self, account_id: str, balances: Optional[list] = None, sequence: str = "123456789",
+                       signers: Optional[list] = None, data: Optional[dict] = None):
             """Configure account response."""
             self.not_found_accounts.discard(account_id)
             self.accounts[account_id] = {
@@ -699,7 +698,7 @@ async def mock_horizon(horizon_server_config):
             self.paths = paths
 
         def set_transaction_response(self, successful: bool = True, hash: str = "abc123",
-                                     error: str = None):
+                                     error: Optional[str] = None):
             """Configure transaction submit response."""
             self.transaction_response = {
                 "successful": successful,
@@ -711,7 +710,7 @@ async def mock_horizon(horizon_server_config):
             if error:
                 self.transaction_response["extras"] = {"result_codes": {"transaction": error}}
 
-        def get_requests(self, endpoint: str = None):
+        def get_requests(self, endpoint: Optional[str] = None):
             """Get received requests, optionally filtered by endpoint."""
             if endpoint:
                 return [r for r in self.requests if r["endpoint"] == endpoint]

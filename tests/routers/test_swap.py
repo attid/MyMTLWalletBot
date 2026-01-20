@@ -1,6 +1,6 @@
 
 import pytest
-import jsonpickle
+import jsonpickle  # type: ignore
 from aiogram import Bot, Dispatcher, types
 from unittest.mock import AsyncMock, MagicMock, patch
 import datetime

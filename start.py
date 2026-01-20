@@ -13,9 +13,9 @@ from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
 from sqlalchemy.orm import sessionmaker
-from sulguk import AiogramSulgukMiddleware
+from sulguk import AiogramSulgukMiddleware  # type: ignore[import-untyped]
 from other.config_reader import config
 from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
@@ -92,7 +92,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker, app_c
 
 
 async def set_commands(bot: Bot):
-    commands_clear = []
+    commands_clear: list[BotCommand] = []
     commands_private = [
         BotCommand(
             command="start",
@@ -186,10 +186,11 @@ async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     await stop_broker()
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=config.admins[0], text='Bot stopped')
-    
+
     task_list = dispatcher.get("task_list", [])
-    for task in task_list:
-        task.cancel()
+    if task_list:
+        for task in task_list:
+            task.cancel()
 
 
 async def main():
@@ -240,7 +241,8 @@ async def main():
     
     # Create UseCaseFactory for DI
     from infrastructure.factories.use_case_factory import UseCaseFactory
-    use_case_factory = UseCaseFactory(repository_factory, stellar_service, encryption_service)
+    from core.constants import CHEQUE_PUBLIC_KEY
+    use_case_factory = UseCaseFactory(repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY)
     
     app_context = AppContext(
         bot=bot,

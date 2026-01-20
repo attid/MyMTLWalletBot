@@ -4,7 +4,7 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from keyboards.common_keyboards import get_kb_return
@@ -40,7 +40,9 @@ def get_kb_ton_yesno(user_id: Union[types.CallbackQuery, types.Message, int]) ->
 
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "SendTon")
-async def cmd_send_ton_start(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_start(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     await clear_state(state)
     await send_message(session, callback.from_user.id, "Enter recipient's address:", reply_markup=get_kb_return(callback.from_user.id, app_context=app_context), app_context=app_context)
     await state.set_state(StateSendTon.sending_for)
@@ -48,7 +50,9 @@ async def cmd_send_ton_start(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.message(StateSendTon.sending_for)
-async def cmd_send_ton_address(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     address = message.text
     # Basic address validation
     if len(address) != 48:
@@ -62,7 +66,9 @@ async def cmd_send_ton_address(message: types.Message, state: FSMContext, sessio
 
 
 @router.message(StateSendTon.sending_sum)
-async def cmd_send_ton_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     try:
         amount = float(message.text)
         if amount <= 0:
@@ -82,7 +88,9 @@ async def cmd_send_ton_sum(message: types.Message, state: FSMContext, session: S
 
 
 @router.callback_query(StateSendTon.sending_confirmation, F.data == "ton_yes")
-async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     data = await state.get_data()
     recipient_address = data.get('recipient_address')
     amount = data.get('amount')
@@ -97,6 +105,8 @@ async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext,
     if await secret_service.is_ton_wallet(user_id):
         try:
             mnemonic = await secret_service.get_ton_mnemonic(user_id)
+            if mnemonic is None or recipient_address is None or amount is None:
+                 return
             ton_service = app_context.ton_service or TonService()
             ton_service.from_mnemonic(mnemonic)
 
@@ -123,7 +133,7 @@ async def cmd_send_ton_confirm(callback: types.CallbackQuery, state: FSMContext,
 
 
 @router.callback_query(StateSendTon.sending_confirmation, F.data == "ton_no")
-async def cmd_send_ton_cancel(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_cancel(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await clear_state(state)
     await state.set_state(None)
     await send_message(session, callback.from_user.id, "Transaction cancelled.", app_context=app_context)
@@ -133,7 +143,9 @@ async def cmd_send_ton_cancel(callback: types.CallbackQuery, state: FSMContext, 
 
 @rate_limit(3, 'private_links')
 @router.callback_query(F.data == "SendTonUSDt")
-async def cmd_send_ton_usdt_start(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_usdt_start(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     await clear_state(state)
     await send_message(session, callback.from_user.id, "Enter recipient's address:", reply_markup=get_kb_return(callback.from_user.id, app_context=app_context), app_context=app_context)
     await state.set_state(StateSendTonUSDT.sending_for)
@@ -141,7 +153,9 @@ async def cmd_send_ton_usdt_start(callback: types.CallbackQuery, state: FSMConte
 
 
 @router.message(StateSendTonUSDT.sending_for)
-async def cmd_send_ton_usdt_address(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_usdt_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     address = message.text
     # Basic address validation
     if len(address) != 48:
@@ -155,7 +169,9 @@ async def cmd_send_ton_usdt_address(message: types.Message, state: FSMContext, s
 
 
 @router.message(StateSendTonUSDT.sending_sum)
-async def cmd_send_ton_usdt_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_usdt_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     try:
         amount = float(message.text)
         if amount <= 0:
@@ -175,7 +191,9 @@ async def cmd_send_ton_usdt_sum(message: types.Message, state: FSMContext, sessi
 
 
 @router.callback_query(StateSendTonUSDT.sending_confirmation, F.data == "ton_yes")
-async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     data = await state.get_data()
     recipient_address = data.get('recipient_address')
     amount = data.get('amount')
@@ -190,6 +208,8 @@ async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMCon
     if await secret_service.is_ton_wallet(user_id):
         try:
             mnemonic = await secret_service.get_ton_mnemonic(user_id)
+            if mnemonic is None or recipient_address is None or amount is None:
+                 return
             ton_service = app_context.ton_service or TonService()
             ton_service.from_mnemonic(mnemonic)
 
@@ -217,7 +237,7 @@ async def cmd_send_ton_usdt_confirm(callback: types.CallbackQuery, state: FSMCon
 
 
 @router.callback_query(StateSendTonUSDT.sending_confirmation, F.data == "ton_no")
-async def cmd_send_ton_usdt_cancel(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_ton_usdt_cancel(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await clear_state(state)
     await state.set_state(None)
     await send_message(session, callback.from_user.id, "Transaction cancelled.", app_context=app_context)

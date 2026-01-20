@@ -1,5 +1,5 @@
 from typing import Optional
-import cryptocode
+import cryptocode  # type: ignore
 from core.interfaces.services import IEncryptionService
 
 class EncryptionService(IEncryptionService):

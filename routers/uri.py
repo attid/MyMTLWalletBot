@@ -3,7 +3,7 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk import Network, TransactionBuilder
 
@@ -23,7 +23,7 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state: FSMContext, app_context: AppContext):
+async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, state: FSMContext, app_context: AppContext):
     """Get URI from server and prepare for signing"""
     # Get URI from server
     try:
@@ -32,12 +32,15 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
             url=f"https://eurmtl.me/remote/sep07/get/{uri_id}"
         )
 
-        if response.status != 200:
+        if response.status != 200 or not isinstance(response.data, dict):
             await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
             return
 
         # Process the URI
-        uri_data = response.data['uri']
+        uri_data = response.data.get('uri')
+        if not uri_data:
+            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
+            return
         
         # Use DI via app_context
         process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(session)
@@ -72,16 +75,20 @@ async def process_remote_uri(session: Session, chat_id: int, uri_id: str, state:
 
 
 @router.message(Command(commands=["start"]), F.text.contains("uri_"))
-async def cmd_start_remote(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_start_remote(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """Handle Telegram bot start with remote URI"""
+    if message.from_user is None or message.text is None:
+        return
     await clear_state(state)
     uri_id = message.text.split()[1][4:]  # Extract ID from "uri_..."
     await process_remote_uri(session, message.from_user.id, uri_id, state, app_context=app_context)
 
 
 @router.message(F.text.startswith("web+stellar:tx"))
-async def process_stellar_uri(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def process_stellar_uri(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """Handle direct Stellar URI with optional encoded params"""
+    if message.from_user is None or message.text is None:
+        return
     uri = message.text
     if '?' in uri:
         from urllib.parse import unquote
@@ -122,7 +129,7 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
         )
 
 
-async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext, app_context: AppContext):
+async def handle_wc_uri(wc_uri: str, user_id: int, session: AsyncSession, state: FSMContext, app_context: AppContext):
     """Helper function to process WalletConnect URI"""
     await clear_state(state)
     await clear_last_message_id(user_id, app_context=app_context)
@@ -159,7 +166,9 @@ async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMC
 
 
 @router.message(F.text.startswith("wc:"))
-async def process_wc_uri(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def process_wc_uri(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """Handle WalletConnect URI from text message"""
+    if message.from_user is None or message.text is None:
+        return
     await handle_wc_uri(message.text, message.from_user.id, session, state, app_context=app_context)
     await message.delete()

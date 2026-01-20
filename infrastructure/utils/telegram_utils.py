@@ -1,11 +1,11 @@
 from contextlib import suppress
-from typing import Union, Any
+from typing import Union, Any, Optional
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_button
 
@@ -19,15 +19,16 @@ from infrastructure.utils.common_utils import get_user_id
 TELEGRAM_API_ERROR: Any = object()
 
 
-async def send_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
+async def send_message(session: Optional[AsyncSession], user_id: Union[types.CallbackQuery, types.Message, int], msg: str,
                        reply_markup=None, need_new_msg=None, parse_mode='HTML', *, app_context: AppContext):
     # app_context MUST be provided or global_data used as fallback (TEMPORARY)
     # Removing global_data completely means we crash if app_context is None.
     # Assuming app_context is always passed now.
     user_id = get_user_id(user_id)
-    
+
     bot = app_context.bot
     dispatcher = app_context.dispatcher
+    assert dispatcher is not None, "Dispatcher must be initialized in app_context"
 
     fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
     data = await dispatcher.storage.get_data(key=fsm_storage_key)
@@ -56,7 +57,7 @@ async def send_message(session: Session | None, user_id: Union[types.CallbackQue
                                                          data={'last_message_id': new_msg.message_id})
 
 
-async def cmd_show_sign(session: Session, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,
+async def cmd_show_sign(session: AsyncSession, chat_id: int, state: FSMContext, msg='', use_send=False, xdr_uri=None,
                         parse_mode='HTML', *, app_context: AppContext):
     # msg = msg + my_gettext(chat_id, 'send_xdr', app_context=app_context)
     data = await state.get_data()
@@ -130,9 +131,11 @@ def long_line() -> str:
 
 
 async def set_last_message_id(chat_id: int, msg_id: int, app_context: AppContext):
+    dispatcher = app_context.dispatcher
+    assert dispatcher is not None, "Dispatcher must be initialized in app_context"
     fsm_storage_key = StorageKey(bot_id=app_context.bot.id, user_id=chat_id, chat_id=chat_id)
     # data = await dp.storage.get_data(key=fsm_storage_key)
-    await app_context.dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
+    await dispatcher.storage.update_data(key=fsm_storage_key, data={'last_message_id': msg_id})
 
 
 async def clear_last_message_id(chat_id: int, app_context: AppContext):

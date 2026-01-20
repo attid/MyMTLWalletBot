@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     fest_menu: dict = {}
     admins: list = []
     toncenter_token: Optional[str] = None
+    debank: Optional[SecretStr] = None
     start_path: str = start_path
 
     # horizon_url_id: Optional[int] = 0

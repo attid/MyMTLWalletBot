@@ -8,7 +8,7 @@ from aiogram.client.telegram import TelegramAPIServer
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
 from aiogram.fsm.storage.base import StorageKey
 import datetime
-import jsonpickle
+import jsonpickle  # type: ignore
 
 from routers.wallet_setting import router as wallet_setting_router, AssetVisibilityCallbackData, DelAssetCallbackData
 from core.domain.entities import Wallet, AddressBookEntry
@@ -56,8 +56,8 @@ def mock_session():
     mock_result.scalars.return_value.first.return_value = mock_db_wallet
     
     session.execute = AsyncMock(return_value=mock_result) # Fix for await session.execute
-    session.commit = MagicMock()
-    session.rollback = MagicMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
     return session
 
 @pytest.fixture

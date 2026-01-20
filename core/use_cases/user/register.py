@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 from core.domain.entities import User, Wallet
 from core.interfaces.repositories import IUserRepository, IWalletRepository
 # Note: In a real scenario, we might need a KeyGenerationService. 
@@ -14,7 +14,7 @@ class RegisterUser:
         self.user_repository = user_repository
         self.wallet_repository = wallet_repository
 
-    async def execute(self, user_id: int, username: str, language: str, public_key: str, secret_key: str = None, seed_key: str = None) -> Tuple[User, Wallet]:
+    async def execute(self, user_id: int, username: str, language: str, public_key: str, secret_key: Optional[str] = None, seed_key: Optional[str] = None) -> Tuple[User, Wallet]:
         """
         Registers a new user and their initial wallet.
         Atomic operation is ideal (Unit of Work), but here we do sequential.
@@ -41,7 +41,7 @@ class RegisterUser:
 
         return saved_user, saved_wallet
 
-    async def _create_wallet(self, user_id: int, public_key: str, secret_key: str, seed_key: str) -> Wallet:
+    async def _create_wallet(self, user_id: int, public_key: str, secret_key: Optional[str], seed_key: Optional[str]) -> Wallet:
         new_wallet = Wallet(
             id=0, # Auto-increment
             user_id=user_id,

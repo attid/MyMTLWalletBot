@@ -2,7 +2,7 @@ import qrcode
 from PIL import ImageDraw, Image, ImageFont
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.telegram_utils import my_gettext
@@ -15,7 +15,7 @@ router.message.filter(F.chat.type == "private")
 from infrastructure.services.app_context import AppContext
 
 @router.callback_query(F.data == "Receive")
-async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_receive(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     
