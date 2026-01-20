@@ -202,6 +202,7 @@
   "your_xdr_sign": "Your signed transaction:\n\n<code>{}</code>\n\n",
   "zero_sum": "Amount 0 =( \n will not be enough",
   "kb_strict_receive": "Specify exact amount to receive",
+  "kb_slippage": "↕️ Slippage: {}%",
   "enter_strict_receive_sum": "Enter the amount of {} you want to receive",
   "kb_manage_assets": "Manage assets",
   "kb_asset_visibility": "Manage visibility",

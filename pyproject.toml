@@ -34,7 +34,7 @@ dependencies = [
     "sentry-sdk==1.45.1",
     "sqlalchemy~=2.0.35",
     "sqlalchemy-firebird==2.0.2",
-    "sqlalchemy-firebird-async[firebird-driver]>=0.2.0",
+    "sqlalchemy-firebird-async[firebird-driver]>=0.2.1",
     "stellar-sdk~=11.1.0",
     "sulguk~=0.8.0",
     "tonutils>=0.5.6",
