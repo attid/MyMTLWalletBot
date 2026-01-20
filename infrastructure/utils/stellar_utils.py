@@ -30,11 +30,14 @@ base_fee = BASE_FEE
 
 
 def my_float(s):
-    """Convert string to float, handling 'unlimited' case and None."""
+    """Convert string to float, handling 'unlimited' case, None, and comma as decimal separator."""
     if s is None:
         return 0.0
     if s == 'unlimited':
         return float('inf')
+    # Support both comma and dot as decimal separator
+    if isinstance(s, str):
+        s = s.replace(',', '.')
     return float(s)
 
 

@@ -482,30 +482,16 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
         )
 
 
-        
-
-
-        from routers.sign import cmd_ask_pin
-
-
-        
 
 
         xdr = await stellar_check_xdr(tx)
 
-
         if xdr:
+            await state.update_data(xdr=xdr, operation='delete_asset')
+            msg = my_gettext(callback, 'confirm_close_asset', (asset_obj.asset_code, asset_obj.asset_issuer), app_context=app_context)
+            await send_message(session, callback, msg, reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
 
-
-            await state.update_data(xdr=xdr)
-
-
-            await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
-
-
-            
-
-
+        await callback.answer()
         return
 
 

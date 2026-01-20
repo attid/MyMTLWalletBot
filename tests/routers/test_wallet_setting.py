@@ -211,7 +211,7 @@ async def test_cmd_delete_asset_list(mock_telegram, bot, dp, mock_session, mock_
 
 @pytest.mark.asyncio
 async def test_cq_delete_asset_execute(mock_telegram, mock_horizon, horizon_server_config, bot, dp, mock_session, mock_app_context):
-    """Test actual asset deletion (trustline removal)"""
+    """Test actual asset deletion (trustline removal) - shows confirmation message"""
     from infrastructure.services.stellar_service import StellarService
     user_id = 123
     mock_app_context.bot = bot
@@ -236,8 +236,7 @@ async def test_cq_delete_asset_execute(mock_telegram, mock_horizon, horizon_serv
     # Configure mock_horizon
     mock_horizon.set_account(public_key)
     
-    with patch("routers.sign.cmd_ask_pin", AsyncMock()) as mock_ask_pin, \
-         patch("routers.wallet_setting.stellar_check_xdr", AsyncMock(side_effect=lambda x: x)):
+    with patch("routers.wallet_setting.stellar_check_xdr", AsyncMock(side_effect=lambda x: x)):
              
         cb_data = DelAssetCallbackData(answer="BTCMTL").pack()
         await dp.feed_update(bot=bot, update=types.Update(
@@ -253,7 +252,13 @@ async def test_cq_delete_asset_execute(mock_telegram, mock_horizon, horizon_serv
         data = await dp.storage.get_data(key=storage_key)
         assert "xdr" in data
         assert "AAAA" in data['xdr']
-        mock_ask_pin.assert_called_once()
+        assert data.get('operation') == 'delete_asset'
+        
+        # Verify confirmation message was sent with Yes/No keyboard
+        sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
+        assert len(sent) == 1
+        assert "confirm_close_asset" in sent[0]['data']['text']
+        assert "Yes_send_xdr" in sent[0]['data']['reply_markup']
 
 
 @pytest.mark.asyncio

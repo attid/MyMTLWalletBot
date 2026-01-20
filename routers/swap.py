@@ -229,8 +229,8 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
             if blocked_sum > 0:
                 msg += '\n\n' + my_gettext(
                     callback,
-                    'swap_blocked',
-                    (send_asset_code, float2str(blocked_sum)),
+                    'swap_summ_blocked_by_offers',
+                    (float2str(blocked_sum), send_asset_code),
                     app_context=app_context
                 )
 

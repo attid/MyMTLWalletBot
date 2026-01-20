@@ -11,6 +11,7 @@ from keyboards.common_keyboards import get_kb_return
 from middleware.throttling import rate_limit
 from infrastructure.utils.telegram_utils import send_message, clear_state
 from infrastructure.utils.common_utils import get_user_id
+from infrastructure.utils.stellar_utils import my_float
 from infrastructure.services.app_context import AppContext
 from services.ton_service import TonService
 
@@ -70,7 +71,7 @@ async def cmd_send_ton_sum(message: types.Message, state: FSMContext, session: A
     if message.from_user is None or message.text is None:
         return
     try:
-        amount = float(message.text)
+        amount = my_float(message.text)
         if amount <= 0:
             raise ValueError
     except ValueError:
@@ -173,7 +174,7 @@ async def cmd_send_ton_usdt_sum(message: types.Message, state: FSMContext, sessi
     if message.from_user is None or message.text is None:
         return
     try:
-        amount = float(message.text)
+        amount = my_float(message.text)
         if amount <= 0:
             raise ValueError
     except ValueError:
