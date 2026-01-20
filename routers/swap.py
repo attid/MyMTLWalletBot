@@ -236,7 +236,8 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
 
             # Change state and show message
             await state.set_state(StateSwapToken.swap_sum)
-            await state.update_data(msg=msg)
+            await state.update_data(msg=msg, slippage=1)  # Default slippage 1%
+            data = await state.get_data()  # Refresh data with slippage
 
             # Use swap confirm keyboard with strict receive button
             from keyboards.common_keyboards import get_kb_swap_confirm
@@ -263,6 +264,35 @@ async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContex
         reply_markup=get_kb_return(callback, app_context=app_context),
         app_context=app_context,
     )
+
+
+# Slippage values to cycle through
+SLIPPAGE_VALUES = [0, 1, 3, 5]
+
+
+@router.callback_query(StateSwapToken.swap_sum, F.data == "SwapSlippage")
+async def cq_swap_slippage_click(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    """
+    Handle slippage button click - cycle through 0%, 1%, 3%, 5%.
+    """
+    from keyboards.common_keyboards import get_kb_swap_confirm
+    
+    data = await state.get_data()
+    current = data.get('slippage', 1)
+    try:
+        idx = SLIPPAGE_VALUES.index(current)
+        next_idx = (idx + 1) % len(SLIPPAGE_VALUES)
+    except ValueError:
+        next_idx = 1  # Default to 1%
+    
+    new_slippage = SLIPPAGE_VALUES[next_idx]
+    await state.update_data(slippage=new_slippage)
+    data = await state.get_data()  # Refresh data with new slippage
+    
+    msg = data.get('msg', '')
+    keyboard = get_kb_swap_confirm(callback.from_user.id, data, app_context=app_context)
+    await send_message(session, callback, msg, reply_markup=keyboard, app_context=app_context)
+    await callback.answer()
 
 
 @router.callback_query(StateSwapToken.swap_sum, F.data == "CancelOffers")
@@ -331,12 +361,16 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Async
             return
         use_case = use_case_factory.create_swap_assets(session)
 
+        # Apply slippage tolerance to reduce dest_min
+        slippage = data.get('slippage', 1)
+        receive_sum_with_slippage = my_round(receive_sum * (1 - slippage / 100), 7)  # Max 7 decimals for Stellar
+
         result = await use_case.execute(
             user_id=message.from_user.id,
             send_asset=DomainAsset(code=send_asset, issuer=send_asset_code),
             send_amount=send_sum,
             receive_asset=DomainAsset(code=receive_asset, issuer=receive_asset_code),
-            receive_amount=receive_sum,
+            receive_amount=receive_sum_with_slippage,  # Use slippage-adjusted value
             strict_receive=False,
             cancel_offers=cancel_offers
         )

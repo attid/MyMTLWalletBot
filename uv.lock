@@ -1234,7 +1234,7 @@ requires-dist = [
     { name = "sentry-sdk", specifier = "==1.45.1" },
     { name = "sqlalchemy", specifier = "~=2.0.35" },
     { name = "sqlalchemy-firebird", specifier = "==2.0.2" },
-    { name = "sqlalchemy-firebird-async", extras = ["firebird-driver"], specifier = ">=0.2.0" },
+    { name = "sqlalchemy-firebird-async", extras = ["firebird-driver"], specifier = ">=0.2.1" },
     { name = "stellar-sdk", specifier = "~=11.1.0" },
     { name = "sulguk", specifier = "~=0.8.0" },
     { name = "tonutils", specifier = ">=0.5.6" },
@@ -2293,16 +2293,16 @@ wheels = [
 
 [[package]]
 name = "sqlalchemy-firebird-async"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "greenlet" },
     { name = "sqlalchemy" },
     { name = "sqlalchemy-firebird" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/e6/f52ca0011ccaf8934848c378d380a8921a9fc77072d05677c76c2d3eab01/sqlalchemy_firebird_async-0.2.0.tar.gz", hash = "sha256:0be87311b971bacad98c71b380de0b36ba19b182190a9e37a73828fcde17eb3b", size = 11319, upload-time = "2026-01-18T23:11:08.465Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/54/91c0f4f64c6dfaff550def0bd38ea0790e3643fc04981e10a028c277bdc6/sqlalchemy_firebird_async-0.2.1.tar.gz", hash = "sha256:3245dd6905938c0de6b06752cd046800987ed0e4bd50589862f63560becbea6d", size = 13631, upload-time = "2026-01-20T03:30:10.907Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/91/92/b475496ec56fdebb7d580b30911df768e774d21306bcae0a1ec45e45aeb9/sqlalchemy_firebird_async-0.2.0-py2.py3-none-any.whl", hash = "sha256:4f74b35854cb2e213ab054e4db5d42d8f14637031d1df5e1b1649d2c9ec6228c", size = 10028, upload-time = "2026-01-18T23:11:06.794Z" },
+    { url = "https://files.pythonhosted.org/packages/99/7e/a4f69337e102e4ab6178835c00a7bfb7fa69d68f79d0c4d24d0981053a98/sqlalchemy_firebird_async-0.2.1-py2.py3-none-any.whl", hash = "sha256:bbc8cb4988e4554cf93c482141b32c862eb29502760b6e6c06dd1544a8f9a4a0", size = 10056, upload-time = "2026-01-20T03:30:09.614Z" },
 ]
 
 [package.optional-dependencies]

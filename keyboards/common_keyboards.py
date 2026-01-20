@@ -124,11 +124,21 @@ def get_kb_offers_cancel(user_id: int, data: dict, *, app_context: AppContext) -
 def get_kb_swap_confirm(user_id: int, data: dict, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     """
     Create keyboard for swap confirmation with:
+    - Slippage tolerance button (cycles through 0%, 1%, 3%, 5%)
     - Optional 'Cancel offers' checkbox
     - 'Specify exact amount to receive' button
     - 'Return' button
     """
     buttons = []
+    
+    # Slippage button - cycles through 0, 1, 3, 5
+    slippage = data.get('slippage', 1)  # Default 1%
+    slippage_text = my_gettext(user_id, 'kb_slippage', (slippage,), app_context=app_context)
+    buttons.append([types.InlineKeyboardButton(
+        text=slippage_text,
+        callback_data='SwapSlippage'
+    )])
+    
     if data.get('send_asset_blocked_sum', 0.0) > 0:
         cancel_offers_state = '🟢' if data.get('cancel_offers', False) else '⚪️'
         btn_txt = my_gettext(
