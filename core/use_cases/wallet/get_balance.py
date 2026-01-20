@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import List, Any, Optional
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Balance
@@ -8,7 +8,7 @@ class GetWalletBalance:
         self.wallet_repository = wallet_repository
         self.stellar_service = stellar_service
 
-    async def execute(self, user_id: int, public_key: str = None) -> List[Balance]:
+    async def execute(self, user_id: int, public_key: Optional[str] = None) -> List[Balance]:
         """
         Retrieves the balance for the user's default wallet or specified public key, 
         including calculation of locked reserves.

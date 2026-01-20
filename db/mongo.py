@@ -3,7 +3,7 @@ import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from other.config_reader import config
 
-client = AsyncIOMotorClient(config.mongodb_url)
+client: AsyncIOMotorClient = AsyncIOMotorClient(config.mongodb_url)
 db = client['mtl_tables']
 
 assets_collection = db['assets']
@@ -37,5 +37,6 @@ async def check_account_id_from_grist(public_key: str) -> bool:
 
 
 if __name__ == '__main__':
-    _ = asyncio.run(mongo_check_multi('GD44EAUQXNUVBJACZMW6GPT2GZ7I26EDQCU5HGKUTVEQTXIDEVGUFIRE'))
-    print(_)
+    pass
+    # _ = asyncio.run(mongo_check_multi('GD44EAUQXNUVBJACZMW6GPT2GZ7I26EDQCU5HGKUTVEQTXIDEVGUFIRE'))
+    # print(_)

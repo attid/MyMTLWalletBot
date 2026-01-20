@@ -13,6 +13,7 @@ See tests/README.md for complete testing rules.
 """
 
 import pytest
+from typing import Optional
 from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
@@ -92,7 +93,7 @@ def setup_send_mocks(router_app_context):
             """Configure user transaction limit."""
             self.user.can_5000 = can_5000
 
-        def set_payment_result(self, success: bool, xdr: str = None, error: str = None):
+        def set_payment_result(self, success: bool, xdr: Optional[str] = None, error: Optional[str] = None):
             """Configure payment result."""
             send_uc = MagicMock(spec=SendPayment)
             send_uc.execute = AsyncMock(return_value=PaymentResult(
@@ -219,7 +220,7 @@ async def test_cb_send_choose_token(mock_telegram, mock_horizon, router_app_cont
     dp.include_router(send_router)
 
     # Set state with assets
-    import jsonpickle
+    import jsonpickle  # type: ignore
     storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
     assets = [
         Balance(asset_code="XLM", balance="100.0", asset_issuer=None, asset_type="native"),

@@ -1,14 +1,14 @@
 from typing import List, Union
 
 from infrastructure.services.app_context import AppContext
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-import jsonpickle
+import jsonpickle  # type: ignore
 from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset
 from loguru import logger
 
@@ -84,12 +84,17 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.callback_query(F.data == "Swap")
-async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     msg = my_gettext(callback, 'choose_token_swap', app_context=app_context)
     
     # Use DI from app_context
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
-    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    use_case_factory = app_context.use_case_factory
+    if use_case_factory is None:
+        return
+    use_case = use_case_factory.create_get_wallet_balance(session)
     asset_list = await use_case.execute(user_id=callback.from_user.id)
     
     wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
@@ -100,7 +105,7 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
     for token in asset_list:
         kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                   callback_data=SwapAssetFromCallbackData(
-                                                      answer=token.asset_code).pack()
+                                                      answer=token.asset_code or "").pack()
                                                   )])
     kb_tmp.append(get_return_button(callback, app_context=app_context))
     await send_message(
@@ -116,7 +121,9 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
 
 @router.callback_query(SwapAssetFromCallbackData.filter())
 async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data: SwapAssetFromCallbackData,
-                                    state: FSMContext, session: Session, app_context: AppContext):
+                                    state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -130,6 +137,8 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 # Get summ of tokens, blocked by Sell offers (using DI)
                 wallet_repo = app_context.repository_factory.get_wallet_repository(session)
                 wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+                if wallet is None:
+                    return
                 offers = await app_context.stellar_service.get_selling_offers(wallet.public_key)
                 blocked_token_sum = 0.0
                 for offer in offers:
@@ -156,20 +165,26 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
                 wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
                 vis_str = wallet.assets_visibility if wallet else None
 
-                balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+                use_case_factory = app_context.use_case_factory
+                if use_case_factory is None:
+                    return
+                balance_use_case = use_case_factory.create_get_wallet_balance(session)
                 for token in await balance_use_case.execute(user_id=callback.from_user.id):
                     if get_asset_visibility(vis_str, token.asset_code) in (ASSET_VISIBLE, ASSET_EXCHANGE_ONLY):
-                        asset_list2.append(Asset(token.asset_code, token.asset_issuer))
-                swap_possible_sum = '1' if my_float(asset.balance) > 0 else asset.balance # try dont lose path for nfts
-                receive_assets = await stellar_check_receive_asset(Asset(asset.asset_code, asset.asset_issuer), swap_possible_sum,
-                                                                    asset_list2)
-                receive_assets = sorted(receive_assets, key=lambda x: str(x))  # Sort by token name
+                        if token.asset_code:
+                            asset_list2.append(Asset(token.asset_code, token.asset_issuer))
+                swap_possible_sum = '1' if my_float(asset.balance) > 0 else (asset.balance or '0') # try dont lose path for nfts
+                
+                if asset.asset_code:
+                    receive_assets = await stellar_check_receive_asset(Asset(asset.asset_code, asset.asset_issuer), swap_possible_sum,
+                                                                        asset_list2)
+                    receive_assets = sorted(receive_assets, key=lambda x: str(x))  # Sort by token name
 
-                for receive_asset in receive_assets:
-                    kb_tmp.append([types.InlineKeyboardButton(text=f"{receive_asset}",
-                                                              callback_data=SwapAssetForCallbackData(
-                                                                  answer=receive_asset).pack()
-                                                              )])
+                    for receive_asset in receive_assets:
+                        kb_tmp.append([types.InlineKeyboardButton(text=f"{receive_asset}",
+                                                                  callback_data=SwapAssetForCallbackData(
+                                                                      answer=str(receive_asset)).pack()
+                                                                  )])
                 kb_tmp.append(get_return_button(callback, app_context=app_context))
                 await send_message(
                     session,
@@ -182,7 +197,9 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
 @router.callback_query(SwapAssetForCallbackData.filter())
 async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data: SwapAssetForCallbackData,
-                                   state: FSMContext, session: Session, app_context: AppContext):
+                                   state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -194,23 +211,31 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
                                     receive_asset_min_sum=asset.balance)
             data = await state.get_data()
 
+            send_asset_code = data.get('send_asset_code')
+            send_asset_issuer = data.get('send_asset_issuer')
+            receive_asset_code = data.get('receive_asset_code')
+            receive_asset_issuer = data.get('receive_asset_issuer')
+            
+            if send_asset_code is None or receive_asset_code is None:
+                 continue
+
             msg = my_gettext(callback, 'send_sum_swap', (
-                data.get('send_asset_code'),
+                send_asset_code,
                 data.get('send_asset_max_sum', 0.0),
-                data.get('receive_asset_code'),
+                receive_asset_code,
                 stellar_get_market_link(
-                    Asset(data.get("send_asset_code"), data.get("send_asset_issuer")),
-                    Asset(data.get('receive_asset_code'), data.get('receive_asset_issuer'))
+                    Asset(send_asset_code, send_asset_issuer),
+                    Asset(receive_asset_code, receive_asset_issuer)
                 )
             ), app_context=app_context)
 
             # If user has some assets that are blocked by offers, remind him\her about it.
-            blocked_sum = data.get('send_asset_blocked_sum')
+            blocked_sum = data.get('send_asset_blocked_sum', 0.0)
             if blocked_sum > 0:
                 msg += '\n\n' + my_gettext(
                     callback,
                     'swap_blocked',
-                    (data.get('send_asset_code'), float2str(blocked_sum)),
+                    (send_asset_code, float2str(blocked_sum)),
                     app_context=app_context
                 )
 
@@ -226,7 +251,7 @@ async def cq_swap_choose_token_for(callback: types.CallbackQuery, callback_data:
 
 # Handle "Specify exact amount to receive" button
 @router.callback_query(StateSwapToken.swap_sum, F.data == "SwapStrictReceive")
-async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """
     Switch FSM to strict receive state and ask user to enter amount to receive.
     """
@@ -246,7 +271,7 @@ async def cq_swap_strict_receive(callback: types.CallbackQuery, state: FSMContex
 
 
 @router.callback_query(StateSwapToken.swap_sum, F.data == "CancelOffers")
-async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """
         Handle callback event 'CancelOffers_swap' in state 'swap_sum'.
         Invert state of 'cancel offers' flag by clicking on button.
@@ -262,7 +287,9 @@ async def cq_swap_cancel_offers_click(callback: types.CallbackQuery, state: FSMC
 
 
 @router.message(StateSwapToken.swap_sum)
-async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_swap_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     try:
         send_sum = my_float(message.text)
         # Use DI from app_context
@@ -274,7 +301,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
             await send_message(
                 session,
                 message,
-                msg0 + data['msg'],
+                msg0 + (data.get('msg') or ""),
                 reply_markup=get_kb_return(message, app_context=app_context),
                 app_context=app_context,
             )
@@ -292,22 +319,29 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
         receive_asset_code = data.get('receive_asset_issuer')
         cancel_offers = data.get('cancel_offers', False)
         xdr = data.get('xdr')
+        
+        if send_asset is None or receive_asset is None:
+             return
 
-        receive_sum, need_alert = await stellar_check_receive_sum(Asset(send_asset, send_asset_code),
+        receive_sum_str, need_alert = await stellar_check_receive_sum(Asset(send_asset, send_asset_code),
                                                                   float2str(send_sum),
                                                                   Asset(receive_asset, receive_asset_code))
-        if float(receive_sum) > 10:
-            receive_sum = float2str(my_round(float(receive_sum), 3))
+        receive_sum = my_float(receive_sum_str)
+        if receive_sum > 10:
+            receive_sum_str = float2str(my_round(receive_sum, 3))
 
         # Use DI from app_context
-        use_case = app_context.use_case_factory.create_swap_assets(session)
+        use_case_factory = app_context.use_case_factory
+        if use_case_factory is None:
+            return
+        use_case = use_case_factory.create_swap_assets(session)
 
         result = await use_case.execute(
             user_id=message.from_user.id,
             send_asset=DomainAsset(code=send_asset, issuer=send_asset_code),
             send_amount=send_sum,
             receive_asset=DomainAsset(code=receive_asset, issuer=receive_asset_code),
-            receive_amount=my_float(receive_sum),
+            receive_amount=receive_sum,
             strict_receive=False,
             cancel_offers=cancel_offers
         )
@@ -374,7 +408,9 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Sessi
 
 # Handle input of amount to receive (strict receive)
 @router.message(StateSwapToken.swap_receive_sum)
-async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     try:
         receive_sum = my_float(message.text)
         # Use DI from app_context
@@ -404,15 +440,19 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
         receive_asset_code = data.get('receive_asset_issuer')
         cancel_offers = data.get('cancel_offers', False)
         xdr = data.get('xdr')
+        
+        if send_asset is None or receive_asset is None:
+             return
 
          # Calculate required send_sum to get the desired receive_sum
-        send_sum, need_alert = await stellar_check_send_sum(
+        send_sum_str, need_alert = await stellar_check_send_sum(
             Asset(send_asset, send_asset_code),
             float2str(receive_sum),
             Asset(receive_asset, receive_asset_code)
         )
-        max_send_amount = my_round(my_float(send_sum) * 1.001, 7)
-        if my_float(max_send_amount) == 0.0:
+        send_sum = my_float(send_sum_str)
+        max_send_amount = my_round(send_sum * 1.001, 7)
+        if max_send_amount == 0.0:
             keyboard = get_kb_return(message, app_context=app_context)
             await send_message(
                 session,

@@ -1,12 +1,12 @@
 import asyncio
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-import jsonpickle
+import jsonpickle  # type: ignore
 from aiogram.fsm.context import FSMContext
 from faststream.redis import RedisBroker, BinaryMessageFormatV1
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from keyboards.common_keyboards import get_kb_return
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id
@@ -17,7 +17,7 @@ from other.lang_tools import my_gettext
 
 from infrastructure.services.app_context import AppContext
 
-APP_CONTEXT: AppContext = None
+APP_CONTEXT: Optional[AppContext] = None
 
 # --- Глобальные переменные и объекты брокера ---
 
@@ -42,7 +42,7 @@ async def stop_broker():
 
 # --- Логика для WalletConnect ---
 
-async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMContext):
+async def do_wc_sign_and_respond(session: AsyncSession, user_id: int, state: FSMContext):
     """
     Callback, который выполняется вместо стандартной логики подписи.
     """
@@ -65,6 +65,7 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         if method == "stellar_signAndSubmitXDR":
             # Нужна функция для отправки XDR в Horizon
             # Возьмите ее из signer_client_fs.py или напишите аналогичную
+            assert xdr is not None, "xdr must not be None for stellar_signAndSubmitXDR"
             from other.stellar_tools import async_stellar_send
             submit_result = await async_stellar_send(xdr)
             status = "success" if submit_result.get("successful") else "pending"
@@ -75,6 +76,7 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
             logger.info(f"XDR for request {original_request_id} signed.")
 
         # 2. Находим "замороженный" запрос и отправляем ему результат
+        assert internal_request_id is not None, "internal_request_id must not be None"
         pending_req = PENDING_SIGN_REQUESTS.get(internal_request_id)
         if pending_req:
             pending_req['result'] = response_msg
@@ -82,6 +84,7 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         logger.info(f"pending_req: {pending_req}")
 
         # 3. Сообщаем пользователю об успехе
+        assert APP_CONTEXT is not None, "APP_CONTEXT must be initialized"
         await send_message(session, user_id, my_gettext(user_id, 'wc_sign_success', app_context=APP_CONTEXT),
                            reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)
         logger.info(f"pending_req: {pending_req}")
@@ -91,10 +94,12 @@ async def do_wc_sign_and_respond(session: Session, user_id: int, state: FSMConte
         # Формируем ответ с ошибкой
         response_msg["error"] = str(e)
         # В случае ошибки также уведомляем "замороженный" запрос
+        assert internal_request_id is not None, "internal_request_id must not be None"
         pending_req = PENDING_SIGN_REQUESTS.get(internal_request_id)
         if pending_req:
             pending_req['result'] = response_msg
             pending_req['event'].set()
+        assert APP_CONTEXT is not None, "APP_CONTEXT must be initialized"
         await send_message(session, user_id, my_gettext(user_id, 'bad_password', app_context=APP_CONTEXT),
                            reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)  # Общее сообщение об ошибке
 
@@ -115,6 +120,7 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
         logger.error("APP_CONTEXT is not initialized")
         return
 
+    assert APP_CONTEXT.dispatcher is not None, "Dispatcher must be initialized in app_context"
     bot = APP_CONTEXT.bot
     state = APP_CONTEXT.dispatcher.fsm.get_context(bot, user_id, user_id)
     dapp_name = dapp_info.get("name", "Unknown App")
@@ -195,6 +201,11 @@ async def handle_sign_request(msg: dict):
 
     try:
         # Передаем ID дальше
+        assert user_id is not None, "user_id must not be None"
+        assert xdr is not None, "xdr must not be None"
+        assert original_request_id is not None, "original_request_id must not be None"
+        assert method is not None, "method must not be None"
+        assert dapp_info is not None, "dapp_info must not be None"
         await request_wc_signature(user_id=user_id, xdr=xdr, internal_request_id=internal_request_id,
                                    original_request_id=original_request_id, method=method, dapp_info=dapp_info)
 

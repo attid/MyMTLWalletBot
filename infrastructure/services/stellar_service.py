@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional, List
-from stellar_sdk import AiohttpClient, ServerAsync
+from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Asset as SdkAsset, Network, Price, TransactionEnvelope, Keypair
 from stellar_sdk.exceptions import NotFoundError
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Asset
@@ -44,22 +44,19 @@ class StellarService(IStellarService):
 
     async def build_payment_transaction(
         self, 
-        source_public_key: str = None, 
-        destination_account_id: str = None, 
-        asset_code: str = None, 
-        asset_issuer: Optional[str] = None, 
-        amount: str = None, 
-        memo: Optional[str] = None,
-        sequence: Optional[int] = None,
+        source_account_id: str, 
+        destination_account_id: str, 
+        asset_code: str, 
+        asset_issuer: str | None, 
+        amount: str, 
+        memo: str | None = None,
+        sequence: int | None = None,
         cancel_offers: bool = False,
-        create_account: bool = False,
-        source_account_id: str = None,
-        **kwargs
+        create_account: bool = False
     ) -> str:
-        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              # Load source account for sequence number
-             source_account = await server.load_account(source_id)
+             source_account = await server.load_account(source_account_id)
         
         from stellar_sdk import TransactionBuilder, Asset, Network, Price
         
@@ -78,7 +75,7 @@ class StellarService(IStellarService):
             
         if cancel_offers:
              # Fetch offers for this asset and cancel them
-             offers = await self.get_selling_offers(source_public_key)
+             offers = await self.get_selling_offers(source_account_id)
              # Filter offers that sell this asset
              for offer in offers:
                  selling = offer.get('selling', {})
@@ -134,18 +131,16 @@ class StellarService(IStellarService):
 
     async def swap_assets(
         self,
-        source_public_key: str = None,
-        send_asset: Asset = None,
-        send_amount: str = None,
-        receive_asset: Asset = None,
-        receive_amount: str = None,
+        source_account_id: str,
+        send_asset: Asset,
+        send_amount: str,
+        receive_asset: Asset,
+        receive_amount: str,
         path: List[Asset] = [],
-        strict_receive: bool = False, # if True, use destination amount, else source amount
-        cancel_offers: bool = False,
-        source_account_id: str = None,
-        **kwargs
+        strict_receive: bool = False,
+        cancel_offers: bool = False
     ) -> str:
-        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
+        source_id = source_account_id
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_id)
         
@@ -160,8 +155,7 @@ class StellarService(IStellarService):
         transaction.set_timeout(180)
 
         # Helper to convert domain Asset to SDK Asset
-        def to_sdk_asset(a: Asset) -> Optional[SdkAsset]:
-            if not a: return None
+        def to_sdk_asset(a: Asset) -> SdkAsset:
             if a.code == "XLM": return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
 
@@ -177,23 +171,23 @@ class StellarService(IStellarService):
                       if selling.get('asset_type') == 'native': is_match = True
                  else:
                       if s_code == send_asset.code and s_issuer == send_asset.issuer: is_match = True
-                      
+
                  if is_match:
                       buying = offer.get('buying', {})
                       b_code = buying.get('asset_code')
                       b_issuer = buying.get('asset_issuer')
                       buying_asset = SdkAsset.native() if buying.get('asset_type') == 'native' else SdkAsset(b_code, b_issuer)
-                      
+
                       transaction.append_manage_sell_offer_op(
                           selling=to_sdk_asset(send_asset),
                           buying=buying_asset,
                           amount='0',
-                          price=Price.from_raw_price('1'), 
+                          price=Price.from_raw_price('1'),
                           offer_id=int(offer.get('id', 0))
                       )
 
         path_assets = [to_sdk_asset(a) for a in (path or []) if a]
-        
+
         if strict_receive:
             transaction.append_path_payment_strict_receive_op(
                 destination=source_id, # sending to self
@@ -217,16 +211,14 @@ class StellarService(IStellarService):
 
     async def manage_offer(
         self,
-        source_public_key: str = None,
-        selling: Asset = None,
-        buying: Asset = None,
-        amount: str = None,
-        price: str = None,
-        offer_id: int = 0,
-        source_account_id: str = None,
-        **kwargs
+        source_account_id: str,
+        selling: Asset,
+        buying: Asset,
+        amount: str,
+        price: str,
+        offer_id: int = 0
     ) -> str:
-        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
+        source_id = source_account_id
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_id)
         
@@ -253,8 +245,7 @@ class StellarService(IStellarService):
         
         return transaction.build().to_xdr()
 
-    def sign_transaction(self, xdr: str, secret: str) -> str:
-        from stellar_sdk import TransactionEnvelope, Network, Keypair
+    async def sign_transaction(self, xdr: str, secret: str) -> str:
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
         kp = Keypair.from_secret(secret)
         transaction.sign(kp)
@@ -268,18 +259,22 @@ class StellarService(IStellarService):
         return transaction.to_xdr()
 
     def create_payment_op(self, destination: str, asset_code: str, asset_issuer: Optional[str], amount: str, source: Optional[str] = None):
-        asset = Asset(asset_code, asset_issuer) if asset_issuer else Asset.native()
+        from stellar_sdk.operation import Payment
+        asset = SdkAsset(asset_code, asset_issuer) if asset_issuer else SdkAsset.native()
         return Payment(destination=destination, asset=asset, amount=amount, source=source)
 
     def create_create_account_op(self, destination: str, starting_balance: str, source: Optional[str] = None):
+        from stellar_sdk.operation import CreateAccount
         return CreateAccount(destination=destination, starting_balance=starting_balance, source=source)
 
-    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: str = None, source: Optional[str] = None):
-        asset = Asset(asset_code, asset_issuer)
+    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: Optional[str] = None, source: Optional[str] = None):
+        from stellar_sdk.operation import ChangeTrust
+        asset = SdkAsset(asset_code, asset_issuer)
         return ChangeTrust(asset=asset, limit=limit, source=source)
 
-    async def build_transaction(self, source_public_key: str, operations: list, memo: str = None):
-        account = await self.load_account(source_public_key)
+    async def build_transaction(self, source_public_key: str, operations: list, memo: Optional[str] = None):
+        async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
+             account = await server.load_account(source_public_key)
         
         tx_builder = TransactionBuilder(
             source_account=account,
@@ -297,14 +292,12 @@ class StellarService(IStellarService):
 
     async def build_change_trust_transaction(
         self,
-        source_public_key: str = None,
-        asset_code: str = None,
-        asset_issuer: str = None,
-        limit: Optional[str] = None,
-        source_account_id: str = None,
-        **kwargs
+        source_account_id: str,
+        asset_code: str,
+        asset_issuer: str,
+        limit: Optional[str] = None
     ) -> str:
-        source_id = source_public_key or source_account_id or kwargs.get('source_account_id')
+        source_id = source_account_id
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_id)
         
@@ -328,28 +321,13 @@ class StellarService(IStellarService):
 
     async def build_manage_data_transaction(
         self,
-        source_account_id: str = None,
-        data_name: Optional[str] = None,
-        data_value: Optional[str] = None,
-        data: Optional[Dict[str, Optional[str]]] = None,
-        source_public_key: str = None,
-        **kwargs
+        source_account_id: str,
+        data: Dict[str, Optional[str]]
     ) -> str:
-        """Build transaction for manage data operation.
-        
-        Args:
-            source_account_id: Source account public key
-            data_name: Name of the data entry (legacy)
-            data_value: Value to set (None to delete) (legacy)
-            data: Dictionary of data entries to set/delete
-            source_public_key: Alias for source_account_id
-        """
-        source_id = source_account_id or source_public_key or kwargs.get('source_public_key')
+        source_id = source_account_id
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_id)
         
-        from stellar_sdk import TransactionBuilder, Network
-
         transaction = TransactionBuilder(
             source_account=source_account,
             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
@@ -357,11 +335,8 @@ class StellarService(IStellarService):
         )
         transaction.set_timeout(180)
         
-        if data:
-            for name, value in data.items():
-                transaction.append_manage_data_op(data_name=name, data_value=value)
-        elif data_name:
-            transaction.append_manage_data_op(data_name=data_name, data_value=data_value)
+        for name, value in data.items():
+            transaction.append_manage_data_op(data_name=name, data_value=value)
             
         return transaction.build().to_xdr()
 
@@ -380,8 +355,6 @@ class StellarService(IStellarService):
             if a.code == "XLM": return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
             
-        from stellar_sdk import Asset as SdkAsset
-        
         try:
             async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
                 call_result = await server.strict_send_paths(

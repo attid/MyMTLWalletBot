@@ -1,4 +1,4 @@
-import asyncio, uuid, jsonpickle
+import asyncio, uuid, jsonpickle  # type: ignore
 from dataclasses import dataclass
 from typing import Union
 from aiogram import types, Router, F
@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset
 
 from db.models import ChequeStatus
@@ -67,7 +67,7 @@ class ChequeQuery:
 @router.callback_query(F.data=="CreateCheque")
 @router.message(Command('create_cheque'))
 async def cmd_create_cheque(
-        update: Union[CallbackQuery, Message], state: FSMContext, session: Session, app_context: AppContext, l10n: LocalizationService
+        update: Union[CallbackQuery, Message], state: FSMContext, session: AsyncSession, app_context: AppContext, l10n: LocalizationService
 ):
     await clear_state(state)
     if isinstance(update, Message):
@@ -80,7 +80,7 @@ async def cmd_create_cheque(
 
 
 @router.message(StateCheque.sending_sum)
-async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
     except:
@@ -98,7 +98,7 @@ async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: Sessi
         await message.delete()
 
 
-async def cmd_cheque_show(session: Session, message: Message, state: FSMContext, app_context: AppContext):
+async def cmd_cheque_show(session: AsyncSession, message: Message, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
 
     send_sum = data.get("send_sum")
@@ -107,12 +107,18 @@ async def cmd_cheque_show(session: Session, message: Message, state: FSMContext,
     send_uuid = data.get("send_uuid", str(uuid.uuid4().hex))
     await state.update_data(send_uuid=send_uuid)
 
+    if send_sum is None:
+        return
+
     msg = my_gettext(message, 'send_cheque',
                      (float2str(send_sum), send_count, float(send_sum) * send_count, send_comment), app_context=app_context)
 
     repo = app_context.repository_factory.get_wallet_repository(session)
     service = app_context.stellar_service
     use_case = app_context.use_case_factory.create_create_cheque(session)
+
+    if message.from_user is None:
+        return
 
     result = await use_case.execute(
         user_id=message.from_user.id,
@@ -151,7 +157,7 @@ def get_kb_send_cheque(user_id: Union[types.CallbackQuery, types.Message, int], 
 
 
 @router.callback_query(F.data=="ChequeCount")
-async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     msg = my_gettext(callback, 'kb_change_count', app_context=app_context)
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateCheque.sending_count)
@@ -159,7 +165,9 @@ async def cmd_cheque_count(callback: CallbackQuery, state: FSMContext, session: 
 
 
 @router.message(StateCheque.sending_count)
-async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_get_count(message: Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None:
+        return
     try:
         send_count = int(message.text)
         if send_count < 1:
@@ -178,7 +186,7 @@ async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Ses
 
 
 @router.callback_query(F.data=="ChequeComment")
-async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     msg = my_gettext(callback, 'kb_change_comment', app_context=app_context)
     await send_message(session, callback, msg, reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     await state.set_state(StateCheque.sending_comment)
@@ -186,7 +194,9 @@ async def cmd_cheque_comment(callback: CallbackQuery, state: FSMContext, session
 
 
 @router.message(StateCheque.sending_comment)
-async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None:
+        return
     send_comment = message.text[:255]
 
     if send_comment:
@@ -200,7 +210,7 @@ async def cmd_cheque_get_comment(message: Message, state: FSMContext, session: S
 
 
 @router.callback_query(F.data=="ChequeExecute")
-async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)
@@ -213,7 +223,7 @@ async def cmd_cheque_execute(callback: CallbackQuery, state: FSMContext, session
     await callback.answer()
 
 
-async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
+async def cheque_after_send(session: AsyncSession, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
     data = await state.get_data()
     send_sum = data.get("send_sum")
     send_count = data.get("send_count", 1)
@@ -248,9 +258,10 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *
                                                          float(cheque.amount) * cheque.count, cheque.comment, link), app_context=app_context),
                            reply_markup=kb, app_context=app_context)
     if cheque.status == ChequeStatus.INVOICE.value:
+        asset_code = cheque.asset.split(':')[0] if cheque.asset else 'UNKNOWN'
         await send_message(session, user_id, my_gettext(user_id, 'send_invoice_buy_resend',
                                                         (send_uuid, float2str(cheque.amount), cheque.count,
-                                                         cheque.asset.split(':')[0], cheque.comment, link), app_context=app_context),
+                                                         asset_code, cheque.comment, link), app_context=app_context),
                            reply_markup=kb, app_context=app_context)
 
     await state.update_data(last_message_id=0)
@@ -258,7 +269,9 @@ async def cheque_after_send(session: Session, user_id: int, state: FSMContext, *
 
 @router.callback_query(ChequeCallbackData.filter())
 async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCallbackData, state: FSMContext,
-                          session: Session, app_context: AppContext):
+                          session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     cmd = callback_data.cmd
     cheque_uuid = callback_data.uuid
     repo = app_context.repository_factory.get_cheque_repository(session)
@@ -286,7 +299,7 @@ async def cb_cheque_click(callback: types.CallbackQuery, callback_data: ChequeCa
             await callback.answer('Nothing to cancel', show_alert=True)
 
 
-async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, state: FSMContext, app_context: AppContext):
+async def cmd_cancel_cheque(session: AsyncSession, user_id: int, cheque_uuid: str, state: FSMContext, app_context: AppContext):
     use_case = app_context.use_case_factory.create_cancel_cheque(session)
     result = await use_case.execute(user_id=user_id, cheque_uuid=cheque_uuid)
     
@@ -302,13 +315,16 @@ async def cmd_cancel_cheque(session: Session, user_id: int, cheque_uuid: str, st
 
 
 @router.inline_query(F.chat_type != "sender")
-async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, app_context: AppContext):
-    results = []
+async def cmd_inline_query(inline_query: types.InlineQuery, session: AsyncSession, app_context: AppContext):
+    results: list[types.InlineQueryResult] = []
     repo = app_context.repository_factory.get_cheque_repository(session)
     # all exist cheques
+    if inline_query.from_user is None:
+        return
     data = await repo.get_available(inline_query.from_user.id)
 
-    bot_name = (await app_context.bot.me()).username
+    bot_me = await app_context.bot.me()
+    bot_name = bot_me.username if bot_me.username else "bot"
     for record in data:
         if record.status == ChequeStatus.CHEQUE.value:
             link = f'https://t.me/{bot_name}?start=cheque_{record.uuid}'
@@ -317,8 +333,9 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ap
             button_text = my_gettext(inline_query.from_user.id, 'kb_get_cheque', app_context=app_context)
         else:  # record.status == ChequeStatus.INVOICE:
             link = f'https://t.me/{bot_name}?start=invoice_{record.uuid}'
+            asset_code = record.asset.split(':')[0] if record.asset else 'UNKNOWN'
             msg = my_gettext(inline_query.from_user.id, 'inline_invoice_buy',
-                             (record.amount, record.asset.split(':')[0], record.comment), app_context=app_context)
+                             (record.amount, asset_code, record.comment), app_context=app_context)
             button_text = my_gettext(inline_query.from_user.id, 'kb_get_invoice_buy', app_context=app_context)
 
         results.append(types.InlineQueryResultArticle(id=record.uuid,
@@ -333,7 +350,7 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ap
                                                       )))
 
     await inline_query.answer(
-        results[:49], is_personal=True
+        results[:49], is_personal=True  # type: ignore[arg-type]
     )
 
 
@@ -344,7 +361,9 @@ async def cmd_inline_query(inline_query: types.InlineQuery, session: Session, ap
 
 @router.message(Command(commands=["start"]), F.text.contains("cheque_"))
 @router.message(Command(commands=["start"]), F.text.contains("invoice_"))
-async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_start_cheque(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     await clear_state(state)
 
     # check address
@@ -373,8 +392,9 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
             get_return_button(user_id, app_context=app_context)
         ])
     else:
+        asset_code = cheque.asset.split(':')[0] if cheque.asset else 'UNKNOWN'
         msg = my_gettext(user_id, 'inline_invoice_buy',
-                         (cheque.amount, cheque.asset.split(':')[0], cheque.comment), app_context=app_context)
+                         (cheque.amount, asset_code, cheque.comment), app_context=app_context)
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_get_invoice_buy', app_context=app_context), callback_data='InvoiceYes')],
             get_return_button(user_id, app_context=app_context)
@@ -384,16 +404,18 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 
 
 @router.callback_query(F.data=="ChequeYes")
-async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheque_yes(callback: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     data = await state.get_data()
     # await cmd_send_money_from_cheque(callback.from_user.id, state, cheque_uuid=data['cheque_uuid'],
     #                                 message=callback)
     app_context.cheque_queue.put_nowait(ChequeQuery(user_id=callback.from_user.id, cheque_uuid=data['cheque_uuid'], state=state,
-                                        username=callback.from_user.username))
+                                        username=callback.from_user.username or ""))
     await callback.answer()
 
 
-async def cmd_send_money_from_cheque(session: Session, user_id: int, state: FSMContext, cheque_uuid: str,
+async def cmd_send_money_from_cheque(session: AsyncSession, user_id: int, state: FSMContext, cheque_uuid: str,
                                      username: str, app_context: AppContext):
     use_case = app_context.use_case_factory.create_claim_cheque(session)
     result = await use_case.execute(user_id=user_id, cheque_uuid=cheque_uuid, username=username)
@@ -430,7 +452,7 @@ async def cheque_worker(app_context: AppContext):
         # logger.info(f'{cheque_item} start')
 
         try:
-            with app_context.db_pool.get_session() as session:
+            async with app_context.db_pool.get_session() as session:
                 if cheque_item.for_cancel:
                     await cmd_cancel_cheque(session, cheque_item.user_id, cheque_item.cheque_uuid, cheque_item.state, app_context=app_context)
                 else:
@@ -443,7 +465,7 @@ async def cheque_worker(app_context: AppContext):
 
 
 @router.callback_query(F.data=="InvoiceYes")
-async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     # Step 1: Check if the invoice is alive
     data = await state.get_data()
     cheque_uuid = data['cheque_uuid']
@@ -465,7 +487,9 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
 
     # Refactored to use GetWalletBalance Use Case
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
-    
+
+    if cheque.asset is None:
+        return
     cheque_asset_code, cheque_asset_issuer = cheque.asset.split(':')
     all_balances = await balance_use_case.execute(user_id=callback.from_user.id)
     asset_list = [b for b in all_balances if b.asset_code == cheque_asset_code]
@@ -474,6 +498,8 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
         # If the cheque asset is not in the balance list, add the trust line
         wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+        if wallet is None:
+            return
         xdr = await app_context.stellar_service.build_change_trust_transaction(
             source_account_id=wallet.public_key,
             asset_code=cheque_asset_code,
@@ -491,13 +517,17 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
                             receive_asset_issuer=cheque_asset_issuer
                             )
     data = await state.get_data()
-    msg = my_gettext(callback, 'send_sum_swap', (data.get('send_asset_code'),
+    send_asset_code = str(data.get('send_asset_code', ''))
+    send_asset_issuer = str(data.get('send_asset_issuer', ''))
+    receive_asset_code = str(data.get('receive_asset_code', ''))
+    receive_asset_issuer = str(data.get('receive_asset_issuer', ''))
+    msg = my_gettext(callback, 'send_sum_swap', (send_asset_code,
                                                  float2str(max_eurmtl),
-                                                 data.get('receive_asset_code'),
-                                                 stellar_get_market_link(Asset(data.get("send_asset_code"),
-                                                                               data.get("send_asset_issuer")),
-                                                                         Asset(data.get('receive_asset_code'),
-                                                                               data.get('receive_asset_issuer')))
+                                                 receive_asset_code,
+                                                 stellar_get_market_link(Asset(send_asset_code,
+                                                                               send_asset_issuer),
+                                                                         Asset(receive_asset_code,
+                                                                               receive_asset_issuer))
                                                  ), app_context=app_context)
     await state.set_state(StateSwapToken.swap_sum)
     await state.update_data(msg=msg, xdr=xdr)
@@ -512,7 +542,9 @@ async def cmd_invoice_yes(callback: CallbackQuery, state: FSMContext, session: S
 
 
 @router.message(Command(commands=["cheques"]))
-async def cmd_cheques(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_cheques(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     await clear_state(state)
     # Получение списка доступных чеков
     repo = app_context.repository_factory.get_cheque_repository(session)

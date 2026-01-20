@@ -1,15 +1,15 @@
 import asyncio
 from datetime import datetime, timedelta
-import jsonpickle
+import jsonpickle  # type: ignore
 from aiogram import Router, types, F
-from aiogram.filters import StateFilter
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.filters import Command, StateFilter
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
-from sulguk import SULGUK_PARSE_MODE
+from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
 
 from infrastructure.services.app_context import AppContext
@@ -43,18 +43,18 @@ class PinCallbackData(CallbackData, prefix="pin_"):
 router = Router()
 router.message.filter(F.chat.type == "private")
 
-kb_cash = {}
+kb_cash: dict[str, types.InlineKeyboardMarkup] = {}
 
 
 @router.callback_query(F.data == "Yes_send_xdr")
-async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_yes_send(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await state.set_state(PinState.sign_and_send)
 
     await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
     await callback.answer()
 
 
-async def cmd_ask_pin(session: Session, chat_id: int, state: FSMContext, msg=None, *, app_context: AppContext):
+async def cmd_ask_pin(session: AsyncSession, chat_id: int, state: FSMContext, msg=None, *, app_context: AppContext):
     data = await state.get_data()
     # Use DI
     user_account_obj = await app_context.stellar_service.get_user_account(session, chat_id)
@@ -140,7 +140,7 @@ def get_kb_pin(data: dict, app_context: AppContext) -> types.InlineKeyboardMarku
 
 
 @router.callback_query(PinCallbackData.filter())
-async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, state: FSMContext, session: Session, app_context: AppContext):
+async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, state: FSMContext, session: AsyncSession, app_context: AppContext):
     answer = callback_data.action
     user_id = query.from_user.id
     data = await state.get_data()
@@ -197,7 +197,9 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
 
 
 @router.message(StateFilter(PinState.sign, PinState.sign_and_send))
-async def cmd_password_from_pin(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_password_from_pin(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None or message.from_user is None:
+        return
     pin = message.text.upper()
     user_id = message.from_user.id
     await state.update_data(pin=pin)
@@ -211,7 +213,7 @@ async def cmd_password_from_pin(message: types.Message, state: FSMContext, sessi
         pass
 
 
-async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext):
+async def sign_xdr(session: AsyncSession, state, user_id, *, app_context: AppContext):
     data = await state.get_data()
     current_state = await state.get_state()
     pin = data.get('pin', '')
@@ -245,11 +247,11 @@ async def sign_xdr(session: Session, state, user_id, *, app_context: AppContext)
                     # save_xdr_to_send(user_id, xdr)
                     # Use DI
                     resp = await app_context.stellar_service.send_xdr_async(xdr)
-                    resp = MyResponse.from_dict(resp)
+                    my_resp = MyResponse.from_dict(resp)
                     await state.update_data(try_sent_xdr=None)
                     link_msg = ''
-                    if resp.paging_token:
-                        link_msg = f'\n(<a href="https://viewer.eurmtl.me/transaction/{resp.hash}">expert link</a>)'
+                    if my_resp.paging_token:
+                        link_msg = f'\n(<a href="https://viewer.eurmtl.me/transaction/{my_resp.hash}">expert link</a>)'
 
                     msg = my_gettext(user_id, "send_good", app_context=app_context) + link_msg
 
@@ -318,7 +320,7 @@ def get_kb_nopassword(chat_id: int, app_context: AppContext) -> types.InlineKeyb
 
 
 @router.callback_query(F.data == "Sign")
-async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await cmd_show_sign(session, callback.from_user.id, state, my_gettext(callback, 'send_xdr', app_context=app_context), app_context=app_context)
     await state.set_state(StateSign.sending_xdr)
     await state.update_data(part_xdr='')
@@ -326,15 +328,19 @@ async def cmd_sign(callback: types.CallbackQuery, state: FSMContext, session: Se
 
 
 @router.message(StateSign.sending_xdr)
-async def cmd_send_xdr(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_xdr(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.text is None or message.from_user is None:
+        return
     await cmd_check_xdr(session, message.text, message.from_user.id, state, app_context=app_context)
     await message.delete()
 
 
-async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMContext, *, app_context: AppContext):
+async def cmd_check_xdr(session: AsyncSession, check_xdr: str, user_id, state: FSMContext, *, app_context: AppContext):
     try:
         data = await state.get_data()
-        part_xdr = data.get('part_xdr')
+        part_xdr = data.get('part_xdr', '')
+        if part_xdr is None:
+            part_xdr = ''
 
         if len(check_xdr) >= 4096:
             # possible we have xdr in 2\3 message
@@ -343,7 +349,9 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
             await asyncio.sleep(3)
 
             data = await state.get_data()
-            part_xdr = data.get('part_xdr')
+            part_xdr = data.get('part_xdr', '')
+            if part_xdr is None:
+                part_xdr = ''
             if len(part_xdr) == 0:
                 return
             check_xdr = part_xdr
@@ -372,7 +380,7 @@ async def cmd_check_xdr(session: Session, check_xdr: str, user_id, state: FSMCon
 
 @router.callback_query(F.data == "SendTr")
 @router.callback_query(F.data == "SendTools")
-async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await state.get_data()
     callback_url = data.get('callback_url')
     xdr = data.get('xdr')
@@ -423,20 +431,21 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                     # status, response_json = await get_web_request('POST', url='https://eurmtl.me/remote/update_signature',
                     #                                               json={"xdr": xdr})
                     # { "SUCCESS": true/false, "MESSAGES": ["список", "сообщений", "об", "обработке"] }
-                    msgs = '\n'.join(response.data.get('MESSAGES'))
-                    if response.data.get('SUCCESS'):
-                        return_url = data.get('return_url')
-                        if return_url:
-                            from keyboards.common_keyboards import get_kb_return_url
-                            await send_message(session, callback.from_user.id, f'SUCCESS',
-                                               reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
-                            return
+                    if isinstance(response.data, dict):
+                        msgs = '\n'.join(response.data.get('MESSAGES', []))
+                        if response.data.get('SUCCESS'):
+                            return_url = data.get('return_url')
+                            if return_url:
+                                from keyboards.common_keyboards import get_kb_return_url
+                                await send_message(session, callback.from_user.id, f'SUCCESS',
+                                                   reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
+                                return
+                            else:
+                                await cmd_info_message(session, callback, f'SUCCESS\n{msgs}', app_context=app_context)
                         else:
-                            await cmd_info_message(session, callback, f'SUCCESS\n{msgs}', app_context=app_context)
+                            await cmd_info_message(session, callback, f'ERROR\n{msgs}', app_context=app_context)
                     else:
-                        await cmd_info_message(session, callback, f'ERROR\n{msgs}', app_context=app_context)
-                    # else:
-                    #     await cmd_info_message(session, callback, status)
+                        await cmd_info_message(session, callback, f'ERROR: {response.data}', app_context=app_context)
 
                 except Exception as ex:
                     logger.info(['cmd_show_send_tr', callback, ex])
@@ -448,6 +457,7 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                                    )
             # save_xdr_to_send(callback.from_user.id, xdr)
             # Use DI
+            assert xdr is not None, "xdr must not be None"
             await app_context.stellar_service.send_xdr_async(xdr)
             return_url = data.get('return_url')
             if return_url:
@@ -475,13 +485,16 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
     except Exception as ex:
         logger.exception(['send unknown error', ex])
         msg = 'unknown error'
-        data[xdr] = xdr
+        if xdr:
+            data['xdr_error'] = xdr
         await cmd_info_message(session, callback, f"{my_gettext(callback, 'send_error', app_context=app_context)}\n{msg}",
                                resend_transaction=True, app_context=app_context)
 
 
 @router.message(PinState.ask_password)
-async def cmd_password(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_password(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     await state.update_data(pin=message.text)
     await message.delete()
     await state.set_state(PinState.sign_and_send)
@@ -489,7 +502,9 @@ async def cmd_password(message: types.Message, state: FSMContext, session: Sessi
 
 
 @router.message(PinState.ask_password_set)
-async def cmd_password_set(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_password_set(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     await state.update_data(pin=message.text)
     await state.set_state(PinState.ask_password_set2)
     await message.delete()
@@ -498,7 +513,9 @@ async def cmd_password_set(message: types.Message, state: FSMContext, session: S
 
 
 @router.message(PinState.ask_password_set2)
-async def cmd_password_set2(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_password_set2(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     data = await state.get_data()
     user_id = message.from_user.id
     pin = data.get('pin', '')
@@ -512,6 +529,8 @@ async def cmd_password_set2(message: types.Message, state: FSMContext, session: 
         await state.update_data(pin2='', pin='')
         await message.delete()
     else:
+        if message.from_user is None:
+            return
         await message.delete()
         await state.set_state(PinState.ask_password_set)
         await send_message(session, message, my_gettext(message, 'bad_passwords', app_context=app_context),
@@ -519,13 +538,14 @@ async def cmd_password_set2(message: types.Message, state: FSMContext, session: 
 
 
 @router.callback_query(F.data == "ReSend")
-async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await state.get_data()
     xdr = data.get('xdr')
     user_id = callback.from_user.id
     try:
         await cmd_info_message(session, user_id, my_gettext(user_id, "resend", app_context=app_context), app_context=app_context)
         # Use DI
+        assert xdr is not None, "xdr must not be None"
         await app_context.stellar_service.send_xdr_async(xdr)
         await cmd_info_message(session, user_id, my_gettext(user_id, "send_good", app_context=app_context), app_context=app_context)
     except BaseHorizonError as ex:
@@ -546,12 +566,13 @@ async def cmd_resend(callback: types.CallbackQuery, state: FSMContext, session: 
         logger.info(['ReSend unknown error', ex])
         msg = 'unknown error'
         data = await state.get_data()
-        data[xdr] = xdr
+        if xdr:
+            data['xdr_error'] = xdr
         await cmd_info_message(session, user_id, f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n{msg}", resend_transaction=True, app_context=app_context)
 
 
 @router.callback_query(F.data == "Decode")
-async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_decode_xdr(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     data = await state.get_data()
     xdr = data.get('xdr')
 

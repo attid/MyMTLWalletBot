@@ -1,7 +1,8 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, TelegramObject, Message
+from aiogram.fsm.context import FSMContext
 
 
 class CheckOldButtonCallbackMiddleware(BaseMiddleware):
@@ -11,10 +12,16 @@ class CheckOldButtonCallbackMiddleware(BaseMiddleware):
 
     async def __call__(
             self,
-            handler: Callable[[CallbackQuery, Dict[str, Any]], Awaitable[Any]],
-            event: CallbackQuery,
+            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+            event: TelegramObject,
             data: Dict[str, Any]
     ) -> Any:
+        if not isinstance(event, CallbackQuery):
+            return await handler(event, data)
+
+        if not event.message or not isinstance(event.message, Message):
+            return await handler(event, data)
+
         fsm: FSMContext = data["state"]
         fsm_data = await fsm.get_data()
         last_message_id = fsm_data.get('last_message_id', 0)
@@ -23,7 +30,7 @@ class CheckOldButtonCallbackMiddleware(BaseMiddleware):
             return await handler(event, data)
         elif last_message_id == 0:
             return await handler(event, data)
-        elif event.message.reply_markup.__str__().find('cheque_callback_') > 0:
+        elif event.message.reply_markup and event.message.reply_markup.__str__().find('cheque_callback_') > 0:
             return await handler(event, data)
         else:
             await event.answer(

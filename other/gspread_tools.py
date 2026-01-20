@@ -1,6 +1,6 @@
 import asyncio
 import os
-import gspread_asyncio
+import gspread_asyncio  # type: ignore[import-untyped]
 from google.oauth2.service_account import Credentials
 
 

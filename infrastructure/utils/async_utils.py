@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime
 from functools import wraps
 from time import time
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
 from loguru import logger
 from aiogram import Bot
@@ -15,8 +15,8 @@ class TaskKilled(Exception):
 def kill_task(task):
     task.cancel()
 
-_bot: Bot = None
-_admin_id: int = None
+_bot: Optional[Bot] = None
+_admin_id: Optional[int] = None
 
 def setup_async_utils(bot: Bot, admin_id: int):
     global _bot, _admin_id

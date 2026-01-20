@@ -1,5 +1,5 @@
 import pytest
-import jsonpickle
+import jsonpickle  # type: ignore
 from unittest.mock import MagicMock, patch, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 

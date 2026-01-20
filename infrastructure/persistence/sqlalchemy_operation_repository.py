@@ -31,9 +31,12 @@ class SqlAlchemyOperationRepository(IOperationRepository):
         stmt = select(TOperations).where(
             or_(TOperations.for_account == account,
                 TOperations.from_account == account,
-                TOperations.code2 == account),
-            TOperations.id > last_id,
-            TOperations.dt > datetime.utcnow() - timedelta(minutes=minutes),
+                TOperations.code2 == account)
+        ).where(
+            TOperations.id > last_id
+        ).where(
+            TOperations.dt > datetime.utcnow() - timedelta(minutes=minutes)
+        ).where(
             TOperations.arhived == None
         ).order_by(TOperations.id)
         result = await self.session.execute(stmt)

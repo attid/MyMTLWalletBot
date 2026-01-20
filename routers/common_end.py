@@ -3,7 +3,7 @@ import re
 import json
 
 from aiogram.fsm.context import FSMContext
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from routers.send import cmd_send_04, cmd_send_choose_token
@@ -23,19 +23,26 @@ router.message.filter(F.chat.type == "private")
 from infrastructure.services.app_context import AppContext
 
 @router.message()
-async def cmd_last_route(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_last_route(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     if message.chat.type != "private":
         return
 
     text = message.text
+    if text is None:
+        return
     entities = message.entities or []
 
     # Check for 'eurmtl.me/sign_tools' in text or entities
-    has_sign_tools_link = 'eurmtl.me/sign_tools' in text or any('eurmtl.me/sign_tools' in entity.url for entity in entities if entity.type == 'url')
+    has_sign_tools_link = 'eurmtl.me/sign_tools' in text or any(entity.url and 'eurmtl.me/sign_tools' in entity.url for entity in entities if entity.type == 'url')
     if has_sign_tools_link or (len(text) > 60 and is_base64(text)):
+        if message.from_user is None:
+            return
         await clear_state(state)
         await clear_last_message_id(message.from_user.id, app_context=app_context)
-        xdr_to_check = extract_url(text) if has_sign_tools_link else text
+        xdr_to_check_opt = extract_url(text) if has_sign_tools_link else text
+        if xdr_to_check_opt is None:
+            return
+        xdr_to_check = xdr_to_check_opt
         await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
                             user_id=message.from_user.id, state=state, app_context=app_context)
         return
@@ -59,8 +66,10 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Ses
                 public_key = find_stellar_federation_address(message.caption.lower())
 
         if message.forward_from and public_key is None:
-            user_repo = app_context.repository_factory.get_user_repository(session)
-            public_key, user_id = await user_repo.get_account_by_username('@' + message.forward_from.username)
+            username = message.forward_from.username
+            if username:
+                user_repo = app_context.repository_factory.get_user_repository(session)
+                public_key, user_id = await user_repo.get_account_by_username('@' + username)
 
         if public_key:
             my_account = await app_context.stellar_service.check_account(public_key)

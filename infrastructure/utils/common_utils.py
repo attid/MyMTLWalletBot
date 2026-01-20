@@ -1,18 +1,19 @@
 from typing import Union
 from aiogram import types
 import cv2
-from pyzbar.pyzbar import decode
+from pyzbar.pyzbar import decode  # type: ignore
 from PIL import Image
 
 
 def get_user_id(user_id: Union[types.CallbackQuery, types.Message, int]) -> int:
     if isinstance(user_id, types.CallbackQuery):
-        user_id = user_id.from_user.id
+        assert user_id.from_user is not None, "CallbackQuery has no from_user"
+        return user_id.from_user.id
     elif isinstance(user_id, types.Message):
-        user_id = user_id.from_user.id
+        assert user_id.from_user is not None, "Message has no from_user"
+        return user_id.from_user.id
     else:
-        user_id = user_id
-    return user_id
+        return user_id
 
 
 def float2str(f, short: bool = False) -> str:

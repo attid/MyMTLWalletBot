@@ -19,11 +19,11 @@ IS_TESTNET = False
 
 async def main() -> None:
     client = TonapiClient(api_key=API_KEY, is_testnet=IS_TESTNET)
-    mnemonic = config.ton_token
-    wallet, public_key, private_key, mnemonic = WalletV5R1.from_mnemonic(client, mnemonic)
+    mnemonic_str = config.ton_token
+    wallet, public_key, private_key, mnemonic = WalletV5R1.from_mnemonic(client, mnemonic_str)
 
     tonapi = AsyncTonapi(api_key=API_KEY)
-    account = tonapi.accounts.get_info(account_id=wallet.address.to_str())
+    account = await tonapi.accounts.get_info(account_id=wallet.address.to_str())
 
     print(f"Raw form: {account.address.to_raw()}")
     # output: 0:bede2955afe5b451cde92eb189125c12685c6f8575df922400dc4c1d5411cd35
@@ -42,7 +42,7 @@ async def main() -> None:
     USDT_MASTER_ADDRESS = Address("EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs")
 
     # Получаем баланс USDT
-    usdt_balance = tonapi.accounts.get_jetton_balance(
+    usdt_balance = await tonapi.accounts.get_jetton_balance(
         account_id=wallet.address.to_str(),
         jetton_id=USDT_MASTER_ADDRESS.to_str()
     )

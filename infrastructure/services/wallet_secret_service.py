@@ -1,6 +1,6 @@
 """SQLAlchemy implementation of IWalletSecretService."""
 from typing import Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from core.interfaces.services import IWalletSecretService
@@ -14,14 +14,16 @@ class SqlAlchemyWalletSecretService(IWalletSecretService):
     that should not be part of the domain entity for security reasons.
     """
     
-    def __init__(self, session: Session):
+    def __init__(self, session: AsyncSession):
         self.session = session
     
     async def _get_default_wallet(self, user_id: int) -> Optional[MyMtlWalletBot]:
         """Get the default wallet model for a user."""
         stmt = select(MyMtlWalletBot).where(
-            MyMtlWalletBot.user_id == user_id,
-            MyMtlWalletBot.default_wallet == 1,
+            MyMtlWalletBot.user_id == user_id
+        ).where(
+            MyMtlWalletBot.default_wallet == 1
+        ).where(
             MyMtlWalletBot.need_delete == 0
         )
         result = await self.session.execute(stmt)

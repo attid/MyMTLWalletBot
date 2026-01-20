@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Callable
 from datetime import datetime, timedelta
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +81,8 @@ class SqlAlchemyUserRepository(IUserRepository):
             else:
                 # Second query if default_address is not available or invalid
                 wallet_stmt = select(MyMtlWalletBot.public_key).where(
-                    MyMtlWalletBot.user_id == user_id,
+                    MyMtlWalletBot.user_id == user_id
+                ).where(
                     MyMtlWalletBot.default_wallet == 1
                 )
                 wallet_result = await self.session.execute(wallet_stmt)
@@ -94,11 +95,12 @@ class SqlAlchemyUserRepository(IUserRepository):
     async def search_by_username(self, query: str) -> list[str]:
         """Search users by partial username match."""
         stmt = select(MyMtlWalletBotUsers.user_name).where(
-            MyMtlWalletBotUsers.user_name.isnot(None),
+            MyMtlWalletBotUsers.user_name.isnot(None)
+        ).where(
             MyMtlWalletBotUsers.user_name.ilike(f"%{query}%")
         )
         result = await self.session.execute(stmt)
-        return [row[0] for row in result.all()]
+        return [str(row[0]) for row in result.all() if row[0]]
 
     async def update_donate_sum(self, user_id: int, amount: float) -> None:
         """Add to the user's donation sum."""
@@ -106,7 +108,8 @@ class SqlAlchemyUserRepository(IUserRepository):
         result = await self.session.execute(stmt)
         db_user = result.scalar_one_or_none()
         if db_user:
-            db_user.donate_sum += amount
+            current_sum = float(db_user.donate_sum or 0.0)
+            db_user.donate_sum = current_sum + amount  # type: ignore
             await self.session.flush()
 
     async def delete(self, user_id: int) -> None:
@@ -118,25 +121,27 @@ class SqlAlchemyUserRepository(IUserRepository):
             await self.session.delete(db_user)
             await self.session.flush()
 
-    async def get_usdt_key(self, user_id: int) -> tuple[Optional[str], int]:
-        stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+    async def get_usdt_key(self, user_id: int, create_func: Optional[Callable] = None, user_name: Optional[str] = None) -> tuple[Optional[str], int]:
+        if user_id > 0:
+            stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+        elif user_name:
+            stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_name == user_name)
+        else:
+            return None, 0
+            
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         
         if user and user.usdt and len(user.usdt) == 64:
-            return user.usdt, user.usdt_amount
+            return user.usdt, user.usdt_amount or 0
         elif user:
             # Generate new key if user exists but has no USDT key
-            # Logic from db/requests.py: db_get_usdt_private_key
             try:
-                addr = create_trc_private_key()
+                addr = create_func() if create_func else create_trc_private_key()
                 user.usdt = addr
-                await self.session.flush() # Commit logic usually outside, but here we modify state on read?
-                # db/requests logic did commit.
-                # It's better to avoid side effects on get, but this is legacy behavior migration.
+                await self.session.flush() 
                 return addr, 0
             except Exception:
-                # If generation fails or import error handling
                 return None, 0
         return None, 0
 
@@ -153,9 +158,10 @@ class SqlAlchemyUserRepository(IUserRepository):
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
         if user and user.usdt and len(user.usdt) == 64:
-            user.usdt_amount = user.usdt_amount + amount
+            current_amount = user.usdt_amount or 0
+            user.usdt_amount = current_amount + amount
             await self.session.flush()
-            return user.usdt
+            return str(user.usdt)
         else:
              raise ValueError(f"No user found with id {user_id} or invalid USDT key")
 
@@ -184,10 +190,11 @@ class SqlAlchemyUserRepository(IUserRepository):
         return [(row.user_name, row.usdt_amount, row.user_id) for row in result.all()]
 
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:
+        from typing import cast
         return User(
-            id=db_user.user_id,
+            id=cast(int, db_user.user_id),
             username=db_user.user_name,
-            language=db_user.lang,
+            language=str(db_user.lang or 'en'),
             default_address=db_user.default_address,
-            can_5000=db_user.can_5000 or 0
+            can_5000=int(db_user.can_5000 or 0)
         )

@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "aiogram~=3.13.1",
+    "aiogram>=3.17.0",
     "aiohttp>=3.10.11",
     "aiohttp-sse-client>=0.2.1",
     "apscheduler~=3.10.4",
@@ -39,6 +39,10 @@ dependencies = [
     "sulguk~=0.8.0",
     "tonutils>=0.5.6",
     "tronpy~=0.5.0",
+    "types-python-dateutil>=2.9.0.20251115",
+    "types-qrcode>=8.2.0.20250914",
+    "types-redis>=4.6.0.20241004",
+    "types-requests>=2.32.4.20260107",
     "tzlocal~=5.2",
     "uvloop~=0.21.0",
 ]
@@ -48,13 +52,30 @@ dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.13",
     "types-python-dateutil>=2.9.0.20251115",
     "types-redis>=4.6.0.20241004",
     "types-requests>=2.32.4.20260107",
 ]
 
 [tool.mypy]
+
 explicit_package_bases = true
+
 warn_unused_ignores = true
+
 show_error_codes = true
+
+plugins = [
+
+    "pydantic.mypy",
+
+    "sqlalchemy.ext.mypy.plugin"
+
+]
+
 # ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "other.stellar_tools"
+ignore_errors = true

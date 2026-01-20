@@ -1,7 +1,7 @@
 import asyncio
-from typing import Callable, Dict, Any, Awaitable
+from typing import Callable, Dict, Any, Awaitable, cast
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, TelegramObject
 from loguru import logger
 from db.models import MyMtlWalletBotLog
 # from other.global_data import global_data, LogQuery
@@ -15,19 +15,18 @@ from infrastructure.log_models import LogQuery
 class LogButtonClickCallbackMiddleware(BaseMiddleware):
     async def __call__(
             self,
-            handler: Callable[[CallbackQuery, Dict[str, Any]], Awaitable[Any]],
-            event: CallbackQuery,
+            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+            event: TelegramObject,
             data: Dict[str, Any]
     ) -> Any:
-        app_context: AppContext = data.get("app_context")
-        if app_context:
-            app_context.log_queue.put_nowait(LogQuery(
-                user_id=event.from_user.id,
-                log_operation='callback',
-                log_operation_info=event.data.split(':')[0]
-            ))
-            
-        return await handler(event, data)
+        if isinstance(event, CallbackQuery):
+            app_context = cast(AppContext, data.get("app_context"))
+            if app_context:
+                app_context.log_queue.put_nowait(LogQuery(
+                    user_id=event.from_user.id,
+                    log_operation='callback',
+                    log_operation_info=event.data.split(':')[0] if event.data else ""
+                ))
             
         return await handler(event, data)
 

@@ -1,4 +1,4 @@
-from typing import TypeVar, Callable
+from typing import TypeVar, Callable, Any, Coroutine, Awaitable
 from functools import wraps
 from loguru import logger
 
@@ -14,7 +14,7 @@ def safe_catch(func: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-def safe_catch_async(func: Callable[..., T]) -> Callable[..., T]:
+def safe_catch_async(func: Callable[..., Awaitable[T]]) -> Callable[..., Coroutine[Any, Any, T]]:
     @wraps(func)
     @logger.catch()
     async def wrapper(*args, **kwargs) -> T:

@@ -4,16 +4,19 @@ from contextlib import suppress
 from urllib.parse import urlparse, parse_qs
 from typing import List, Optional, Union, Dict
 
-import jsonpickle
+import jsonpickle  # type: ignore
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.utils.text_decorations import html_decoration
-from cryptocode import encrypt, decrypt
+from cryptocode import encrypt, decrypt  # type: ignore
 from stellar_sdk import AiohttpClient, ServerAsync, StrKey, MuxedAccount
 from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
+
+from infrastructure.utils.stellar_utils import my_float
+from infrastructure.utils.common_utils import float2str
 
 from other.config_reader import config
 
@@ -76,8 +79,8 @@ def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
     )
 
     # Устанавливаем временные границы, если они были заданы
-    if existing_transaction.preconditions.time_bounds:
-        transaction_builder.set_timeout(existing_transaction.preconditions.time_bounds.max_time)
+    if existing_transaction.preconditions and existing_transaction.preconditions.time_bounds:  # type: ignore[union-attr,index]
+        transaction_builder.set_timeout(existing_transaction.preconditions.time_bounds.max_time)  # type: ignore[union-attr,index]
     else:
         # Если временные границы не заданы, задаем неограниченное время
         transaction_builder.set_timeout(0)
@@ -90,7 +93,7 @@ def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
     return transaction_builder
 
 
-async def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete: bool = False):
+async def stellar_add_trust(user_key: str, asset: Asset, xdr: Optional[str] = None, delete: bool = False):  # type: ignore[misc]
     if xdr:
         transaction = stellar_get_transaction_builder(xdr)
         # TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
@@ -108,14 +111,14 @@ async def stellar_add_trust(user_key: str, asset: Asset, xdr: str = None, delete
     else:
         transaction.append_change_trust_op(asset, source=user_key)
 
-    transaction = transaction.build()
+    transaction = transaction.build()  # type: ignore[assignment]
 
-    xdr = transaction.to_xdr()
+    xdr = transaction.to_xdr()  # type: ignore[attr-defined]
     logger.info(f"new xdr: {xdr}")
     return xdr
 
 
-async def stellar_close_asset(user_key: str, asset: Asset, amount, xdr: str = None):
+async def stellar_close_asset(user_key: str, asset: Asset, amount, xdr: Optional[str] = None):
     if xdr:
         transaction = stellar_get_transaction_builder(xdr)
     else:
@@ -145,9 +148,9 @@ async def stellar_close_asset(user_key: str, asset: Asset, amount, xdr: str = No
         )
 
     transaction.append_change_trust_op(asset, limit='0', source=user_key)
-    transaction = transaction.build()
+    transaction = transaction.build()  # type: ignore[assignment]
 
-    xdr = transaction.to_xdr()
+    xdr = transaction.to_xdr()  # type: ignore[attr-defined]
     logger.info(f"new xdr: {xdr}")
     return xdr
 
@@ -207,13 +210,13 @@ async def stellar_check_xdr(xdr: str, for_free_account=False):
     return result
 
 
-async def stellar_user_sign(session: Session, xdr: str, user_id: int, user_password: str):
+async def stellar_user_sign(session: AsyncSession, xdr: str, user_id: int, user_password: str):
     user_key_pair = await stellar_get_user_keypair(session, user_id, user_password)
     return stellar_sign(xdr, user_key_pair.secret)
 
 
 
-async def stellar_user_sign_message(session: Session, msg: str, user_id: int, user_password: str) -> str:
+async def stellar_user_sign_message(session: AsyncSession, msg: str, user_id: int, user_password: str) -> str:
     user_key_pair = await stellar_get_user_keypair(session, user_id, user_password)
     return base64.b64encode(user_key_pair.sign(msg.encode())).decode()
 
@@ -241,14 +244,14 @@ async def async_stellar_check_fee() -> str:
 
 
 
-async def stellar_get_selling_offers_sum(session: Session, user_id: int, sell_asset_filter: Asset):
+async def stellar_get_selling_offers_sum(session: AsyncSession, user_id: int, sell_asset_filter: Asset):
     """
         Returns sum, blocked by Sell offers, filtered by selling asset
     """
     blocked_token_sum = 0.0
     offers = await stellar_get_offers(session, user_id)
     for offer in offers:
-        if offer.selling.asset_code == sell_asset_filter.asset_code:
+        if offer.selling and offer.selling.asset_code == sell_asset_filter.asset_code:  # type: ignore[union-attr]
             blocked_token_sum += float(offer.amount)
     return blocked_token_sum
 
@@ -266,13 +269,13 @@ async def stellar_del_selling_offers(transaction: TransactionBuilder, account_id
         )
 
     # Add 'delete offer' operations to transaction
-    for offer in offers.embedded.records:
+    for offer in offers.embedded.records:  # type: ignore[union-attr]
         transaction.append_manage_sell_offer_op(
-            selling=Asset(offer.selling.asset_code, offer.selling.asset_issuer),
-            buying=Asset(offer.buying.asset_code, offer.buying.asset_issuer),
+            selling=Asset(offer.selling.asset_code, offer.selling.asset_issuer),  # type: ignore[union-attr,arg-type]
+            buying=Asset(offer.buying.asset_code, offer.buying.asset_issuer),  # type: ignore[union-attr,arg-type]
             amount='0',
             price='99999999',
-            offer_id=offer.id
+            offer_id=offer.id  # type: ignore[arg-type]
         )
 
 
@@ -302,14 +305,15 @@ async def stellar_sale(from_account: str, send_asset: Asset, send_amount: str, r
     return full_transaction.to_xdr()
 
 
-async def stellar_get_user_keypair(session: Session, user_id: int, user_password: str) -> Keypair:
+async def stellar_get_user_keypair(session: AsyncSession, user_id: int, user_password: str) -> Keypair:
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(user_id) # Using async repo
-    result = wallet.secret_key
+    assert wallet is not None, "wallet must not be None"
+    result = wallet.secret_key  # type: ignore[union-attr]
     return Keypair.from_secret(decrypt(result, user_password))
 
 
-async def stellar_get_user_seed_phrase(session: Session, user_id: int, user_password: str) -> str:
+async def stellar_get_user_seed_phrase(session: AsyncSession, user_id: int, user_password: str) -> str:
     """
     Получает сид-фразу пользователя из базы данных и расшифровывает её приватным ключом.
     
@@ -333,20 +337,21 @@ async def stellar_get_user_seed_phrase(session: Session, user_id: int, user_pass
         return None
 
 
-async def stellar_get_user_account(session: Session, user_id: int, public_key=None) -> Account:
+async def stellar_get_user_account(session: AsyncSession, user_id: int, public_key=None) -> Account:
     if public_key:
         result = public_key
     else:
         repo = SqlAlchemyWalletRepository(session)
         wallet = await repo.get_default_wallet(user_id)
-        result = wallet.public_key
+        assert wallet is not None, "wallet must not be None"
+        result = wallet.public_key  # type: ignore[union-attr]
     async with ServerAsync(
             horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         return await server.load_account(result)
 
 
-async def stellar_get_master(session: Session) -> Keypair:
+async def stellar_get_master(session: AsyncSession) -> Keypair:
     return await stellar_get_user_keypair(session, 0, '0')
 
 
@@ -391,7 +396,7 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
             return xdr
 
 
-async def stellar_delete_all_deleted(session: Session):
+async def stellar_delete_all_deleted(session: AsyncSession):
     master = await stellar_get_master(session)
     repo = SqlAlchemyWalletRepository(session)
     wallets = await repo.get_all_deleted()
@@ -428,7 +433,7 @@ async def stellar_delete_all_deleted(session: Session):
 # LEGACY: Use GetWalletBalance Use Case instead
 # This function is kept for backward compatibility with routers
 # TODO: Remove after routers are refactored
-async def stellar_get_balance_str(session: Session, user_id: int, public_key=None, state=None) -> str:
+async def stellar_get_balance_str(session: AsyncSession, user_id: int, public_key=None, state=None) -> str:
     # Use Use Case to get balances
     repo = SqlAlchemyWalletRepository(session)
     service = StellarService(config.horizon_url)
@@ -481,13 +486,13 @@ async def stellar_get_balance_str(session: Session, user_id: int, public_key=Non
     return result
 
 
-async def stellar_is_free_wallet(session: Session, user_id: int):
+async def stellar_is_free_wallet(session: AsyncSession, user_id: int):
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(user_id)
     return wallet.is_free if wallet else False
 
 
-async def stellar_unfree_wallet(session: Session, user_id: int):
+async def stellar_unfree_wallet(session: AsyncSession, user_id: int):
     try:
         # DB: db_unfree_wallet(session, user_id, user_account.account.account_id)
         # Usage: update wallet set free_wallet=0 where public_key matches.
@@ -506,7 +511,7 @@ async def stellar_unfree_wallet(session: Session, user_id: int):
 # This function is kept for backward compatibility with existing routers
 # TODO: Remove after all routers are refactored to use GetWalletBalance directly
 async def stellar_get_balances(session, user_id: int, public_key=None,
-                               asset_filter: str = None, state=None) -> List[Balance]:
+                               asset_filter: Optional[str] = None, state=None) -> List[Balance]:
     try:
         repo = SqlAlchemyWalletRepository(session)
         service = StellarService()
@@ -551,7 +556,7 @@ def get_first_balance_from_list(balance_list):
     return 0.0
 
 
-async def stellar_get_data(session: Session, user_id: int, public_key=None) -> dict:
+async def stellar_get_data(session: AsyncSession, user_id: int, public_key=None) -> dict:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     async with ServerAsync(
             horizon_url=config.horizon_url, client=AiohttpClient()
@@ -565,7 +570,7 @@ async def stellar_get_data(session: Session, user_id: int, public_key=None) -> d
     return data
 
 
-async def stellar_get_offers(session: Session, user_id: int, public_key=None) -> List[MyOffer]:
+async def stellar_get_offers(session: AsyncSession, user_id: int, public_key=None) -> List[MyOffer]:
     user_account = await stellar_get_user_account(session, user_id, public_key)
     async with ServerAsync(
             horizon_url=config.horizon_url, client=AiohttpClient()
@@ -573,16 +578,16 @@ async def stellar_get_offers(session: Session, user_id: int, public_key=None) ->
         offers = MyOffers.from_dict(await server.offers().for_seller(
             user_account.account.account_id).limit(90).call())
 
-        for offer in offers.embedded.records:
-            if offer.selling.asset_type == "native":
-                offer.selling.asset_code = "XLM"
-            if offer.buying.asset_type == "native":
-                offer.buying.asset_code = "XLM"
+        for offer in offers.embedded.records:  # type: ignore[union-attr]
+            if offer.selling and offer.selling.asset_type == "native":  # type: ignore[union-attr]
+                offer.selling.asset_code = "XLM"  # type: ignore[union-attr]
+            if offer.buying and offer.buying.asset_type == "native":  # type: ignore[union-attr]
+                offer.buying.asset_code = "XLM"  # type: ignore[union-attr]
 
-        return offers.embedded.records
+        return offers.embedded.records  # type: ignore[return-value]
 
 
-async def stellar_has_asset_offers(session: Session, user_id: int, asset: Asset) -> bool:
+async def stellar_has_asset_offers(session: AsyncSession, user_id: int, asset: Asset) -> bool:
     offers = await stellar_get_offers(session, user_id)
     for offer in offers:
         if offer.selling and offer.selling.asset_code == asset.code and offer.selling.asset_issuer == asset.issuer:
@@ -592,7 +597,7 @@ async def stellar_has_asset_offers(session: Session, user_id: int, asset: Asset)
     return False
 
 
-def stellar_change_password(session: Session, user_id: int, old_password: str, new_password: str,
+def stellar_change_password(session: AsyncSession, user_id: int, old_password: str, new_password: str,
                             password_type: int):
     account = Keypair.from_secret(decrypt(db_get_default_wallet(session, user_id).secret_key, old_password))
     db_update_secret_key(session, user_id, encrypt(account.secret, new_password), password_type)

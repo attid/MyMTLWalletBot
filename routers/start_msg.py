@@ -1,14 +1,14 @@
 from contextlib import suppress
-from typing import Union
+from typing import Union, Optional, Any
 
-import jsonpickle
+import jsonpickle  # type: ignore
 from aiogram import types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from keyboards.common_keyboards import get_kb_resend, get_kb_return, get_return_button, get_hide_notification_keyboard
@@ -26,7 +26,7 @@ class WalletSettingCallbackData(CallbackData, prefix="WalletSettingCallbackData"
     idx: int
 
 
-async def get_kb_default(session: Session, chat_id: int, state: FSMContext, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
+async def get_kb_default(session: AsyncSession, chat_id: int, state: FSMContext, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
     data = await state.get_data()
 
     if data.get('use_ton', False):
@@ -50,10 +50,6 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext, *, a
             types.InlineKeyboardButton(text='💸 ' + my_gettext(chat_id, 'kb_inout', app_context=app_context), callback_data="InOut"),
             types.InlineKeyboardButton(text='📊 ' + my_gettext(chat_id, 'kb_market', app_context=app_context), callback_data="Market")
         ],
-        # [
-        #     types.InlineKeyboardButton(text='🥳 ' + "MTLFEST 2024", callback_data="Fest2024")
-        # ]
-        # app_context passed to keys if needed? 'MTLFEST 2024' is constant.
     ]
 
     if data.get('show_more', False):
@@ -91,8 +87,8 @@ async def get_kb_default(session: Session, chat_id: int, state: FSMContext, *, a
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, need_new_msg=None,
-                           refresh_callback: types.CallbackQuery = None, *, app_context: AppContext, **kwargs):
+async def cmd_show_balance(session: AsyncSession, user_id: int, state: FSMContext, need_new_msg=None,
+                           refresh_callback: Optional[types.CallbackQuery] = None, *, app_context: AppContext, **kwargs):
     user_repo = app_context.repository_factory.get_user_repository(session)
     user = await user_repo.get_by_id(user_id)
     # new user ?
@@ -101,8 +97,6 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
         await cmd_change_wallet(user_id, state, session, app_context=app_context)
     else:
         try:
-            # start_time = datetime.now()
-            # print(datetime.now(), f'time {datetime.now() - start_time}', 4)
             data = await state.get_data()
             await state.set_state(state=None)
             await clear_state(state)
@@ -128,27 +122,34 @@ async def cmd_show_balance(session: Session, user_id: int, state: FSMContext, ne
             await state.update_data(last_message_id=0)
 
 
-async def get_start_text(session, state, user_id, *, app_context: AppContext):
-    secret_service = app_context.use_case_factory.create_wallet_secret_service(session)
+async def get_start_text(session: AsyncSession, state: FSMContext, user_id: int, *, app_context: AppContext):
+    use_case_factory = app_context.use_case_factory
+    if use_case_factory is None:
+        return "Internal error"
+    secret_service = use_case_factory.create_wallet_secret_service(session)
     repo = app_context.repository_factory.get_wallet_repository(session)
     
     wallet = await repo.get_default_wallet(user_id)
+    if not wallet:
+        return "No wallet found"
+
     if await secret_service.is_ton_wallet(user_id):
         mnemonic = await secret_service.get_ton_mnemonic(user_id)
         ton_service = TonService()
-        ton_service.from_mnemonic(mnemonic)
+        if mnemonic:
+            ton_service.from_mnemonic(mnemonic)
         await state.update_data(use_ton=True)
         ton_balance = await ton_service.get_ton_balance()
         usdt_balance = await ton_service.get_usdt_balance()
         warning_message = "⚠️ The TON wallet is in a testing phase. It is not recommended to store amounts that you are not willing to lose."
+        address_str = ton_service.wallet.address.to_str(is_bounceable=False) if ton_service.wallet else "Unknown"
         return f"""Address: 
-<code>{ton_service.wallet.address.to_str(is_bounceable=False)}</code>
+<code>{address_str}</code>
 TON: {float2str(ton_balance, True)}
 USDT: {float2str(usdt_balance, True)}
 
 {warning_message}"""
 
-    # user_account = (await stellar_get_user_account(session, user_id)).account.account_id
     user_account = wallet.public_key
     await state.update_data(use_ton=None)
 
@@ -158,21 +159,17 @@ USDT: {float2str(usdt_balance, True)}
     link = 'https://viewer.eurmtl.me/account/' + user_account
     from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE
     
-    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    use_case = use_case_factory.create_get_wallet_balance(session)
     
     balances = await use_case.execute(user_id)
     
-    # Formatting Logic (Presenter layer in Router)
     vis_str = getattr(wallet, "assets_visibility", None)
     
-    # Filter visible
     balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
 
-    # Filter EURMTL only if needed (legacy logic)
     if (await state.get_data()).get('show_more', False) is False:
          balances = [b for b in balances if b.asset_code == 'EURMTL']
     
-    # from infrastructure.utils.stellar_utils import my_float
     from infrastructure.utils.stellar_utils import my_float
 
     balance_str = ''
@@ -191,17 +188,14 @@ USDT: {float2str(usdt_balance, True)}
     if wallet.is_free:
         balance_str += 'XLM : <a href="https://telegra.ph/XLM-05-28">?</a>\n'
 
-    # msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance")}\n\n' \
-    #       f'{await stellar_get_balance_str(session, user_id, state=state)}'
-    
     msg = f'<a href="{link}">{simple_account}</a> {info} {my_gettext(user_id, "your_balance", app_context=app_context)}\n\n' \
           f'{balance_str}'
     return msg
 
 
-async def cmd_info_message(session: Session | None, user_id: Union[types.CallbackQuery, types.Message, int],
-                           msg: str, send_file=None, resend_transaction=None, operation_id: str = None,
-                           public_key: str = None, wallet_id: int = None, *, app_context: AppContext):
+async def cmd_info_message(session: Optional[AsyncSession] = None, user_id: Union[types.CallbackQuery, types.Message, int] = 0,
+                           msg: str = "", send_file=None, resend_transaction=None, operation_id: Optional[str] = None,
+                           public_key: Optional[str] = None, wallet_id: Optional[int] = None, *, app_context: AppContext):
     user_id = get_user_id(user_id)
     
     bot = app_context.bot
@@ -214,27 +208,25 @@ async def cmd_info_message(session: Session | None, user_id: Union[types.Callbac
         await bot.send_photo(user_id, photo=photo, caption=msg,
                                          reply_markup=get_kb_return(user_id, add_buttons, app_context=app_context))
         fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
-        data = await dispatcher.storage.get_data(key=fsm_storage_key)
-        with suppress(TelegramBadRequest):
-            await bot.delete_message(user_id, data.get('last_message_id', 0))
+        if dispatcher and dispatcher.storage:
+            data = await dispatcher.storage.get_data(key=fsm_storage_key)
+            with suppress(TelegramBadRequest):
+                await bot.delete_message(user_id, data.get('last_message_id', 0))
         await clear_last_message_id(user_id, app_context=app_context)
 
     elif resend_transaction:
         await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id, app_context=app_context), app_context=app_context)
     elif operation_id:
-        keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id)
-        await send_message(None, user_id, msg, reply_markup=keyboard, app_context=app_context)
+        if wallet_id is not None:
+            keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id, app_context=app_context)
+            await send_message(None, user_id, msg, reply_markup=keyboard, app_context=app_context)
+        else:
+            await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
     else:
         await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
 
 
-# user_id = 123456
-#    fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)#
-#
-#   # Clear user state
-#  await dp.storage.set_state(fsm_storage_key, None) #workflow_data
-
-async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
+async def cmd_change_wallet(user_id: int, state: FSMContext, session: AsyncSession, *, app_context: AppContext):
     msg = my_gettext(user_id, 'setting_msg', app_context=app_context)
     buttons = []
     
@@ -258,4 +250,3 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: Session, *
 
     await send_message(session, user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
     await state.update_data(wallets={wallet.id: wallet.public_key for wallet in wallets})
-

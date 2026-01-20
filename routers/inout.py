@@ -1,16 +1,15 @@
 import asyncio
 import html
-import jsonpickle
+import jsonpickle  # type: ignore
 from asyncio import sleep
 from decimal import Decimal
 from datetime import datetime, timedelta
-from sqlalchemy.orm import sessionmaker, Session
-
 from aiogram import Router, types, F, Bot
 from aiogram.enums import ContentType
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from keyboards.common_keyboards import get_return_button, get_kb_return, get_kb_yesno_send_xdr
 from other.loguru_tools import safe_catch_async
 from routers.start_msg import cmd_info_message
@@ -51,7 +50,9 @@ usdt_in_fee = 0
 
 
 @router.callback_query(F.data == "InOut")
-async def cmd_inout(callback: types.CallbackQuery, session: Session, app_context: AppContext):
+async def cmd_inout(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     msg = my_gettext(callback, "inout", app_context=app_context)
     buttons = [[types.InlineKeyboardButton(text='USDT TRC20',
                                            callback_data="USDT_TRC20")],
@@ -71,7 +72,7 @@ async def cmd_inout(callback: types.CallbackQuery, session: Session, app_context
 
 
 @router.callback_query(F.data == "USDT_TRC20")
-async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session, app_context: AppContext):
+async def cmd_receive_usdt(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
     msg = my_gettext(callback, "inout_usdt", app_context=app_context)
     buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in', app_context=app_context),
                                            callback_data="USDT_IN"),
@@ -88,7 +89,10 @@ async def cmd_receive_usdt(callback: types.CallbackQuery, session: Session, app_
 ############################################################################
 
 @router.callback_query(F.data == "USDT_IN")
-async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     asset_list = await balance_use_case.execute(user_id=callback.from_user.id)
     # Filter for USDM
@@ -97,6 +101,7 @@ async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session:
         await send_message(session, callback, my_gettext(callback, 'usdm_need', app_context=app_context),
                            reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
     else:
+        assert app_context.repository_factory is not None, "repository_factory must be initialized"
         user_repo = app_context.repository_factory.get_user_repository(session)
         user_tron_private_key, _ = await user_repo.get_usdt_key(get_user_id(callback))
         
@@ -118,7 +123,9 @@ async def cmd_usdt_in(callback: types.CallbackQuery, state: FSMContext, session:
 
 
 @router.callback_query(F.data == "USDT_CHECK")
-async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, session: Session, bot: Bot, app_context: AppContext):
+async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot, app_context: AppContext):
+    if callback.from_user is None:
+        return
     data = await state.get_data()
     check_time = data.get("check_time")
     if check_time and datetime.now() < datetime.strptime(check_time, '%d.%m.%Y %H:%M:%S') + timedelta(seconds=10):
@@ -129,6 +136,7 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         return
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     # rest of the function logic
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     user_balances = await balance_use_case.execute(user_id=callback.from_user.id)
     if not any(b.asset_code == 'USDM' for b in user_balances):
@@ -137,7 +145,11 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
         return
     async with new_wallet_lock:
         user_repo = app_context.repository_factory.get_user_repository(session)
-        user_tron_private_key, usdt_old_sum = await user_repo.get_usdt_key(get_user_id(callback))
+        user_tron_private_key_opt, usdt_old_sum = await user_repo.get_usdt_key(get_user_id(callback),
+            create_trc_private_key)
+        if user_tron_private_key_opt is None:
+             return
+        user_tron_private_key = user_tron_private_key_opt
         user_tron_key = tron_get_public(user_tron_private_key)
         full_usdt_balance = int(await get_usdt_balance(private_key=user_tron_private_key))
         income_usdt_balance = int(full_usdt_balance - usdt_old_sum)
@@ -199,14 +211,18 @@ async def cmd_usdt_check(callback: types.CallbackQuery, state: FSMContext, sessi
 ############################################################################
 
 @router.callback_query(F.data == "USDT_OUT")
-async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
+    assert app_context.repository_factory is not None, "repository_factory must be initialized"
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     if wallet and wallet.use_pin == 10:
         await send_message(session, callback, "Sorry, I can't work in read-only mode", reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
         await callback.answer()
         return
-        
+
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     asset_list = await balance_use_case.execute(user_id=callback.from_user.id)
     # Check if USDM exists in balances
@@ -226,7 +242,7 @@ async def cmd_usdt_out(callback: types.CallbackQuery, state: FSMContext, session
         await state.set_state(StateInOut.sending_usdt_address)
 
 
-async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
+async def cmd_after_send_usdt(session: AsyncSession, user_id: int, state: FSMContext, *, app_context: AppContext):
     await state.update_data(out_pay_usdt=user_id)
 
     message_text = (f"Ваша заявка #{user_id}\n"
@@ -244,21 +260,22 @@ async def cmd_after_send_usdt(session: Session, user_id: int, state: FSMContext,
     await cmd_after_send_usdt_task(session, user_id, state, app_context=app_context)
 
 
-async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
+async def cmd_after_send_usdt_task(session: AsyncSession, user_id: int, state: FSMContext, *, app_context: AppContext):
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     async with new_wallet_lock:
         data = await state.get_data()
         out_pay_usdt = data.get("out_pay_usdt")
         if out_pay_usdt:
             admin_id = app_context.admin_id
-            usdt_address = data.get('usdt_address')
-            usdt_sum = data.get('usdt_sum')
+            usdt_address: str | None = data.get('usdt_address')
+            usdt_sum: int | None = data.get('usdt_sum')
             await send_message(session, user_id=admin_id, msg=f'{user_id} {usdt_sum} usdt {usdt_address}',
                                need_new_msg=True,
                                reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
             await clear_last_message_id(admin_id, app_context=app_context)
             try:
-                success, tx_hash = await send_usdt_async(amount=usdt_sum, public_key_to=usdt_address,
+                usdt_sum_val: float = float(usdt_sum) if usdt_sum else 0.0
+                success, tx_hash = await send_usdt_async(amount=usdt_sum_val, public_key_to=usdt_address,
                                                          sun_fee=data.get("sun_fee", 0))
                 if success:
                     await state.update_data(out_pay_usdt=None)
@@ -280,7 +297,7 @@ async def cmd_after_send_usdt_task(session: Session, user_id: int, state: FSMCon
 
 
 @router.callback_query(F.data == "USDT_OUT_CHECK")
-async def cmd_usdt_out_check(callback: types.CallbackQuery, state: FSMContext, session: Session, bot: Bot, app_context: AppContext):
+async def cmd_usdt_out_check(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, bot: Bot, app_context: AppContext):
     data = await state.get_data()
     check_time = data.get("check_time")
     if check_time and datetime.now() < datetime.strptime(check_time, '%d.%m.%Y %H:%M:%S') + timedelta(seconds=10):
@@ -294,7 +311,9 @@ async def cmd_usdt_out_check(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.message(StateInOut.sending_usdt_address)
-async def cmd_send_get_address(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_get_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     try:
         if not check_valid_trx(message.text):
             raise ValueError
@@ -322,7 +341,9 @@ async def cmd_send_get_address(message: types.Message, state: FSMContext, sessio
 
 
 @router.message(StateInOut.sending_usdt_sum)
-async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None:
+        return
     try:
         send_sum = my_float(message.text)
     except:
@@ -344,11 +365,16 @@ async def cmd_send_usdt_sum(message: types.Message, state: FSMContext, session: 
     await message.delete()
 
 
-async def cmd_send_usdt(session: Session, message: types.Message, state: FSMContext, *, app_context: AppContext):
+async def cmd_send_usdt(session: AsyncSession, message: types.Message, state: FSMContext, *, app_context: AppContext):
+    if message.from_user is None:
+        return
     data = await state.get_data()
 
-    send_sum = data.get("send_sum")
-    usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, data.get("usdt_address"), int(send_sum))
+    send_sum: float | None = data.get("send_sum")
+    usdt_address: str | None = data.get("usdt_address")
+    assert send_sum is not None, "send_sum must be set in state"
+    assert usdt_address is not None, "usdt_address must be set in state"
+    usdt_out_fee, sun_fee = await get_usdt_transfer_fee(tron_master_address, usdt_address, int(send_sum))
     usdt_out_fee = round(usdt_out_fee)
     master_energy = await get_account_energy()
     if master_energy.energy_amount > 130_000:
@@ -358,8 +384,10 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
 
     # send_address = (await stellar_get_user_account(session, 0)).account.account_id
     # We need public key for user 0
+    assert app_context.repository_factory is not None, "repository_factory must be initialized"
     repo = app_context.repository_factory.get_wallet_repository(session)
     master_wallet = await repo.get_default_wallet(0)
+    assert master_wallet is not None, "master wallet must exist"
     send_address = master_wallet.public_key
     
     send_memo = 'For USDT'
@@ -367,8 +395,10 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
     await state.update_data(usdt_sum=usdt_sum, sun_fee=sun_fee)
 
     msg = my_gettext(message, 'confirm_send', (float2str(send_sum), usdm_asset.code, send_address, send_memo), app_context=app_context)
-    msg += f"\n you will receive {usdt_sum} USDT for this address <b>{data.get('usdt_address')}</b>"
+    dest_address: str | None = data.get('usdt_address')
+    msg += f"\n you will receive {usdt_sum} USDT for this address <b>{dest_address}</b>"
 
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     pay_use_case = app_context.use_case_factory.create_send_payment(session)
     # Perform transaction immediately? 
     # Logic in send.py used cmd_send_04/SendPayment.
@@ -410,7 +440,7 @@ async def cmd_send_usdt(session: Session, message: types.Message, state: FSMCont
 ############################################################################
 
 @router.callback_query(F.data == "BTC")
-async def cmd_receive_btc(callback: types.CallbackQuery, session: Session, app_context: AppContext):
+async def cmd_receive_btc(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
     # await callback.answer('Not implemented yet', show_alert=True)
     msg = my_gettext(callback, "inout_btc", app_context=app_context)
     buttons = [[types.InlineKeyboardButton(text=my_gettext(callback, 'kb_in', app_context=app_context),
@@ -428,15 +458,20 @@ async def cmd_receive_btc(callback: types.CallbackQuery, session: Session, app_c
 ############################################################################
 
 @router.callback_query(F.data == "BTC_IN")
-async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_btc_in(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     await cmd_show_btc_in(session, callback.from_user.id, state, app_context=app_context)
     await callback.answer()
 
 
-async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext):
+async def cmd_show_btc_in(session: AsyncSession, user_id: int, state: FSMContext, *, app_context: AppContext):
+    assert app_context.repository_factory is not None, "repository_factory must be initialized"
     user_repo = app_context.repository_factory.get_user_repository(session)
-    btc_uuid, btc_date = await user_repo.get_btc_uuid(user_id)
-    if btc_uuid and btc_date and btc_date > datetime.now():
+    result = await user_repo.get_btc_uuid(user_id)
+    btc_uuid: str | None = result[0]
+    btc_date: datetime | None = result[1] if isinstance(result[1], datetime) else None
+    if btc_uuid and btc_date and isinstance(btc_date, datetime) and btc_date > datetime.now():
         buttons = [[types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_check', app_context=app_context),
                                                callback_data="BTC_CHECK"),
                     ], get_return_button(user_id, app_context=app_context)]
@@ -446,6 +481,7 @@ async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, *, 
         await send_message(session, user_id, msg, reply_markup=keyboard, app_context=app_context)
 
     else:
+        assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
         balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         master_balances = await balance_use_case.execute(0)
         sats_obj = next((b for b in master_balances if b.asset_code == 'SATSMTL'), None)
@@ -458,12 +494,18 @@ async def cmd_show_btc_in(session: Session, user_id: int, state: FSMContext, *, 
 
 
 @router.message(StateInOut.sending_btc_sum_in)
-async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
-    try:
-        send_sum = int(message.text)
-    except:
+async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
+    if message.text is None:
         send_sum = 0
+    else:
+        try:
+            send_sum = int(message.text)
+        except:
+            send_sum = 0
 
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     master_balances = await balance_use_case.execute(0)
     sats_obj = next((b for b in master_balances if b.asset_code == 'SATSMTL'), None)
@@ -483,14 +525,18 @@ async def cmd_send_btc_sum(message: types.Message, state: FSMContext, session: S
         if order_uuid:
             await state.update_data(send_sum=send_sum)
             await state.set_state(None)
+            assert app_context.repository_factory is not None, "repository_factory must be initialized"
             user_repo = app_context.repository_factory.get_user_repository(session)
-            await user_repo.set_btc_uuid(message.from_user.id, order_uuid)
-            await cmd_show_btc_in(session, message.from_user.id, state, app_context=app_context)
+            if message.from_user is not None:
+                await user_repo.set_btc_uuid(message.from_user.id, order_uuid)
+                await cmd_show_btc_in(session, message.from_user.id, state, app_context=app_context)
     await message.delete()
 
 
 @router.callback_query(F.data == "BTC_CHECK")
-async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     data = await state.get_data()
     check_time = data.get("check_time")
     if check_time and datetime.now() < datetime.strptime(check_time, '%d.%m.%Y %H:%M:%S') + timedelta(seconds=10):
@@ -502,11 +548,13 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
     await state.update_data(check_time=datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
     # rest of the function logic
     async with new_wallet_lock:
+        assert app_context.repository_factory is not None, "repository_factory must be initialized"
         user_repo = app_context.repository_factory.get_user_repository(session)
         btc_uuid, btc_date = await user_repo.get_btc_uuid(callback.from_user.id)
-        if btc_uuid and btc_date and btc_date > datetime.now():
+        if btc_uuid and btc_date and isinstance(btc_date, datetime) and btc_date > datetime.now():
             result, sats_sum = await thoth_check_order(btc_uuid)
             if result:
+                assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
                 balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
                 balances = await balance_use_case.execute(callback.from_user.id)
                 has_sats = any(b.asset_code == 'SATSMTL' for b in balances)
@@ -529,8 +577,11 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
                 await sleep(1)
 
                 # Payout SATS
+                assert app_context.repository_factory is not None, "repository_factory must be initialized"
                 repo = app_context.repository_factory.get_wallet_repository(session)
                 user_wallet = await repo.get_default_wallet(callback.from_user.id)
+                assert user_wallet is not None, "user wallet must exist"
+                assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
                 pay_use_case = app_context.use_case_factory.create_send_payment(session)
                 await pay_use_case.execute(
                     user_id=0,
@@ -552,7 +603,7 @@ async def cmd_btc_check(callback: types.CallbackQuery, state: FSMContext, sessio
 ############################################################################
 
 @router.callback_query(F.data == "BTC_OUT")
-async def cmd_btc_out(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_btc_out(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await callback.answer('Not implemented yet', show_alert=True)
 
 
@@ -561,12 +612,13 @@ async def cmd_btc_out(callback: types.CallbackQuery, state: FSMContext, session:
 ############################################################################
 
 @router.callback_query(F.data == "STARTS")
-async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await callback.answer()
     await state.set_state(StateInOut.sending_starts_sum_in)
     # await state.update_data(msg=msg)
     await state.set_state(StateInOut.sending_starts_sum_in)
     # await state.update_data(msg=msg)
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     master_balances = await balance_use_case.execute(0)
     eurmtl_obj = next((b for b in master_balances if b.asset_code == 'EURMTL'), None)
@@ -577,7 +629,9 @@ async def cmd_starts_in(callback: types.CallbackQuery, state: FSMContext, sessio
 
 
 @router.message(StateInOut.sending_starts_sum_in)
-async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session: Session, bot: Bot, app_context: AppContext):
+async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session: AsyncSession, bot: Bot, app_context: AppContext):
+    if message.text is None:
+        return
     try:
         send_sum = int(message.text)
     except:
@@ -585,6 +639,7 @@ async def cmd_send_starts_sum(message: types.Message, state: FSMContext, session
 
 
 
+    assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     master_balances = await balance_use_case.execute(0)
     eurmtl_obj = next((b for b in master_balances if b.asset_code == 'EURMTL'), None)
@@ -611,12 +666,15 @@ async def cmd_process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQu
 
 
 @router.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
-async def cmd_process_message_successful_payment(message: types.Message, session: Session, state: FSMContext, app_context: AppContext):
+async def cmd_process_message_successful_payment(message: types.Message, session: AsyncSession, state: FSMContext, app_context: AppContext):
+    if message.from_user is None:
+        return
     logger.info(message.successful_payment)
     data = await state.get_data()
-    send_sum = data.get("send_sum")
+    send_sum: int | None = data.get("send_sum")
 
     async with new_wallet_lock:
+        assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
         balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         user_balances = await balance_use_case.execute(message.from_user.id)
         has_eurmtl = any(b.asset_code == 'EURMTL' for b in user_balances)
@@ -625,18 +683,21 @@ async def cmd_process_message_successful_payment(message: types.Message, session
             await message.answer(text=f"You don't have a trust line to EURMTL, continuation is not possible",
                                  show_alert=True)
             return
-        await message.answer(text=f"Found pay for {round(send_sum)} EURMTL, wait transaction",
+        await message.answer(text=f"Found pay for {round(send_sum) if send_sum else 0} EURMTL, wait transaction",
                              show_alert=True)
         await sleep(1)
 
+        assert app_context.repository_factory is not None, "repository_factory must be initialized"
         repo = app_context.repository_factory.get_wallet_repository(session)
         user_wallet = await repo.get_default_wallet(message.from_user.id)
+        assert user_wallet is not None, "user wallet must exist"
+        assert app_context.use_case_factory is not None, "use_case_factory must be initialized"
         pay_use_case = app_context.use_case_factory.create_send_payment(session)
         await pay_use_case.execute(
             user_id=0,
             destination_address=user_wallet.public_key,
             asset=DomainAsset(code='EURMTL', issuer=eurmtl_asset.issuer),
-            amount=round(send_sum),
+            amount=round(send_sum) if send_sum else 0,
             password='0'
         )
         await cmd_info_message(session, message.chat.id, 'All works done!', app_context=app_context)
@@ -653,22 +714,23 @@ async def cmd_process_message_successful_payment(message: types.Message, session
 
 @router.message(Command(commands=["balance"]))
 @safe_catch_async
-async def cmd_balance(message: types.Message, session: Session, app_context: AppContext):
-    if message.from_user.username == "itolstov":
-        user_repo = app_context.repository_factory.get_user_repository(session)
-        balances = await user_repo.get_all_with_usdt_balance()
-        if balances:
-            balance_message = "\n".join(f"Адрес: {addr if addr else 'ID:'+str(id)}, USDT: {amount}" for addr, amount, id in balances)
-
-            total_balance = sum(amount for _, amount, _ in balances)
-            balance_message += f"\nИтого: {total_balance} USDT"
-            master_energy = await get_account_energy()
-            balance_message += f"\n\nЭнергия аккаунта: {master_energy.energy_amount}"
-        else:
-            balance_message = "У вас нет активных балансов USDT."
-        await message.answer(balance_message)
-    else:
+async def cmd_balance(message: types.Message, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.from_user.username != "itolstov":
         await message.answer("У вас нет доступа к этой команде.")
+        return
+    assert app_context.repository_factory is not None, "repository_factory must be initialized"
+    user_repo = app_context.repository_factory.get_user_repository(session)
+    balances = await user_repo.get_all_with_usdt_balance()
+    if balances:
+        balance_message = "\n".join(f"Адрес: {addr if addr else 'ID:'+str(id)}, USDT: {amount}" for addr, amount, id in balances)
+
+        total_balance = sum(amount for _, amount, _ in balances)
+        balance_message += f"\nИтого: {total_balance} USDT"
+        master_energy = await get_account_energy()
+        balance_message += f"\n\nЭнергия аккаунта: {master_energy.energy_amount}"
+    else:
+        balance_message = "У вас нет активных балансов USDT."
+    await message.answer(balance_message)
 
 
 async def notify_admin(bot: Bot, text: str, *, app_context: AppContext):
@@ -676,7 +738,7 @@ async def notify_admin(bot: Bot, text: str, *, app_context: AppContext):
     await bot.send_message(chat_id=admin_id, text=text)
 
 @safe_catch_async
-async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None = None,
+async def process_usdt_wallet(session: AsyncSession, bot: Bot, *, user_id: int | None = None,
                               username: str | None = None, master_energy: EnergyObject | None = None, 
                               app_context: AppContext) -> bool:
     if user_id is None and username is None:
@@ -689,11 +751,15 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
     # Note: user_id provided here is from iterating addresses?
     # Wait, line 679 context: `usdt_key, balance = db_get_usdt_private_key(session, user_id, create_trc_private_key)`
     # This loop iterates users.
+    assert app_context.repository_factory is not None, "repository_factory must be initialized"
     user_repo = app_context.repository_factory.get_user_repository(session)
-    usdt_key, balance = await user_repo.get_usdt_key(user_id if user_id is not None else 0,
+    usdt_key_opt, balance = await user_repo.get_usdt_key(user_id if user_id is not None else 0,
         create_trc_private_key,
         user_name=username
     )
+    if usdt_key_opt is None:
+         return False
+    usdt_key = usdt_key_opt
 
     await notify_admin(bot, f"[USDT] Start processing {target_label}. db_balance={balance}", app_context=app_context)
     if balance <= 0:
@@ -768,8 +834,9 @@ async def process_usdt_wallet(session: Session, bot: Bot, *, user_id: int | None
             await delegate_energy(private_key_to=usdt_key, energy_object=master_energy, undo=True)
 
 @safe_catch_async
-async def process_first_usdt_balance(session: Session, bot: Bot,
+async def process_first_usdt_balance(session: AsyncSession, bot: Bot,
                                      master_energy: EnergyObject | None = None, *, app_context: AppContext) -> tuple[bool, str]:
+    assert app_context.repository_factory is not None, "repository_factory must be initialized"
     user_repo = app_context.repository_factory.get_user_repository(session)
     balances = await user_repo.get_all_with_usdt_balance()
     if not balances:
@@ -789,8 +856,8 @@ async def process_first_usdt_balance(session: Session, bot: Bot,
 
 @router.message(Command(commands=["usdt"]))
 @safe_catch_async
-async def cmd_usdt_home(message: types.Message, session: Session, command: CommandObject, bot: Bot, app_context: AppContext):
-    if message.from_user.username != "itolstov":
+async def cmd_usdt_home(message: types.Message, session: AsyncSession, command: CommandObject, bot: Bot, app_context: AppContext):
+    if message.from_user is None or message.from_user.username != "itolstov":
         await message.answer("У вас нет доступа к этой команде.")
         return
 
@@ -801,26 +868,26 @@ async def cmd_usdt_home(message: types.Message, session: Session, command: Comma
     user_arg = command.args.strip()
     await message.answer("Старт обработки. Подробности пришлю в админ-чат.")
     if user_arg.isdigit():
-        await process_usdt_wallet(session, bot, user_id=int(user_arg))
+        await process_usdt_wallet(session, bot, user_id=int(user_arg), app_context=app_context)
     else:
-        await process_usdt_wallet(session, bot, username=user_arg)
+        await process_usdt_wallet(session, bot, username=user_arg, app_context=app_context)
 
 
 @router.message(Command(commands=["usdt1"]))
 @safe_catch_async
-async def cmd_usdt_auto(message: types.Message, session: Session, bot: Bot):
-    if message.from_user.username != "itolstov":
+async def cmd_usdt_auto(message: types.Message, session: AsyncSession, bot: Bot, app_context: AppContext):
+    if message.from_user is None or message.from_user.username != "itolstov":
         await message.answer("У вас нет доступа к этой команде.")
         return
 
-    success, info = await process_first_usdt_balance(session, bot)
+    success, info = await process_first_usdt_balance(session, bot, app_context=app_context)
     prefix = "✅" if success else "⚠️"
     await message.answer(f"{prefix} {info}")
 
 
 @safe_catch_async
-async def usdt_worker(bot: Bot, session_pool: sessionmaker, app_context: AppContext):
-    last_energy = 0
+async def usdt_worker(bot: Bot, session_pool: async_sessionmaker[AsyncSession], app_context: AppContext):
+    last_energy: float = 0.0
     while True:
         try:
             master_energy = await get_account_energy()
@@ -833,8 +900,8 @@ async def usdt_worker(bot: Bot, session_pool: sessionmaker, app_context: AppCont
                     chat_id=app_context.admin_id,
                     text=f'Energy Full: {current_energy}'
                 )
-                with session_pool.get_session() as session:
-                    await process_first_usdt_balance(session, bot)
+                async with session_pool() as session:
+                    success, info = await process_first_usdt_balance(session, bot, master_energy=master_energy, app_context=app_context)
 
             # Energy drained notification
             elif last_energy > 150_000 >= current_energy:
@@ -844,3 +911,4 @@ async def usdt_worker(bot: Bot, session_pool: sessionmaker, app_context: AppCont
         except Exception as ex:
             logger.error(['usdt_worker', ex])
             await asyncio.sleep(60)
+

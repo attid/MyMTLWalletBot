@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from keyboards.common_keyboards import get_return_button, get_kb_return
 from routers.start_msg import cmd_show_balance, cmd_change_wallet, WalletSettingCallbackData
@@ -23,7 +23,7 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService, *, app_context: AppContext):
+async def cmd_language(session: AsyncSession, chat_id: int, l10n: LocalizationService, *, app_context: AppContext):
     buttons = []
 
     for lang in l10n.lang_dict:
@@ -39,13 +39,17 @@ async def cmd_language(session: Session, chat_id: int, l10n: LocalizationService
 
 
 @router.callback_query(F.data == "ChangeLang")
-async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: Session, l10n: LocalizationService, app_context: AppContext):
+async def cmd_wallet_lang(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, l10n: LocalizationService, app_context: AppContext):
+    if callback.from_user is None:
+        return
     await cmd_language(session, callback.from_user.id, l10n, app_context=app_context)
 
 
 @router.callback_query(LangCallbackData.filter())
 async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallbackData, state: FSMContext,
-                         session: Session, l10n: LocalizationService, app_context: AppContext):
+                         session: AsyncSession, l10n: LocalizationService, app_context: AppContext):
+    if callback.from_user is None:
+        return
     logger.info(f'{callback.from_user.id}, {callback_data}')
     lang = callback_data.action
     user_repo = app_context.repository_factory.get_user_repository(session)
@@ -57,12 +61,16 @@ async def callbacks_lang(callback: types.CallbackQuery, callback_data: LangCallb
 
 
 @router.callback_query(F.data == "ChangeWallet")
-async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     await cmd_change_wallet(callback.from_user.id, state, session, app_context=app_context)
 
 
 @router.message(Command(commands=["change_wallet"]))
-async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     await message.delete()
     await clear_state(state)
     await cmd_change_wallet(message.from_user.id, state, session, app_context=app_context)
@@ -70,12 +78,14 @@ async def cmd_wallet_setting_msg(message: types.Message, state: FSMContext, sess
 
 @router.callback_query(WalletSettingCallbackData.filter())
 async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSettingCallbackData,
-                     state: FSMContext, session: Session, app_context: AppContext):
+                     state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None or callback.message is None or callback.message.chat is None:
+        return
     answer = callback_data.action
     idx = str(callback_data.idx)
     user_id = callback.from_user.id
     data = await state.get_data()
-    wallets = data['wallets']
+    wallets = data.get('wallets', {})
     if wallets.get(idx):
         if answer == 'DELETE':
             await state.update_data(idx=idx)
@@ -132,7 +142,7 @@ async def cq_setting(callback: types.CallbackQuery, callback_data: WalletSetting
     await callback.answer()
 
 
-async def cmd_confirm_delete(session: Session, user_id, state: FSMContext, app_context: AppContext):
+async def cmd_confirm_delete(session: AsyncSession, user_id, state: FSMContext, app_context: AppContext):
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_yes', app_context=app_context),
                                     callback_data="YES_DELETE"),
@@ -150,10 +160,14 @@ async def cmd_confirm_delete(session: Session, user_id, state: FSMContext, app_c
 
 
 @router.callback_query(F.data == "YES_DELETE")
-async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None or callback.message is None or callback.message.chat is None:
+        return
     data = await state.get_data()
     idx = data.get('idx')
-    wallets = data['wallets']
+    wallets = data.get('wallets', {})
+    if idx is None or idx not in wallets:
+        return
     # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     await wallet_repo.delete(callback.from_user.id, wallets[idx], wallet_id=int(idx))
@@ -162,5 +176,7 @@ async def cmd_yes_delete(callback: types.CallbackQuery, state: FSMContext, sessi
 
 
 @router.callback_query(F.data == "Support")
-async def cmd_support(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_support(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     await send_message(session, callback, my_gettext(callback, "support_bot", app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)

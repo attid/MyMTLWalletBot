@@ -1,6 +1,6 @@
 
 import pytest
-import jsonpickle
+import jsonpickle  # type: ignore
 import sys
 from loguru import logger
 from unittest.mock import AsyncMock, MagicMock, patch

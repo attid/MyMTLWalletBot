@@ -27,8 +27,10 @@ class LocalizationMiddleware(BaseMiddleware):
         
         # Try to use common utility if applicable, or safe attribute access
         try:
+           from aiogram.types import Message, CallbackQuery
            from infrastructure.utils.common_utils import get_user_id
-           user_id = get_user_id(event)
+           if isinstance(event, (Message, CallbackQuery)):
+               user_id = get_user_id(event)
         except:
            pass
 

@@ -44,12 +44,17 @@ class CancelCheque:
 
         # Refund Payment
         wallet = await self.wallet_repository.get_default_wallet(user_id)
-        
+        if not wallet:
+            return CancelResult(False, error_message="User wallet not found")
+
+        if not cheque.asset:
+            return CancelResult(False, error_message="Cheque asset not defined")
+
         refund_amount = remaining_count * float(cheque.amount)
-        refund_amount_str = f"{refund_amount:.7f}" 
-        
+        refund_amount_str = f"{refund_amount:.7f}"
+
         cheque_asset_parts = cheque.asset.split(':')
-        
+
         tx_xdr = await self.stellar_service.build_payment_transaction(
             source_account_id=self.cheque_public_key,
             destination_account_id=wallet.public_key,
@@ -58,10 +63,18 @@ class CancelCheque:
             amount=refund_amount_str,
             memo=cheque_uuid[:16]
         )
-        
+
         master_wallet = await self.wallet_repository.get_default_wallet(0)
+        if not master_wallet:
+            return CancelResult(False, error_message="Master wallet not found")
+
+        if not master_wallet.secret_key:
+            return CancelResult(False, error_message="Master wallet secret not available")
+
         master_secret = self.encryption_service.decrypt(master_wallet.secret_key, "0")
-        
+        if not master_secret:
+            return CancelResult(False, error_message="Failed to decrypt master secret")
+
         signed_xdr = await self.stellar_service.sign_xdr(tx_xdr, master_secret)
         
         return CancelResult(True, xdr=signed_xdr)

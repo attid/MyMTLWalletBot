@@ -1,13 +1,13 @@
 from typing import List
-import jsonpickle
+import jsonpickle  # type: ignore
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from requests import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset
-from sulguk import SULGUK_PARSE_MODE
+from sulguk import SULGUK_PARSE_MODE  # type: ignore
 
 from other.config_reader import config
 
@@ -17,7 +17,8 @@ from other.mytypes import Balance
 from routers.add_wallet import cmd_show_add_wallet_choose_pin
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
-from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state
+from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state, clear_last_message_id
+from other.faststream_tools import publish_pairing_request
 from infrastructure.utils.common_utils import float2str
 from other.web_tools import get_web_request, get_web_decoded_xdr
 from loguru import logger
@@ -34,7 +35,6 @@ from other.stellar_tools import eurmtl_asset, stellar_check_xdr
 # Legacy imports removed
 # Imports removed/updated
 from core.domain.value_objects import Asset as DomainAsset
-# from other.config_reader import config # Duplicate import
 from other.config_reader import config
 from other.asset_visibility_tools import (
     get_asset_visibility, set_asset_visibility,
@@ -90,7 +90,9 @@ router.message.filter(F.chat.type == "private")
 ASSETS_PER_PAGE = 30 # Max assets per page
 
 @router.callback_query(F.data == "WalletSetting")
-async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext, l10n: LocalizationService):
+async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext, l10n: LocalizationService):
+    if callback.from_user is None:
+        return
     msg = my_gettext(callback, 'wallet_setting_msg', app_context=app_context)
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -123,7 +125,7 @@ async def cmd_wallet_setting(callback: types.CallbackQuery, state: FSMContext, s
 
 
 @router.callback_query(F.data == "ManageAssetsMenu")
-async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     msg = my_gettext(callback, 'manage_assets_msg', app_context=app_context)
     buttons = [
         [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete_one', app_context=app_context), callback_data="DeleteAsset")],
@@ -139,13 +141,18 @@ async def cmd_manage_assets(callback: types.CallbackQuery, state: FSMContext, se
 
 
 # Helper function to generate the message text and keyboard markup
-async def _generate_asset_visibility_markup(user_id: int, session: Session, app_context: AppContext, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
+async def _generate_asset_visibility_markup(user_id: int, session: AsyncSession, app_context: AppContext, page: int = 1) -> tuple[str, types.InlineKeyboardMarkup]:
     """Generates the text and keyboard for the asset visibility menu."""
     """Generates the text and keyboard for the asset visibility menu."""
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(user_id)
+    if not wallet:
+        return "Wallet not found", types.InlineKeyboardMarkup(inline_keyboard=[])
     # Using UseCaseFactory
-    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    use_case_factory = app_context.use_case_factory
+    if use_case_factory is None:
+        return "Internal error", types.InlineKeyboardMarkup(inline_keyboard=[])
+    use_case = use_case_factory.create_get_wallet_balance(session)
     balances = await use_case.execute(user_id=user_id)
 
     vis_dict = {}
@@ -165,6 +172,8 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, app_
     # Asset buttons
     for asset in assets_on_page:
         code = asset.asset_code
+        if code is None:
+            continue
         issuer = asset.asset_issuer # Keep issuer for potential future use (e.g., URL)
         current_status = vis_dict.get(code, ASSET_VISIBLE)
 
@@ -224,7 +233,7 @@ async def _generate_asset_visibility_markup(user_id: int, session: Session, app_
 
 
 @router.callback_query(F.data == "AssetVisibilityMenu")
-async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """Displays the initial asset visibility settings menu."""
     user_id = callback.from_user.id
     message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=1)
@@ -237,7 +246,7 @@ async def cmd_asset_visibility_menu(callback: types.CallbackQuery, state: FSMCon
 ########################################################################################################################
 ########################################################################################################################
 @router.callback_query(AssetVisibilityCallbackData.filter())
-async def handle_asset_visibility_action(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: Session, app_context: AppContext):
+async def handle_asset_visibility_action(callback: types.CallbackQuery, callback_data: AssetVisibilityCallbackData, state: FSMContext, session: AsyncSession, app_context: AppContext):
     """Handles actions from the asset visibility menu (setting status or changing page)."""
     logger.info(f"Entered handle_asset_visibility_action with callback_data: {callback_data!r}") # Log entry point
     action = callback_data.action
@@ -249,7 +258,8 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
         target_page = callback_data.page # The page number is directly in callback_data for 'page' action
         message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=target_page)
         try:
-            await callback.message.edit_text(message_text, reply_markup=reply_markup)
+            if callback.message and isinstance(callback.message, types.Message):
+                await callback.message.edit_text(message_text, reply_markup=reply_markup)
             await callback.answer()
         except Exception as e:
             logger.error(f"Error editing message for asset visibility page change: {e}")
@@ -258,7 +268,7 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
     elif action == "set":
         # Set the visibility status for an asset
         # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-        from sqlalchemy.orm import Session as OrmSession
+        from sqlalchemy.ext.asyncio import AsyncSession as OrmSession
         from other.asset_visibility_tools import deserialize_visibility, serialize_visibility
 
         repo = app_context.repository_factory.get_wallet_repository(session)
@@ -278,6 +288,9 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
              await callback.answer(my_gettext(callback, 'error_processing_request', app_context=app_context), show_alert=True)
              return # Stop if status is invalid
 
+        if wallet is None:
+            await callback.answer(my_gettext(callback, 'error_processing_request', app_context=app_context), show_alert=True)
+            return
         vis_dict = deserialize_visibility(wallet.assets_visibility) if wallet.assets_visibility else {}
         current_status_str = vis_dict.get(asset_code, ASSET_VISIBLE)
 
@@ -293,24 +306,25 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
         else:
             vis_dict[asset_code] = new_status_str
 
+        if wallet is None:
+            await callback.answer(my_gettext(callback, 'error_processing_request', app_context=app_context), show_alert=True)
+            return
         wallet.assets_visibility = serialize_visibility(vis_dict)
         save_error = False
-        if isinstance(session, OrmSession):
-            try:
-                session.commit()
-            except Exception as e:
-                session.rollback()
-                logger.error(f"Error committing asset visibility changes: {e}")
-                await callback.answer(my_gettext(callback, 'error_saving_settings', app_context=app_context), show_alert=True)
-                save_error = True
-        else:
-             logger.warning("Asset visibility change in non-ORM session, commit might not be applicable.")
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error committing asset visibility changes: {e}")
+            await callback.answer(my_gettext(callback, 'error_saving_settings', app_context=app_context), show_alert=True)
+            save_error = True
 
         if not save_error:
             # Redraw the current page of the menu to reflect the change
             message_text, reply_markup = await _generate_asset_visibility_markup(user_id, session, app_context, page=page)
             try:
-                await callback.message.edit_text(message_text, reply_markup=reply_markup)
+                if callback.message and isinstance(callback.message, types.Message):
+                    await callback.message.edit_text(message_text, reply_markup=reply_markup)
                 await callback.answer(my_gettext(callback, 'asset_visibility_changed', app_context=app_context))
             except Exception as e:
                 logger.error(f"Error editing message after asset visibility change: {e}")
@@ -331,33 +345,46 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
 ########################################################################################################################
 
 @router.callback_query(F.data == "DeleteAsset")
-async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_add_asset_del(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     # Refactored to use UseCaseFactory
-    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    use_case_factory = app_context.use_case_factory
+    if use_case_factory is None:
+        return
+    use_case = use_case_factory.create_get_wallet_balance(session)
     asset_list = await use_case.execute(user_id=callback.from_user.id)
-
+    
+    # Filter out native asset (XLM) or others if needed
+    # Usually we can delete any non-native asset
+    
     kb_tmp = []
-    for token in asset_list:
-        kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
-                                                  callback_data=DelAssetCallbackData(
-                                                      answer=token.asset_code).pack()
-                                                  )])
+    assets_to_store = []
+    
+    for asset in asset_list:
+        if asset.asset_type == 'native':
+            continue
+            
+        assets_to_store.append(asset)
+        kb_tmp.append([types.InlineKeyboardButton(
+            text=f"{asset.asset_code}",
+            callback_data=DelAssetCallbackData(answer=asset.asset_code).pack()
+        )])
+        
     kb_tmp.append(get_return_button(callback, app_context=app_context))
+    
+    await state.update_data(assets=jsonpickle.encode(assets_to_store))
+    
     msg = my_gettext(callback, 'delete_asset2', app_context=app_context)
     await send_message(session, callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp), app_context=app_context)
-    await state.update_data(assets=jsonpickle.encode(asset_list))
     await callback.answer()
 
 
 @router.callback_query(DelAssetCallbackData.filter())
-
-
 async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data: DelAssetCallbackData,
-
-
-                                    state: FSMContext, session: Session, app_context: AppContext):
-
-
+                                    state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     answer = callback_data.answer
 
 
@@ -396,6 +423,9 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
         wallet = await repo.get_default_wallet(callback.from_user.id)
 
+        if wallet is None:
+            await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
+            return
 
         offers = await service.get_selling_offers(wallet.public_key)
 
@@ -426,11 +456,14 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
         # Close asset = Change Trust (Limit 0)
 
+        if asset_obj.asset_code is None or asset_obj.asset_issuer is None:
+            await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
+            return
 
         tx = await service.build_change_trust_transaction(
 
 
-            source_public_key=wallet.public_key,
+            source_account_id=wallet.public_key,
 
 
             asset_code=asset_obj.asset_code,
@@ -492,12 +525,16 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 ########################################################################################################################
 
 @router.callback_query(F.data == "AddAsset")
-async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
-    user_id = callback.from_user.id
+async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None:
+        return
     user_id = callback.from_user.id
     # Refactored to use UseCaseFactory
     repo = app_context.repository_factory.get_wallet_repository(session)
-    balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    use_case_factory = app_context.use_case_factory
+    if use_case_factory is None:
+        return
+    balance_use_case = use_case_factory.create_get_wallet_balance(session)
     
     wallet = await repo.get_default_wallet(user_id)
     is_free = wallet.is_free if wallet else False
@@ -538,7 +575,7 @@ async def cmd_add_asset_add(callback: types.CallbackQuery, state: FSMContext, se
 
 @router.callback_query(AddAssetCallbackData.filter())
 async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCallbackData,
-                       state: FSMContext, session: Session, app_context: AppContext):
+                       state: FSMContext, session: AsyncSession, app_context: AppContext):
     answer = callback_data.answer
     data = await state.get_data()
     asset_list: List[Balance] = jsonpickle.decode(data['assets'])
@@ -547,6 +584,8 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
     if asset:
         await state.update_data(send_asset_code=asset[0].asset_code,
                                 send_asset_issuer=asset[0].asset_issuer)
+        if callback.message is None or not isinstance(callback.message, types.Message):
+            return
         await cmd_add_asset_end(callback.message.chat.id, state, session, app_context=app_context)
     else:
         await callback.answer(my_gettext(callback, "bad_data", app_context=app_context), show_alert=True)
@@ -560,7 +599,7 @@ async def cq_add_asset(callback: types.CallbackQuery, callback_data: AddAssetCal
 ########################################################################################################################
 
 @router.callback_query(F.data == "AddAssetExpert")
-async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     user_id = callback.from_user.id
     user_id = callback.from_user.id
     repo = app_context.repository_factory.get_wallet_repository(session)
@@ -586,7 +625,9 @@ async def cmd_add_asset_expert(callback: types.CallbackQuery, state: FSMContext,
 
 
 @router.message(StateAddAsset.sending_code)
-async def cmd_sending_code(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_sending_code(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None:
+        return
     user_id = message.from_user.id
     asset_code = message.text
     await state.update_data(send_asset_code=asset_code)
@@ -598,7 +639,9 @@ async def cmd_sending_code(message: types.Message, state: FSMContext, session: S
 
 
 @router.message(StateAddAsset.sending_issuer)
-async def cmd_sending_issuer(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_sending_issuer(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None or message.chat is None:
+        return
     await state.update_data(send_asset_issuer=message.text)
     await cmd_add_asset_end(message.chat.id, state, session, app_context=app_context)
 
@@ -608,7 +651,9 @@ async def cmd_sending_issuer(message: types.Message, state: FSMContext, session:
 ########################################################################################################################
 
 @router.message(Command(commands=["start"]), F.text.contains("asset_"))
-async def cmd_start_cheque(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_start_cheque(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if message.from_user is None or message.text is None or message.chat is None:
+        return
     await clear_state(state)
 
     # check address
@@ -650,13 +695,15 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: S
 ########################################################################################################################
 
 
-async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session, *, app_context: AppContext):
+async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: AsyncSession, *, app_context: AppContext):
     data = await state.get_data()
     asset_code = data.get('send_asset_code', 'EURMTL')
     asset_issuer = data.get('send_asset_issuer', '')
-    
+
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(chat_id)
+    if wallet is None:
+        return
     service = app_context.stellar_service
 
     tx = await service.build_change_trust_transaction(
@@ -683,7 +730,7 @@ async def cmd_add_asset_end(chat_id: int, state: FSMContext, session: Session, *
 ########################################################################################################################
 ########################################################################################################################
 
-async def remove_password(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
+async def remove_password(session: AsyncSession, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
     data = await state.get_data()
@@ -714,7 +761,7 @@ async def remove_password(session: Session, user_id: int, state: FSMContext, app
 
 
 @router.callback_query(F.data == "RemovePassword")
-async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -731,7 +778,7 @@ async def cmd_remove_password(callback: types.CallbackQuery, state: FSMContext, 
 
 
 @router.callback_query(F.data == "SetPassword")
-async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
@@ -745,14 +792,17 @@ async def cmd_set_password(callback: types.CallbackQuery, state: FSMContext, ses
         if is_free:
             await callback.answer('You have free account. Please buy it first.', show_alert=True)
         else:
+            if wallet is None:
+                return
             public_key = wallet.public_key
             await state.update_data(public_key=public_key)
             await cmd_show_add_wallet_choose_pin(session, callback.from_user.id, state,
-                                                 my_gettext(callback, 'for_address', (public_key,), app_context=app_context))
+                                                 my_gettext(callback, 'for_address', (public_key,), app_context=app_context),
+                                                 app_context=app_context)
             await callback.answer()
 
 
-async def send_private_key(session: Session, user_id: int, state: FSMContext, app_context: AppContext):
+async def send_private_key(session: AsyncSession, user_id: int, state: FSMContext, app_context: AppContext):
     data = await state.get_data()
     pin = data.get('pin', '')
     secrets_use_case = app_context.use_case_factory.create_get_wallet_secrets(session)
@@ -773,7 +823,7 @@ async def send_private_key(session: Session, user_id: int, state: FSMContext, ap
 
 
 @router.callback_query(F.data == "GetPrivateKey")
-async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     is_free = wallet.is_free if wallet else False
@@ -793,7 +843,7 @@ async def cmd_get_private_key(callback: types.CallbackQuery, state: FSMContext, 
             await callback.answer()
 
 
-async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
+async def cmd_after_buy(session: AsyncSession, user_id: int, state: FSMContext, *, app_context: AppContext, **kwargs):
     data = await state.get_data()
     buy_address = data.get('buy_address')
     admin_id = app_context.admin_id
@@ -810,21 +860,25 @@ async def cmd_after_buy(session: Session, user_id: int, state: FSMContext, *, ap
 
 
 @router.callback_query(F.data == "BuyAddress")
-async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     # Check free wallet using Repo (already done?)
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
     is_free = wallet.is_free if wallet else False
-    
+
     if is_free:
+        if wallet is None:
+            return
         public_key = wallet.public_key
         father_wallet = await repo.get_default_wallet(0)
+        if father_wallet is None:
+            return
         father_key = father_wallet.public_key
         await state.update_data(buy_address=public_key, fsm_after_send=jsonpickle.dumps(cmd_after_buy))
         # Refactored to use UseCaseFactory
         balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         balances = await balance_use_case.execute(user_id=callback.from_user.id)
-        eurmtl_balance = 0
+        eurmtl_balance: float = 0.0
         for balance in balances:
             if balance.asset_code == 'EURMTL':
                 eurmtl_balance = float(balance.balance)
@@ -857,7 +911,7 @@ async def cmd_buy_private_key(callback: types.CallbackQuery, state: FSMContext, 
         await callback.answer('You can`t buy. You have you oun account. But you can donate /donate', show_alert=True)
 
 
-async def cmd_edit_address_book(session: Session, user_id: int, app_context: AppContext):
+async def cmd_edit_address_book(session: AsyncSession, user_id: int, app_context: AppContext):
     # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
     addressbook_repo = app_context.repository_factory.get_addressbook_repository(session)
     entries = await addressbook_repo.get_all(user_id)
@@ -887,15 +941,17 @@ async def cmd_edit_address_book(session: Session, user_id: int, app_context: App
 
 
 @router.callback_query(F.data == "AddressBook")
-async def cb_edit_address_book(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cb_edit_address_book(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await callback.answer()
     await state.set_state(StateAddressBook.sending_new)
     await cmd_edit_address_book(session, callback.from_user.id, app_context=app_context)
 
 
 @router.message(StateAddressBook.sending_new, F.text)
-async def cmd_send_for(message: types.Message, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_send_for(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     await message.delete()
+    if message.text is None or message.from_user is None:
+        return
     if len(message.text) > 5 and message.text.find(' ') != -1:
         arr = message.text.split(' ')
         # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
@@ -906,7 +962,7 @@ async def cmd_send_for(message: types.Message, state: FSMContext, session: Sessi
 
 @router.callback_query(AddressBookCallbackData.filter())
 async def cq_setting_address_book(callback: types.CallbackQuery, callback_data: AddressBookCallbackData,
-                     state: FSMContext, session: Session, app_context: AppContext):
+                     state: FSMContext, session: AsyncSession, app_context: AppContext):
     # from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
     addressbook_repo = app_context.repository_factory.get_addressbook_repository(session)
     answer = callback_data.action
@@ -930,9 +986,13 @@ async def cq_setting_address_book(callback: types.CallbackQuery, callback_data: 
 ########################################################################################################################
 
 @router.callback_query(F.data == "ManageData")
-async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, session: Session, app_context: AppContext):
+async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    if callback.from_user is None or callback.message is None:
+        return
     repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await repo.get_default_wallet(callback.from_user.id)
+    if not wallet:
+        return
     account_id = wallet.public_key
     buttons = [
         [types.InlineKeyboardButton(text='Manage Data',
@@ -948,7 +1008,7 @@ async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, 
 
 @router.callback_query(MDCallbackData.filter())
 async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: MDCallbackData,
-                       state: FSMContext, session: Session, app_context: AppContext):
+                       state: FSMContext, session: AsyncSession, app_context: AppContext):
     uuid_callback = callback_data.uuid_callback
     data = await state.get_data()
 
@@ -976,9 +1036,8 @@ async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: 
         await callback.answer("Error getting data", show_alert=True)
 
 
-async def handle_wc_uri(wc_uri: str, user_id: int, session: Session, state: FSMContext, app_context: AppContext):
+async def handle_wc_uri(wc_uri: str, user_id: int, session: AsyncSession, state: FSMContext, app_context: AppContext):
     """Helper function to process WalletConnect URI"""
-    await clear_state(state)
     await clear_state(state)
     await clear_last_message_id(user_id, app_context=app_context)
     # Get user's default address
