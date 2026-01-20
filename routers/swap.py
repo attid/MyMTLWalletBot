@@ -96,6 +96,8 @@ async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session:
 
     kb_tmp = []
     for token in asset_list:
+        if my_float(token.balance) <= 0.0:
+            continue
         kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                   callback_data=SwapAssetFromCallbackData(
                                                       answer=token.asset_code or "").pack()
