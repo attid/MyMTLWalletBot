@@ -15,12 +15,7 @@ from other.mytypes import Balance, MyOffer
 from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
 from infrastructure.utils.common_utils import float2str
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
-from core.use_cases.wallet.get_balance import GetWalletBalance
-from core.use_cases.trade.manage_offer import ManageOffer
 from core.domain.value_objects import Asset as DomainAsset
-from other.config_reader import config
 from loguru import logger
 
 
@@ -171,7 +166,7 @@ async def cq_trade_choose_token_buy(callback: types.CallbackQuery, callback_data
 async def cmd_send_sale_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
-    except:
+    except Exception:
         send_sum = 0.0
 
     data = await state.get_data()
@@ -200,7 +195,7 @@ async def cmd_send_sale_sum(message: types.Message, state: FSMContext, session: 
 async def cmd_send_sale_cost(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     try:
         receive_sum = my_float(message.text)
-    except:
+    except Exception:
         receive_sum = 0.0
 
     data = await state.get_data()
@@ -404,7 +399,7 @@ async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext
                 max_balance = target_obj.balance if target_obj else "not found =("
             else:
                 max_balance = '"not found =("'
-        except:
+        except Exception:
             max_balance = '"not found =("'
 
         data = await state.get_data()
@@ -436,7 +431,7 @@ async def cmd_edit_order_amount(callback: types.CallbackQuery, state: FSMContext
 async def cmd_edit_sale_sum(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
-    except:
+    except Exception:
         send_sum = 0.0
 
     data = await state.get_data()
@@ -510,7 +505,7 @@ async def cmd_edit_order_price(callback: types.CallbackQuery, state: FSMContext,
 async def cmd_edit_sale_cost(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     try:
         receive_sum = my_float(message.text)
-    except:
+    except Exception:
         receive_sum = 0.0
 
     data = await state.get_data()
@@ -542,8 +537,6 @@ async def cmd_delete_order(callback: types.CallbackQuery, state: FSMContext, ses
         buying_code = o.buying.asset_code if o.buying else "Unknown"
         amount = float(o.amount or 0)
         price = float(o.price or 0)
-        msg = f"{amount} {selling_code} -> ({price}) "
-        f"-> {amount * price} {buying_code}\n"
 
         await state.update_data(send_sum=o.amount,
                                 receive_sum=amount * price,

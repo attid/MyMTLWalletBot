@@ -1,9 +1,7 @@
 
 import pytest
 import jsonpickle  # type: ignore
-from aiogram import Bot, Dispatcher, types
 from unittest.mock import AsyncMock, MagicMock, patch
-import datetime
 
 from routers.swap import (
     router as swap_router,

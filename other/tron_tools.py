@@ -1,7 +1,6 @@
-from typing import Optional, List
+from typing import Optional
 from contextlib import suppress
 import asyncio
-from decimal import Decimal
 
 import base58
 import requests
@@ -280,7 +279,7 @@ async def get_usdt_balance(public_key: Optional[str] = None, private_key: Option
 def check_valid_trx(public_key):
     try:
         return is_address(public_key)
-    except:
+    except Exception:
         return False
 
 
@@ -495,7 +494,7 @@ def test4():
     # Просмотр закодированных данных транзакции
     print("Transaction data:", txn.to_json())
 
-    s = {'txID': '10ec1aedd7fbbaf98a51f003054d43c6331124ef3f5b324b3036d449d986b577', 'raw_data': {'contract': [{
+    { 'txID': '10ec1aedd7fbbaf98a51f003054d43c6331124ef3f5b324b3036d449d986b577', 'raw_data': {'contract': [{
         'parameter': {
             'value': {
                 'owner_address': '415e62c22aa70ba7530c8272ee34e4cbb23174fb0b',

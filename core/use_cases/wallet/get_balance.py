@@ -1,4 +1,4 @@
-from typing import List, Any, Optional
+from typing import List, Optional
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Balance

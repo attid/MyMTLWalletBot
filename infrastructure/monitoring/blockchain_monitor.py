@@ -2,11 +2,10 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import cast
 
-from aiogram import Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
-from sqlalchemy import func, or_, select, update, delete
+from sqlalchemy import func, or_, select, update
 
 from db.models import TOperations, MyMtlWalletBot, TLOperations, NotificationFilter
 from db.db_pool import DatabasePool
@@ -116,7 +115,7 @@ async def handle_address(tl_result, session_pool: DatabasePool, app_context: App
         ).where(
             TOperations.dt > datetime.utcnow() - timedelta(minutes=30)
         ).where(
-            TOperations.arhived == None
+            TOperations.arhived.is_(None)
         ).order_by(TOperations.id)
         
         result_ops = await session.execute(stmt_ops)

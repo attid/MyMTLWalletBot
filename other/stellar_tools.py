@@ -1,34 +1,28 @@
 import asyncio
 import base64
 from contextlib import suppress
-from urllib.parse import urlparse, parse_qs
-from typing import List, Optional, Union, Dict
+from typing import List, Optional
 
-import jsonpickle  # type: ignore
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from aiogram.utils.text_decorations import html_decoration
 from cryptocode import encrypt, decrypt  # type: ignore
-from stellar_sdk import AiohttpClient, ServerAsync, StrKey, MuxedAccount
+from stellar_sdk import AiohttpClient, ServerAsync
 from stellar_sdk import Network, TransactionBuilder, Asset, Account, Keypair, Price, TransactionEnvelope
 from stellar_sdk.exceptions import BadRequestError, NotFoundError
-from stellar_sdk.sep import stellar_uri
 from stellar_sdk.sep.federation import resolve_stellar_address
 
-from infrastructure.utils.stellar_utils import my_float
+from infrastructure.utils.stellar_utils import my_float, decode_data_value, is_valid_stellar_address
 from infrastructure.utils.common_utils import float2str
 
 from other.config_reader import config
 
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from infrastructure.services.stellar_service import StellarService
 from other.mytypes import MyOffers, MyAccount, Balance, MyOffer
 from other.web_tools import get_web_request
 from other.counting_lock import CountingLock
-from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, \
-    ASSET_EXCHANGE_ONLY  # Import for asset visibility tools
+from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE  # Import for asset visibility tools
 
 base_fee = config.base_fee
 
@@ -463,7 +457,7 @@ async def stellar_get_balance_str(session: AsyncSession, user_id: int, public_ke
     balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
     
     # Filter EURMTL only if needed (legacy logic)
-    if public_key is None and state and (await state.get_data()).get('show_more', False) == False:
+    if public_key is None and state and not (await state.get_data()).get('show_more', False):
          balances = [b for b in balances if b.asset_code == 'EURMTL']
 
     result = ''
@@ -503,7 +497,7 @@ async def stellar_unfree_wallet(session: AsyncSession, user_id: int):
         if wallet and wallet.is_free:
             wallet.is_free = False
             await repo.update(wallet)
-    except:
+    except Exception:
         return
 
 
@@ -597,10 +591,15 @@ async def stellar_has_asset_offers(session: AsyncSession, user_id: int, asset: A
     return False
 
 
-def stellar_change_password(session: AsyncSession, user_id: int, old_password: str, new_password: str,
+async def stellar_change_password(session: AsyncSession, user_id: int, old_password: str, new_password: str,
                             password_type: int):
-    account = Keypair.from_secret(decrypt(db_get_default_wallet(session, user_id).secret_key, old_password))
-    db_update_secret_key(session, user_id, encrypt(account.secret, new_password), password_type)
+    repo = SqlAlchemyWalletRepository(session)
+    wallet = await repo.get_default_wallet(user_id)
+    assert wallet is not None, "wallet must not be None"
+    account = Keypair.from_secret(decrypt(wallet.secret_key, old_password))
+    wallet.secret_key = encrypt(account.secret, new_password)
+    wallet.use_pin = password_type
+    await repo.update(wallet)
     return account.public_key
 
 

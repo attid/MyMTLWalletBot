@@ -29,9 +29,9 @@ def float2str(f, short: bool = False) -> str:
         s = "%.8f" % f
         s = s[:-1]
     while len(s) > 1 and s[-1] in ('0', '.'):
-        l = s[-1]
+        last_char = s[-1]
         s = s[0:-1]
-        if l == '.':
+        if last_char == '.':
             break
     return s
 

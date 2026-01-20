@@ -1,4 +1,5 @@
-import asyncio, uuid, jsonpickle  # type: ignore
+import uuid
+import jsonpickle  # type: ignore
 from dataclasses import dataclass
 from typing import Union
 from aiogram import types, Router, F
@@ -13,7 +14,6 @@ from stellar_sdk import Asset
 
 from db.models import ChequeStatus
 from keyboards.common_keyboards import get_kb_return, get_return_button, get_kb_yesno_send_xdr
-from routers.common_setting import cmd_language
 from routers.start_msg import cmd_info_message
 from routers.swap import StateSwapToken
 from infrastructure.utils.common_utils import get_user_id
@@ -23,15 +23,6 @@ from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
 from infrastructure.utils.common_utils import float2str
 from infrastructure.utils.telegram_utils import send_message, clear_state
 from core.constants import CHEQUE_PUBLIC_KEY
-from core.use_cases.cheque.create_cheque import CreateCheque
-from core.use_cases.cheque.claim_cheque import ClaimCheque
-from core.use_cases.cheque.cancel_cheque import CancelCheque
-from core.use_cases.wallet.get_balance import GetWalletBalance
-from core.use_cases.wallet.add_wallet import AddWallet
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
-from infrastructure.services.encryption_service import EncryptionService
-from other.config_reader import config as app_config
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
 
@@ -83,10 +74,8 @@ async def cmd_create_cheque(
 async def cmd_cheque_get_sum(message: Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
     try:
         send_sum = my_float(message.text)
-    except:
+    except Exception:
         send_sum = 0.0
-
-    data = await state.get_data()
 
     if send_sum > 0.0:
         await state.update_data(send_sum=send_sum)
@@ -113,8 +102,6 @@ async def cmd_cheque_show(session: AsyncSession, message: Message, state: FSMCon
     msg = my_gettext(message, 'send_cheque',
                      (float2str(send_sum), send_count, float(send_sum) * send_count, send_comment), app_context=app_context)
 
-    repo = app_context.repository_factory.get_wallet_repository(session)
-    service = app_context.stellar_service
     use_case = app_context.use_case_factory.create_create_cheque(session)
 
     if message.from_user is None:
@@ -172,7 +159,7 @@ async def cmd_cheque_get_count(message: Message, state: FSMContext, session: Asy
         send_count = int(message.text)
         if send_count < 1:
             send_count = 1
-    except:
+    except Exception:
         send_count = 1
 
     if send_count > 0:
@@ -443,8 +430,6 @@ async def cmd_send_money_from_cheque(session: AsyncSession, user_id: int, state:
     # Or check if user language is default/none.
     pass
 
-
-from infrastructure.services.app_context import AppContext
 
 async def cheque_worker(app_context: AppContext):
     while True:  # not queue.empty():

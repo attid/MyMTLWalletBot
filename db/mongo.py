@@ -1,4 +1,3 @@
-import asyncio
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from other.config_reader import config

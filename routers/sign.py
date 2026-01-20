@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import jsonpickle  # type: ignore
 from aiogram import Router, types, F
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import StateFilter
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from loguru import logger
@@ -13,14 +13,13 @@ from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
 
 from infrastructure.services.app_context import AppContext
-from infrastructure.services.localization_service import LocalizationService
 
 
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import (my_gettext, send_message, cmd_show_sign, long_line)
-from other.web_tools import get_web_request, get_web_decoded_xdr
+from other.web_tools import get_web_decoded_xdr
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
@@ -157,7 +156,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                 # Use DI
                 await app_context.stellar_service.get_user_keypair(session, user_id, pin)  # test pin
                 await sign_xdr(session, state, user_id, app_context=app_context)
-            except:
+            except Exception:
                 pass
 
     if answer == 'Del':
@@ -190,7 +189,7 @@ async def cq_pin(query: types.CallbackQuery, callback_data: PinCallbackData, sta
                 # Use DI
                 await app_context.stellar_service.get_user_keypair(session, user_id, pin)  # test pin
                 await sign_xdr(session, state, user_id, app_context=app_context)
-            except:
+            except Exception:
                 await query.answer(my_gettext(user_id, "bad_password", app_context=app_context), show_alert=True)
                 return True
         return True
@@ -209,7 +208,7 @@ async def cmd_password_from_pin(message: types.Message, state: FSMContext, sessi
         # Use DI
         await app_context.stellar_service.get_user_keypair(session, user_id, pin)  # test pin
         await sign_xdr(session, state, user_id, app_context=app_context)
-    except:
+    except Exception:
         pass
 
 
@@ -400,12 +399,12 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                         if return_url:
                             # Если есть return_url, отправляем только SUCCESS с кнопкой возврата
                             from keyboards.common_keyboards import get_kb_return_url
-                            await send_message(session, callback.from_user.id, f'SUCCESS',
+                            await send_message(session, callback.from_user.id, 'SUCCESS',
                                                reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
                         else:
-                            await cmd_info_message(session, callback, f'SUCCESS', app_context=app_context)
+                            await cmd_info_message(session, callback, 'SUCCESS', app_context=app_context)
                     else:
-                        await cmd_info_message(session, callback, f'ERROR', app_context=app_context)
+                        await cmd_info_message(session, callback, 'ERROR', app_context=app_context)
                 except Exception as ex:
                     logger.info(['cmd_show_send_tr', callback, ex])
                     await cmd_info_message(session, callback, my_gettext(callback, 'send_error', app_context=app_context), app_context=app_context)
@@ -437,7 +436,7 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
                             return_url = data.get('return_url')
                             if return_url:
                                 from keyboards.common_keyboards import get_kb_return_url
-                                await send_message(session, callback.from_user.id, f'SUCCESS',
+                                await send_message(session, callback.from_user.id, 'SUCCESS',
                                                    reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
                                 return
                             else:
@@ -462,7 +461,7 @@ async def cmd_show_send_tr(callback: types.CallbackQuery, state: FSMContext, ses
             return_url = data.get('return_url')
             if return_url:
                 from keyboards.common_keyboards import get_kb_return_url
-                await send_message(session, callback.from_user.id, f'SUCCESS',
+                await send_message(session, callback.from_user.id, 'SUCCESS',
                                    reply_markup=get_kb_return_url(callback.from_user.id, return_url, app_context=app_context), app_context=app_context)
                 return
             else:

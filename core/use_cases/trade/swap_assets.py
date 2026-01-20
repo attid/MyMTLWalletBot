@@ -1,4 +1,3 @@
-from typing import Optional, List
 import math
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService

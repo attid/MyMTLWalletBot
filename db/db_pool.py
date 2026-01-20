@@ -5,7 +5,7 @@ import random
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import text, event
+from sqlalchemy import event
 
 from other.config_reader import config
 from db.models import MyMtlWalletBot
@@ -93,15 +93,15 @@ db_pool = DatabasePool()
 async def update_last_event_id(my_id, public_key):
     random_id = random.randint(1, 10)
     print(21, my_id, random_id)
-    async with db_pool.get_session() as session:
+    async with db_pool.get_session() as _session:
         print(22, my_id)
         # result = session.query(MyMtlWalletBot)\
         #             .filter(MyMtlWalletBot.public_key == public_key)\
         #             .with_for_update(nowait=False).first()
         
         # In async, we use execute(select(...))
-        from sqlalchemy import select
-        q = select(MyMtlWalletBot).where(MyMtlWalletBot.public_key == public_key)
+        # from sqlalchemy import select
+        # q = select(MyMtlWalletBot).where(MyMtlWalletBot.public_key == public_key)
         
         # Async implementation of update is different.
         # We should use update() statement usually.

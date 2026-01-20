@@ -1,7 +1,6 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from enum import Enum
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from other.config_reader import config
@@ -85,7 +84,7 @@ class GristAPI:
                 if isinstance(response.data, dict) and "records" in response.data:
                     return [{'id': record['id'], **record['fields']} for record in response.data["records"]]
                 else:
-                    raise Exception(f'Unexpected response format')
+                    raise Exception('Unexpected response format')
             case _:
                 raise Exception(f'Ошибка запроса: Статус {response.status}')
 

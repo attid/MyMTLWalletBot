@@ -1,8 +1,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.fsm.context import FSMContext
+from aiogram import Bot, Dispatcher, types
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.dispatcher.middlewares.base import BaseMiddleware

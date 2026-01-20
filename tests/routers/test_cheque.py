@@ -15,7 +15,7 @@ import pytest
 import json
 from unittest.mock import MagicMock, patch, AsyncMock
 
-from routers.cheque import router as cheque_router, ChequeCallbackData, StateCheque
+from routers.cheque import router as cheque_router, ChequeCallbackData
 from db.models import ChequeStatus
 from core.domain.value_objects import PaymentResult, Balance
 from core.interfaces.repositories import IChequeRepository, IWalletRepository

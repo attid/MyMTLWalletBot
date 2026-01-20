@@ -1,9 +1,8 @@
-from typing import Optional, List
+from typing import Optional
 from dataclasses import dataclass
 from core.interfaces.repositories import IWalletRepository, IChequeRepository
 from core.interfaces.services import IStellarService, IEncryptionService
 from core.use_cases.wallet.add_wallet import AddWallet
-from core.domain.entities import Cheque
 
 @dataclass
 class ClaimResult:

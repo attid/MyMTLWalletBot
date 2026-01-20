@@ -1,22 +1,20 @@
 import pytest
 import jsonpickle  # type: ignore
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.trade import (
     router as trade_router,
     StateSaleToken,
     SaleAssetCallbackData,
-    BuyAssetCallbackData,
     EditOrderCallbackData,
 )
-from core.domain.value_objects import Balance, PaymentResult, Asset as DomainAsset
+from core.domain.value_objects import Balance, PaymentResult
 from other.mytypes import MyOffer, MyAsset
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
     create_message_update,
-    get_telegram_request,
 )
 
 VALID_ISSUER = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"

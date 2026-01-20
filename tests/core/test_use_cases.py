@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from core.interfaces.repositories import IUserRepository, IWalletRepository
 from core.domain.entities import User, Wallet
 from core.use_cases.wallet.get_balance import GetWalletBalance

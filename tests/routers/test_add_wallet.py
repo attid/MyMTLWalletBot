@@ -1,8 +1,5 @@
 
 import pytest
-import jsonpickle  # type: ignore
-import sys
-from loguru import logger
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
 
@@ -10,12 +7,10 @@ from routers.add_wallet import (
     router as add_wallet_router,
     StateAddWallet,
 )
-from routers.sign import PinState
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
     create_message_update,
-    get_telegram_request,
 )
 from core.interfaces.repositories import IWalletRepository, IUserRepository
 from core.use_cases.wallet.add_wallet import AddWallet

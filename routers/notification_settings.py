@@ -1,15 +1,10 @@
-import asyncio
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 from keyboards.common_keyboards import get_return_button, get_kb_return, HideNotificationCallbackData
 from infrastructure.utils.telegram_utils import send_message
 from other.lang_tools import my_gettext
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.persistence.sqlalchemy_notification_repository import SqlAlchemyNotificationRepository
-from infrastructure.persistence.sqlalchemy_operation_repository import SqlAlchemyOperationRepository
 from infrastructure.services.app_context import AppContext
 
 router = Router()

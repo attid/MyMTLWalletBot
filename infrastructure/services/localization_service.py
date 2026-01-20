@@ -1,9 +1,7 @@
 import json
 import os
-from typing import Dict, Optional, Union, Tuple
+from typing import Dict, Union, Tuple
 from sqlalchemy.future import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from infrastructure.utils.common_utils import get_user_id
 from db.models import MyMtlWalletBotUsers
 
 class LocalizationService:

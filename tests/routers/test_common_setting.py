@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.fsm.context import FSMContext
+from aiogram import Bot, Dispatcher, types
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.dispatcher.middlewares.base import BaseMiddleware
@@ -10,7 +9,6 @@ import datetime
 from routers.common_setting import router as common_setting_router, LangCallbackData
 from routers.start_msg import WalletSettingCallbackData
 from infrastructure.services.localization_service import LocalizationService
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from aiogram.fsm.storage.base import StorageKey
 from tests.conftest import TEST_BOT_TOKEN
 from core.interfaces.repositories import IUserRepository, IWalletRepository

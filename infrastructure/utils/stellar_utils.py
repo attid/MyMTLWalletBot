@@ -186,7 +186,6 @@ def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset) -> str:
 
 def get_good_asset_list():
     """Return list of recommended assets for the bot."""
-    from typing import List
     from other.mytypes import Balance
     
     return [

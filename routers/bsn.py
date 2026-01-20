@@ -1,9 +1,10 @@
 import typing
+from enum import Enum
 from collections import defaultdict
 from dataclasses import dataclass
 
 import jsonpickle  # type: ignore
-from aiogram import F, Router, types
+from aiogram import F, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup
@@ -12,17 +13,15 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 # from stellar_sdk import AiohttpClient, ServerAsync, TransactionBuilder, Network
 
-from other.config_reader import config
 from other.lang_tools import my_gettext
 # from other.mytypes import MyAccount
-from infrastructure.utils.stellar_utils import base_fee, decode_data_value
+from infrastructure.utils.stellar_utils import decode_data_value
 # from other.stellar_tools import stellar_get_user_account
 from routers.start_msg import cmd_show_balance
 from routers.sign import cmd_ask_pin, PinState
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id, clear_state
 from infrastructure.utils.common_utils import get_user_id
 from infrastructure.services.app_context import AppContext
-from infrastructure.services.localization_service import LocalizationService
 
 bsn_router = Router()
 
@@ -66,8 +65,6 @@ BACK_CALLBACK_DATA = "bsn:back"
 
 DELETE_KEY = "DELETE"
 
-from enum import Enum
-
 
 class ActionType(Enum):
     ADD = 'ADD'
@@ -101,7 +98,7 @@ class Str64b(str):
         if len(value) > 64:
             raise LengthError(value)
         if len(value) < 1:
-            raise ValueError(f"Не может быть пусто")
+            raise ValueError("Не может быть пусто")
         return super().__new__(cls, value)
 
 

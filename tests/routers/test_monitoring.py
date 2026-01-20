@@ -1,6 +1,5 @@
 import pytest
-from aiogram import Bot, Dispatcher, types
-from unittest.mock import MagicMock
+from aiogram import types
 import datetime
 
 from routers.monitoring import router as monitoring_router

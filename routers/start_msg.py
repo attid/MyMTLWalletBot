@@ -1,5 +1,5 @@
 from contextlib import suppress
-from typing import Union, Optional, Any
+from typing import Union, Optional
 
 import jsonpickle  # type: ignore
 from aiogram import types
@@ -241,7 +241,7 @@ async def cmd_change_wallet(user_id: int, state: FSMContext, session: AsyncSessi
              types.InlineKeyboardButton(text=f"{active_name}",
                                         callback_data=WalletSettingCallbackData(action='SET_ACTIVE',
                                                                                 idx=wallet.id).pack()),
-             types.InlineKeyboardButton(text=f"Delete",
+             types.InlineKeyboardButton(text="Delete",
                                         callback_data=WalletSettingCallbackData(action='DELETE',
                                                                                 idx=wallet.id).pack())
              ])

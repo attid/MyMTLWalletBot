@@ -1,10 +1,9 @@
 from __future__ import annotations
-from typing import *
+from typing import Callable, Dict, Any, Awaitable, Optional, Union, cast
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject, CallbackQuery
 import redis.asyncio.client
 import time
-from loguru import logger
 
 
 def rate_limit(limit: int, key=None):

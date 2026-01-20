@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List
 
 from infrastructure.services.app_context import AppContext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,6 @@ from aiogram import Router, types, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset
 from loguru import logger
 
@@ -23,13 +22,7 @@ from other.stellar_tools import stellar_check_receive_asset, \
     stellar_check_receive_sum, \
     stellar_check_send_sum
 
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from infrastructure.services.stellar_service import StellarService
-from core.use_cases.wallet.get_balance import GetWalletBalance
-from core.use_cases.trade.swap_assets import SwapAssets
 from core.domain.value_objects import Asset as DomainAsset
-from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-from other.config_reader import config
 
 
 class StateSwapToken(StatesGroup):
@@ -307,7 +300,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Async
             )
             await message.delete()
             return
-    except:
+    except Exception:
         send_sum = 0.0
 
     data = await state.get_data()
@@ -428,7 +421,7 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
             )
             await message.delete()
             return
-    except:
+    except Exception:
         receive_sum = 0.0
 
     data = await state.get_data()

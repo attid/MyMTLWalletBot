@@ -2,7 +2,6 @@ from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, TelegramObject, Message
-from aiogram.fsm.context import FSMContext
 
 
 class CheckOldButtonCallbackMiddleware(BaseMiddleware):

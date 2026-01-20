@@ -1,8 +1,6 @@
 
 import pytest
-import jsonpickle  # type: ignore
 from unittest.mock import AsyncMock, MagicMock, patch
-from aiogram import types
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.start_msg import (
@@ -10,15 +8,8 @@ from routers.start_msg import (
     cmd_show_balance,
     cmd_info_message,
     cmd_change_wallet,
-    WalletSettingCallbackData,
 )
 from core.domain.value_objects import Balance
-from tests.conftest import (
-    RouterTestMiddleware,
-    create_callback_update,
-    create_message_update,
-    get_telegram_request,
-)
 
 @pytest.fixture(autouse=True)
 def cleanup_router():

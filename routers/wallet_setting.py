@@ -6,7 +6,6 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
-from stellar_sdk import Asset
 from sulguk import SULGUK_PARSE_MODE  # type: ignore
 
 from other.config_reader import config
@@ -19,7 +18,6 @@ from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_state, clear_last_message_id
 from other.faststream_tools import publish_pairing_request
-from infrastructure.utils.common_utils import float2str
 from other.web_tools import get_web_request, get_web_decoded_xdr
 from loguru import logger
 
@@ -35,9 +33,7 @@ from other.stellar_tools import eurmtl_asset, stellar_check_xdr
 # Legacy imports removed
 # Imports removed/updated
 from core.domain.value_objects import Asset as DomainAsset
-from other.config_reader import config
 from other.asset_visibility_tools import (
-    get_asset_visibility, set_asset_visibility,
     ASSET_VISIBLE, ASSET_EXCHANGE_ONLY, ASSET_HIDDEN
 )
 from infrastructure.services.app_context import AppContext
@@ -174,7 +170,6 @@ async def _generate_asset_visibility_markup(user_id: int, session: AsyncSession,
         code = asset.asset_code
         if code is None:
             continue
-        issuer = asset.asset_issuer # Keep issuer for potential future use (e.g., URL)
         current_status = vis_dict.get(code, ASSET_VISIBLE)
 
         # Button texts with status indicators
@@ -268,7 +263,6 @@ async def handle_asset_visibility_action(callback: types.CallbackQuery, callback
     elif action == "set":
         # Set the visibility status for an asset
         # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-        from sqlalchemy.ext.asyncio import AsyncSession as OrmSession
         from other.asset_visibility_tools import deserialize_visibility, serialize_visibility
 
         repo = app_context.repository_factory.get_wallet_repository(session)
@@ -680,7 +674,7 @@ async def cmd_start_cheque(message: types.Message, state: FSMContext, session: A
 
         if public_key is None:
             raise Exception("public_key is None")
-    except Exception as ex:
+    except Exception:
         await send_message(session, message.chat.id, my_gettext(message.chat.id, 'send_error2', app_context=app_context),
                            reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
         return
@@ -1010,7 +1004,6 @@ async def cmd_data_management(callback: types.CallbackQuery, state: FSMContext, 
 async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: MDCallbackData,
                        state: FSMContext, session: AsyncSession, app_context: AppContext):
     uuid_callback = callback_data.uuid_callback
-    data = await state.get_data()
 
     headers = {
         "Authorization": f"Bearer {config.eurmtl_key}",
@@ -1020,7 +1013,7 @@ async def cq_manage_data_callback(callback: types.CallbackQuery, callback_data: 
         "uuid": uuid_callback,
         "user_id": callback.from_user.id
     }
-    status, json_data = await get_web_request('POST', url=f"https://eurmtl.me/remote/get_mmwb_transaction",
+    status, json_data = await get_web_request('POST', url="https://eurmtl.me/remote/get_mmwb_transaction",
                                               headers=headers, json=json_payload, return_type='json')
 
     if json_data is not None:

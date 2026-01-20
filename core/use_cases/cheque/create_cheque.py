@@ -1,4 +1,3 @@
-from typing import Optional
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import PaymentResult

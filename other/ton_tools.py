@@ -1,5 +1,4 @@
 import asyncio
-from pprint import pprint
 
 from pytonapi import AsyncTonapi
 from pytoniq_core import Address
@@ -9,6 +8,8 @@ from tonutils.wallet import (
     WalletV5R1,
 )
 from other.config_reader import config
+
+from pytoniq import LiteClient, LiteBalancer, WalletV4R2
 
 # API key for accessing the Tonapi (obtainable from https://tonconsole.com)
 API_KEY = config.tonconsole_token
@@ -48,10 +49,6 @@ async def main() -> None:
     )
 
     print(f"USDT Balance: {to_amount(int(usdt_balance.balance), decimals=6 )}")
-
-
-import asyncio
-from pytoniq import LiteClient, MessageAny, LiteBalancer, WalletV4R2
 
 
 async def main0():

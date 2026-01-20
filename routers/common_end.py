@@ -1,26 +1,23 @@
 from aiogram import Router, types, F
-import re
-import json
 
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-from routers.send import cmd_send_04, cmd_send_choose_token
+from routers.send import cmd_send_choose_token
 from routers.sign import cmd_check_xdr
 from infrastructure.utils.telegram_utils import clear_last_message_id, clear_state
-from other.gpt import gpt_check_message
 from infrastructure.utils.stellar_utils import (
     find_stellar_addresses, find_stellar_federation_address,
     extract_url, is_base64, is_valid_stellar_address
 )
 
 
+from infrastructure.services.app_context import AppContext
+
 router = Router()
 router.message.filter(F.chat.type == "private")
 
-
-from infrastructure.services.app_context import AppContext
 
 @router.message()
 async def cmd_last_route(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):

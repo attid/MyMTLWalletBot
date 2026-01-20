@@ -13,7 +13,6 @@ from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
     create_message_update,
-    get_telegram_request,
 )
 
 @pytest.fixture(autouse=True)

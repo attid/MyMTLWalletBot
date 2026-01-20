@@ -1,17 +1,13 @@
-import asyncio
 from datetime import datetime, timedelta
-from typing import Union, Optional, Any
+from typing import Optional
 import jsonpickle  # type: ignore
 from aiogram import Router, types, Bot, F
 from aiogram.enums import ChatAction
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
-from stellar_sdk import Keypair
 
-from core.domain.value_objects import Asset as DomainAsset
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService 
 # from db.requests import db_add_donate, db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
@@ -23,8 +19,6 @@ from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
 from infrastructure.utils.telegram_utils import send_message, clear_state
 
 from other.lang_tools import my_gettext, check_user_id, check_user_lang
-from other.stellar_tools import (stellar_get_balances, stellar_get_user_account
-                                 )
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -138,7 +132,7 @@ async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, ses
     try:
         if isinstance(callback.message, types.Message):
             await callback.message.delete()
-    except:
+    except Exception:
         if isinstance(callback.message, types.Message):
             await callback.message.edit_text('deleted')
             await callback.message.edit_reply_markup(None)
@@ -158,9 +152,9 @@ async def cb_delete_return(callback: types.CallbackQuery, state: FSMContext, ses
 async def cmd_about(message: types.Message, session: AsyncSession, app_context: AppContext):
     if message.from_user is None:
         return
-    msg = f'Sorry not ready\n' \
-          f'Тут будет что-то о кошельке, переводчиках и добрых людях\n' \
-          f'стать добрым - /donate'
+    msg = 'Sorry not ready\n' \
+          'Тут будет что-то о кошельке, переводчиках и добрых людях\n' \
+          'стать добрым - /donate'
     await send_message(session, message.from_user.id, msg, reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
 @router.callback_query(F.data == "Donate")
 async def cb_donate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
@@ -257,7 +251,6 @@ async def get_donate_sum(session: AsyncSession, user_id, donate_sum, state: FSMC
         else:
             # Refactored to use Clean Architecture Use Case
             from core.constants import EURMTL_ASSET
-            from other.config_reader import config as app_config
 
             repo = app_context.repository_factory.get_wallet_repository(session)
             use_case = app_context.use_case_factory.create_send_payment(session)
@@ -306,7 +299,7 @@ async def get_donate_sum(session: AsyncSession, user_id, donate_sum, state: FSMC
                     app_context=app_context,
                 )
 
-    except Exception as ex:
+    except Exception:
         # logger.error(["get_donate_sum", ex])
         await send_message(
             session,
@@ -392,13 +385,12 @@ async def cmd_set_default(message: types.Message, state: FSMContext, session: As
         return
     address = message.text
     try:
-        from other.config_reader import config as app_config
         balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
         await balance_use_case.execute(user_id=message.from_user.id, public_key=address)
         # Update default address via UpdateUserProfile Use Case
         update_profile = app_context.use_case_factory.create_update_user_profile(session)
         await update_profile.execute(user_id=message.from_user.id, default_address=address)
-    except:
+    except Exception:
         update_profile = app_context.use_case_factory.create_update_user_profile(session)
         await update_profile.execute(user_id=message.from_user.id, default_address='')
 

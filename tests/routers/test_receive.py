@@ -1,13 +1,9 @@
 import pytest
 import os
-from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.storage.base import StorageKey
-import datetime
+from unittest.mock import MagicMock, AsyncMock
 
 from routers.receive import router as receive_router, create_beautiful_code
 from tests.conftest import (
-    TEST_BOT_TOKEN, 
     RouterTestMiddleware,
     create_callback_update,
     get_telegram_request

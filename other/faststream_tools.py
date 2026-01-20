@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from keyboards.common_keyboards import get_kb_return
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id
 from other.config_reader import config
-from faststream import FastStream
 
 from other.lang_tools import my_gettext
 

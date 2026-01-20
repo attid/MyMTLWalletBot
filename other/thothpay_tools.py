@@ -7,31 +7,6 @@ from other.web_tools import get_web_request
 
 def test():
     print(config.thothpay_api.get_secret_value())
-    headers = {
-        "accept": "application/json",
-        "Authorization": config.thothpay_api.get_secret_value()
-    }
-
-    j = {
-        "order_id": "string",
-        "number": 0,
-        "title": "string",
-        "currency": {
-            "Crypto": "Btc"
-        },
-        "items": [
-            {
-                "amount": "0x54470",
-                "name": "VPN subscription 1 month"
-            },
-            {
-                "amount": "0x28622f0",
-                "name": "10GB RAM stick"
-            }
-        ],
-        "due_date": "2023-12-28T12:39:14",
-        "callback_url": "string"
-    }
 
     j2 = {"order_id": str(uuid.uuid4()),
           # "number": 0,

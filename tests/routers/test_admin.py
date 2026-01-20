@@ -1,6 +1,6 @@
 import pytest
 import os
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.admin import router as admin_router, ExitState
@@ -177,20 +177,21 @@ async def test_cmd_log_err_clear(mock_telegram, router_app_context, setup_admin_
 
     log_files = ['mmwb.log', 'mmwb_check_transaction.log', 'MyMTLWallet_bot.err', 'MMWB.err', 'MMWB.log']
     for f in log_files:
-        with open(f, 'w') as fh: fh.write('log')
+        with open(f, 'w') as fh:
+            fh.write('log')
 
     try:
         # /log
         await dp.feed_update(bot=router_app_context.bot, update=create_message_update(user_id, "/log", username="itolstov"), app_context=router_app_context)
         assert any(r['method'] == 'sendDocument' for r in mock_telegram)
-        
+
         # /clear - file deletion skipped in test mode
         mock_telegram.clear()
         await dp.feed_update(bot=router_app_context.bot, update=create_message_update(user_id, "/clear", username="itolstov"), app_context=router_app_context)
     finally:
         for f in log_files:
-            if os.path.exists(f): os.remove(f)
-
+            if os.path.exists(f):
+                os.remove(f)
 
 @pytest.mark.asyncio
 async def test_cmd_fee(mock_telegram, mock_horizon, router_app_context, setup_admin_mocks):

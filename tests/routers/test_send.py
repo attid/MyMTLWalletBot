@@ -104,7 +104,6 @@ def setup_send_mocks(router_app_context):
         def set_offers(self, offers: list):
             """Configure selling offers."""
             # Use mock_horizon instead of mocking service
-            from tests.conftest import DEFAULT_TEST_ACCOUNT
             # We assume mock_horizon is available via some way? 
             # In router tests, we usually pass it to the test function.
             # Since SendMockHelper doesn't have it, we might need to pass it.

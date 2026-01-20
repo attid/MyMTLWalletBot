@@ -1,17 +1,13 @@
 import pytest
-import jsonpickle  # type: ignore
-from unittest.mock import AsyncMock, MagicMock, patch, ANY
-from aiogram import types, Dispatcher, F
+from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.sign import router as sign_router, PinState, PinCallbackData
-from infrastructure.services.app_context import AppContext
 from infrastructure.states import StateSign
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
     create_message_update,
-    get_telegram_request,
 )
 
 @pytest.fixture(autouse=True)

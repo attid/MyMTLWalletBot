@@ -1,5 +1,4 @@
 import pytest
-import jsonpickle  # type: ignore
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
 
@@ -7,12 +6,11 @@ from routers.common_start import (
     router as start_router,
     SettingState,
 )
-from core.domain.value_objects import Balance, PaymentResult
+from core.domain.value_objects import Balance
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
     create_message_update,
-    get_telegram_request,
 )
 
 @pytest.fixture(autouse=True)

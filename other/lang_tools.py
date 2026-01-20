@@ -1,4 +1,4 @@
-from typing import Union, Optional
+from typing import Union
 from aiogram import types
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import MyMtlWalletBotUsers

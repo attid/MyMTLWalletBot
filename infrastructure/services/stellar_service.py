@@ -58,7 +58,7 @@ class StellarService(IStellarService):
              # Load source account for sequence number
              source_account = await server.load_account(source_account_id)
         
-        from stellar_sdk import TransactionBuilder, Asset, Network, Price
+        from stellar_sdk import TransactionBuilder, Asset, Network
         
         base_fee = 10000 # Configurable?
         transaction = TransactionBuilder(
@@ -84,9 +84,11 @@ class StellarService(IStellarService):
                  # Check if match
                  is_match = False
                  if asset_code == "XLM":
-                      if selling.get('asset_type') == 'native': is_match = True
+                      if selling.get('asset_type') == 'native':
+                          is_match = True
                  else:
-                      if s_code == asset_code and s_issuer == asset_issuer: is_match = True
+                      if s_code == asset_code and s_issuer == asset_issuer:
+                          is_match = True
                       
                  if is_match:
                       # Cancel offer
@@ -144,7 +146,7 @@ class StellarService(IStellarService):
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_id)
         
-        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network, Price
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
         
         base_fee = 10000 
         transaction = TransactionBuilder(
@@ -156,7 +158,8 @@ class StellarService(IStellarService):
 
         # Helper to convert domain Asset to SDK Asset
         def to_sdk_asset(a: Asset) -> SdkAsset:
-            if a.code == "XLM": return SdkAsset.native()
+            if a.code == "XLM":
+                return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
 
         if cancel_offers:
@@ -168,9 +171,11 @@ class StellarService(IStellarService):
                  s_issuer = selling.get('asset_issuer')
                  is_match = False
                  if send_asset.code == "XLM":
-                      if selling.get('asset_type') == 'native': is_match = True
+                      if selling.get('asset_type') == 'native':
+                          is_match = True
                  else:
-                      if s_code == send_asset.code and s_issuer == send_asset.issuer: is_match = True
+                      if s_code == send_asset.code and s_issuer == send_asset.issuer:
+                          is_match = True
 
                  if is_match:
                       buying = offer.get('buying', {})
@@ -222,7 +227,7 @@ class StellarService(IStellarService):
         async with ServerAsync(horizon_url=self.horizon_url, client=AiohttpClient()) as server:
              source_account = await server.load_account(source_id)
         
-        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network, Price
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
         
         transaction = TransactionBuilder(
             source_account=source_account,
@@ -232,7 +237,8 @@ class StellarService(IStellarService):
         transaction.set_timeout(180)
 
         def to_sdk_asset(a: Asset) -> SdkAsset:
-            if a.code == "XLM": return SdkAsset.native()
+            if a.code == "XLM":
+                return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
             
         transaction.append_manage_sell_offer_op(
@@ -352,7 +358,8 @@ class StellarService(IStellarService):
         
         # Mapping domain Asset to SDK Asset helper
         def to_sdk_asset(a: Asset):
-            if a.code == "XLM": return SdkAsset.native()
+            if a.code == "XLM":
+                return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
             
         try:
@@ -409,7 +416,7 @@ class StellarService(IStellarService):
 
     async def change_password(self, session, user_id: int, user_id_str: str, pin: str, pin_type: int):
         from other.stellar_tools import stellar_change_password
-        return stellar_change_password(session, user_id, user_id_str, pin, pin_type)
+        return await stellar_change_password(session, user_id, user_id_str, pin, pin_type)
 
     async def send_xdr_async(self, xdr: str):
         from other.stellar_tools import async_stellar_send

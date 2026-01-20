@@ -1,5 +1,4 @@
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import sys
@@ -13,12 +12,14 @@ from aiogram import Dispatcher, Bot, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
 
 from core.interfaces.services import IStellarService
-from core.interfaces.repositories import IUserRepository, IWalletRepository, IRepositoryFactory, IAddressBookRepository, IChequeRepository, INotificationRepository, IOperationRepository, IMessageRepository
+from core.interfaces.repositories import IRepositoryFactory
 from infrastructure.factories.use_case_factory import IUseCaseFactory
 from infrastructure.services.localization_service import LocalizationService
-from core.domain.entities import User, Wallet, Cheque
 
 TEST_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 
@@ -166,7 +167,7 @@ async def mock_telegram(telegram_server_config):
         if request.content_type == 'application/json':
             try:
                 data = await request.json()
-            except:
+            except Exception:
                 data = {}
         else:
             # Handle x-www-form-urlencoded or multipart/form-data
@@ -472,11 +473,6 @@ def mock_message():
 
 
 # --- Common Router Test Fixtures ---
-
-from aiogram import Bot
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
 
 
 class RouterTestMiddleware(BaseMiddleware):
