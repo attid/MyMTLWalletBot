@@ -92,6 +92,8 @@ async def cmd_sale_new_order(callback: types.CallbackQuery, state: FSMContext, s
 
     kb_tmp = []
     for token in asset_list:
+        if my_float(token.balance) <= 0.0:
+            continue
         kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                   callback_data=SaleAssetCallbackData(
                                                       answer=token.asset_code).pack()
@@ -120,6 +122,8 @@ async def cq_trade_choose_token_sell(callback: types.CallbackQuery, callback_dat
                                         send_asset_max_sum=asset.balance)
                 kb_tmp = []
                 for token in asset_list:
+                    if my_float(token.balance) <= 0.0 or token.asset_code == asset.asset_code:
+                        continue
                     kb_tmp.append([types.InlineKeyboardButton(text=f"{token.asset_code} ({float2str(token.balance)})",
                                                               callback_data=BuyAssetCallbackData(
                                                                   answer=token.asset_code).pack()
