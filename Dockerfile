@@ -1,12 +1,28 @@
-# Use an official Python runtime as a parent image
+# --- Builder Stage ---
+FROM python:3.12-slim-bookworm AS builder
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Configure uv to install to system location
+ENV UV_PROJECT_ENVIRONMENT="/usr/local"
+ENV UV_COMPILE_BYTECODE=1
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
+
+# --- Final Stage ---
 FROM python:3.12-slim-bookworm
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    # UV environment variables
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
 
 # Install system dependencies
 # libgl1 and libglib2.0-0 are for opencv
@@ -23,27 +39,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# Copy installed python packages from builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Set the working directory
-WORKDIR /app
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN uv sync --frozen --no-install-project --no-dev
-
-# Copy the rest of the application code
+# Copy application code
 COPY . .
-
-# Install the project itself (if needed, or just ensures env is ready)
-RUN uv sync --frozen --no-dev
 
 # Create directories for volumes
 RUN mkdir -p logs data db
 
-# Set the entrypoint
-# Using 'uv run' ensures the environment is active and up-to-date
-CMD ["uv", "run", "python", "start.py"]
+# Run the application directly with python
+CMD ["python", "start.py"]

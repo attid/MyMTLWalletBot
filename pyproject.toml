@@ -57,6 +57,7 @@ dev = [
     "types-redis>=4.6.0.20241004",
     "types-requests>=2.32.4.20260107",
     "aiosqlite>=0.17.0",
+    "testcontainers>=3.7.1",
 ]
 
 [tool.mypy]

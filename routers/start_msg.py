@@ -1,8 +1,8 @@
 from contextlib import suppress
-from typing import Union, Optional
+from typing import Union, Optional, Any
 
 import jsonpickle  # type: ignore
-from aiogram import types
+from aiogram import types, Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -195,35 +195,50 @@ USDT: {float2str(usdt_balance, True)}
 
 async def cmd_info_message(session: Optional[AsyncSession] = None, user_id: Union[types.CallbackQuery, types.Message, int] = 0,
                            msg: str = "", send_file=None, resend_transaction=None, operation_id: Optional[str] = None,
-                           public_key: Optional[str] = None, wallet_id: Optional[int] = None, *, app_context: AppContext):
+                           public_key: Optional[str] = None, wallet_id: Optional[int] = None, *, 
+                           app_context: Optional[AppContext] = None, 
+                           bot: Optional[Bot] = None, 
+                           dispatcher: Optional[Dispatcher] = None,
+                           localization_service: Any = None):
     user_id = get_user_id(user_id)
     
-    bot = app_context.bot
-    dispatcher = app_context.dispatcher
+    # Resolve dependencies
+    current_bot = bot
+    current_dp = dispatcher
+    loc_service = localization_service
+    
+    if app_context:
+        if not current_bot: current_bot = app_context.bot
+        if not current_dp: current_dp = app_context.dispatcher
+        if not loc_service: loc_service = app_context.localization_service
+
+    if not current_bot:
+        logger.error("cmd_info_message: Bot instance not provided")
+        return
 
     if send_file:
         photo = types.FSInputFile(send_file)
-        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg', app_context=app_context),
+        add_buttons = [types.InlineKeyboardButton(text=my_gettext(user_id, 'manage_assets_msg', app_context=app_context, localization_service=loc_service),
                                                   callback_data="ManageAssetsMenu")]
-        await bot.send_photo(user_id, photo=photo, caption=msg,
-                                         reply_markup=get_kb_return(user_id, add_buttons, app_context=app_context))
-        fsm_storage_key = StorageKey(bot_id=bot.id, user_id=user_id, chat_id=user_id)
-        if dispatcher and dispatcher.storage:
-            data = await dispatcher.storage.get_data(key=fsm_storage_key)
+        await current_bot.send_photo(user_id, photo=photo, caption=msg,
+                                         reply_markup=get_kb_return(user_id, add_buttons, app_context=app_context, localization_service=loc_service))
+        fsm_storage_key = StorageKey(bot_id=current_bot.id, user_id=user_id, chat_id=user_id)
+        if current_dp and current_dp.storage:
+            data = await current_dp.storage.get_data(key=fsm_storage_key)
             with suppress(TelegramBadRequest):
-                await bot.delete_message(user_id, data.get('last_message_id', 0))
+                await current_bot.delete_message(user_id, data.get('last_message_id', 0))
         await clear_last_message_id(user_id, app_context=app_context)
 
     elif resend_transaction:
         await send_message(None, user_id, msg, reply_markup=get_kb_resend(user_id, app_context=app_context), app_context=app_context)
     elif operation_id:
         if wallet_id is not None:
-            keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id, app_context=app_context)
+            keyboard = get_hide_notification_keyboard(user_id, operation_id, wallet_id, app_context=app_context, localization_service=loc_service)
             await send_message(None, user_id, msg, reply_markup=keyboard, app_context=app_context)
         else:
-            await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+            await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context, localization_service=loc_service), app_context=app_context)
     else:
-        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+        await send_message(None, user_id, msg, reply_markup=get_kb_return(user_id, app_context=app_context, localization_service=loc_service), app_context=app_context)
 
 
 async def cmd_change_wallet(user_id: int, state: FSMContext, session: AsyncSession, *, app_context: AppContext):

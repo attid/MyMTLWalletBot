@@ -56,9 +56,10 @@ class SqlAlchemyUserRepository(IUserRepository):
         user = result.scalar_one_or_none()
         if user:
             user.lang = lang
-            await self.session.flush()
         else:
-             raise ValueError(f"User with id {user_id} not found for update_lang")
+            user = MyMtlWalletBotUsers(user_id=user_id, lang=lang)
+            self.session.add(user)
+        await self.session.flush()
 
     async def get_account_by_username(self, username: str) -> tuple[Optional[str], Optional[int]]:
         """Get wallet public key and user_id by Telegram username."""

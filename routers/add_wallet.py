@@ -74,6 +74,10 @@ async def cmd_sending_private(message: types.Message, state: FSMContext, session
             is_default=False 
         )
         
+        # Subscribe to notifications
+        if app_context.notification_service:
+            await app_context.notification_service.subscribe(public_key)
+            
         await state.update_data(public_key=public_key)
         await state.set_state(None)
         await cmd_show_add_wallet_choose_pin(session, message.chat.id, state,
@@ -126,6 +130,10 @@ async def cq_add_new_key(callback: types.CallbackQuery, session: AsyncSession, s
              )
 
              await cmd_info_message(session, callback.message.chat.id, msg, app_context=app_context)
+
+             # Subscribe to notifications
+             if app_context.notification_service:
+                 await app_context.notification_service.subscribe(kp.public_key)
 
              service = app_context.stellar_service
              master_wallet = await wallet_repo.get_default_wallet(0)
