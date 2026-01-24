@@ -80,6 +80,11 @@ def setup_add_wallet_mocks(router_app_context, mock_horizon):
             self.secret_service.is_ton_wallet = AsyncMock(return_value=False) # Must be AsyncMock!
             self.ctx.use_case_factory.create_wallet_secret_service.return_value = self.secret_service
 
+            # Notification Service
+            from infrastructure.services.notification_service import NotificationService
+            self.ctx.notification_service = MagicMock(spec=NotificationService)
+            self.ctx.notification_service.subscribe = AsyncMock()
+
     return AddWalletMockHelper(router_app_context)
 
 

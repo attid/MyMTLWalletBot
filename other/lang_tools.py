@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Optional, Any
 from aiogram import types
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import MyMtlWalletBotUsers
@@ -38,14 +38,21 @@ async def check_user_lang(session: AsyncSession, user_id: int):
     return lang
 
 
-def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int], text: str, param: tuple = (), *, app_context: AppContext) -> str:
+
+def my_gettext(user_id: Union[types.CallbackQuery, types.Message, int], text: str, param: tuple = (), *,
+               app_context: Optional[AppContext] = None, localization_service: Any = None) -> str:
     # Resolve service
-    service = None
-    if app_context and app_context.localization_service:
+    service = localization_service
+    if not service and app_context and app_context.localization_service:
         service = app_context.localization_service
         
     if service:
-        return service.get_text(get_user_id(user_id), text, param)
+        try:
+             # Check if service has get_text method
+             if hasattr(service, 'get_text'):
+                 return service.get_text(get_user_id(user_id), text, param)
+        except Exception as e:
+             logger.error(f"Error in my_gettext: {e}")
     
     # Critical fallback if no service available (e.g. tests without setup)
     # Using simple return or limited logic

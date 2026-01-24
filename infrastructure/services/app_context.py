@@ -26,6 +26,7 @@ class AppContext:
         ton_service: Optional['ITonService'] = None,
         localization_service: Optional[LocalizationService] = None,
         dispatcher: Optional[Dispatcher] = None,
+        notification_service: Optional['NotificationService'] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -39,4 +40,5 @@ class AppContext:
         self.ton_service = ton_service
         self.localization_service = localization_service
         self.dispatcher = dispatcher
+        self.notification_service = notification_service
 

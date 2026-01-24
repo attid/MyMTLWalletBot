@@ -658,6 +658,7 @@ async def mock_horizon(horizon_server_config):
             self.not_found_accounts = set() # accounts that should return 404
             self.offers = {}    # account_id -> list of offers
             self.paths = []     # configured paths for strict-send/receive
+            self.operations = [] # configured operations
             self.transaction_response = {"successful": True, "hash": "abc123"}
 
         def set_account(self, account_id: str, balances: Optional[list] = None, sequence: str = "123456789",
@@ -798,6 +799,71 @@ async def mock_horizon(horizon_server_config):
     async def get_strict_send_paths(request):
         """Mock strict-send paths endpoint."""
         params = dict(request.query)
+        state.requests.append({
+            "endpoint": "paths/strict-send",
+            "method": "GET",
+            "params": params
+        })
+        return web.json_response({
+            "_embedded": {
+                "records": state.paths
+            }
+        })
+        
+    @routes.get("/ledgers")
+    async def get_ledgers(request):
+        """Mock ledgers endpoint."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "ledgers",
+            "method": "GET",
+            "params": params
+        })
+        # Return a simple ledger list to satisfy basic polling
+        return web.json_response({
+            "_embedded": {
+                "records": [
+                    {
+                        "id": "123456789",
+                        "sequence": 12345,
+                        "hash": "hash123",
+                        "paging_token": "12345",
+                        "closed_at": "2024-01-01T00:00:00Z"
+                    }
+                ]
+            }
+        })
+
+    @routes.get("/ledgers/{sequence}")
+    async def get_ledger_by_seq(request):
+        """Mock single ledger endpoint."""
+        seq = request.match_info['sequence']
+        return web.json_response({
+             "id": seq,
+             "sequence": int(seq) if seq.isdigit() else 1,
+             "hash": "hash123",
+             "paging_token": seq
+        })
+
+    @routes.get("/operations")
+    async def get_operations(request):
+        """Mock operations endpoint."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "operations",
+            "method": "GET",
+            "params": params
+        })
+        # Use simple static logic or return configured list
+        # For integration test, we might want to return nothing first, then something.
+        # But simple version: return empty list unless cursor suggests otherwise?
+        # Let's return empty by default, allowing test to inject via state (if we added state.set_operations support)
+        # But state.operations is not defined yet.
+        return web.json_response({
+            "_embedded": {
+                "records": state.operations
+            }
+        })
         state.requests.append({
             "endpoint": "paths/strict-send",
             "method": "GET",

@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     toncenter_token: Optional[str] = None
     debank: Optional[SecretStr] = None
     start_path: str = start_path
+    
+    notifier_url: Optional[str] = "http://operations-notifier:8000"
+    webhook_public_url: Optional[str] = "http://mmwb_bot:8081/webhook"
+    webhook_port: int = 8081
+    
+    # Security for Notification Service
+    notifier_public_key: Optional[str] = None # Public Key of the Notifier Service to verify webhooks
+    service_secret: Optional[SecretStr] = None # Secret Key to sign requests to Notifier
 
     # horizon_url_id: Optional[int] = 0
 

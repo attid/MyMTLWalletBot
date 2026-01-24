@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Any
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters.callback_data import CallbackData
@@ -9,9 +9,9 @@ from infrastructure.services.app_context import AppContext
 from other.lang_tools import my_gettext
 
 
-def get_return_button(chat_id, text=None, callback=None, *, app_context: AppContext):
+def get_return_button(chat_id, text=None, callback=None, *, app_context: AppContext = None, localization_service: Any = None):
     if text is None:
-        text = my_gettext(chat_id, 'kb_return', app_context=app_context)
+        text = my_gettext(chat_id, 'kb_return', app_context=app_context, localization_service=localization_service)
 
     if callback is None:
         callback = "Return"
@@ -20,13 +20,13 @@ def get_return_button(chat_id, text=None, callback=None, *, app_context: AppCont
 
 
 def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int],
-                  add_buttons=None, *, app_context: AppContext) -> InlineKeyboardMarkup:
+                  add_buttons=None, *, app_context: AppContext = None, localization_service: Any = None) -> InlineKeyboardMarkup:
     user_id = get_user_id(user_id)
 
     if add_buttons:
-        buttons = [add_buttons, get_return_button(user_id, app_context=app_context)]
+        buttons = [add_buttons, get_return_button(user_id, app_context=app_context, localization_service=localization_service)]
     else:
-        buttons = [get_return_button(user_id, app_context=app_context)]
+        buttons = [get_return_button(user_id, app_context=app_context, localization_service=localization_service)]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
 
@@ -37,14 +37,14 @@ class HideNotificationCallbackData(CallbackData, prefix="hide_notification"):
 
 
 def get_hide_notification_keyboard(user_id: int, operation_id: str,
-                                   wallet_id: int, *, app_context: AppContext) -> InlineKeyboardMarkup:
+                                   wallet_id: int, *, app_context: AppContext = None, localization_service: Any = None) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text=my_gettext(user_id, 'kb_hide_similar_messages', app_context=app_context),
+        [InlineKeyboardButton(text=my_gettext(user_id, 'kb_hide_similar_messages', app_context=app_context, localization_service=localization_service),
                                     callback_data=HideNotificationCallbackData(
                                         operation_id=operation_id,
                                         wallet_id=wallet_id
                                     ).pack())],
-        get_return_button(user_id, app_context=app_context)
+        get_return_button(user_id, app_context=app_context, localization_service=localization_service) # Pass services
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard

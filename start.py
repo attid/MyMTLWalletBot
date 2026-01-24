@@ -31,8 +31,6 @@ from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
 from other.faststream_tools import start_broker, stop_broker
-# from other.global_data import global_data
-from infrastructure.monitoring.blockchain_monitor import events_worker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
 
@@ -150,8 +148,11 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=config.admins[0], text='Bot started')
-    # fest.fest_menu = await gs_update_fest_menu()
-    
+    # fest.fest_menu = await gs_update_fest_menu()    
+    # Start Notification Service (Webhook Server)
+    if app_context.notification_service:
+        await app_context.notification_service.start_server()
+
     if config.test_mode:
         task_list = [
             # asyncio.create_task(cheque_worker(app_context)),
@@ -163,33 +164,27 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
         task_list = [
             asyncio.create_task(cheque_worker(app_context)),
             asyncio.create_task(log_worker(app_context)),
-            asyncio.create_task(events_worker(app_context.db_pool, app_context)),
             asyncio.create_task(usdt_worker(bot, app_context.db_pool, app_context))
         ]
+        
+        # Add notification sync task
+        if app_context.notification_service:
+             task_list.append(asyncio.create_task(app_context.notification_service.sync_subscriptions()))
+             
     dispatcher["task_list"] = task_list
 
     # config.fest_menu = await load_fest_info()
-
-
-async def on_shutdown(bot: Bot):
-    await stop_broker()
-    with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text='Bot stopped')
     
-    # Retrieve dispatcher somehow? or assume task_list is somewhere
-    # on_shutdown sends bot only? 
-    # Ah, I don't have access to dispatcher here easily unless I use bot.context... but bot doesn't have it.
-    # But usually on_shutdown has (dispatcher: Dispatcher) if registered properly?
-    # Aiogram 3: startup/shutdown handlers can accept arguments. Dispatcher is available via DI if requested?
-    # Let's check signature. `dp.shutdown.register(on_shutdown)`
-    # It injects dependencies. I can ask for dispatcher.
-    pass 
-    # Logic moved to on_shutdown_dispatcher below
     
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     await stop_broker()
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=config.admins[0], text='Bot stopped')
+        
+    # Stop Notification Service
+    app_context: AppContext = dispatcher["app_context"]
+    if app_context.notification_service:
+        await app_context.notification_service.stop()
 
     task_list = dispatcher.get("task_list", [])
     if task_list:
@@ -198,11 +193,12 @@ async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
 
 
 async def main():
-    sentry_sdk.init(
-        dsn=config.sentry_dsn,
-        traces_sample_rate=1.0,
-        profiles_sample_rate=1.0,
-    )
+    if len(config.sentry_dsn) > 20:
+        sentry_sdk.init(
+            dsn=config.sentry_dsn,
+            traces_sample_rate=1.0,
+            profiles_sample_rate=1.0,
+        )
 
     # Creating DB connections pool
     from db.db_pool import db_pool
@@ -220,7 +216,6 @@ async def main():
     dp = Dispatcher(storage=storage)
     scheduler = AsyncIOScheduler(timezone='Europe/Podgorica')  # str(tzlocal.get_localzone())
     scheduler.start()
-    # scheduler_jobs moved after app_context init
 
     # Create Queues
     cheque_queue = asyncio.Queue()
@@ -234,6 +229,7 @@ async def main():
 
     from infrastructure.services.encryption_service import EncryptionService
     from services.ton_service import TonService
+    from infrastructure.services.notification_service import NotificationService
     
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -248,6 +244,9 @@ async def main():
     from core.constants import CHEQUE_PUBLIC_KEY
     use_case_factory = UseCaseFactory(repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY)
     
+    from infrastructure.services.notification_service import NotificationService
+    notification_service = NotificationService(config, db_pool, bot, localization_service, dp)
+
     app_context = AppContext(
         bot=bot,
         db_pool=db_pool,
@@ -260,7 +259,8 @@ async def main():
         encryption_service=encryption_service,
         localization_service=localization_service,
         dispatcher=dp,
-        use_case_factory=use_case_factory
+        use_case_factory=use_case_factory,
+        notification_service=notification_service
     )
     
     dp["app_context"] = app_context
