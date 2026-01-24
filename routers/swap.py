@@ -148,7 +148,7 @@ async def cq_swap_choose_token_from(callback: types.CallbackQuery, callback_data
 
                 msg = my_gettext(
         callback,
-        'choose_token_swap_for',
+        'choose_token_swap2',
         (f"{asset.asset_code}:{asset.asset_issuer}",),
         app_context=app_context
     )

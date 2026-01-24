@@ -89,7 +89,7 @@ async def test_cmd_swap_start(mock_telegram, router_app_context, setup_swap_mock
 
 
 @pytest.mark.asyncio
-async def test_cq_swap_choose_token_from(mock_telegram, router_app_context, setup_swap_mocks):
+async def test_cq_swap_choose_token_from(mock_telegram, router_app_context, setup_swap_mocks, mock_horizon, horizon_server_config):
     """Test selecting source token: should show destination tokens."""
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
@@ -102,13 +102,26 @@ async def test_cq_swap_choose_token_from(mock_telegram, router_app_context, setu
 
     cb_data = SwapAssetFromCallbackData(answer="XLM").pack()
     
-    # Patch external check for possible receive assets
-    with patch("routers.swap.stellar_check_receive_asset", AsyncMock(return_value=["EURMTL", "USDM"])):
+    # Configure Mock Horizon to return valid paths for EURMTL
+    # stellar_check_receive_asset calls strict-send paths
+    mock_horizon.set_paths([
+        {
+            "destination_asset_type": "credit_alphanum12",
+            "destination_asset_code": "EURMTL",
+            "destination_asset_issuer": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V", 
+            "destination_amount": "9.5",
+            "source_amount": "10.0",
+            "path": []
+        }
+    ])
+    
+    # Patch the global config used by legacy stellar_tools
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
         update = create_callback_update(user_id=user_id, callback_data=cb_data)
         await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
     req = get_telegram_request(mock_telegram, "sendMessage")
-    assert "choose_token_swap_for" in req["data"]["text"]
+    assert "choose_token_swap2" in req["data"]["text"]
     assert "EURMTL" in req["data"]["reply_markup"]
 
 
@@ -139,7 +152,7 @@ async def test_cq_swap_choose_token_for(mock_telegram, router_app_context, setup
 
 
 @pytest.mark.asyncio
-async def test_cmd_swap_sum_execution(mock_telegram, router_app_context, setup_swap_mocks):
+async def test_cmd_swap_sum_execution(mock_telegram, router_app_context, setup_swap_mocks, mock_horizon, horizon_server_config):
     """Test entering amount: should show confirmation."""
     dp = router_app_context.dispatcher
     dp.message.middleware(RouterTestMiddleware(router_app_context))
@@ -158,8 +171,20 @@ async def test_cmd_swap_sum_execution(mock_telegram, router_app_context, setup_s
         msg="Prompt"
     )
 
+    # Configure Mock Horizon for strict-send path
+    mock_horizon.set_paths([
+        {
+            "destination_asset_type": "credit_alphanum12",
+            "destination_asset_code": "EURMTL",
+            "destination_asset_issuer": valid_issuer,
+            "destination_amount": "9.5",
+            "source_amount": "10.0",
+            "path": []
+        }
+    ])
+
     # Patch external check for estimated receive sum
-    with patch("routers.swap.stellar_check_receive_sum", AsyncMock(return_value=("9.5", False))):
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
         update = create_message_update(user_id, "10.0")
         await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
@@ -192,7 +217,7 @@ async def test_cq_swap_strict_receive_switch(mock_telegram, router_app_context, 
 
 
 @pytest.mark.asyncio
-async def test_cmd_swap_receive_sum_execution(mock_telegram, router_app_context, setup_swap_mocks):
+async def test_cmd_swap_receive_sum_execution(mock_telegram, router_app_context, setup_swap_mocks, mock_horizon, horizon_server_config):
     """Test entering receive amount: should show strict swap confirmation."""
     dp = router_app_context.dispatcher
     dp.message.middleware(RouterTestMiddleware(router_app_context))
@@ -210,8 +235,20 @@ async def test_cmd_swap_receive_sum_execution(mock_telegram, router_app_context,
         cancel_offers=False
     )
 
+    # Configure Mock Horizon for strict-receive path
+    mock_horizon.set_paths([
+        {
+            "destination_asset_type": "credit_alphanum12",
+            "destination_asset_code": "EURMTL",
+            "destination_asset_issuer": valid_issuer,
+            "destination_amount": "10.0",
+            "source_amount": "10.5",
+            "path": []
+        }
+    ])
+
     # Patch external check for estimated send sum
-    with patch("routers.swap.stellar_check_send_sum", AsyncMock(return_value=("10.5", False))):
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
         update = create_message_update(user_id, "10.0")
         await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
