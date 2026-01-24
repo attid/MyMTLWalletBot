@@ -1,0 +1,36 @@
+services:
+  bot:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=production
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      # Mount db directory if using local Firebird file
+      - ./db:/app/db
+    depends_on:
+      - redis
+      - mongo
+    # If using host network for Firebird on localhost (not recommended for other services)
+    # network_mode: "host" 
+    # Otherwise, use standard networking:
+
+  redis:
+    image: redis:alpine
+    restart: always
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  mongo:
+    image: mongo:latest
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  redis_data:
+  mongo_data:
