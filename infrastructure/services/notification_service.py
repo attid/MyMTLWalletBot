@@ -2,23 +2,19 @@ import asyncio
 import aiohttp
 from aiohttp import web
 from loguru import logger
-from sqlalchemy import select, update, cast
-from typing import Optional, List, Any
+from sqlalchemy import select
+from typing import Optional, Any
 from datetime import datetime
 from urllib.parse import quote
 
 from db.db_pool import DatabasePool
 from db.models import MyMtlWalletBot, TOperations, NotificationFilter
-from infrastructure.services.app_context import AppContext
-from infrastructure.utils.common_utils import float2str
-from other.lang_tools import my_gettext
 from aiogram.fsm.storage.base import StorageKey
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.notification_utils import decode_db_effect
 from stellar_sdk import Keypair
 import time
 import json
-import base64
 from collections import OrderedDict
 from enum import Enum
 
@@ -39,8 +35,6 @@ class NotificationService:
         
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
-        # Simple cache to deduplicate events if needed. 
-        # Using a set with limited size or cleanup mechanism would be better in prod.
         self.notified_operations = set() 
 
     def _encode_url_params(self, pairs: list) -> str:
@@ -65,10 +59,6 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Failed to sign payload: {e}")
             raise e
-            
-        return "&".join(parts)
-
-    # _get_auth_headers removed in favor of inline logic with consistent ordering
 
     def _verify_webhook_signature(self, request: web.Request, body_bytes: bytes) -> bool:
         """Verifies the Notifier's signature on the webhook (X-Request-ED25519-Signature)."""
@@ -81,7 +71,7 @@ class NotificationService:
             return False
 
         try:
-            # Исправление: Notifier шлет HEX, а не Base64
+            # Notifier шлет HEX
             signature = bytes.fromhex(sig_hex)
             kp = Keypair.from_public_key(self.config.notifier_public_key)
             # Verify raw body bytes
@@ -137,16 +127,21 @@ class NotificationService:
             logger.error(f"Error handling webhook: {e}")
             return web.Response(text=f"Error: {e}", status=500)
 
+    async def process_notification(self, payload: dict):
+        """Process the notification payload."""
+        op_info = payload.get('operation', {})
+
+        # Исправлено: Однократное корректное определение ID
         resource_id = (
             payload.get('subscription') or
-            op_data.get('account') or
-            op_data.get('source_account') or
-            op_data.get('to') or
-            op_data.get('destination')
+            op_info.get('account') or
+            op_info.get('source_account') or
+            op_info.get('to') or
+            op_info.get('destination')
         )
         
         if not resource_id:
-             logger.warning(f"Could not determine resource_id. Keys: {payload.keys()}")
+             logger.warning(f"Could not determine resource_id. Payload keys: {payload.keys()}")
              return
 
         # Deduplicate
@@ -156,27 +151,17 @@ class NotificationService:
              return
         if op_id:
              self.notified_operations.add(op_id)
-             # Cleanup logic omitted for brevity (e.g. keep last 1000)
              if len(self.notified_operations) > 1000:
                  self.notified_operations.clear()
 
         # 2. Convert Payload to TOperations-like object
-        op_data = self._map_payload_to_operation(payload)
-        if not op_data:
+        op_data_mapped = self._map_payload_to_operation(payload)
+        if not op_data_mapped:
              logger.warning("Could not map payload to operation")
              return
 
         # 3. Find Users watching this wallet
-        # We need to find wallets linked to ANY of the involved accounts (to, from, etc.)
-        # Logic in blockchain_monitor: 
-        #   or_(TOperations.for_account == account, TOperations.from_account == account, TOperations.code2 == account)
-        # Here we have the involved accounts in op_data.
-        # But we only get webhook for the *subscribed* address usually.
-        # If we subscribe to Alice, we get events for Alice.
-        # So we should look for wallets where public_key == key_in_webhook.
-        
-        # We might have multiple involved accounts.
-        involved_accounts = {op_data.for_account, op_data.from_account}
+        involved_accounts = {op_data_mapped.for_account, op_data_mapped.from_account}
         involved_accounts.discard(None)
         
         if not involved_accounts:
@@ -192,19 +177,17 @@ class NotificationService:
             wallets = result.scalars().all()
             
             for wallet in wallets:
-                await self._send_notification_to_user(wallet, op_data)
+                await self._send_notification_to_user(wallet, op_data_mapped)
 
     def _map_payload_to_operation(self, payload: dict) -> Optional[TOperations]:
         """Maps JSON payload to TOperations entity."""
         try:
-            # ГЛАВНОЕ ИСПРАВЛЕНИЕ: Данные лежат внутри ключа 'operation'
             op_data = payload.get('operation')
             if not op_data:
-                # Если вдруг пришел не operation, а что-то другое
                 logger.warning(f"No operation data in payload: {payload.keys()}")
                 return None
 
-            op_type = op_data.get('type') # Теперь здесь будет 'payment', 'create_account' и т.д.
+            op_type = op_data.get('type')
             
             # Map common fields
             op = TOperations(
@@ -215,7 +198,7 @@ class NotificationService:
                 transaction_hash=payload.get('transaction', {}).get('hash')
             )
             
-            # Type specific mapping - используем op_data!
+            # Type specific mapping
             if op_type == 'payment':
                 op.for_account = op_data.get('to') or op_data.get('destination')
                 op.amount1 = float(op_data.get('amount', 0))
@@ -248,17 +231,12 @@ class NotificationService:
 
     async def _send_notification_to_user(self, wallet: MyMtlWalletBot, operation: TOperations):
         try:
-            # 1. Decode Message
-            # decode_db_effect expects: operation, decode_for(public_key), user_id, app_context (optional), localization_service
             message_text = decode_db_effect(operation, str(wallet.public_key), int(wallet.user_id), 
                                             localization_service=self.localization_service)
             
-            # If decode returns None or empty? It usually returns string.
             if not message_text:
                 return
 
-            # 2. Check Filters
-            # This logic mimics handle_address filtering
             async with self.db_pool.get_session() as session:
                 stmt_filter = select(NotificationFilter).where(NotificationFilter.user_id == wallet.user_id)
                 result_filter = await session.execute(stmt_filter)
@@ -283,8 +261,6 @@ class NotificationService:
             if not should_send:
                 return
 
-            # 3. Send
-            # Reset FSM last_message_id? logic from blockchain_monitor
             fsm_storage_key = StorageKey(bot_id=self.bot.id, user_id=wallet.user_id,
                                          chat_id=wallet.user_id)
             if self.dispatcher:
@@ -309,7 +285,6 @@ class NotificationService:
         url = f"{self.config.notifier_url}/api/subscription"
         webhook = self.config.webhook_public_url
         
-        # 1. Define fields as list of tuples to control order strictly
         nonce = int(time.time() * 1000)
         pairs = [
             ("reaction_url", webhook),
@@ -317,14 +292,9 @@ class NotificationService:
             ("nonce", nonce)
         ]
         
-        # 2. Construct payload string for signature
         payload_str = self._encode_url_params(pairs)
-        
-        # 3. Generate Auth Header
         auth_header = self._sign_payload(payload_str)
         
-        # 4. Construct JSON body strictly maintaining order
-        # using OrderedDict + separators=(',', ':')
         body_json = json.dumps(OrderedDict(pairs), separators=(',', ':'))
         
         headers = {
@@ -351,12 +321,9 @@ class NotificationService:
 
         logger.info("Starting subscription sync...")
         try:
-            # 1. Get active subs from Notifier
-            # Handle paginated response / list
             notifier_keys = await self._get_active_subscriptions()
             logger.info(f"Notifier has {len(notifier_keys)} subscriptions")
 
-            # 2. Get DB wallets
             async with self.db_pool.get_session() as session:
                 stmt = select(MyMtlWalletBot.public_key).where(
                     MyMtlWalletBot.need_delete == 0, 
@@ -367,7 +334,6 @@ class NotificationService:
                 
             logger.info(f"DB has {len(db_keys)} wallets")
 
-            # 3. Calculate diff
             missing = db_keys - notifier_keys
             
             logger.info(f"Found {len(missing)} missing subscriptions.")
@@ -385,15 +351,12 @@ class NotificationService:
             logger.error(f"Sync failed: {e}")
 
     async def _get_active_subscriptions(self) -> set:
-        
-        # 1. Prepare query string manually
         nonce = int(time.time() * 1000)
         pairs = [("nonce", nonce)]
         
         payload_str = self._encode_url_params(pairs)
         auth_header = self._sign_payload(payload_str)
         
-        # 2. Append query string to URL manually
         url = f"{self.config.notifier_url}/api/subscription?{payload_str}"
         
         headers = {
@@ -405,22 +368,13 @@ class NotificationService:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        # data expected to be list of objects, each having subscription info
-                        # We need to extract 'account' (or resource_id logic if deprecated?)
-                        # User said fields are reaction_url + account.
-                        # Assuming response structure: [{"account": "...", ...}, ...] based on request.
-                        # Or maybe we need to filter checking what matches our logic.
-                        
-                        # Let's collect 'account' fields
                         results = set()
                         if isinstance(data, list):
                             for item in data:
                                 if isinstance(item, dict):
-                                    # Fallback keys just in case, but prefer 'account'
                                     key = item.get('account') or item.get('resource_id')
                                     if key:
                                         results.add(key)
-                        
                         return results
                     else:
                         logger.error(f"Get subs failed: {resp.status} {await resp.text()}")
