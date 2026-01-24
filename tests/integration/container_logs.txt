@@ -1,0 +1,9 @@
+STDOUT:
+b'\n> @stellar-expert/operations-notifier@0.4.3 start\n> cross-env NODE_ENV=production node ./app.js\n\nUsing "mongodb" storage provider.\nUsing Horizon server https://horizon-testnet.stellar.org\nListening on port 8080\n'
+
+STDERR:
+b'Error: Unauthorized.\n    at generateError (/app/util/errors.js:3:17)\n    at Object.unauthorized (/app/util/errors.js:37:16)\n    at userRequiredMiddleware (/app/api/authorization-handler.js:85:28)\n    at Layer.handleRequest (/app/node_modules/router/lib/layer.js:152:17)\n    at next (/app/node_modules/router/lib/route.js:157:13)\n    at Route.dispatch (/app/node_modules/router/lib/route.js:117:3)\n    at handle (/app/node_modules/router/index.js:435:11)\n    at Layer.handleRequest (/app/node_modules/router/lib/layer.js:152:17)\n    at /app/node_modules/router/index.js:295:15\n    at processParams (/app/node_modules/router/index.js:582:12) {\n  code: 401\n}\n'
+
+Exception: Expected 400 (Bad Request), got: 401. Text: 
+assert 401 == 400
+ +  where 401 = <ClientResponse(http://localhost:33135/api/subscription) [401 Unauthorized]>\n<CIMultiDictProxy('Access-Control-Allow-O...Date': 'Sat, 24 Jan 2026 20:00:55 GMT', 'Connection': 'keep-alive', 'Keep-Alive': 'timeout=5', 'Content-Length': '0')>\n.status
