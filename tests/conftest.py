@@ -794,6 +794,46 @@ async def mock_horizon(horizon_server_config):
             }
         })
 
+    @routes.get("/paths/strict-send")
+    async def get_strict_send_paths(request):
+        """Mock strict-send paths endpoint."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "paths/strict-send",
+            "method": "GET",
+            "params": params
+        })
+        
+        # Determine strict send mode based on params
+        # source_assets: comma-separated list of assets
+        # source_amount: amount
+        # destination_assets: comma-separated list of assets
+        
+        # If paths are configured, return them if they match destination assets
+        # For simplicity, we just return configured paths if any, or empty list
+        
+        return web.json_response({
+            "_embedded": {
+                "records": state.paths
+            }
+        })
+
+    @routes.get("/paths/strict-receive")
+    async def get_strict_receive_paths(request):
+        """Mock strict-receive paths endpoint."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "paths/strict-receive",
+            "method": "GET",
+            "params": params
+        })
+        
+        return web.json_response({
+            "_embedded": {
+                "records": state.paths
+            }
+        })
+
     @routes.post("/transactions")
     async def submit_transaction(request):
         if request.content_type == 'application/json':
