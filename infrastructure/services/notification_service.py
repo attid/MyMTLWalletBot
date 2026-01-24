@@ -18,7 +18,11 @@ from infrastructure.utils.notification_utils import decode_db_effect
 from stellar_sdk import Keypair
 import time
 import json
+import base64
+from collections import OrderedDict
 from enum import Enum
+
+SAFE = "-_.!~*'()"
 
 class NotifierHeaders(str, Enum):
     ID = "X-Client-ID"
@@ -39,83 +43,52 @@ class NotificationService:
         # Using a set with limited size or cleanup mechanism would be better in prod.
         self.notified_operations = set() 
 
-    def _encode_url_params(self, params: dict) -> str:
-        """Encodes parameters to match stellar_notifier logic (key=val&key=val)."""
-        if not params:
-            return ""
-        
-        SAFE = "-_.!~*'()"
+    def _encode_url_params(self, pairs: list) -> str:
+        """
+        Encodes parameters to match stellar_notifier logic (key=val&key=val).
+        MUST accept a list of tuples to guarantee order.
+        """
         parts = []
-        # Ensure consistent order. JS Object.keys iterates in insertion order for strings.
-        # Python dicts (3.7+) also maintain insertion order. 
-        # But to match user's explicit example logic where we construct lists, we should be careful.
-        # However, `params` here is a dict. The caller must ensure insertion order if it matters, 
-        # or we assume alphabetical if JS behaviour is standard?
-        # User provided example: pairs = [("reaction_url", ...)] which implies explicit order.
-        # But process_notification passes a DICT.
-        # Let's hope standard dict iteration matches insertion/definition order which is standard practice now.
-        
-        for k, v in params.items():
+        for k, v in pairs:
             if isinstance(v, (list, tuple)):
                 v = ",".join(str(x) for x in v)
-            else:
-                v = str(v)
-            parts.append(f"{quote(str(k), safe=SAFE)}={quote(v, safe=SAFE)}")
+            parts.append(f"{quote(str(k), safe=SAFE)}={quote(str(v), safe=SAFE)}")
+        return "&".join(parts)
+
+    def _sign_payload(self, payload: str) -> str:
+        """Signs the payload string using the service secret."""
+        try:
+            kp = Keypair.from_secret(self.config.service_secret.get_secret_value())
+            # Notifier ожидает сигнатуру в HEX формате
+            signature = kp.sign(payload.encode('utf-8')).hex()
+            return f"ed25519 {kp.public_key}.{signature}"
+        except Exception as e:
+            logger.error(f"Failed to sign payload: {e}")
+            raise e
             
         return "&".join(parts)
 
-    def _get_auth_headers(self, payload: dict) -> dict:
-        """Generates authentication headers for requests to Notifier."""
-        if not self.config.service_secret:
-            return {}
-            
-        try:
-            # Add nonce if not present (required by notifier)
-            if "nonce" not in payload:
-                payload["nonce"] = int(time.time() * 1000) # Milliseconds integer
-                
-            # Serialize payload for signature
-            msg = self._encode_url_params(payload)
-            
-            # Debug logging
-            # logger.debug(f"Signing payload: {msg}")
-
-            kp = Keypair.from_secret(self.config.service_secret.get_secret_value())
-            signature = kp.sign(msg.encode('utf-8')).hex()
-            
-            token = f"ed25519 {kp.public_key}.{signature}"
-            
-            return {
-                "Authorization": token
-            }
-        except Exception as e:
-            logger.error(f"Failed to generate auth headers: {e}")
-            return {}
+    # _get_auth_headers removed in favor of inline logic with consistent ordering
 
     def _verify_webhook_signature(self, request: web.Request, body_bytes: bytes) -> bool:
-        """Verifies the Notifier's signature on the webhook."""
+        """Verifies the Notifier's signature on the webhook (X-Request-ED25519-Signature)."""
         if not self.config.notifier_public_key:
-            # If no key configured, skip verification (insecure mode or not configured)
-            return True
-            
+            return True # Режим без проверки, если ключ не задан
+
+        sig_hex = request.headers.get("X-Request-ED25519-Signature")
+        if not sig_hex:
+            logger.warning("Missing signature header")
+            return False
+
         try:
-            signature = request.headers.get(NotifierHeaders.SIGNATURE.value)
-            timestamp = request.headers.get(NotifierHeaders.TIMESTAMP.value)
-            
-            if not signature or not timestamp:
-                logger.warning("Missing signature headers in webhook")
-                return False
-                
-            # Anti-replay check (e.g. 5 minutes)
-            # if abs(time.time() - int(timestamp)) > 300: ... 
-            
-            msg = f"{timestamp}.".encode('utf-8') + body_bytes
+            # Исправление: Notifier шлет HEX, а не Base64
+            signature = bytes.fromhex(sig_hex)
             kp = Keypair.from_public_key(self.config.notifier_public_key)
-            
-            kp.verify(msg, bytes.fromhex(signature))
+            # Verify raw body bytes
+            kp.verify(body_bytes, signature)
             return True
         except Exception as e:
-            logger.warning(f"Signature verification failed: {e}")
+            logger.error(f"Signature verification failed: {e}")
             return False
 
     async def start_server(self):
@@ -141,43 +114,39 @@ class NotificationService:
 
     async def handle_webhook(self, request: web.Request):
         try:
-            # We need raw bytes for verification
+            # 1. Читаем байты (нужны для проверки подписи)
             body_bytes = await request.read()
             if not body_bytes:
                  return web.Response(text="Empty payload", status=400)
 
-            # Verify Signature
+            # 2. Проверяем подпись
             if not self._verify_webhook_signature(request, body_bytes):
                 return web.Response(text="Invalid Signature", status=403)
 
+            # 3. Парсим JSON
             try:
                 payload = json.loads(body_bytes)
             except json.JSONDecodeError:
                 return web.Response(text="Invalid JSON", status=400)
 
-            logger.info(f"Webhook received payload: {payload}")
-
-            # Process asynchronously to return quickly?
-            # For robustness, we await processing.
+            # 4. Обрабатываем
             await self.process_notification(payload)
-            
             return web.Response(text="OK")
+
         except Exception as e:
             logger.error(f"Error handling webhook: {e}")
             return web.Response(text=f"Error: {e}", status=500)
 
-    async def process_notification(self, payload: dict):
-        """Process the notification payload."""
-        # 1. Identify the Wallet. 
-        # The payload format from operations-notifier needs to be handled.
-        # Assuming payload contains 'resource_id' (the watched address) or 'account'.
-        # And 'data' or top-level keys for operation.
-        
-        # Check if this is a test notification or real one
-        resource_id = payload.get('resource_id') or payload.get('account') or payload.get('to') or payload.get('source_account')
+        resource_id = (
+            payload.get('subscription') or
+            op_data.get('account') or
+            op_data.get('source_account') or
+            op_data.get('to') or
+            op_data.get('destination')
+        )
         
         if not resource_id:
-             logger.warning(f"No resource_id in payload: {payload}")
+             logger.warning(f"Could not determine resource_id. Keys: {payload.keys()}")
              return
 
         # Deduplicate
@@ -228,44 +197,46 @@ class NotificationService:
     def _map_payload_to_operation(self, payload: dict) -> Optional[TOperations]:
         """Maps JSON payload to TOperations entity."""
         try:
-            # Flatten "data" if present
-            data = payload.get('data', {})
-            if data:
-                # Merge data into payload, keeping payload keys if collision (or vice versa)
-                payload = {**data, **payload}
+            # ГЛАВНОЕ ИСПРАВЛЕНИЕ: Данные лежат внутри ключа 'operation'
+            op_data = payload.get('operation')
+            if not op_data:
+                # Если вдруг пришел не operation, а что-то другое
+                logger.warning(f"No operation data in payload: {payload.keys()}")
+                return None
 
-            op_type = payload.get('type')
+            op_type = op_data.get('type') # Теперь здесь будет 'payment', 'create_account' и т.д.
             
             # Map common fields
             op = TOperations(
-                id=payload.get('id'),
+                id=payload.get('id'), # ID уведомления
                 operation=op_type,
-                dt=datetime.utcnow(), # Approximate
-                from_account=payload.get('source_account') or payload.get('from'),
-                transaction_hash=payload.get('transaction_hash')
+                dt=datetime.utcnow(),
+                from_account=op_data.get('source_account') or op_data.get('from') or op_data.get('account'),
+                transaction_hash=payload.get('transaction', {}).get('hash')
             )
             
-            # Type specific mapping
+            # Type specific mapping - используем op_data!
             if op_type == 'payment':
-                op.for_account = payload.get('to')
-                op.amount1 = float(payload.get('amount', 0))
-                op.code1 = payload.get('asset_code', 'XLM') # Native if missing usually
-                if payload.get('asset_type') == 'native':
+                op.for_account = op_data.get('to') or op_data.get('destination')
+                op.amount1 = float(op_data.get('amount', 0))
+                op.code1 = op_data.get('asset', {}).get('asset_code', 'XLM')
+                if op_data.get('asset', {}).get('asset_type') == 'native':
                     op.code1 = 'XLM'
+
             elif op_type == 'create_account':
-                op.for_account = payload.get('account')
-                op.amount1 = float(payload.get('starting_balance', 0))
+                op.for_account = op_data.get('account')
+                op.amount1 = float(op_data.get('starting_balance', 0))
                 op.code1 = 'XLM'
+
             elif op_type in ('path_payment_strict_send', 'path_payment_strict_receive'):
-                 op.for_account = payload.get('to')
-                 op.amount1 = float(payload.get('amount', 0))
-                 op.code1 = payload.get('asset_code', 'XLM')
-                 # amount2/code2 for source asset? 
-                 op.amount2 = float(payload.get('source_amount', 0))
-                 op.code2 = payload.get('source_asset_code', 'XLM')
+                 op.for_account = op_data.get('to') or op_data.get('destination')
+                 op.amount1 = float(op_data.get('amount', 0))
+                 op.code1 = op_data.get('asset', {}).get('asset_code', 'XLM')
+                 op.amount2 = float(op_data.get('source_amount', 0))
+                 op.code2 = op_data.get('source_asset', {}).get('asset_code', 'XLM')
+
             else:
-                 # Generic fallback
-                 op.for_account = payload.get('to') or payload.get('account')
+                 op.for_account = op_data.get('to') or op_data.get('account')
                  op.amount1 = 0.0
                  op.code1 = 'UNK'
 
@@ -338,23 +309,32 @@ class NotificationService:
         url = f"{self.config.notifier_url}/api/subscription"
         webhook = self.config.webhook_public_url
         
-        # API requires 'reaction_url' and 'account' (or other filters)
-        # Order matters for signature!
-        data = {
-            "reaction_url": webhook,
-            "account": public_key,
-            # Add nonce explicitly matches signature
-            "nonce": int(time.time() * 1000)
+        # 1. Define fields as list of tuples to control order strictly
+        nonce = int(time.time() * 1000)
+        pairs = [
+            ("reaction_url", webhook),
+            ("account", public_key),
+            ("nonce", nonce)
+        ]
+        
+        # 2. Construct payload string for signature
+        payload_str = self._encode_url_params(pairs)
+        
+        # 3. Generate Auth Header
+        auth_header = self._sign_payload(payload_str)
+        
+        # 4. Construct JSON body strictly maintaining order
+        # using OrderedDict + separators=(',', ':')
+        body_json = json.dumps(OrderedDict(pairs), separators=(',', ':'))
+        
+        headers = {
+            "Authorization": auth_header,
+            "Content-Type": "application/json"
         }
         
         async with aiohttp.ClientSession() as session:
             try:
-                # Serialize precisely to ensure signature matches what is sent
-                payload_json = json.dumps(data, separators=(',', ':'))
-                headers = self._get_auth_headers(data)
-                
-                headers['Content-Type'] = 'application/json'
-                async with session.post(url, data=payload_json, headers=headers) as resp:
+                async with session.post(url, data=body_json, headers=headers) as resp:
                     if resp.status in (200, 201):
                         logger.debug(f"Subscribed {public_key}")
                     else:
@@ -405,27 +385,45 @@ class NotificationService:
             logger.error(f"Sync failed: {e}")
 
     async def _get_active_subscriptions(self) -> set:
-        url = f"{self.config.notifier_url}/api/subscription" 
+        
+        # 1. Prepare query string manually
+        nonce = int(time.time() * 1000)
+        pairs = [("nonce", nonce)]
+        
+        payload_str = self._encode_url_params(pairs)
+        auth_header = self._sign_payload(payload_str)
+        
+        # 2. Append query string to URL manually
+        url = f"{self.config.notifier_url}/api/subscription?{payload_str}"
+        
+        headers = {
+            "Authorization": auth_header
+        }
+        
         async with aiohttp.ClientSession() as session:
              try:
-                # Prepare params with nonce for signature AND query params
-                params = {"nonce": int(time.time() * 1000)}
-                headers = self._get_auth_headers(params)
-                
-                async with session.get(url, headers=headers, params=params) as resp:
+                async with session.get(url, headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        # data might be list of dicts: [{"resource_id": "..."}, ...]
+                        # data expected to be list of objects, each having subscription info
+                        # We need to extract 'account' (or resource_id logic if deprecated?)
+                        # User said fields are reaction_url + account.
+                        # Assuming response structure: [{"account": "...", ...}, ...] based on request.
+                        # Or maybe we need to filter checking what matches our logic.
+                        
+                        # Let's collect 'account' fields
+                        results = set()
                         if isinstance(data, list):
-                            return {item.get('resource_id') for item in data if isinstance(item, dict)}
-                        elif isinstance(data, dict):
-                             # Maybe wrapped in {"results": [...]}
-                             results = data.get('results') or data.get('data')
-                             if isinstance(results, list):
-                                 return {item.get('resource_id') for item in results}
-                        return set()
+                            for item in data:
+                                if isinstance(item, dict):
+                                    # Fallback keys just in case, but prefer 'account'
+                                    key = item.get('account') or item.get('resource_id')
+                                    if key:
+                                        results.add(key)
+                        
+                        return results
                     else:
-                        logger.error(f"Get subs failed: {resp.status}")
+                        logger.error(f"Get subs failed: {resp.status} {await resp.text()}")
                         return set()
              except Exception as e:
                  logger.error(f"Error fetching subs: {e}")
