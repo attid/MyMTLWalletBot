@@ -119,49 +119,48 @@ async def test_notifier_initial_connection(mock_horizon, horizon_server_config, 
                         # 4. Neighbor Subscription
                         # Manually construct signed request matching new logic
                         async with aiohttp.ClientSession() as session:
-                            neighbor_kp = keys["neighbor"] # Unused for signing now
+                            neighbor_kp = keys["neighbor"]
+                            neighbor_target = Keypair.random().public_key
                             
-                            # TEST VECTOR FROM USER (Known valid signature for this payload)
-                            # Payload implies: resource_type, resource_id, webhook_url, nonce
-                            # This SHOULD fail with 400 (Bad Request) if Auth passes.
-                            # If it fails with 401, then Headers/Auth format is wrong.
+                            # Define FIELDS AS LIST OF TUPLES
+                            neighbor_nonce = int(time.time() * 1000)
+                            pairs = [
+                                ("reaction_url", f"http://neighbor-svc:{webhook_port}/webhook"),
+                                ("account", neighbor_target),
+                                ("nonce", neighbor_nonce),
+                            ]
                             
-                            hardcoded_pubkey = "GAVJ55E3IICB5MUSB6IKBMPFYTFDUVPFZQSC46EQYPEZGDKMHYTFXVJY"
-                            hardcoded_sig = "a1973809cd96910dc72ffa465c51e2599478a82061c6123e176ffdf97567475796be5408b1be65bcf249e936c71bbd9501802110b8b24f74ed288e77084cd001"
-                            token = f"ed25519 {hardcoded_pubkey}.{hardcoded_sig}"
-                            
-                            json_data = {
-                                "resource_type": "account",
-                                "resource_id": hardcoded_pubkey,
-                                "webhook_url": "http://example.com/webhook",
-                                "nonce": 1706112000000
-                            }
+                            # Sign encoded string
+                            msg = encode_url_params(pairs)
+                            sig = neighbor_kp.sign(msg.encode('utf-8')).hex()
+                            token = f"ed25519 {neighbor_kp.public_key}.{sig}"
                             
                             headers = {
                                 "Authorization": token,
                                 'Content-Type': 'application/json'
                             }
                             
+                            from collections import OrderedDict
+                            json_data = json.dumps(OrderedDict(pairs), separators=(',', ':'))
+                            
                             async with session.post(f"{notifier_url}/api/subscription", 
-                                                    json=json_data, headers=headers) as resp:
-                                # We expect 400 because these fields are deprecated/wrong
-                                assert resp.status == 400, f"Expected 400 (Bad Request), got: {resp.status}. Text: {await resp.text()}"
-                                print("DEBUG: Auth PASSED (got 400 as expected for wrong body).")
+                                                    data=json_data, headers=headers) as resp:
+                                assert resp.status == 200, f"Neighbor sub failed: {await resp.text()}"
 
-                        # 5. Bot Subscription
-                        bot_wallet = Keypair.random().public_key
-                        # Service.subscribe now handles usage of new auth headers internally
-                        await service.subscribe(bot_wallet)
-                        
-                        # 6. Verify Isolation
-                        # Bot should only see its own subscription
-                        subs = await service._get_active_subscriptions()
-                        print(f"DEBUG: Retrieved Subs: {subs}")
-                        
-                        assert bot_wallet in subs
-                        assert len(subs) == 1
-                        
-                        print("Step 1 SUCCESS: Notifier Connected, Subscriptions created & Isolated.")
+                            # 5. Bot Subscription
+                            bot_wallet = Keypair.random().public_key
+                            # Service.subscribe now handles usage of new auth headers internally
+                            await service.subscribe(bot_wallet)
+                            
+                            # 6. Verify Isolation
+                            # Bot should only see its own subscription
+                            subs = await service._get_active_subscriptions()
+                            print(f"DEBUG: Retrieved Subs: {subs}")
+                            
+                            assert bot_wallet in subs
+                            assert len(subs) == 1
+                            
+                            print("Step 1 SUCCESS: Notifier Connected, Subscriptions created & Isolated.")
 
                     except Exception as e:
                         try:
