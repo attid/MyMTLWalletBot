@@ -2,6 +2,30 @@
 
 **Запуск тестов:** `uv run pytest`
 
+## ⚠️ Критическое правило: Database Commits
+
+**ВАЖНО:** `db_pool.get_session()` **НЕ делает автокоммит**. Все тесты, которые проверяют сохранение данных, **ДОЛЖНЫ** включать проверку commit.
+
+### Обязательная проверка persist после изменений:
+
+```python
+@pytest.mark.asyncio
+async def test_data_persists():
+    # Modify data in one session
+    async with db_pool.get_session() as session:
+        repo = factory.get_user_repository(session)
+        await repo.update_lang(user_id, "en")
+        await session.commit()  # ОБЯЗАТЕЛЬНО!
+    
+    # Verify in NEW session (simulates separate read)
+    async with db_pool.get_session() as session:
+        repo = factory.get_user_repository(session)
+        user = await repo.get(user_id)
+        assert user.lang == "en"  # Данные должны сохраниться
+```
+
+**Если тест НЕ проверяет persist через новую сессию - он неполный!**
+
 ## Принципы ("философия тестов")
 
 ### 1. Минимум моков — Максимум реального кода
