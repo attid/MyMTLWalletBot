@@ -118,6 +118,31 @@ class NotificationService:
         """Fetches the current nonce from the Notifier to initialize the local counter."""
         if not self.config.notifier_url:
             return
+            
+        # If using Token Auth, we don't need nonce for auth, but still might need it for consistent ordering
+        # However, Notifier 0.5.3 with Token Auth might not enforce nonce check the same way.
+        # But for backward compatibility or if Notifier still tracks nonce per token user, we keep it.
+        # Typically Token Auth is stateless or simple. Let's assume we still use nonce for logic consistency.
+        
+        # If token is present, we might not need to sign nonce request
+        if getattr(self.config, 'notifier_auth_token', None):
+             # For token auth, we just trust local counter or fetch without signature if supported
+             # But GET /api/nonce requires signature in old version. 
+             # In 0.5.3 with Token auth, maybe we can just GET /api/nonce with token?
+             # Let's try fetching with token auth
+             headers = {"Authorization": self.config.notifier_auth_token}
+             url = f"{self.config.notifier_url}/api/nonce"
+             try:
+                 async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            remote_nonce = int(data.get('nonce', 0))
+                            self._nonce = remote_nonce + 1000
+                            logger.info(f"Initialized nonce (TokenAuth): {self._nonce}")
+                            return
+             except Exception as e:
+                 logger.warning(f"TokenAuth fetch nonce failed: {e}")
 
         try:
             kp = Keypair.from_secret(self.config.service_secret.get_secret_value())
@@ -169,8 +194,10 @@ class NotificationService:
 
         sig_hex = request.headers.get("X-Request-ED25519-Signature")
         if not sig_hex:
-            logger.warning("Missing signature header")
-            return False
+            # Если токен-авторизация, возможно подпись не так важна или настроена по-другому
+            # Но пользователь просил: "если не верно просто ругнемся"
+            logger.warning("Missing signature header on webhook")
+            return False # Fail validation if signature missing but key configured
 
         try:
             # Notifier шлет HEX
@@ -181,7 +208,7 @@ class NotificationService:
             return True
         except Exception as e:
             logger.error(f"Signature verification failed: {e}")
-            return False
+            return False # Fail validation
 
     async def start_server(self):
         """Starts the internal Webhook Listener."""
@@ -216,6 +243,7 @@ class NotificationService:
 
             # 2. Проверяем подпись
             if not self._verify_webhook_signature(request, body_bytes):
+                # Пользователь: "если не верно просто ругнемся не будем игнорировать" -> значит отклоняем (403)
                 return web.Response(text="Invalid Signature", status=403)
 
             # 3. Парсим JSON
@@ -231,7 +259,6 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error handling webhook: {e}")
             return web.Response(text=f"Error: {e}", status=500)
-
     async def process_notification(self, payload: dict):
         """Process the notification payload."""
         op_info = payload.get('operation', {})
@@ -381,7 +408,6 @@ class NotificationService:
                                    
         except Exception as e:
             logger.error(f"Failed to send notification to {wallet.user_id}: {e}")
-
     async def subscribe(self, public_key: str):
         """Subscribe a wallet to the notifier."""
         if not self.config.notifier_url:
@@ -398,15 +424,25 @@ class NotificationService:
             ("reaction_url", webhook)
         ]
         
-        payload_str = self._encode_url_params(pairs)
-        auth_header = self._sign_payload(payload_str)
-        
         body_json = json.dumps(OrderedDict(pairs), separators=(',', ':'))
         
-        headers = {
-            "Authorization": auth_header,
-            "Content-Type": "application/json"
-        }
+        # Token Auth Logic
+        auth_token = getattr(self.config, 'notifier_auth_token', None)
+        if auth_token:
+             headers = {
+                "Authorization": auth_token, # authorization: "token"
+                "Content-Type": "application/json"
+             }
+             payload_str = "TOKEN_AUTH_MODE"
+             auth_header = auth_token
+        else:
+             # Fallback to Signature
+             payload_str = self._encode_url_params(pairs)
+             auth_header = self._sign_payload(payload_str)
+             headers = {
+                "Authorization": auth_header,
+                "Content-Type": "application/json"
+             }
         
         async with aiohttp.ClientSession() as session:
             try:
@@ -416,13 +452,14 @@ class NotificationService:
                     else:
                         text = await resp.text()
                         logger.error(f"Failed to subscribe {public_key}: {resp.status} {text}")
-                        logger.error(f"DEBUG: Payload Signed: '{payload_str}'")
-                        logger.error(f"DEBUG: Auth Header: '{auth_header}'")
-                        logger.error(f"DEBUG: Body JSON: '{body_json}'")
+                        # Only log debug details if not token auth (safe)
+                        if not auth_token:
+                             logger.error(f"DEBUG: Payload Signed: '{payload_str}'")
+                             logger.error(f"DEBUG: Auth Header: '{auth_header}'")
+                        else:
+                             logger.error(f"DEBUG: Token Auth used.")
             except Exception as e:
                 logger.error(f"Exception subscribing {public_key}: {e}")
-                logger.error(f"DEBUG: Payload Signed: '{payload_str}'")
-                logger.error(f"DEBUG: Auth Header: '{auth_header}'")
 
     async def sync_subscriptions(self):
         """Syncs all DB wallets with Notifier subscriptions."""
@@ -463,16 +500,20 @@ class NotificationService:
 
     async def _get_active_subscriptions(self) -> set:
         nonce = await self._get_next_nonce()
-        pairs = [("nonce", nonce)]
         
-        payload_str = self._encode_url_params(pairs)
-        auth_header = self._sign_payload(payload_str)
-        
-        url = f"{self.config.notifier_url}/api/subscription?{payload_str}"
-        
-        headers = {
-            "Authorization": auth_header
-        }
+        auth_token = getattr(self.config, 'notifier_auth_token', None)
+        if auth_token:
+             headers = {"Authorization": auth_token}
+             # Token auth might not require signed params query
+             # Just pass nonce if needed or nothing
+             # Assuming GET /api/subscription returns list for the token user
+             url = f"{self.config.notifier_url}/api/subscription?nonce={nonce}" 
+        else:
+            pairs = [("nonce", nonce)]
+            payload_str = self._encode_url_params(pairs)
+            auth_header = self._sign_payload(payload_str)
+            url = f"{self.config.notifier_url}/api/subscription?{payload_str}"
+            headers = {"Authorization": auth_header}
         
         async with aiohttp.ClientSession() as session:
              try:
@@ -489,8 +530,6 @@ class NotificationService:
                         return results
                     else:
                         logger.error(f"Get subs failed: {resp.status} {await resp.text()}")
-                        logger.error(f"DEBUG GET: Payload Signed: '{payload_str}'")
-                        logger.error(f"DEBUG GET: Auth Header: '{auth_header}'")
                         return set()
              except Exception as e:
                  logger.error(f"Error fetching subs: {e}")

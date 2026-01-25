@@ -49,68 +49,60 @@ async def notifier_service(mock_horizon, horizon_server_config):
     Starts Notifier container connected to Mock Horizon.
     Returns the base URL of the notifier.
     """
-    notifier_kp = Keypair.random()
-    notifier_secret = notifier_kp.secret
-
+    # Testing Token Auth
+    test_token = "secret-test-token"
+    
+    # Use Mock Horizon (HTTP) via host.docker.internal for container access
+    mock_horizon_url = f"http://host.docker.internal:{horizon_server_config['port']}"
+    
     with Network() as network:
-        notifier = NotifierContainer()
+        notifier = NotifierContainer("ghcr.io/montelibero/stellar_notifier:latest")
         notifier.with_network(network)
-        notifier.with_env("ENVIRONMENT", "production")
-        notifier.with_env("STORAGE_PROVIDER", "memory")
-        notifier.with_env("AUTHORIZATION", "enabled")
-        notifier.with_env("SIGNATURE_SECRET", notifier_secret)
-        notifier.with_env("API_PORT", "8080")
-
-        # Use Mock Horizon (HTTP) via host.docker.internal
-        mock_horizon_url = f"http://host.docker.internal:{horizon_server_config['port']}"
         notifier.with_env("HORIZON", mock_horizon_url)
         notifier.with_env("HORIZON_ALLOW_HTTP", "true")
+        notifier.with_env("API_PORT", "8080")
+        notifier.with_env("AUTHORIZATION", "token")
+        notifier.with_env("USER_TOKENS", test_token)
         
         # Enable host.docker.internal on Linux
         notifier.with_kwargs(extra_hosts={"host.docker.internal": "host-gateway"})
 
         with notifier:
-            wait_for_logs(notifier, "Listening on port 8080", timeout=60)
-            notifier_port = notifier.get_exposed_port(8080)
-            notifier_base_url = f"http://localhost:{notifier_port}"
-            yield notifier_base_url, notifier
+             wait_for_logs(notifier, "Listening on port 8080", timeout=60)
+             notifier_port = notifier.get_exposed_port(8080)
+             notifier_base_url = f"http://localhost:{notifier_port}"
+             # Yield notifier object too for logs debugging
+             yield notifier_base_url, test_token, notifier
 
 @pytest.fixture
 async def http_session():
     async with aiohttp.ClientSession() as session:
         yield session
 
-async def subscribe(session, notifier_url, user_kp, target_pubkey, webhook):
+async def subscribe(session, notifier_url, user_kp, target_pubkey, webhook, token):
     nonce = int(time.time() * 1000)
+    
     pairs = [
         ("account", target_pubkey),
         ("nonce", nonce),
         ("reaction_url", webhook)
     ]
-
-    msg = encode_url_params(pairs)
-    sig = user_kp.sign(msg.encode('utf-8')).hex()
-    token = f"ed25519 {user_kp.public_key}.{sig}"
+    
+    from collections import OrderedDict
+    json_data = json.dumps(OrderedDict(pairs), separators=(',', ':'))
 
     headers = {
         "Authorization": token,
         "Content-Type": "application/json"
     }
 
-    from collections import OrderedDict
-    json_data = json.dumps(OrderedDict(pairs), separators=(',', ':'))
-
     async with session.post(f"{notifier_url}/api/subscription",
                           data=json_data, headers=headers) as resp:
         assert resp.status == 200, f"Sub failed: {await resp.text()}"
         return nonce
 
-async def get_subs_count(session, notifier_url, user_kp):
+async def get_subs_count(session, notifier_url, user_kp, token):
     nonce = int(time.time() * 1000)
-    pairs = [("nonce", nonce)]
-    msg = encode_url_params(pairs)
-    sig = user_kp.sign(msg.encode('utf-8')).hex()
-    token = f"ed25519 {user_kp.public_key}.{sig}"
     
     url = f"{notifier_url}/api/subscription?nonce={nonce}"
     headers = {"Authorization": token}
@@ -120,16 +112,12 @@ async def get_subs_count(session, notifier_url, user_kp):
         data = await resp.json()
         return len(data)
 
-async def get_remote_nonce(session, notifier_url, user_kp):
+async def get_remote_nonce(session, notifier_url, user_kp, token):
     """
     Retrieves the current nonce from the Notifier using the new endpoint.
     GET /api/nonce
-    Sign: nonce:<public_key>
+    Uses Token Auth
     """
-    msg = f"nonce:{user_kp.public_key}"
-    sig = user_kp.sign(msg.encode('utf-8')).hex()
-    token = f"ed25519 {user_kp.public_key}.{sig}"
-    
     headers = {"Authorization": token}
     
     async with session.get(f"{notifier_url}/api/nonce", headers=headers) as resp:
@@ -142,7 +130,8 @@ async def test_notifier_subscription_isolation(notifier_service, http_session):
     """
     Test that users only see their own subscriptions.
     """
-    notifier_url, _ = notifier_service
+
+    notifier_url, test_token, _ = notifier_service
     webhook_url = "http://example.com/webhook" # Dummy URL for this test
     
     # --- User 1 Logic ---
@@ -151,7 +140,7 @@ async def test_notifier_subscription_isolation(notifier_service, http_session):
     
     print(f"DEBUG: User 1 ({user1_kp.public_key}) subscribing to 3 targets")
     for target in user1_targets:
-        await subscribe(http_session, notifier_url, user1_kp, target, webhook_url)
+        await subscribe(http_session, notifier_url, user1_kp, target, webhook_url, test_token)
         
     # --- User 2 Logic ---
     user2_kp = Keypair.random()
@@ -159,14 +148,14 @@ async def test_notifier_subscription_isolation(notifier_service, http_session):
     
     print(f"DEBUG: User 2 ({user2_kp.public_key}) subscribing to 4 targets")
     for target in user2_targets:
-        await subscribe(http_session, notifier_url, user2_kp, target, webhook_url)
+        await subscribe(http_session, notifier_url, user2_kp, target, webhook_url, test_token)
         
     # --- Verification ---
-    count1 = await get_subs_count(http_session, notifier_url, user1_kp)
+    count1 = await get_subs_count(http_session, notifier_url, user1_kp, test_token)
     print(f"DEBUG: User 1 subs count: {count1}")
     assert count1 == 3, f"User 1 should have 3 subs, got {count1}"
     
-    count2 = await get_subs_count(http_session, notifier_url, user2_kp)
+    count2 = await get_subs_count(http_session, notifier_url, user2_kp, test_token)
     print(f"DEBUG: User 2 subs count: {count2}")
     assert count2 == 4, f"User 2 should have 4 subs, got {count2}"
     
@@ -177,7 +166,8 @@ async def test_notifier_webhook_delivery(notifier_service, http_session, mock_ho
     """
     Test E2E notification delivery: Subscription -> Payment Injection -> Webhook Receive.
     """
-    notifier_url, notifier = notifier_service
+
+    notifier_url, test_token, notifier_container = notifier_service
     # --- Webhook Server Setup ---
     webhook_queue = asyncio.Queue()
     webhook_port = 8081
@@ -204,10 +194,10 @@ async def test_notifier_webhook_delivery(notifier_service, http_session, mock_ho
         print(f"DEBUG: User ({user_kp.public_key}) subscribing to target {target_kp.public_key}")
         
         # Subscribe
-        await subscribe(http_session, notifier_url, user_kp, target_kp.public_key, webhook_url)
+        await subscribe(http_session, notifier_url, user_kp, target_kp.public_key, webhook_url, test_token)
         
         # Verify sub exists
-        count = await get_subs_count(http_session, notifier_url, user_kp)
+        count = await get_subs_count(http_session, notifier_url, user_kp, test_token)
         assert count == 1
         
         print("DEBUG: Subscription confirmed. Injecting payment...")
@@ -228,6 +218,8 @@ async def test_notifier_webhook_delivery(notifier_service, http_session, mock_ho
             # Depending on Notifier implementation, verify content
             
         except asyncio.TimeoutError:
+            print("\n!!! TIMEOUT - DUMPING NOTIFIER LOGS !!!")
+            print(notifier_container.get_logs())
             pytest.fail("Timed out waiting for webhook notification.")
 
     finally:
@@ -243,7 +235,8 @@ async def test_nonce_lookup(notifier_service, http_session):
     4. Subscribe again (sets nonce = T2).
     5. Call /api/nonce and verify it returns T2.
     """
-    notifier_url, _ = notifier_service
+
+    notifier_url, test_token, _ = notifier_service
     user_kp = Keypair.random()
     target = Keypair.random().public_key
     webhook = "http://example.com/webhook"
@@ -251,11 +244,11 @@ async def test_nonce_lookup(notifier_service, http_session):
     print(f"DEBUG: Testing Nonce Lookup for user {user_kp.public_key}")
 
     # 1. First Subscription
-    nonce1 = await subscribe(http_session, notifier_url, user_kp, target, webhook)
+    nonce1 = await subscribe(http_session, notifier_url, user_kp, target, webhook, test_token)
     print(f"DEBUG: Subscribed with nonce {nonce1}")
     
     # 2. Verify Nonce Lookup
-    remote_nonce1 = await get_remote_nonce(http_session, notifier_url, user_kp)
+    remote_nonce1 = await get_remote_nonce(http_session, notifier_url, user_kp, test_token)
     print(f"DEBUG: Remote nonce after 1st sub: {remote_nonce1}")
     
     assert remote_nonce1 == nonce1, f"Expected nonce {nonce1}, got {remote_nonce1}"
@@ -263,18 +256,18 @@ async def test_nonce_lookup(notifier_service, http_session):
     # 3. Second Subscription (should have higher nonce)
     # Ensure time moves forward slightly to guarantee higher nonce if script runs ultra fast
     time.sleep(0.01) 
-    nonce2 = await subscribe(http_session, notifier_url, user_kp, target, webhook)
+    nonce2 = await subscribe(http_session, notifier_url, user_kp, target, webhook, test_token)
     print(f"DEBUG: Subscribed again with nonce {nonce2}")
     
     assert nonce2 > nonce1
     
     # 4. Verify Nonce Lookup Again
-    remote_nonce2 = await get_remote_nonce(http_session, notifier_url, user_kp)
+    remote_nonce2 = await get_remote_nonce(http_session, notifier_url, user_kp, test_token)
     print(f"DEBUG: Remote nonce after 2nd sub: {remote_nonce2}")
     
     assert remote_nonce2 == nonce2, f"Expected nonce {nonce2}, got {remote_nonce2}"
     
-    print("SUCCESS: Nonce lookup verified.")
+    print("SUCCESS: Nonce lookup verified (Token Auth).")
 
 @pytest.mark.asyncio
 async def test_nonce_concurrency(notifier_service):
@@ -284,12 +277,14 @@ async def test_nonce_concurrency(notifier_service):
     2. Launch 6 concurrent tasks to fetch nonces using internal _get_next_nonce.
     3. Verify all nonces are unique and sequential (locally).
     """
-    notifier_url, _ = notifier_service
+
+    notifier_url, test_token, _ = notifier_service
     
     # Mock Config
     mock_config = MagicMock()
     mock_config.notifier_url = notifier_url
-    mock_config.service_secret.get_secret_value.return_value = Keypair.random().secret
+    mock_config.notifier_auth_token = test_token # Use token
+    mock_config.service_secret = None
     mock_config.notifier_public_key = None
     mock_config.webhook_port = 8080 # Dummy
     
