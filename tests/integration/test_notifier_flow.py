@@ -10,7 +10,9 @@ from urllib.parse import quote
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.waiting_utils import wait_for_logs
-from stellar_sdk import Keypair
+from stellar_sdk import Keypair, Server, Network as StellarNetwork, TransactionBuilder
+from unittest.mock import MagicMock
+from infrastructure.services.notification_service import NotificationService
 
 # Mark as integration test
 pytestmark = pytest.mark.integration
@@ -273,3 +275,50 @@ async def test_nonce_lookup(notifier_service, http_session):
     assert remote_nonce2 == nonce2, f"Expected nonce {nonce2}, got {remote_nonce2}"
     
     print("SUCCESS: Nonce lookup verified.")
+
+@pytest.mark.asyncio
+async def test_nonce_concurrency(notifier_service):
+    """
+    Test concurrency safety for nonce generation.
+    1. Initialize NotificationService with mock config pointing to real Notifier.
+    2. Launch 6 concurrent tasks to fetch nonces using internal _get_next_nonce.
+    3. Verify all nonces are unique and sequential (locally).
+    """
+    notifier_url, _ = notifier_service
+    
+    # Mock Config
+    mock_config = MagicMock()
+    mock_config.notifier_url = notifier_url
+    mock_config.service_secret.get_secret_value.return_value = Keypair.random().secret
+    mock_config.notifier_public_key = None
+    mock_config.webhook_port = 8080 # Dummy
+    
+    # Instantiate Service (db_pool and others as None since we test nonce only)
+    service = NotificationService(mock_config, None, None, None)
+    
+    # We cheat a bit: verify startup fetches initial nonce
+    await service._fetch_initial_nonce()
+    initial_nonce = service._nonce
+    print(f"DEBUG: Initial Nonce: {initial_nonce}")
+    
+    async def get_nonce_worker():
+        return await service._get_next_nonce()
+        
+    # Launch 6 concurrent tasks
+    tasks = [get_nonce_worker() for _ in range(6)]
+    results = await asyncio.gather(*tasks)
+    
+    print(f"DEBUG: Concurrent Nonces: {results}")
+    
+    # Verify uniqueness
+    assert len(results) == 6
+    assert len(set(results)) == 6
+    
+    # Verify strict sequential order relative to initial
+    sorted_results = sorted(results)
+    assert sorted_results[0] == initial_nonce + 1
+    assert sorted_results[-1] == initial_nonce + 6
+    for i in range(len(sorted_results) - 1):
+        assert sorted_results[i+1] == sorted_results[i] + 1
+        
+    print("SUCCESS: Nonce concurrency verified.")
