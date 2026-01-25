@@ -54,6 +54,10 @@ class NotificationService:
         # Notifier public key (fetched from /api/status)
         self._notifier_public_key: Optional[str] = None
 
+        # Log initialization
+        if not self.bot:
+            logger.warning("NotificationService initialized with bot=None")
+
     def _encode_url_params(self, pairs: list) -> str:
         """
         Encodes parameters to match stellar_notifier logic (key=val&key=val).
@@ -270,6 +274,11 @@ class NotificationService:
 
     async def start_server(self):
         """Starts the internal Webhook Listener."""
+        # Safety check
+        if not self.bot:
+            logger.error("Cannot start webhook server: bot is not initialized")
+            return
+
         # Fetch Notifier's public key from /api/status
         await self._fetch_notifier_public_key()
 
@@ -469,6 +478,12 @@ class NotificationService:
             if not should_send:
                 return
 
+            if not self.bot:
+                logger.warning(
+                    f"Bot not initialized, cannot send notification to {wallet.user_id}"
+                )
+                return
+
             fsm_storage_key = StorageKey(
                 bot_id=self.bot.id, user_id=wallet.user_id, chat_id=wallet.user_id
             )
@@ -490,13 +505,12 @@ class NotificationService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to send notification to {wallet.user_id}: {e}")
+            logger.exception(f"Failed to send notification to {wallet.user_id}: {e}")
 
     async def subscribe(self, public_key: str):
         """Subscribe a wallet to the notifier."""
         # Basic validation for Stellar Public Key (G...)
         if not public_key or not public_key.startswith("G") or len(public_key) != 56:
-            logger.debug(f"Skipping non-stellar subscription: {public_key}")
             return
 
         if not self.config.notifier_url:

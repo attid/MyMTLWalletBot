@@ -7,6 +7,7 @@ from core.interfaces.repositories import IUserRepository
 from db.models import MyMtlWalletBotUsers
 from other.tron_tools import create_trc_private_key
 
+
 class SqlAlchemyUserRepository(IUserRepository):
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -24,13 +25,13 @@ class SqlAlchemyUserRepository(IUserRepository):
             user_id=user.id,
             user_name=user.username,
             lang=user.language,
-            default_address=user.default_address
+            default_address=user.default_address,
         )
         self.session.add(db_user)
-        # Note: Commit is usually handled by the Unit of Work or higher level, 
+        # Note: Commit is usually handled by the Unit of Work or higher level,
         # but for now we might rely on auto-flush or manual commit calls in services/tests.
         # We'll assume the session manager handles commits.
-        await self.session.flush() 
+        await self.session.flush()
         return self._to_entity(db_user)
 
     async def update(self, user: User) -> User:
@@ -61,44 +62,48 @@ class SqlAlchemyUserRepository(IUserRepository):
             self.session.add(user)
         await self.session.flush()
 
-    async def get_account_by_username(self, username: str) -> tuple[Optional[str], Optional[int]]:
+    async def get_account_by_username(
+        self, username: str
+    ) -> tuple[Optional[str], Optional[int]]:
         """Get wallet public key and user_id by Telegram username."""
         from db.models import MyMtlWalletBot
-        
+
         # Remove @ prefix and convert to lowercase
-        clean_username = username.lower()[1:] if username.startswith('@') else username.lower()
-        
-        # First query to check the default_address
-        stmt = select(MyMtlWalletBotUsers.user_id, MyMtlWalletBotUsers.default_address).where(
-            MyMtlWalletBotUsers.user_name == clean_username
+        clean_username = (
+            username.lower()[1:] if username.startswith("@") else username.lower()
         )
+
+        # First query to check the default_address
+        stmt = select(
+            MyMtlWalletBotUsers.user_id, MyMtlWalletBotUsers.default_address
+        ).where(MyMtlWalletBotUsers.user_name == clean_username)
         result = await self.session.execute(stmt)
         user = result.one_or_none()
-        
+
         if user is not None:
             user_id, default_address = user
             if default_address and len(default_address) == 56:
                 return default_address, user_id
             else:
                 # Second query if default_address is not available or invalid
-                wallet_stmt = select(MyMtlWalletBot.public_key).where(
-                    MyMtlWalletBot.user_id == user_id
-                ).where(
-                    MyMtlWalletBot.default_wallet == 1
+                wallet_stmt = (
+                    select(MyMtlWalletBot.public_key)
+                    .where(MyMtlWalletBot.user_id == user_id)
+                    .where(MyMtlWalletBot.default_wallet == 1)
                 )
                 wallet_result = await self.session.execute(wallet_stmt)
                 wallet = wallet_result.scalar_one_or_none()
                 if wallet is not None:
                     return wallet, user_id
-        
+
         return None, None
 
     async def search_by_username(self, query: str) -> list[str]:
         """Search users by partial username match."""
-        stmt = select(MyMtlWalletBotUsers.user_name).where(
-            MyMtlWalletBotUsers.user_name.isnot(None)
-        ).where(
-            MyMtlWalletBotUsers.user_name.ilike(f"%{query}%")
+        stmt = (
+            select(MyMtlWalletBotUsers.user_name)
+            .where(MyMtlWalletBotUsers.user_name.isnot(None))
+            .where(MyMtlWalletBotUsers.user_name.ilike(f"%{query}%"))
         )
         result = await self.session.execute(stmt)
         return [str(row[0]) for row in result.all() if row[0]]
@@ -120,19 +125,28 @@ class SqlAlchemyUserRepository(IUserRepository):
         db_user = result.scalar_one_or_none()
         if db_user:
             await self.session.delete(db_user)
-            await self.session.flush()
+            await self.session.commit()
 
-    async def get_usdt_key(self, user_id: int, create_func: Optional[Callable] = None, user_name: Optional[str] = None) -> tuple[Optional[str], int]:
+    async def get_usdt_key(
+        self,
+        user_id: int,
+        create_func: Optional[Callable] = None,
+        user_name: Optional[str] = None,
+    ) -> tuple[Optional[str], int]:
         if user_id > 0:
-            stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
+            stmt = select(MyMtlWalletBotUsers).where(
+                MyMtlWalletBotUsers.user_id == user_id
+            )
         elif user_name:
-            stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_name == user_name)
+            stmt = select(MyMtlWalletBotUsers).where(
+                MyMtlWalletBotUsers.user_name == user_name
+            )
         else:
             return None, 0
-            
+
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
-        
+
         if user and user.usdt and len(user.usdt) == 64:
             return user.usdt, user.usdt_amount or 0
         elif user:
@@ -140,7 +154,7 @@ class SqlAlchemyUserRepository(IUserRepository):
             try:
                 addr = create_func() if create_func else create_trc_private_key()
                 user.usdt = addr
-                await self.session.flush() 
+                await self.session.flush()
                 return addr, 0
             except Exception:
                 return None, 0
@@ -164,9 +178,11 @@ class SqlAlchemyUserRepository(IUserRepository):
             await self.session.flush()
             return str(user.usdt)
         else:
-             raise ValueError(f"No user found with id {user_id} or invalid USDT key")
+            raise ValueError(f"No user found with id {user_id} or invalid USDT key")
 
-    async def get_btc_uuid(self, user_id: int) -> tuple[Optional[str], Optional[datetime]]:
+    async def get_btc_uuid(
+        self, user_id: int
+    ) -> tuple[Optional[str], Optional[datetime]]:
         stmt = select(MyMtlWalletBotUsers).where(MyMtlWalletBotUsers.user_id == user_id)
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
@@ -184,18 +200,25 @@ class SqlAlchemyUserRepository(IUserRepository):
             await self.session.flush()
 
     async def get_all_with_usdt_balance(self) -> List[tuple[str, int, int]]:
-        stmt = select(MyMtlWalletBotUsers.user_name, MyMtlWalletBotUsers.usdt_amount, MyMtlWalletBotUsers.user_id).where(
-            MyMtlWalletBotUsers.usdt_amount > 0
-        ).order_by(MyMtlWalletBotUsers.usdt_amount.desc())
+        stmt = (
+            select(
+                MyMtlWalletBotUsers.user_name,
+                MyMtlWalletBotUsers.usdt_amount,
+                MyMtlWalletBotUsers.user_id,
+            )
+            .where(MyMtlWalletBotUsers.usdt_amount > 0)
+            .order_by(MyMtlWalletBotUsers.usdt_amount.desc())
+        )
         result = await self.session.execute(stmt)
         return [(row.user_name, row.usdt_amount, row.user_id) for row in result.all()]
 
     def _to_entity(self, db_user: MyMtlWalletBotUsers) -> User:
         from typing import cast
+
         return User(
             id=cast(int, db_user.user_id),
             username=db_user.user_name,
-            language=str(db_user.lang or 'en'),
+            language=str(db_user.lang or "en"),
             default_address=db_user.default_address,
-            can_5000=int(db_user.can_5000 or 0)
+            can_5000=int(db_user.can_5000 or 0),
         )

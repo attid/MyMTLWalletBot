@@ -1296,6 +1296,8 @@ async def process_usdt_wallet(
                         # db_update_usdt_sum raise ValueError if user not found.
                         # get_account_by_username might behave slightly different but serves purpose.
                         pass
+                # Commit the balance update to database
+                await session.commit()
             await notify_admin(
                 bot,
                 f"[USDT] {target_label}: sent {transfer_amount} (tx: {tx_hash}) | db_balance={balance} trx_balance={trx_balance}",
