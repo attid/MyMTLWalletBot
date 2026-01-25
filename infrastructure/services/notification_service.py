@@ -424,7 +424,11 @@ class NotificationService:
                 op.code1 = "XLM"
 
             elif op_type in ("path_payment_strict_send", "path_payment_strict_receive"):
-                op.for_account = op_data.get("to") or op_data.get("destination")
+                op.for_account = (
+                    op_data.get("to")
+                    or op_data.get("destination")
+                    or op_data.get("account")
+                )
                 op.amount1 = float(op_data.get("amount", 0))
                 op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
                 op.amount2 = float(op_data.get("source_amount", 0))
