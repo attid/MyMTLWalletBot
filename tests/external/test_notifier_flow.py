@@ -13,8 +13,8 @@ from stellar_sdk import Keypair, Server, Network as StellarNetwork, TransactionB
 from unittest.mock import MagicMock
 from infrastructure.services.notification_service import NotificationService
 
-# Mark as integration test
-pytestmark = pytest.mark.integration
+# Mark as external test (requires Docker and external services)
+pytestmark = pytest.mark.external
 
 
 @pytest.fixture(scope="module")
