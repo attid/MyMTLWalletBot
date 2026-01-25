@@ -1,5 +1,6 @@
 from core.interfaces.repositories import IUserRepository, IWalletRepository
 
+
 class DeleteUser:
     def __init__(self, user_repo: IUserRepository, wallet_repo: IWalletRepository):
         self.user_repo = user_repo
@@ -11,9 +12,12 @@ class DeleteUser:
         """
         # Delete wallets (Soft Delete as per repository impl)
         await self.wallet_repo.delete_all_by_user(user_id)
-        
+
         # Delete user
         await self.user_repo.delete(user_id)
+
+        # Both repository methods now commit internally, so no additional commit needed here
+
 
 class AddDonation:
     def __init__(self, user_repo: IUserRepository):
