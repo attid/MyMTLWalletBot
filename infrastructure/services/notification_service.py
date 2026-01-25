@@ -287,9 +287,9 @@ class NotificationService:
         
         nonce = int(time.time() * 1000)
         pairs = [
-            ("reaction_url", webhook),
             ("account", public_key),
-            ("nonce", nonce)
+            ("nonce", nonce),
+            ("reaction_url", webhook)
         ]
         
         payload_str = self._encode_url_params(pairs)

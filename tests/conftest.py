@@ -47,7 +47,7 @@ def telegram_server_config():
 @pytest.fixture(scope="function")
 def horizon_server_config():
     port = get_free_port()
-    return {"host": "localhost", "port": port, "url": f"http://localhost:{port}"}
+    return {"host": "0.0.0.0", "port": port, "url": f"http://0.0.0.0:{port}"}
 
 @pytest.fixture
 def dp():
@@ -659,7 +659,88 @@ async def mock_horizon(horizon_server_config):
             self.offers = {}    # account_id -> list of offers
             self.paths = []     # configured paths for strict-send/receive
             self.operations = [] # configured operations
+            self.payments = []   # configured payments
+            self.transactions = [] # configured transactions
             self.transaction_response = {"successful": True, "hash": "abc123"}
+
+        def add_payment(self, from_account: str, to_account: str, amount: str, 
+                       asset_type: str = "native", asset_code: str = None, 
+                       asset_issuer: str = None, paging_token: str = None):
+            """Add a payment to the mock state."""
+            from stellar_sdk import Keypair, TransactionBuilder, Payment, Account, Asset, Network
+            
+            if not paging_token:
+                # Simple auto-increment token if not provided
+                paging_token = str(len(self.payments) + 1 + 100000)
+            
+            # Generate valid XDR
+            source_kp = Keypair.random() # We can use random key for source signature
+            # We need a source account object. Sequence doesn't matter for XDR parsing mostly unless validated vs horizon
+            source_acc_obj = Account(from_account, 12345)
+            
+            if asset_type == "native":
+                asset = Asset.native()
+            else:
+                asset = Asset(asset_code, asset_issuer)
+                
+            tx_builder = TransactionBuilder(
+                source_account=source_acc_obj,
+                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, # Notifier hardcodes 'Public'
+
+                base_fee=100
+            ).append_operation(
+                Payment(destination=to_account, amount=amount, asset=asset)
+            )
+            
+            tx_envelope = tx_builder.build()
+            tx_envelope.sign(source_kp)
+            xdr = tx_envelope.to_xdr()
+            tx_hash = tx_envelope.hash().hex()
+            
+            # Add Transaction
+            tx = {
+                "id": tx_hash,
+                "paging_token": paging_token,
+                "successful": True,
+                "hash": tx_hash,
+                "ledger": 12345,
+                "created_at": "2024-01-01T00:00:00Z",
+                "source_account": from_account,
+                "source_account_sequence": "12345",
+                "fee_account": from_account,
+                "fee_charged": "100",
+                "max_fee": "100",
+                "operation_count": 1,
+                "envelope_xdr": xdr,
+                "result_xdr": "AAAAAAAAAGQAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAA=", # Success tx result XDR (simple)
+                "result_meta_xdr": "AAAAAA==", # Empty meta
+                "fee_meta_xdr": "AAAAAA==", # Empty fee meta
+                "memo_type": "none"
+            }
+            self.transactions.append(tx)
+            self.transactions.sort(key=lambda x: x["paging_token"])
+
+            payment = {
+                "id": paging_token,
+                "paging_token": paging_token,
+                "transaction_successful": True,
+                "source_account": from_account,
+                "type": "payment",
+                "type_i": 1,
+                "created_at": "2024-01-01T00:00:00Z",
+                "transaction_hash": tx_hash,
+                "asset_type": asset_type,
+                "from": from_account,
+                "to": to_account,
+                "amount": amount
+            }
+            if asset_code:
+                payment["asset_code"] = asset_code
+                payment["asset_issuer"] = asset_issuer
+                
+            self.payments.append(payment)
+            # Sort by paging_token to be safe
+            self.payments.sort(key=lambda x: x["paging_token"])
 
         def set_account(self, account_id: str, balances: Optional[list] = None, sequence: str = "123456789",
                        signers: Optional[list] = None, data: Optional[dict] = None):
@@ -864,25 +945,7 @@ async def mock_horizon(horizon_server_config):
                 "records": state.operations
             }
         })
-        state.requests.append({
-            "endpoint": "paths/strict-send",
-            "method": "GET",
-            "params": params
-        })
-        
-        # Determine strict send mode based on params
-        # source_assets: comma-separated list of assets
-        # source_amount: amount
-        # destination_assets: comma-separated list of assets
-        
-        # If paths are configured, return them if they match destination assets
-        # For simplicity, we just return configured paths if any, or empty list
-        
-        return web.json_response({
-            "_embedded": {
-                "records": state.paths
-            }
-        })
+    # Removed garbage code block
 
     @routes.get("/paths/strict-receive")
     async def get_strict_receive_paths(request):
@@ -917,6 +980,90 @@ async def mock_horizon(horizon_server_config):
             return web.json_response(state.transaction_response)
         else:
             return web.json_response(state.transaction_response, status=400)
+
+    @routes.get("/transactions")
+    async def get_transactions(request):
+        """Mock transactions endpoint with cursor support."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "transactions",
+            "method": "GET",
+            "params": params
+        })
+        
+        cursor = params.get("cursor", "0")
+        if cursor == "now":
+            cursor = "0"
+            
+        limit = int(params.get("limit", 10))
+        
+        # Filter transactions > cursor
+        filtered = [tx for tx in state.transactions if tx["paging_token"] > cursor]
+        records = filtered[:limit]
+        
+        if "text/event-stream" in request.headers.get("Accept", ""):
+            import json
+            response = web.StreamResponse(status=200, reason='OK', headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
+            })
+            await response.prepare(request)
+            await response.write(b'event: open\ndata: "hello"\n\n')
+
+            for record in records:
+                data = json.dumps(record)
+                await response.write(f'data: {data}\n\n'.encode('utf-8'))
+            
+            return response
+
+        return web.json_response({
+            "_embedded": {
+                "records": records
+            }
+        })
+    
+    @routes.get("/payments")
+    async def get_payments(request):
+        """Mock payments endpoint with cursor support."""
+        params = dict(request.query)
+        state.requests.append({
+            "endpoint": "payments",
+            "method": "GET",
+            "params": params
+        })
+        
+        cursor = params.get("cursor", "0")
+        if cursor == "now":
+            cursor = "0"
+            
+        limit = int(params.get("limit", 10))
+        
+        # Filter payments > cursor
+        filtered = [p for p in state.payments if p["paging_token"] > cursor]
+        # Apply limit
+        records = filtered[:limit]
+        
+        if "text/event-stream" in request.headers.get("Accept", ""):
+            response = web.StreamResponse(status=200, reason='OK', headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
+            })
+            await response.prepare(request)
+            await response.write(b'event: open\ndata: "hello"\n\n')
+
+            for record in records:
+                data = json.dumps(record)
+                await response.write(f'data: {data}\n\n'.encode('utf-8'))
+            
+            return response
+
+        return web.json_response({
+            "_embedded": {
+                "records": records
+            }
+        })
 
     @routes.get("/paths/strict-send")
     async def strict_send_paths(request):

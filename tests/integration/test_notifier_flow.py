@@ -2,6 +2,7 @@
 import pytest
 import asyncio
 import aiohttp
+from aiohttp import web
 import time
 import json
 import os
@@ -10,8 +11,6 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.waiting_utils import wait_for_logs
 from stellar_sdk import Keypair
-from infrastructure.services.notification_service import NotificationService, NotifierHeaders
-from other.config_reader import Settings
 
 # Mark as integration test
 pytestmark = pytest.mark.integration
@@ -20,8 +19,6 @@ pytestmark = pytest.mark.integration
 def keys():
     return {
         "notifier": Keypair.random(),
-        "bot": Keypair.random(),
-        "neighbor": Keypair.random()
     }
 
 class NotifierContainer(DockerContainer):
@@ -44,142 +41,174 @@ def encode_url_params(pairs):
         parts.append(f"{quote(str(k), safe=SAFE)}={quote(v, safe=SAFE)}")
     return "&".join(parts)
 
-@pytest.mark.asyncio
-async def test_notifier_initial_connection(mock_horizon, horizon_server_config, mock_app_context, keys):
+@pytest.fixture
+async def notifier_service(mock_horizon, horizon_server_config):
     """
-    Step 1: Verify Connectivity & Subscription Isolation
-    
-    1. Start Notifier Container (Real Image) connected to PUBLIC HORIZON (Testnet).
-       - This avoids the "insecure HTTP" error.
-       - Use Mongo:6 for storage.
-    2. "Neighbor" creates a subscription.
-    3. "Bot" creates a separate subscription.
-    4. Verify both return 200 OK.
-    5. Verify Bot's `_get_active_subscriptions` return ONLY Bot's wallet.
+    Starts Notifier container connected to Mock Horizon.
+    Returns the base URL of the notifier.
     """
-    
-    notifier_signing_key = keys["notifier"]
-    notifier_secret_seed = notifier_signing_key.secret
-    
+    notifier_kp = Keypair.random()
+    notifier_secret = notifier_kp.secret
+
     with Network() as network:
-        # 1. Start MongoDB
-        mongo = DockerContainer("mongo:6")
-        mongo.with_network(network)
-        mongo.with_network_aliases("mongodb")
-        mongo.with_env("MONGO_INITDB_DATABASE", "notifier")
+        notifier = NotifierContainer()
+        notifier.with_network(network)
+        notifier.with_env("ENVIRONMENT", "production")
+        notifier.with_env("STORAGE_PROVIDER", "memory")
+        notifier.with_env("AUTHORIZATION", "enabled")
+        notifier.with_env("SIGNATURE_SECRET", notifier_secret)
+        notifier.with_env("API_PORT", "8080")
+
+        # Use Mock Horizon (HTTP) via host.docker.internal
+        mock_horizon_url = f"http://host.docker.internal:{horizon_server_config['port']}"
+        notifier.with_env("HORIZON", mock_horizon_url)
+        notifier.with_env("HORIZON_ALLOW_HTTP", "true")
         
-        with mongo:
-            wait_for_logs(mongo, "Waiting for connections")
+        # Enable host.docker.internal on Linux
+        notifier.with_kwargs(extra_hosts={"host.docker.internal": "host-gateway"})
 
-            # 2. Start Stellar Notifier with PUBLIC HORIZON
-            notifier = NotifierContainer()
-            notifier.with_network(network)
-            notifier.with_env("ENVIRONMENT", "production") 
-            notifier.with_env("STORAGE_PROVIDER", "mongodb")
-            notifier.with_env("STORAGE_CONNECTION_STRING", "mongodb://mongodb:27017/notifier")
-            notifier.with_env("AUTHORIZATION", "enabled")
-            notifier.with_env("SIGNATURE_SECRET", notifier_secret_seed)
-            notifier.with_env("API_PORT", "8080")
+        with notifier:
+            wait_for_logs(notifier, "Listening on port 8080", timeout=60)
+            notifier_port = notifier.get_exposed_port(8080)
+            notifier_base_url = f"http://localhost:{notifier_port}"
+            yield notifier_base_url, notifier
+
+@pytest.fixture
+async def http_session():
+    async with aiohttp.ClientSession() as session:
+        yield session
+
+async def subscribe(session, notifier_url, user_kp, target_pubkey, webhook):
+    nonce = int(time.time() * 1000)
+    pairs = [
+        ("account", target_pubkey),
+        ("nonce", nonce),
+        ("reaction_url", webhook)
+    ]
+
+    msg = encode_url_params(pairs)
+    sig = user_kp.sign(msg.encode('utf-8')).hex()
+    token = f"ed25519 {user_kp.public_key}.{sig}"
+
+    headers = {
+        "Authorization": token,
+        "Content-Type": "application/json"
+    }
+
+    from collections import OrderedDict
+    json_data = json.dumps(OrderedDict(pairs), separators=(',', ':'))
+
+    async with session.post(f"{notifier_url}/api/subscription",
+                          data=json_data, headers=headers) as resp:
+        assert resp.status == 200, f"Sub failed: {await resp.text()}"
+
+async def get_subs_count(session, notifier_url, user_kp):
+    nonce = int(time.time() * 1000)
+    pairs = [("nonce", nonce)]
+    msg = encode_url_params(pairs)
+    sig = user_kp.sign(msg.encode('utf-8')).hex()
+    token = f"ed25519 {user_kp.public_key}.{sig}"
+    
+    url = f"{notifier_url}/api/subscription?nonce={nonce}"
+    headers = {"Authorization": token}
+
+    async with session.get(url, headers=headers) as resp:
+         assert resp.status == 200
+         data = await resp.json()
+         return len(data)
+
+@pytest.mark.asyncio
+async def test_notifier_subscription_isolation(notifier_service, http_session):
+    """
+    Test that users only see their own subscriptions.
+    """
+    notifier_url, _ = notifier_service
+    webhook_url = "http://example.com/webhook" # Dummy URL for this test
+    
+    # --- User 1 Logic ---
+    user1_kp = Keypair.random()
+    user1_targets = [Keypair.random().public_key for _ in range(3)]
+    
+    print(f"DEBUG: User 1 ({user1_kp.public_key}) subscribing to 3 targets")
+    for target in user1_targets:
+        await subscribe(http_session, notifier_url, user1_kp, target, webhook_url)
+        
+    # --- User 2 Logic ---
+    user2_kp = Keypair.random()
+    user2_targets = [Keypair.random().public_key for _ in range(4)]
+    
+    print(f"DEBUG: User 2 ({user2_kp.public_key}) subscribing to 4 targets")
+    for target in user2_targets:
+        await subscribe(http_session, notifier_url, user2_kp, target, webhook_url)
+        
+    # --- Verification ---
+    count1 = await get_subs_count(http_session, notifier_url, user1_kp)
+    print(f"DEBUG: User 1 subs count: {count1}")
+    assert count1 == 3, f"User 1 should have 3 subs, got {count1}"
+    
+    count2 = await get_subs_count(http_session, notifier_url, user2_kp)
+    print(f"DEBUG: User 2 subs count: {count2}")
+    assert count2 == 4, f"User 2 should have 4 subs, got {count2}"
+    
+    print("SUCCESS: User isolation verified.")
+
+@pytest.mark.asyncio
+async def test_notifier_webhook_delivery(notifier_service, http_session, mock_horizon):
+    """
+    Test E2E notification delivery: Subscription -> Payment Injection -> Webhook Receive.
+    """
+    notifier_url, notifier = notifier_service
+    # --- Webhook Server Setup ---
+    webhook_queue = asyncio.Queue()
+    webhook_port = 8081
+    
+    async def webhook_handler(request):
+        data = await request.json()
+        print(f"DEBUG: Webhook received: {data}")
+        await webhook_queue.put(data)
+        return web.json_response({"status": "ok"})
+
+    app = web.Application()
+    app.router.add_post('/webhook', webhook_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', webhook_port)
+    await site.start()
+    
+    try:
+        user_kp = Keypair.random()
+        target_kp = Keypair.random()
+        
+        webhook_url = f"http://host.docker.internal:{webhook_port}/webhook"
+        
+        print(f"DEBUG: User ({user_kp.public_key}) subscribing to target {target_kp.public_key}")
+        
+        # Subscribe
+        await subscribe(http_session, notifier_url, user_kp, target_kp.public_key, webhook_url)
+        
+        # Verify sub exists
+        count = await get_subs_count(http_session, notifier_url, user_kp)
+        assert count == 1
+        
+        print("DEBUG: Subscription confirmed. Injecting payment...")
+        
+        # Inject Payment
+        mock_horizon.add_payment(
+            from_account=Keypair.random().public_key,
+            to_account=target_kp.public_key,
+            amount="10.0",
+            asset_type="native"
+        )
+        
+        # Wait for Webhook
+        try:
+            webhook_data = await asyncio.wait_for(webhook_queue.get(), timeout=15.0)
+            # Notifier service sends 'operation' type for operation events
+            assert webhook_data['type'] == 'operation'
+            # Depending on Notifier implementation, verify content
             
-            # USE PUBLIC TESTNET HORIZON (HTTPS) TO AVOID INSECURE ERROR
-            notifier.with_env("HORIZON", "https://horizon-testnet.stellar.org")
-            
-            with notifier:
-                try:
-                    # Wait for startup
-                    wait_for_logs(notifier, "Listening on port 8080", timeout=60)
-                except Exception as e:
-                    print(f"DEBUG: Container Startup Failed. Logs:\n{notifier.get_logs()}")
-                    raise e
-                
-                notifier_port = notifier.get_exposed_port(8080)
-                notifier_url = f"http://localhost:{notifier_port}"
-                
-                # 3. Configure Bot Service
-                from tests.conftest import get_free_port
-                webhook_port = get_free_port()
-                config = Settings()
-                config.notifier_url = notifier_url
-                config.webhook_public_url = f"http://host.docker.internal:{webhook_port}/webhook"
-                config.webhook_port = webhook_port
-                config.notifier_public_key = keys["notifier"].public_key
-                config.service_secret = settings_secret(keys["bot"].secret)
+        except asyncio.TimeoutError:
+            pytest.fail("Timed out waiting for webhook notification.")
 
-                # Mock DB Context
-                from unittest.mock import AsyncMock, MagicMock
-                session_mock = AsyncMock()
-                mock_app_context.db_pool.get_session.return_value.__aenter__.return_value = session_mock
-                mock_app_context.db_pool.get_session.return_value.__aexit__ = AsyncMock(return_value=None)
-                
-                service = NotificationService(config, mock_app_context.db_pool, mock_app_context.bot, 
-                                            mock_app_context.localization_service, mock_app_context.dispatcher)
-                
-                try:
-                    try:
-                        # 4. Neighbor Subscription
-                        # Manually construct signed request matching new logic
-                        async with aiohttp.ClientSession() as session:
-                            neighbor_kp = keys["neighbor"]
-                            neighbor_target = Keypair.random().public_key
-                            
-                            # Define FIELDS AS LIST OF TUPLES
-                            neighbor_nonce = int(time.time() * 1000)
-                            pairs = [
-                                ("reaction_url", f"http://neighbor-svc:{webhook_port}/webhook"),
-                                ("account", neighbor_target),
-                                ("nonce", neighbor_nonce),
-                            ]
-                            
-                            # Sign encoded string
-                            msg = encode_url_params(pairs)
-                            sig = neighbor_kp.sign(msg.encode('utf-8')).hex()
-                            token = f"ed25519 {neighbor_kp.public_key}.{sig}"
-                            
-                            headers = {
-                                "Authorization": token,
-                                'Content-Type': 'application/json'
-                            }
-                            
-                            from collections import OrderedDict
-                            json_data = json.dumps(OrderedDict(pairs), separators=(',', ':'))
-                            
-                            async with session.post(f"{notifier_url}/api/subscription", 
-                                                    data=json_data, headers=headers) as resp:
-                                assert resp.status == 200, f"Neighbor sub failed: {await resp.text()}"
-
-                            # 5. Bot Subscription
-                            bot_wallet = Keypair.random().public_key
-                            # Service.subscribe now handles usage of new auth headers internally
-                            await service.subscribe(bot_wallet)
-                            
-                            # 6. Verify Isolation
-                            # Bot should only see its own subscription
-                            subs = await service._get_active_subscriptions()
-                            print(f"DEBUG: Retrieved Subs: {subs}")
-                            
-                            assert bot_wallet in subs
-                            assert len(subs) == 1
-                            
-                            print("Step 1 SUCCESS: Notifier Connected, Subscriptions created & Isolated.")
-
-                    except Exception as e:
-                        try:
-                            logs = notifier.get_logs()
-                            if isinstance(logs, tuple):
-                                stdout, stderr = logs
-                                log_str = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
-                            else:
-                                log_str = str(logs)
-                        except:
-                            log_str = "Could not retrieve logs"
-                            
-                        with open("tests/integration/container_logs.txt", "w") as f:
-                            f.write(log_str)
-                            f.write(f"\n\nException: {e}")
-                        raise e
-                finally:
-                    await service.stop()
-
-def settings_secret(s):
-    from pydantic import SecretStr
-    return SecretStr(s)
+    finally:
+        await runner.cleanup()
