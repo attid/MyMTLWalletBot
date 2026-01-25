@@ -410,6 +410,11 @@ class NotificationService:
             logger.error(f"Failed to send notification to {wallet.user_id}: {e}")
     async def subscribe(self, public_key: str):
         """Subscribe a wallet to the notifier."""
+        # Basic validation for Stellar Public Key (G...)
+        if not public_key or not public_key.startswith('G') or len(public_key) != 56:
+             logger.debug(f"Skipping non-stellar subscription: {public_key}")
+             return
+
         if not self.config.notifier_url:
             return 
             
