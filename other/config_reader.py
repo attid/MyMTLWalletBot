@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # Security for Notification Service
     notifier_public_key: Optional[str] = None # Public Key of the Notifier Service to verify webhooks
     service_secret: Optional[SecretStr] = None # Secret Key to sign requests to Notifier
+    notifier_auth_token: Optional[str] = None # Token for Notifier Authentication (alternative to signature)
 
     # horizon_url_id: Optional[int] = 0
 
