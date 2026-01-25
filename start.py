@@ -2,7 +2,9 @@ import asyncio
 import warnings
 
 # Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
-warnings.filterwarnings("ignore", message=".*has conflict with protected namespace .model_.")
+warnings.filterwarnings(
+    "ignore", message=".*has conflict with protected namespace .model_."
+)
 
 import uvloop
 from aiogram.client.default import DefaultBotProperties
@@ -16,7 +18,12 @@ from contextlib import suppress
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeDefault,
+    BotCommandScopeChat,
+    BotCommandScopeAllPrivateChats,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
 from sqlalchemy.orm import sessionmaker
 from sulguk import AiogramSulgukMiddleware  # type: ignore[import-untyped]
@@ -25,8 +32,25 @@ from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
-from routers import (add_wallet, admin, common_start, common_setting, mtltools, receive, trade, send, sign, swap, inout,
-                     cheque, mtlap, fest, uri, ton, notification_settings)
+from routers import (
+    add_wallet,
+    admin,
+    common_start,
+    common_setting,
+    mtltools,
+    receive,
+    trade,
+    send,
+    sign,
+    swap,
+    inout,
+    cheque,
+    mtlap,
+    fest,
+    uri,
+    ton,
+    notification_settings,
+)
 from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
 from loguru import logger
@@ -45,15 +69,22 @@ from infrastructure.services.localization_service import LocalizationService
 from middleware.app_context import AppContextMiddleware
 from middleware.localization import LocalizationMiddleware
 
+
 @logger.catch
-async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker, app_context: AppContext, localization_service: LocalizationService):
+async def bot_add_routers(
+    bot: Bot,
+    dp: Dispatcher,
+    db_pool: sessionmaker,
+    app_context: AppContext,
+    localization_service: LocalizationService,
+):
     bot.session.middleware(AiogramSulgukMiddleware())
-    
+
     # DI Middlewares
     dp.message.middleware(AppContextMiddleware(app_context))
     dp.callback_query.middleware(AppContextMiddleware(app_context))
     dp.inline_query.middleware(AppContextMiddleware(app_context))
-    
+
     dp.message.middleware(LocalizationMiddleware(localization_service))
     dp.callback_query.middleware(LocalizationMiddleware(localization_service))
     dp.inline_query.middleware(LocalizationMiddleware(localization_service))
@@ -66,7 +97,7 @@ async def bot_add_routers(bot: Bot, dp: Dispatcher, db_pool: sessionmaker, app_c
 
     dp.include_router(common_start.router)  # first # first
     dp.include_router(cheque.router)  # first
-    dp.include_router(uri.router) # first
+    dp.include_router(uri.router)  # first
     dp.include_router(wallet_setting.router)  # first
     dp.include_router(notification_settings.router)  # first
 
@@ -138,8 +169,12 @@ async def set_commands(bot: Bot):
     ]
 
     await bot.set_my_commands(commands=commands_clear, scope=BotCommandScopeDefault())
-    await bot.set_my_commands(commands=commands_private, scope=BotCommandScopeAllPrivateChats())
-    await bot.set_my_commands(commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admins[0]))
+    await bot.set_my_commands(
+        commands=commands_private, scope=BotCommandScopeAllPrivateChats()
+    )
+    await bot.set_my_commands(
+        commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admins[0])
+    )
 
 
 async def on_startup(bot: Bot, dispatcher: Dispatcher):
@@ -147,8 +182,8 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await start_broker(app_context)
     await set_commands(bot)
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text='Bot started')
-    # fest.fest_menu = await gs_update_fest_menu()    
+        await bot.send_message(chat_id=config.admins[0], text="Bot started")
+    # fest.fest_menu = await gs_update_fest_menu()
     # Start Notification Service (Webhook Server)
     if app_context.notification_service:
         await app_context.notification_service.start_server()
@@ -164,23 +199,27 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
         task_list = [
             asyncio.create_task(cheque_worker(app_context)),
             asyncio.create_task(log_worker(app_context)),
-            asyncio.create_task(usdt_worker(bot, app_context.db_pool, app_context))
+            asyncio.create_task(usdt_worker(bot, app_context)),
         ]
-        
+
         # Add notification sync task
         if app_context.notification_service:
-             task_list.append(asyncio.create_task(app_context.notification_service.sync_subscriptions()))
-             
+            task_list.append(
+                asyncio.create_task(
+                    app_context.notification_service.sync_subscriptions()
+                )
+            )
+
     dispatcher["task_list"] = task_list
 
     # config.fest_menu = await load_fest_info()
-    
-    
+
+
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     await stop_broker()
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text='Bot stopped')
-        
+        await bot.send_message(chat_id=config.admins[0], text="Bot stopped")
+
     # Stop Notification Service
     app_context: AppContext = dispatcher["app_context"]
     if app_context.notification_service:
@@ -203,49 +242,67 @@ async def main():
     # Creating DB connections pool
     from db.db_pool import db_pool
 
-    default_bot_properties = DefaultBotProperties(parse_mode='HTML')
+    default_bot_properties = DefaultBotProperties(parse_mode="HTML")
     session: AiohttpSession = AiohttpSession()
     session.middleware(RetryRequestMiddleware())
     if config.test_mode:
-        bot = Bot(token=config.test_bot_token.get_secret_value(), default=default_bot_properties, session=session)
-        print('start test')
+        bot = Bot(
+            token=config.test_bot_token.get_secret_value(),
+            default=default_bot_properties,
+            session=session,
+        )
+        print("start test")
     else:
-        bot = Bot(token=config.bot_token.get_secret_value(), default=default_bot_properties, session=session)
+        bot = Bot(
+            token=config.bot_token.get_secret_value(),
+            default=default_bot_properties,
+            session=session,
+        )
 
     storage = RedisStorage.from_url(config.redis_url)
     dp = Dispatcher(storage=storage)
-    scheduler = AsyncIOScheduler(timezone='Europe/Podgorica')  # str(tzlocal.get_localzone())
+    scheduler = AsyncIOScheduler(
+        timezone="Europe/Podgorica"
+    )  # str(tzlocal.get_localzone())
     scheduler.start()
 
     # Create Queues
     cheque_queue = asyncio.Queue()
     log_queue = asyncio.Queue()
-    
+
     # Initialize Services
     from infrastructure.services.app_context import AppContext
     from infrastructure.services.localization_service import LocalizationService
-    from infrastructure.persistence.repository_factory import SqlAlchemyRepositoryFactory
+    from infrastructure.persistence.repository_factory import (
+        SqlAlchemyRepositoryFactory,
+    )
     from infrastructure.services.stellar_service import StellarService
 
     from infrastructure.services.encryption_service import EncryptionService
     from services.ton_service import TonService
     from infrastructure.services.notification_service import NotificationService
-    
+
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
-    
+
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
     encryption_service = EncryptionService()
     ton_service = TonService()
-    
+
     # Create UseCaseFactory for DI
     from infrastructure.factories.use_case_factory import UseCaseFactory
     from core.constants import CHEQUE_PUBLIC_KEY
-    use_case_factory = UseCaseFactory(repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY)
-    
+
+    use_case_factory = UseCaseFactory(
+        repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY
+    )
+
     from infrastructure.services.notification_service import NotificationService
-    notification_service = NotificationService(config, db_pool, bot, localization_service, dp)
+
+    notification_service = NotificationService(
+        config, db_pool, bot, localization_service, dp
+    )
 
     app_context = AppContext(
         bot=bot,
@@ -260,9 +317,9 @@ async def main():
         localization_service=localization_service,
         dispatcher=dp,
         use_case_factory=use_case_factory,
-        notification_service=notification_service
+        notification_service=notification_service,
     )
-    
+
     dp["app_context"] = app_context
 
     setup_async_utils(bot, config.admins[0])
