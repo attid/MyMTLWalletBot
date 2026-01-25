@@ -287,6 +287,7 @@ async def cmd_usdt_check(
         # user_repo instantiated previously in this function
         user_repo = app_context.repository_factory.get_user_repository(session)
         await user_repo.update_usdt_balance(get_user_id(callback), full_usdt_balance)
+        await session.commit()  # Добавляем commit для сохранения изменений в БД
         url = f'<a href="https://tronscan.org/#/address/{user_tron_key}">{user_tron_key}</a>'
         admin_id = app_context.admin_id
         await bot.send_message(
@@ -863,6 +864,7 @@ async def cmd_send_btc_sum(
             user_repo = app_context.repository_factory.get_user_repository(session)
             if message.from_user is not None:
                 await user_repo.set_btc_uuid(message.from_user.id, order_uuid)
+                await session.commit()  # Добавляем commit для сохранения изменений в БД
                 await cmd_show_btc_in(
                     session, message.from_user.id, state, app_context=app_context
                 )
@@ -966,6 +968,7 @@ async def cmd_btc_check(
 
                 user_repo = app_context.repository_factory.get_user_repository(session)
                 await user_repo.set_btc_uuid(callback.from_user.id, None)
+                await session.commit()  # Добавляем commit для сохранения изменений в БД
                 # await async_stellar_send(xdr) # handled by SendPayment
                 await cmd_info_message(
                     session, callback, "All works done!", app_context=app_context
