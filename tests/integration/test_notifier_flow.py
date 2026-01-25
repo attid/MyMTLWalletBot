@@ -101,6 +101,7 @@ async def subscribe(session, notifier_url, user_kp, target_pubkey, webhook):
     async with session.post(f"{notifier_url}/api/subscription",
                           data=json_data, headers=headers) as resp:
         assert resp.status == 200, f"Sub failed: {await resp.text()}"
+        return nonce
 
 async def get_subs_count(session, notifier_url, user_kp):
     nonce = int(time.time() * 1000)
@@ -113,9 +114,26 @@ async def get_subs_count(session, notifier_url, user_kp):
     headers = {"Authorization": token}
 
     async with session.get(url, headers=headers) as resp:
-         assert resp.status == 200
-         data = await resp.json()
-         return len(data)
+        assert resp.status == 200
+        data = await resp.json()
+        return len(data)
+
+async def get_remote_nonce(session, notifier_url, user_kp):
+    """
+    Retrieves the current nonce from the Notifier using the new endpoint.
+    GET /api/nonce
+    Sign: nonce:<public_key>
+    """
+    msg = f"nonce:{user_kp.public_key}"
+    sig = user_kp.sign(msg.encode('utf-8')).hex()
+    token = f"ed25519 {user_kp.public_key}.{sig}"
+    
+    headers = {"Authorization": token}
+    
+    async with session.get(f"{notifier_url}/api/nonce", headers=headers) as resp:
+        assert resp.status == 200, f"Get nonce failed: {await resp.text()}"
+        data = await resp.json()
+        return int(data['nonce'])
 
 @pytest.mark.asyncio
 async def test_notifier_subscription_isolation(notifier_service, http_session):
@@ -212,3 +230,46 @@ async def test_notifier_webhook_delivery(notifier_service, http_session, mock_ho
 
     finally:
         await runner.cleanup()
+
+@pytest.mark.asyncio
+async def test_nonce_lookup(notifier_service, http_session):
+    """
+    Test the new GET /api/nonce endpoint.
+    1. Start with fresh user (nonce=0 implicit or unknown).
+    2. Subscribe (sets nonce = T1).
+    3. Call /api/nonce and verify it returns T1.
+    4. Subscribe again (sets nonce = T2).
+    5. Call /api/nonce and verify it returns T2.
+    """
+    notifier_url, _ = notifier_service
+    user_kp = Keypair.random()
+    target = Keypair.random().public_key
+    webhook = "http://example.com/webhook"
+    
+    print(f"DEBUG: Testing Nonce Lookup for user {user_kp.public_key}")
+
+    # 1. First Subscription
+    nonce1 = await subscribe(http_session, notifier_url, user_kp, target, webhook)
+    print(f"DEBUG: Subscribed with nonce {nonce1}")
+    
+    # 2. Verify Nonce Lookup
+    remote_nonce1 = await get_remote_nonce(http_session, notifier_url, user_kp)
+    print(f"DEBUG: Remote nonce after 1st sub: {remote_nonce1}")
+    
+    assert remote_nonce1 == nonce1, f"Expected nonce {nonce1}, got {remote_nonce1}"
+    
+    # 3. Second Subscription (should have higher nonce)
+    # Ensure time moves forward slightly to guarantee higher nonce if script runs ultra fast
+    time.sleep(0.01) 
+    nonce2 = await subscribe(http_session, notifier_url, user_kp, target, webhook)
+    print(f"DEBUG: Subscribed again with nonce {nonce2}")
+    
+    assert nonce2 > nonce1
+    
+    # 4. Verify Nonce Lookup Again
+    remote_nonce2 = await get_remote_nonce(http_session, notifier_url, user_kp)
+    print(f"DEBUG: Remote nonce after 2nd sub: {remote_nonce2}")
+    
+    assert remote_nonce2 == nonce2, f"Expected nonce {nonce2}, got {remote_nonce2}"
+    
+    print("SUCCESS: Nonce lookup verified.")

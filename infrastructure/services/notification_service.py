@@ -35,7 +35,11 @@ class NotificationService:
         
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
-        self.notified_operations = set() 
+        self.notified_operations = set()
+        
+        # Nonce management
+        self._nonce = 0
+        self._nonce_lock = asyncio.Lock()
 
     def _encode_url_params(self, pairs: list) -> str:
         """
@@ -60,6 +64,52 @@ class NotificationService:
             logger.error(f"Failed to sign payload: {e}")
             raise e
 
+    async def _fetch_initial_nonce(self):
+        """Fetches the current nonce from the Notifier to initialize the local counter."""
+        if not self.config.notifier_url:
+            return
+
+        try:
+            kp = Keypair.from_secret(self.config.service_secret.get_secret_value())
+            public_key = kp.public_key
+            
+            # Sign "nonce:<public_key>"
+            payload = f"nonce:{public_key}"
+            signature = kp.sign(payload.encode('utf-8')).hex()
+            auth_header = f"ed25519 {public_key}.{signature}"
+            
+            headers = {"Authorization": auth_header}
+            url = f"{self.config.notifier_url}/api/nonce"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        remote_nonce = int(data.get('nonce', 0))
+                        # Set local nonce to remote nonce (we will increment before next use)
+                        self._nonce = remote_nonce
+                        logger.info(f"Initialized nonce from Notifier: {self._nonce}")
+                    else:
+                        logger.warning(f"Failed to fetch initial nonce: {resp.status} {await resp.text()}")
+                        # Fallback to current time if fetch fails, to ensure we are likely ahead
+                        self._nonce = int(time.time() * 1000)
+                        logger.info(f"Fallback to time-based initial nonce: {self._nonce}")
+                        
+        except Exception as e:
+            logger.error(f"Error fetching initial nonce: {e}")
+            # Fallback
+            self._nonce = int(time.time() * 1000)
+
+    async def _get_next_nonce(self) -> int:
+        """Returns the next sequential nonce."""
+        async with self._nonce_lock:
+            # Lazy init if still 0 (though start_server should have called it)
+            if self._nonce == 0:
+                await self._fetch_initial_nonce()
+            
+            self._nonce += 1
+            return self._nonce
+
     def _verify_webhook_signature(self, request: web.Request, body_bytes: bytes) -> bool:
         """Verifies the Notifier's signature on the webhook (X-Request-ED25519-Signature)."""
         if not self.config.notifier_public_key:
@@ -83,6 +133,9 @@ class NotificationService:
 
     async def start_server(self):
         """Starts the internal Webhook Listener."""
+        # Initialize nonce
+        await self._fetch_initial_nonce()
+
         app = web.Application()
         app.router.add_post('/webhook', self.handle_webhook)
         
@@ -285,7 +338,8 @@ class NotificationService:
         url = f"{self.config.notifier_url}/api/subscription"
         webhook = self.config.webhook_public_url
         
-        nonce = int(time.time() * 1000)
+        # Use sequential nonce
+        nonce = await self._get_next_nonce()
         pairs = [
             ("account", public_key),
             ("nonce", nonce),
@@ -310,8 +364,13 @@ class NotificationService:
                     else:
                         text = await resp.text()
                         logger.error(f"Failed to subscribe {public_key}: {resp.status} {text}")
+                        logger.error(f"DEBUG: Payload Signed: '{payload_str}'")
+                        logger.error(f"DEBUG: Auth Header: '{auth_header}'")
+                        logger.error(f"DEBUG: Body JSON: '{body_json}'")
             except Exception as e:
                 logger.error(f"Exception subscribing {public_key}: {e}")
+                logger.error(f"DEBUG: Payload Signed: '{payload_str}'")
+                logger.error(f"DEBUG: Auth Header: '{auth_header}'")
 
     async def sync_subscriptions(self):
         """Syncs all DB wallets with Notifier subscriptions."""
@@ -351,7 +410,7 @@ class NotificationService:
             logger.error(f"Sync failed: {e}")
 
     async def _get_active_subscriptions(self) -> set:
-        nonce = int(time.time() * 1000)
+        nonce = await self._get_next_nonce()
         pairs = [("nonce", nonce)]
         
         payload_str = self._encode_url_params(pairs)
