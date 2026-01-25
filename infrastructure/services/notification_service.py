@@ -322,6 +322,9 @@ class NotificationService:
             except json.JSONDecodeError:
                 return web.Response(text="Invalid JSON", status=400)
 
+            # Log webhook payload
+            logger.info(f"Webhook received: {json.dumps(payload, indent=2)}")
+
             # 4. Обрабатываем
             await self.process_notification(payload)
             return web.Response(text="OK")
@@ -396,7 +399,9 @@ class NotificationService:
 
             # Map common fields
             op = TOperations(
-                id=payload.get("id"),  # ID уведомления
+                id=op_data.get(
+                    "id", ""
+                ),  # Stellar operation ID from payload.operation.id
                 operation=op_type,
                 dt=datetime.utcnow(),
                 from_account=op_data.get("source_account")
