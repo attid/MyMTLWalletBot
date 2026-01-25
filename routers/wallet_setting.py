@@ -1229,6 +1229,7 @@ async def cmd_after_buy(
         wallet.is_free = False
         wallet.use_pin = 0  # Also reset pin type? original 'stellar_unfree_wallet' did: db_set_free_wallet(0), db_set_pin_type(0)
         await repo.update(wallet)
+        await session.commit()  # Добавляем commit для сохранения изменений в БД
 
 
 @router.callback_query(F.data == "BuyAddress")
@@ -1381,6 +1382,7 @@ async def cmd_send_for(
             session
         )
         await addressbook_repo.create(message.from_user.id, arr[0], " ".join(arr[1:]))
+        await session.commit()  # Добавляем commit для сохранения изменений в БД
     await cmd_edit_address_book(session, message.from_user.id, app_context=app_context)
 
 
@@ -1407,6 +1409,7 @@ async def cq_setting_address_book(
 
     if answer == "Delete":
         await addressbook_repo.delete(idx, user_id)
+        await session.commit()  # Добавляем commit для сохранения изменений в БД
         await cmd_edit_address_book(session, user_id, app_context=app_context)
 
     await callback.answer()
