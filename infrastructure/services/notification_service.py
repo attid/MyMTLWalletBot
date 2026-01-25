@@ -44,14 +44,64 @@ class NotificationService:
     def _encode_url_params(self, pairs: list) -> str:
         """
         Encodes parameters to match stellar_notifier logic (key=val&key=val).
-        MUST accept a list of tuples to guarantee order.
+        Sorts keys alphabetically to ensure matching order with JS Object.keys().
         """
+        # Convert list of tuples to dict to easy sort, then back to sorted list
+        # Or just sort the list of tuples by key
+        pairs.sort(key=lambda x: x[0])
+        
         parts = []
         for k, v in pairs:
             if isinstance(v, (list, tuple)):
                 v = ",".join(str(x) for x in v)
             parts.append(f"{quote(str(k), safe=SAFE)}={quote(str(v), safe=SAFE)}")
         return "&".join(parts)
+
+    def _sign_payload(self, payload: str) -> str:
+        """Signs the payload string using the service secret."""
+        try:
+            kp = Keypair.from_secret(self.config.service_secret.get_secret_value())
+            # Notifier ожидает сигнатуру в HEX формате
+            signature = kp.sign(payload.encode('utf-8')).hex()
+            return f"ed25519 {kp.public_key}.{signature}"
+        except Exception as e:
+            logger.error(f"Failed to sign payload: {e}")
+            raise e
+# ... (skipping lines)
+    async def _get_active_subscriptions(self) -> set:
+        nonce = await self._get_next_nonce()
+        pairs = [("nonce", nonce)]
+        
+        payload_str = self._encode_url_params(pairs)
+        auth_header = self._sign_payload(payload_str)
+        
+        url = f"{self.config.notifier_url}/api/subscription?{payload_str}"
+        
+        headers = {
+            "Authorization": auth_header
+        }
+        
+        async with aiohttp.ClientSession() as session:
+             try:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        results = set()
+                        if isinstance(data, list):
+                            for item in data:
+                                if isinstance(item, dict):
+                                    key = item.get('account') or item.get('resource_id')
+                                    if key:
+                                        results.add(key)
+                        return results
+                    else:
+                        logger.error(f"Get subs failed: {resp.status} {await resp.text()}")
+                        logger.error(f"DEBUG GET: Payload Signed: '{payload_str}'")
+                        logger.error(f"DEBUG GET: Auth Header: '{auth_header}'")
+                        return set()
+             except Exception as e:
+                 logger.error(f"Error fetching subs: {e}")
+                 return set()
 
     def _sign_payload(self, payload: str) -> str:
         """Signs the payload string using the service secret."""
@@ -86,11 +136,13 @@ class NotificationService:
                     if resp.status == 200:
                         data = await resp.json()
                         remote_nonce = int(data.get('nonce', 0))
-                        # Set local nonce to remote nonce (we will increment before next use)
-                        self._nonce = remote_nonce
-                        logger.info(f"Initialized nonce from Notifier: {self._nonce}")
+                        # Set local nonce to remote nonce + safety margin (e.g., 1000) 
+                        # to avoid race conditions if multiple instances are starting
+                        self._nonce = remote_nonce + 1000
+                        logger.info(f"Initialized nonce from Notifier: {remote_nonce} -> Set local to {self._nonce}")
                     else:
                         logger.warning(f"Failed to fetch initial nonce: {resp.status} {await resp.text()}")
+                        logger.warning(f"Headers: {resp.headers}")
                         # Fallback to current time if fetch fails, to ensure we are likely ahead
                         self._nonce = int(time.time() * 1000)
                         logger.info(f"Fallback to time-based initial nonce: {self._nonce}")
@@ -437,6 +489,8 @@ class NotificationService:
                         return results
                     else:
                         logger.error(f"Get subs failed: {resp.status} {await resp.text()}")
+                        logger.error(f"DEBUG GET: Payload Signed: '{payload_str}'")
+                        logger.error(f"DEBUG GET: Auth Header: '{auth_header}'")
                         return set()
              except Exception as e:
                  logger.error(f"Error fetching subs: {e}")
