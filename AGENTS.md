@@ -15,6 +15,31 @@ Run commands from the repo root so relative imports and path-based config resolv
 ## Coding Style & Naming Conventions
 Adhere to PEP8 (4 spaces, ≤100 chars) and keep business logic async-friendly—avoid blocking calls inside handlers. Modules, functions, and JSON keys use `snake_case`; classes remain `PascalCase`; router instances are exported as `router`. Log via `loguru.logger`, reuse existing middleware for DB/throttling, and place human-facing copy inside `langs/*.json` (HTML markup only).
 
+## Database Transaction Management
+**CRITICAL:** `db_pool.get_session()` does **NOT** auto-commit on context exit (`db/db_pool.py:83` is commented out). All database modifications **MUST** have explicit `await session.commit()` after UPDATE/INSERT/DELETE operations.
+
+**Rules:**
+1. **Always add `await session.commit()`** after repository methods that modify data (update_*, create_*, delete_*, set_*)
+2. **Place commit in the same `async with session` block** as the modification
+3. **Repository methods use `flush()` not `commit()`** - commit is caller's responsibility
+4. **Use cases return without commit** - handlers/routers must commit
+5. **Test data persistence** - verify changes survive session closure (see `tests/infrastructure/test_usdt_balance_commit.py` example)
+
+**Example:**
+```python
+# ❌ WRONG - changes NOT saved
+async with db_pool.get_session() as session:
+    repo = factory.get_user_repository(session)
+    await repo.update_lang(user_id, "en")
+    # Missing commit!
+
+# ✅ CORRECT - changes saved
+async with db_pool.get_session() as session:
+    repo = factory.get_user_repository(session)
+    await repo.update_lang(user_id, "en")
+    await session.commit()  # Required!
+```
+
 ## Testing Guidelines
 A formal `tests/` suite is still emerging; add new coverage with `pytest`/`pytest-asyncio`, mocking external ledgers and Redis. **You MUST read `tests/README.md` before modifying or creating tests to ensure compliance with naming rules.** Prefer scenario tests that drive routers via `dp.feed_update()` plus unit tests for helpers in `other/`. **Any router tests without `mock_server` are considered invalid.** Exercise scheduler jobs and middleware in isolation, and log manual Telegram checks in the PR when automated coverage is not feasible.
 
