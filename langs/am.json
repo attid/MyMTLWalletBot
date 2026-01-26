@@ -191,5 +191,15 @@
   "bsn_empty_tag_error": "መለያ ቢያንስ አንድ ፊደል መያዝ አለበት። [{}]",
   "bsn_length_error": "የጽሑፍ ርዝመት {} 64 ቁምፊዎችን በመስበር ከፍ አለ [{}]",
   "return_to_site": "ወደ ድህረ ገጽ ተመለስ",
+  "kb_notification_settings_button": "⚙️",
+  "notification_filters_title": "Notification filters ({}):",
+  "notification_filter_item": "{} min. {} {}",
+  "kb_delete_filter": "🗑",
+  "kb_add_filter": "➕ Add filter",
+  "filter_deleted": "Filter deleted",
+  "no_filters": "No filters",
+  "select_operation_for_filter": "Select operation:",
+  "no_recent_operations": "No recent operations",
+  "filters_page": "Page {} of {}",
   "notification_settings_error": "ስህተት ተከስቷል። ውሂብ አልተገኘም።"
 }

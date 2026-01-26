@@ -238,9 +238,14 @@ class INotificationRepository(ABC):
         pass
     
     @abstractmethod
-    async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str], 
+    async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str],
                            min_amount: float, operation_type: str) -> Optional['NotificationFilter']:
         """Find a duplicate filter."""
+        pass
+
+    @abstractmethod
+    async def delete_by_id(self, filter_id: int, user_id: int) -> bool:
+        """Delete a filter by ID with owner verification. Returns True if deleted."""
         pass
 
 

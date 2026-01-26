@@ -191,5 +191,15 @@
   "bsn_empty_tag_error": "Պիտակը պետք է ունենա գոնե մեկ տառ։ [{}]",
   "bsn_length_error": "Տողի երկարությունը {} գերազանցում է 64 նիշը։ [{}]",
   "return_to_site": "Վերադառնալ կայք",
+  "kb_notification_settings_button": "⚙️",
+  "notification_filters_title": "Notification filters ({}):",
+  "notification_filter_item": "{} min. {} {}",
+  "kb_delete_filter": "🗑",
+  "kb_add_filter": "➕ Add filter",
+  "filter_deleted": "Filter deleted",
+  "no_filters": "No filters",
+  "select_operation_for_filter": "Select operation:",
+  "no_recent_operations": "No recent operations",
+  "filters_page": "Page {} of {}",
   "notification_settings_error": "Սխալ տեղի ունեցավ. Տվյալները չեն գտնվել."
 }

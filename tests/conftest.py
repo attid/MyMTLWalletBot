@@ -1,12 +1,16 @@
+import sys
+import os
+
+# Add project root to path FIRST, before any other imports
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-import sys
-import os
 import socket
 import random
 from typing import Optional
-sys.path.append(os.getcwd())
 from aiohttp import web
 from aiogram import Dispatcher, Bot, types
 from aiogram.fsm.context import FSMContext

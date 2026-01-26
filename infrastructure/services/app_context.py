@@ -1,11 +1,14 @@
 import asyncio
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from aiogram import Bot, Dispatcher
 from infrastructure.services.localization_service import LocalizationService
 from core.interfaces.repositories import IRepositoryFactory
 from core.interfaces.services import IStellarService, IEncryptionService, ITonService
 from infrastructure.factories.use_case_factory import IUseCaseFactory
 from db.db_pool import DatabasePool
+
+if TYPE_CHECKING:
+    from infrastructure.services.notification_history_service import NotificationHistoryService
 
 class AppContext:
     """
@@ -27,6 +30,7 @@ class AppContext:
         localization_service: Optional[LocalizationService] = None,
         dispatcher: Optional[Dispatcher] = None,
         notification_service: Optional['NotificationService'] = None,
+        notification_history: Optional['NotificationHistoryService'] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -41,4 +45,5 @@ class AppContext:
         self.localization_service = localization_service
         self.dispatcher = dispatcher
         self.notification_service = notification_service
+        self.notification_history = notification_history
 

@@ -15,7 +15,7 @@ from keyboards.common_keyboards import (
     get_kb_resend,
     get_kb_return,
     get_return_button,
-    get_hide_notification_keyboard,
+    get_notification_keyboard,
 )
 from infrastructure.utils.telegram_utils import (
     send_message,
@@ -415,33 +415,19 @@ async def cmd_info_message(
             app_context=app_context,
         )
     elif operation_id:
-        if wallet_id is not None:
-            keyboard = get_hide_notification_keyboard(
-                user_id,
-                operation_id,
-                wallet_id,
-                app_context=app_context,
-                localization_service=loc_service,
-            )
-            await send_message(
-                None,
-                user_id,
-                msg,
-                reply_markup=keyboard,
-                bot=current_bot,
-                app_context=app_context,
-            )
-        else:
-            await send_message(
-                None,
-                user_id,
-                msg,
-                reply_markup=get_kb_return(
-                    user_id, app_context=app_context, localization_service=loc_service
-                ),
-                bot=current_bot,
-                app_context=app_context,
-            )
+        keyboard = get_notification_keyboard(
+            user_id,
+            app_context=app_context,
+            localization_service=loc_service,
+        )
+        await send_message(
+            None,
+            user_id,
+            msg,
+            reply_markup=keyboard,
+            bot=current_bot,
+            app_context=app_context,
+        )
     else:
         await send_message(
             None,

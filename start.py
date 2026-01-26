@@ -299,9 +299,12 @@ async def main():
     )
 
     from infrastructure.services.notification_service import NotificationService
+    from infrastructure.services.notification_history_service import NotificationHistoryService
+
+    notification_history = NotificationHistoryService(ttl_hours=12, max_per_user=50)
 
     notification_service = NotificationService(
-        config, db_pool, bot, localization_service, dp
+        config, db_pool, bot, localization_service, dp, notification_history
     )
 
     app_context = AppContext(
@@ -318,6 +321,7 @@ async def main():
         dispatcher=dp,
         use_case_factory=use_case_factory,
         notification_service=notification_service,
+        notification_history=notification_history,
     )
 
     dp["app_context"] = app_context
