@@ -343,7 +343,7 @@ async def sign_xdr(session: AsyncSession, state, user_id, *, app_context: AppCon
                     await state.update_data(try_sent_xdr=None)
                     link_msg = ""
                     if my_resp.paging_token:
-                        link_msg = f'\n(<a href="https://viewer.eurmtl.me/transaction/{my_resp.hash}">expert link</a>)'
+                        link_msg = f'\n(<a href="https://viewer.eurmtl.me/transaction/{my_resp.hash}">viewer</a>)'
 
                     msg = (
                         my_gettext(user_id, "send_good", app_context=app_context)

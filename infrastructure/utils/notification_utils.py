@@ -33,9 +33,7 @@ def decode_db_effect(
     if not loc_service and app_context:
         loc_service = app_context.localization_service
 
-    op_link = (
-        f'<a href="https://viewer.eurmtl.me/operation/{operation.id}">expert link</a>'
-    )
+    op_link = f'<a href="https://viewer.eurmtl.me/operation/{operation.id}">viewer</a>'
     if operation.operation == "trade":
         return my_gettext(
             user_id,
