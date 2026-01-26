@@ -619,6 +619,23 @@ class NotificationService:
                 localization_service=self.localization_service,
             )
 
+            # Reset balance cache to ensure user sees updated balance
+            # after receiving the transaction notification
+            try:
+                from infrastructure.persistence.sqlalchemy_wallet_repository import (
+                    SqlAlchemyWalletRepository,
+                )
+
+                async with self.db_pool.get_session() as session:
+                    repo = SqlAlchemyWalletRepository(session)
+                    await repo.reset_balance_cache(wallet.user_id)
+                    await session.commit()
+                    logger.debug(f"Balance cache reset for user {wallet.user_id}")
+            except Exception as cache_error:
+                logger.error(
+                    f"Failed to reset balance cache for user {wallet.user_id}: {cache_error}"
+                )
+
         except Exception as e:
             logger.exception(f"Failed to send notification to {wallet.user_id}: {e}")
 
