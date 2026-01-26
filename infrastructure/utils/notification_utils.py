@@ -79,5 +79,43 @@ def decode_db_effect(
         logger.info(
             f"op type: {operation.operation}, from: {operation.for_account}, {operation.code1}/{operation.code2}"
         )
+    elif operation.operation == "payment":
+        # Handle payment operations specifically
+        memo_text = ""
+        if operation.memo:
+            memo_text = f"\nMemo: {operation.memo}"
+
+        if decode_for == operation.for_account:
+            # This is an incoming payment
+            return (
+                my_gettext(
+                    user_id,
+                    "info_credit",
+                    (
+                        account_link,
+                        float2str(operation.amount1),
+                        str(operation.code1),
+                        op_link,
+                    ),
+                    localization_service=loc_service,
+                )
+                + memo_text
+            )
+        else:
+            # This is an outgoing payment or other account
+            return (
+                my_gettext(
+                    user_id,
+                    "info_debit",
+                    (
+                        account_link,
+                        float2str(operation.amount1),
+                        str(operation.code1),
+                        op_link,
+                    ),
+                    localization_service=loc_service,
+                )
+                + memo_text
+            )
     else:
         return f"new operation for {account_link} \n\n{op_link}"
