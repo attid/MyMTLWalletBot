@@ -39,6 +39,7 @@ def cleanup_router():
 @pytest.fixture
 def mock_session():
     session = MagicMock()
+    session.commit = AsyncMock()
     return session
 
 @pytest.fixture
