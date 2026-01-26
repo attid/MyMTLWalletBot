@@ -7,6 +7,7 @@ from typing import Optional, Any
 from datetime import datetime
 from urllib.parse import quote
 import base64
+import sentry_sdk
 
 from db.db_pool import DatabasePool
 from db.models import MyMtlWalletBot, TOperations, NotificationFilter
@@ -331,9 +332,6 @@ class NotificationService:
             except json.JSONDecodeError:
                 return web.Response(text="Invalid JSON", status=400)
 
-            # Log webhook payload
-            logger.info(f"Webhook received: {json.dumps(payload, indent=2)}")
-
             # 4. Обрабатываем
             await self.process_notification(payload)
             return web.Response(text="OK")
@@ -546,6 +544,17 @@ class NotificationService:
                 op.for_account = op_data.get("to") or op_data.get("account")
                 op.amount1 = 0.0
                 op.code1 = "UNK"
+
+                # Log unknown operation type
+                logger.warning(f"Unknown operation type: {op_type}, payload: {json.dumps(payload, indent=2)}")
+
+                # Send to Sentry if initialized
+                if sentry_sdk.Hub.current.client is not None:
+                    sentry_sdk.capture_message(
+                        f"Unknown operation type: {op_type}",
+                        level="warning",
+                        extras={"payload": payload, "op_type": op_type}
+                    )
 
             return op
 
