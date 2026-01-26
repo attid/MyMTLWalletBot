@@ -489,6 +489,57 @@ class NotificationService:
                 op.amount2 = float(op_data.get("source_amount", 0))
                 op.code2 = op_data.get("source_asset", {}).get("asset_code", "XLM")
 
+            elif op_type == "manage_sell_offer":
+                op.for_account = op_data.get("account")
+                # Amount to sell
+                op.amount1 = float(op_data.get("amount", 0))
+                # Asset to sell
+                op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
+                if op_data.get("asset", {}).get("asset_type") == "native":
+                    op.code1 = "XLM"
+
+                # Price per unit
+                op.amount2 = float(op_data.get("price", 0))
+
+                # Asset to receive - in this case source_asset contains the asset being received
+                if "source_asset" in op_data:
+                    op.code2 = op_data.get("source_asset", {}).get("asset_code", "XLM")
+                    if op_data.get("source_asset", {}).get("asset_type") == "native":
+                        op.code2 = "XLM"
+                else:
+                    # Если source_asset не указан, просто укажем, что второй актив неизвестен
+                    logger.info("No source_asset data in manage_sell_offer webhook")
+                    op.code2 = "unknown"
+
+                # Store offer ID in transaction_hash for reuse
+                op.transaction_hash = op_data.get("offerId", "")
+
+            elif op_type == "manage_buy_offer":
+                op.for_account = op_data.get("account")
+                # Amount of buying asset
+                op.amount1 = float(op_data.get("amount", 0))
+                # Asset to buy
+                if "buying_asset" in op_data:
+                    op.code1 = op_data.get("buying_asset", {}).get("asset_code", "XLM")
+                    if op_data.get("buying_asset", {}).get("asset_type") == "native":
+                        op.code1 = "XLM"
+                else:
+                    op.code1 = "unknown"
+
+                # Price per unit
+                op.amount2 = float(op_data.get("price", 0))
+
+                # Asset to sell
+                if "selling_asset" in op_data:
+                    op.code2 = op_data.get("selling_asset", {}).get("asset_code", "XLM")
+                    if op_data.get("selling_asset", {}).get("asset_type") == "native":
+                        op.code2 = "XLM"
+                else:
+                    op.code2 = "unknown"
+
+                # Store offer ID in transaction_hash for reuse
+                op.transaction_hash = op_data.get("offerId", "")
+
             else:
                 op.for_account = op_data.get("to") or op_data.get("account")
                 op.amount1 = 0.0

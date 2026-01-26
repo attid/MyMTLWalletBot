@@ -117,5 +117,66 @@ def decode_db_effect(
                 )
                 + memo_text
             )
+    elif operation.operation == "manage_sell_offer":
+        # Handle sell offer operations
+        # Format: account_link is creating/updating sell offer of amount1 code1 for code2 at price amount2
+        offer_id = ""
+        if operation.transaction_hash:
+            offer_id = f" (ID: {operation.transaction_hash})"
+
+        # Adjust price formatting - if price is a number, format it nicely
+        price_str = operation.amount2
+        try:
+            price = float(operation.amount2 or 0)
+            price_str = float2str(price)
+        except:
+            pass
+
+        # Format larger amounts for better readability (like 2480 EURMTL)
+        amount_str = float2str(operation.amount1)
+        if operation.amount1 and float(operation.amount1) > 1000:
+            # Add spaces for large numbers: 2480.2366399 -> 2 480.24
+            try:
+                amount = float(operation.amount1)
+                amount_str = f"{amount:,.2f}".replace(",", " ").replace(".", ",")
+            except:
+                pass
+
+        # Use localization for sell offer message
+        return my_gettext(
+            user_id,
+            "info_sell_offer",
+            (
+                account_link,
+                amount_str,
+                str(operation.code1),
+                str(operation.code2),
+                price_str,
+                offer_id,
+                op_link,
+            ),
+            localization_service=loc_service,
+        )
+    elif operation.operation == "manage_buy_offer":
+        # Handle buy offer operations
+        offer_id = ""
+        if operation.transaction_hash:
+            offer_id = f" (Offer ID: {operation.transaction_hash})"
+
+        # Use localization for buy offer message
+        return my_gettext(
+            user_id,
+            "info_buy_offer",
+            (
+                account_link,
+                str(operation.code1),
+                float2str(operation.amount1),
+                str(operation.code2),
+                float2str(operation.amount2),
+                offer_id,
+                op_link,
+            ),
+            localization_service=loc_service,
+        )
     else:
         return f"new operation for {account_link} \n\n{op_link}"
