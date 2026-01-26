@@ -183,7 +183,7 @@ def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset) -> str:
     sale_asset_str = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
     buy_asset_str = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
     market_link = f'https://eurmtl.me/cup/orderbook/{sale_asset_str}/{buy_asset_str}'
-    market_link = html_decoration.link(value='expert', link=market_link)
+    market_link = html_decoration.link(value='viewer', link=market_link)
     return market_link
 
 
