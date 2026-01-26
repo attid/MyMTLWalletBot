@@ -67,7 +67,7 @@
   "info_debit": "From account {}, a withdrawal of {} {} was made. \n\n {}.",
   "info_trade": "A trade has been executed from the account {}: \n{} {} was exchanged for {} {}.\n\n {}.",
   "info_sell_offer": "{} placed a sell order for {} {} in exchange for {} at price {}{}\n\n{}",
-  "info_buy_offer": "{} created a buy order for {} for {} {} at price {}{}\n\n{}"
+  "info_buy_offer": "{} created a buy order for {} for {} {} at price {}{}\n\n{}",
   "inline_cheque": "Cheque for {} EURMTL, for {} recipient(s), \n\n {}",
   "inline_invoice_buy": "Invoice for purchase {}, \n\n {}",
   "inout": "Here you can make a deposit or withdrawal to other networks. Currently, it's USDT on the TRC20 network. And soon, Bitcoin on lightning.",
