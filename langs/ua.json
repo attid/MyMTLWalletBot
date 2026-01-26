@@ -213,5 +213,6 @@
   "notification_settings_info": "У вас {} активних фільтрів сповіщень.",
   "kb_delete_all_filters": "Видалити всі фільтри",
   "all_filters_deleted": "Всі фільтри сповіщень було видалено.",
-  "filter_already_exists": "Фільтр з такими ж параметрами вже існує."
+  "filter_already_exists": "Фільтр з такими ж параметрами вже існує.",
+  "notification_settings_error": "Сталася помилка. Дані не знайдено."
 }

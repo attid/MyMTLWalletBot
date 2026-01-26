@@ -198,5 +198,21 @@
   "your_balance": "bilans je",
   "your_xdr": "Ваша транзакция для подписания:\n\n<code>{}</code>\n\n",
   "your_xdr_sign": "Vaša transakcija sa potpisom:\n\n<code>{}</code>\n\n",
-  "zero_sum": "Iznos 0 =( \n neće biti dovoljan"
+  "zero_sum": "Iznos 0 =( \n neće biti dovoljan",
+  "kb_hide_similar_messages": "Sakrij slične poruke",
+  "notification_settings_menu": "Podešavanje filtera obavještenja:",
+  "toggle_token_button": "Token: {}",
+  "any_token": "Bilo koji",
+  "change_amount_button": "Sakrij ako je iznos < {}",
+  "toggle_wallets_button": "Za sve novčanike: {}",
+  "yes": "Da",
+  "no": "Ne",
+  "save_button": "Sačuvaj",
+  "filter_saved": "Filter je sačuvan!",
+  "kb_notification_settings": "Podešavanja obavještenja",
+  "notification_settings_info": "Imate {} aktivnih filtera obavještenja.",
+  "kb_delete_all_filters": "Obriši sve filtere",
+  "all_filters_deleted": "Svi filteri obavještenja su obrisani.",
+  "filter_already_exists": "Filter sa istim parametrima već postoji.",
+  "notification_settings_error": "Došlo je do greške. Podaci nisu pronađeni."
 }

@@ -236,5 +236,6 @@
   "notification_settings_info": "You have {} active notification filters.",
   "kb_delete_all_filters": "Delete all filters",
   "all_filters_deleted": "All notification filters have been deleted.",
-  "filter_already_exists": "A filter with the same parameters already exists."
+  "filter_already_exists": "A filter with the same parameters already exists.",
+  "notification_settings_error": "An error occurred. Data not found."
 }
