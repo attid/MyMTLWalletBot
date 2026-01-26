@@ -31,7 +31,7 @@ class SqlAlchemyNotificationRepository(INotificationRepository):
         await self.session.execute(stmt)
         await self.session.commit()
 
-    async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str], 
+    async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str],
                            min_amount: float, operation_type: str) -> Optional[NotificationFilter]:
         stmt = select(NotificationFilter).where(
             NotificationFilter.user_id == user_id
@@ -46,3 +46,13 @@ class SqlAlchemyNotificationRepository(INotificationRepository):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def delete_by_id(self, filter_id: int, user_id: int) -> bool:
+        """Delete a filter by ID with owner verification."""
+        stmt = delete(NotificationFilter).where(
+            NotificationFilter.id == filter_id,
+            NotificationFilter.user_id == user_id
+        )
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount > 0

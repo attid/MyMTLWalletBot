@@ -81,3 +81,6 @@ plugins = [
 [[tool.mypy.overrides]]
 module = "other.stellar_tools"
 ignore_errors = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

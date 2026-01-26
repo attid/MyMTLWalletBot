@@ -36,12 +36,14 @@ class NotificationService:
         bot: Any,
         localization_service: Any,
         dispatcher: Any = None,
+        notification_history: Any = None,
     ):
         self.config = config
         self.db_pool = db_pool
         self.bot = bot
         self.dispatcher = dispatcher
         self.localization_service = localization_service
+        self.notification_history = notification_history
 
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
@@ -618,6 +620,18 @@ class NotificationService:
                 dispatcher=self.dispatcher,
                 localization_service=self.localization_service,
             )
+
+            # Save to notification history for filter creation
+            if self.notification_history:
+                try:
+                    self.notification_history.add(
+                        user_id=wallet.user_id,
+                        operation=operation,
+                        wallet_id=int(wallet.id) if wallet.id else 0,
+                        public_key=str(wallet.public_key),
+                    )
+                except Exception as history_error:
+                    logger.warning(f"Failed to save notification to history: {history_error}")
 
             # Reset balance cache to ensure user sees updated balance
             # after receiving the transaction notification

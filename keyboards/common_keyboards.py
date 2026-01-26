@@ -31,20 +31,14 @@ def get_kb_return(user_id: Union[types.CallbackQuery, types.Message, int],
     return keyboard
 
 
-class HideNotificationCallbackData(CallbackData, prefix="hide_notification"):
-    operation_id: str
-    wallet_id: int
-
-
-def get_hide_notification_keyboard(user_id: int, operation_id: str,
-                                   wallet_id: int, *, app_context: AppContext = None, localization_service: Any = None) -> InlineKeyboardMarkup:
+def get_notification_keyboard(user_id: int, *, app_context: AppContext = None, localization_service: Any = None) -> InlineKeyboardMarkup:
+    """Keyboard for notification messages with settings button."""
     buttons = [
-        [InlineKeyboardButton(text=my_gettext(user_id, 'kb_hide_similar_messages', app_context=app_context, localization_service=localization_service),
-                                    callback_data=HideNotificationCallbackData(
-                                        operation_id=operation_id,
-                                        wallet_id=wallet_id
-                                    ).pack())],
-        get_return_button(user_id, app_context=app_context, localization_service=localization_service) # Pass services
+        [InlineKeyboardButton(
+            text=my_gettext(user_id, 'kb_notification_settings_button', app_context=app_context, localization_service=localization_service),
+            callback_data="NotificationSettings"
+        )],
+        get_return_button(user_id, app_context=app_context, localization_service=localization_service)
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard

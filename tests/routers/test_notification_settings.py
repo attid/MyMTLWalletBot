@@ -5,7 +5,6 @@ from aiogram.fsm.storage.base import StorageKey
 from routers.notification_settings import (
     router as notification_router,
 )
-from keyboards.common_keyboards import HideNotificationCallbackData
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -53,7 +52,11 @@ def setup_notification_mocks(router_app_context):
             self.notif_repo.find_duplicate = AsyncMock(return_value=None)
             self.notif_repo.create = AsyncMock()
             self.notif_repo.delete_all_by_user = AsyncMock()
+            self.notif_repo.delete_by_id = AsyncMock(return_value=True)
             self.ctx.repository_factory.get_notification_repository.return_value = self.notif_repo
+
+            # Notification History
+            self.ctx.notification_history = None
 
     return NotificationMockHelper(router_app_context)
 
@@ -65,26 +68,41 @@ def get_latest_msg(mock_telegram):
 
 
 @pytest.mark.asyncio
-async def test_hide_notification_start_flow(mock_telegram, router_app_context, setup_notification_mocks):
-    """Test clicking 'Hide notification' button: should open settings menu."""
+async def test_notification_settings_shows_filters(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test NotificationSettings callback shows filters list."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+
+    # Setup some mock filters
+    mock_filter = MagicMock()
+    mock_filter.id = 1
+    mock_filter.asset_code = "EURMTL"
+    mock_filter.min_amount = 100
+    mock_filter.operation_type = "payment"
+    setup_notification_mocks.notif_repo.get_by_user_id = AsyncMock(return_value=[mock_filter])
+
+    user_id = 123
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "NotificationSettings"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "notification_filters_title" in req["data"]["text"]
+    assert "delete_filter:1" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_notification_settings_no_filters(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test NotificationSettings callback with no filters."""
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(notification_router)
 
     user_id = 123
-    cb_data = HideNotificationCallbackData(wallet_id=1, operation_id="10").pack()
-    
-    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, cb_data))
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "NotificationSettings"))
 
     req = get_latest_msg(mock_telegram)
-    assert "notification_settings_menu" in req["data"]["text"]
-    assert "toggle_token_notify" in req["data"]["reply_markup"]
-    
-    # Verify state data
-    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
-    data = await dp.storage.get_data(state_key)
-    assert data['asset_code'] == "EURMTL"
-    assert data['operation_id'] == 10
+    assert "no_filters" in req["data"]["text"]
+    assert "add_filter_menu" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
@@ -96,7 +114,7 @@ async def test_toggle_token_notify(mock_telegram, router_app_context, setup_noti
 
     user_id = 123
     state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
-    
+
     # Initial state: token set
     await dp.storage.update_data(state_key, {'asset_code': 'EURMTL', 'operation_id': 10})
 
@@ -104,7 +122,7 @@ async def test_toggle_token_notify(mock_telegram, router_app_context, setup_noti
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "toggle_token_notify"))
     data = await dp.storage.get_data(state_key)
     assert data['asset_code'] is None
-    
+
     # 2. Toggle ON
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "toggle_token_notify", update_id=2))
     data = await dp.storage.get_data(state_key)
@@ -123,7 +141,7 @@ async def test_change_amount_cycle(mock_telegram, router_app_context, setup_noti
     await dp.storage.update_data(state_key, {'min_amount': 1})
 
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "change_amount"))
-    
+
     data = await dp.storage.get_data(state_key)
     assert data['min_amount'] == 10
 
@@ -138,12 +156,12 @@ async def test_save_filter_success(mock_telegram, router_app_context, setup_noti
     user_id = 123
     state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
     await dp.storage.update_data(state_key, {
-        'public_key': 'GKEY', 'asset_code': 'EURMTL', 
+        'public_key': 'GKEY', 'asset_code': 'EURMTL',
         'min_amount': 100, 'operation_type': 'payment'
     })
 
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "save_filter"))
-    
+
     setup_notification_mocks.notif_repo.create.assert_called_once()
     req = get_latest_msg(mock_telegram)
     assert "filter_saved" in req["data"]["text"]
@@ -159,7 +177,104 @@ async def test_delete_all_filters(mock_telegram, router_app_context, setup_notif
     dp.include_router(notification_router)
 
     await dp.feed_update(router_app_context.bot, create_callback_update(123, "delete_all_filters"))
-    
+
     setup_notification_mocks.notif_repo.delete_all_by_user.assert_called_once_with(123)
     req = get_latest_msg(mock_telegram)
     assert "all_filters_deleted" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_delete_single_filter(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test deleting a single filter."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+
+    user_id = 123
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "delete_filter:5"))
+
+    setup_notification_mocks.notif_repo.delete_by_id.assert_called_once_with(5, user_id)
+
+
+@pytest.mark.asyncio
+async def test_add_filter_menu_no_history(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test add filter menu with no notification history."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+
+    user_id = 123
+    # notification_history is None by default in mocks
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "add_filter_menu"))
+
+    # Should show alert about no recent operations
+    # (callback.answer is called with show_alert=True)
+
+
+@pytest.mark.asyncio
+async def test_add_filter_menu_with_history(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test add filter menu with notification history."""
+    from infrastructure.services.notification_history_service import NotificationHistoryService, NotificationRecord
+    from datetime import datetime
+
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+
+    # Setup mock notification history
+    history = NotificationHistoryService()
+    record = NotificationRecord(
+        id="abc123",
+        operation_type="payment",
+        asset_code="EURMTL",
+        amount=100.0,
+        wallet_id=1,
+        public_key="GKEY",
+        created_at=datetime.utcnow()
+    )
+    history._history[123] = [record]
+    router_app_context.notification_history = history
+
+    user_id = 123
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "add_filter_menu"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "select_operation_for_filter" in req["data"]["text"]
+    assert "create_filter_from:abc123" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_create_filter_from_history(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test creating filter from history record."""
+    from infrastructure.services.notification_history_service import NotificationHistoryService, NotificationRecord
+    from datetime import datetime
+
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+
+    # Setup mock notification history
+    history = NotificationHistoryService()
+    record = NotificationRecord(
+        id="abc123",
+        operation_type="payment",
+        asset_code="EURMTL",
+        amount=100.0,
+        wallet_id=1,
+        public_key="GKEY",
+        created_at=datetime.utcnow()
+    )
+    history._history[123] = [record]
+    router_app_context.notification_history = history
+
+    user_id = 123
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "create_filter_from:abc123"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "notification_settings_menu" in req["data"]["text"]
+
+    # Verify state was set
+    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    data = await dp.storage.get_data(state_key)
+    assert data['asset_code'] == "EURMTL"
+    assert data['operation_type'] == "payment"
