@@ -34,7 +34,7 @@ async def hide_notification_callback(callback: types.CallbackQuery, state: FSMCo
         )
         await send_notification_settings_menu(callback, state, session, app_context=app_context)
     else:
-        await callback.answer(my_gettext(callback.from_user.id, "error", app_context=app_context), show_alert=True)
+        await callback.answer(my_gettext(callback.from_user.id, "notification_settings_error", app_context=app_context), show_alert=True)
 
 # I need to add get_by_id to IWalletRepository first.
 # Cancelling this tool call to add method first.
