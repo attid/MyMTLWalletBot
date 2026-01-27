@@ -322,6 +322,7 @@ async def test_nonce_concurrency(notifier_service):
     mock_config.notifier_auth_token = test_token  # Use token
     mock_config.service_secret = None
     mock_config.notifier_public_key = None
+    mock_config.test_mode = False
     mock_config.webhook_port = 8080  # Dummy
 
     # Instantiate Service (db_pool and others as None since we test nonce only)
