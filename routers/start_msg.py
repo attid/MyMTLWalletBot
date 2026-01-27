@@ -291,6 +291,10 @@ USDT: {float2str(usdt_balance, True)}
 
     balances = await use_case.execute(user_id)
 
+    # Restore legacy logic for MTLAP state
+    mtlap_value = any(b.asset_code == 'MTLAP' for b in balances)
+    await state.update_data(mtlap=mtlap_value)
+
     vis_str = getattr(wallet, "assets_visibility", None)
 
     balances = [

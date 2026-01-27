@@ -4,7 +4,9 @@ from sqlalchemy.orm import sessionmaker
 from db.models import Base
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from core.domain.entities import User, Wallet
+from core.domain.entities import User, Wallet, Cheque
+from infrastructure.persistence.sqlalchemy_cheque_repository import SqlAlchemyChequeRepository
+from db.models import MyMtlWalletBotCheque, MyMtlWalletBotChequeHistory, ChequeStatus
 
 # Use in-memory SQLite for integration tests
 @pytest.fixture(scope="module")
@@ -82,3 +84,71 @@ async def test_wallet_repository(db_session):
     default_wallet = await wallet_repo.get_default_wallet(456)
     assert default_wallet is not None
     assert default_wallet.public_key == "GABC123"
+
+@pytest.mark.asyncio
+async def test_cheque_repository(db_session):
+    repo = SqlAlchemyChequeRepository(db_session)
+    user_id = 12345
+
+    # 1. Create a cheque that is partially claimed (should be available)
+    cheque1 = MyMtlWalletBotCheque(
+        cheque_uuid="uuid-1",
+        cheque_amount="10",
+        cheque_count=5,
+        user_id=user_id,
+        cheque_status=ChequeStatus.CHEQUE.value,
+        cheque_comment="Test 1"
+    )
+    db_session.add(cheque1)
+    await db_session.flush() # get ID
+    
+    # Add 2 history entries (claims) for cheque1
+    db_session.add(MyMtlWalletBotChequeHistory(user_id=999, cheque_id=cheque1.cheque_id))
+    db_session.add(MyMtlWalletBotChequeHistory(user_id=888, cheque_id=cheque1.cheque_id))
+
+    # 2. Create a cheque that is fully claimed (should NOT be available)
+    cheque2 = MyMtlWalletBotCheque(
+        cheque_uuid="uuid-2",
+        cheque_amount="20",
+        cheque_count=2,
+        user_id=user_id,
+        cheque_status=ChequeStatus.CHEQUE.value,
+        cheque_comment="Test 2"
+    )
+    db_session.add(cheque2)
+    await db_session.flush()
+
+    # Add 2 history entries for cheque2 (fully claimed)
+    db_session.add(MyMtlWalletBotChequeHistory(user_id=777, cheque_id=cheque2.cheque_id))
+    db_session.add(MyMtlWalletBotChequeHistory(user_id=666, cheque_id=cheque2.cheque_id))
+
+    # 3. Create a cancelled cheque (should NOT be available)
+    cheque3 = MyMtlWalletBotCheque(
+        cheque_uuid="uuid-3",
+        cheque_amount="30",
+        cheque_count=5,
+        user_id=user_id,
+        cheque_status=ChequeStatus.CANCELED.value,
+        cheque_comment="Test 3"
+    )
+    db_session.add(cheque3)
+
+    # 4. Create a cheque for another user (should NOT be available)
+    cheque4 = MyMtlWalletBotCheque(
+        cheque_uuid="uuid-4",
+        cheque_amount="40",
+        cheque_count=5,
+        user_id=67890,
+        cheque_status=ChequeStatus.CHEQUE.value,
+        cheque_comment="Test 4"
+    )
+    db_session.add(cheque4)
+
+    await db_session.commit()
+
+    # Act
+    available = await repo.get_available(user_id)
+
+    # Assert
+    assert len(available) == 1
+    assert available[0].uuid == "uuid-1"
