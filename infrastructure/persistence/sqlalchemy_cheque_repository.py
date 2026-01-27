@@ -57,18 +57,25 @@ class SqlAlchemyChequeRepository(IChequeRepository):
     
     async def get_available(self, user_id: int) -> List[Cheque]:
         """Get all available (not fully claimed) cheques for a user."""
-        # Translate query-style to select-style for async compatibility
-        stmt = select(MyMtlWalletBotCheque).outerjoin(
+        # 1. Find IDs of cheques that are not fully claimed
+        # We group by cheque_id (PK) and cheque_count (needed for HAVING)
+        subq = select(MyMtlWalletBotCheque.cheque_id).outerjoin(
             MyMtlWalletBotChequeHistory,
             MyMtlWalletBotCheque.cheque_id == MyMtlWalletBotChequeHistory.cheque_id
-        ).group_by(
-            MyMtlWalletBotCheque.cheque_id
-        ).having(
-            func.count(MyMtlWalletBotChequeHistory.cheque_id) < MyMtlWalletBotCheque.cheque_count
         ).where(
             MyMtlWalletBotCheque.user_id == user_id
         ).where(
             MyMtlWalletBotCheque.cheque_status != ChequeStatus.CANCELED.value
+        ).group_by(
+            MyMtlWalletBotCheque.cheque_id,
+            MyMtlWalletBotCheque.cheque_count
+        ).having(
+            func.count(MyMtlWalletBotChequeHistory.cheque_id) < MyMtlWalletBotCheque.cheque_count
+        )
+        
+        # 2. Fetch the full cheque entities for these IDs
+        stmt = select(MyMtlWalletBotCheque).where(
+            MyMtlWalletBotCheque.cheque_id.in_(subq)
         )
         
         result = await self.session.execute(stmt)

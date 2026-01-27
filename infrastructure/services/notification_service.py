@@ -147,6 +147,10 @@ class NotificationService:
         if not self.config.notifier_url:
             logger.warning("Notifier URL not configured, cannot fetch public key")
             return
+            
+        if self.config.test_mode:
+            logger.info("Test mode enabled: Skipping Notifier public key fetch")
+            return
 
         url = f"{self.config.notifier_url}/api/status"
         try:
@@ -174,6 +178,11 @@ class NotificationService:
     async def _fetch_initial_nonce(self):
         """Fetches the current nonce from the Notifier to initialize the local counter."""
         if not self.config.notifier_url:
+            return
+
+        if self.config.test_mode:
+            logger.info("Test mode enabled: Skipping initial nonce fetch")
+            self._nonce = int(time.time() * 1000)
             return
 
         # If using Token Auth, we don't need nonce for auth, but still might need it for consistent ordering
@@ -287,6 +296,10 @@ class NotificationService:
         # Safety check
         if not self.bot:
             logger.error("Cannot start webhook server: bot is not initialized")
+            return
+
+        if self.config.test_mode:
+            logger.info("Test mode enabled: Webhook listener will not start")
             return
 
         # Fetch Notifier's public key from /api/status
@@ -792,6 +805,10 @@ class NotificationService:
             return
 
         if not self.config.notifier_url:
+            return
+
+        if self.config.test_mode:
+            logger.debug(f"Test mode: Skipping subscription for {public_key}")
             return
 
         url = f"{self.config.notifier_url}/api/subscription"
