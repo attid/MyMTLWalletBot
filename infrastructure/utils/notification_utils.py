@@ -55,6 +55,18 @@ def decode_db_effect(
             (account_link, float2str(operation.amount1), str(operation.code1), op_link),
             localization_service=loc_service,
         )
+    elif operation.operation == "create_account":
+        return my_gettext(
+            user_id,
+            "info_create_account",
+            (
+                account_link,
+                float2str(operation.amount1),
+                str(operation.code1),
+                op_link,
+            ),
+            localization_service=loc_service,
+        )
     elif operation.operation == "account_credited":
         return my_gettext(
             user_id,
@@ -62,21 +74,66 @@ def decode_db_effect(
             (account_link, float2str(operation.amount1), str(operation.code1), op_link),
             localization_service=loc_service,
         )
-    elif operation.operation == "data_removed":
-        return (
-            f"You remove DATA: \n\n{operation.code1} \n\non {account_link}\n\n{op_link}"
+    elif operation.operation in (
+        "path_payment_strict_send",
+        "path_payment_strict_receive",
+    ):
+        return my_gettext(
+            user_id,
+            "info_trade",
+            (
+                account_link,
+                float2str(operation.amount2),  # Sent amount (Source)
+                str(operation.code2),  # Sent asset (Source)
+                float2str(operation.amount1),  # Received amount (Dest)
+                str(operation.code1),  # Received asset (Dest)
+                op_link,
+            ),
+            localization_service=loc_service,
         )
-    elif operation.operation in ("data_created", "data_updated"):
-        if operation.for_account == decode_for:
-            return f"You added DATA on {account_link}\n\n{op_link}\n\nData:\n\n{operation.code1}\n{operation.code2}"
-        if operation.code2 == decode_for:
-            simple_decode_for = decode_for[:4] + ".." + decode_for[-4:]
-            decode_for_link = "https://viewer.eurmtl.me/account/" + decode_for
-            decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
-            return f"{account_link} set your account {decode_for_link} on his DATA \n\n{op_link}\n\nData Name:\n\n{operation.code1}"
-        logger.info(
-            f"op type: {operation.operation}, from: {operation.for_account}, {operation.code1}/{operation.code2}"
-        )
+    elif operation.operation == "manage_data":
+        if operation.code2 is None:
+            # Data Removed
+            return my_gettext(
+                user_id,
+                "info_data_removed",
+                (
+                    str(operation.code1),
+                    account_link,
+                    op_link,
+                ),
+                localization_service=loc_service,
+            )
+        elif operation.code2 == decode_for:
+             # User mentioned in Data
+             simple_decode_for = decode_for[:4] + ".." + decode_for[-4:]
+             decode_for_link = "https://viewer.eurmtl.me/account/" + decode_for
+             decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
+             
+             return my_gettext(
+                user_id,
+                "info_data_mention",
+                (
+                    account_link,
+                    decode_for_link,
+                    op_link,
+                    str(operation.code1)
+                ),
+                localization_service=loc_service,
+             )
+        else:
+             # Data Set / Updated
+             return my_gettext(
+                user_id,
+                "info_data_set",
+                (
+                    account_link,
+                    op_link,
+                    str(operation.code1),
+                    str(operation.code2)
+                ),
+                localization_service=loc_service,
+             )
     elif operation.operation == "payment":
         # Handle payment operations specifically
         memo_text = ""
