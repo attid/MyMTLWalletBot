@@ -33,7 +33,8 @@ def decode_db_effect(
     if not loc_service and app_context:
         loc_service = app_context.localization_service
 
-    op_link = f'<a href="https://viewer.eurmtl.me/operation/{operation.id}">viewer</a>'
+    op_id_clean = operation.id.split('_')[0] if operation.id else ""
+    op_link = f'<a href="https://viewer.eurmtl.me/operation/{op_id_clean}">viewer</a>'
     if operation.operation == "trade":
         return my_gettext(
             user_id,
@@ -158,12 +159,17 @@ def decode_db_effect(
             )
         else:
             # This is an outgoing payment or other account
+            # Use source account for the message "From ... was debit" to be logically correct with "Source"
+            simple_source = operation.from_account[:4] + ".." + operation.from_account[-4:]
+            source_link = "https://viewer.eurmtl.me/account/" + operation.from_account
+            source_link_html = f'<a href="{source_link}">{simple_source}</a>'
+
             return (
                 my_gettext(
                     user_id,
                     "info_debit",
                     (
-                        account_link,
+                        source_link_html,
                         float2str(operation.amount1),
                         str(operation.code1),
                         op_link,

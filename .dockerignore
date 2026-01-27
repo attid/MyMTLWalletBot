@@ -28,4 +28,6 @@ local_settings.py
 tmp/
 logs/
 data/
+/localdoc/
+/tests/
 
