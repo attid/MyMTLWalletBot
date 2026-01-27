@@ -487,8 +487,8 @@ class NotificationService:
                         # Re-implementing with assumption that fields might be there:
                         # sold_asset_code / bought_asset_code
                         
-                        sold_asset = trade.get("sold_asset_code", "XLM" if trade.get("sold_asset_type") == "native" else None)
-                        bought_asset = trade.get("bought_asset_code", "XLM" if trade.get("bought_asset_type") == "native" else None)
+                        sold_asset = trade.get("sold_asset_code", "XLM" if trade.get("sold_asset_type") in ("native", 0) else None)
+                        bought_asset = trade.get("bought_asset_code", "XLM" if trade.get("bought_asset_type") in ("native", 0) else None)
                         
                         # If native is implicit or missing code:
                         # User example had NO asset info. 
@@ -497,8 +497,11 @@ class NotificationService:
                         
                         # Let's try to grab generic asset fields if available
                         
+                        # Ensure we use the Stellar Operation ID, not the Notification ID
+                        stellar_op_id = op_info.get("id", op_id)
+                        
                         op_trade = TOperations(
-                            id=f"{op_id}_t{i}",
+                            id=f"{stellar_op_id}_t{i}",
                             operation="trade",
                             dt=datetime.utcnow(),
                             for_account=seller,
@@ -509,11 +512,11 @@ class NotificationService:
                         # Maker perspective:
                         # Bought (Received): amount_bought
                         op_trade.amount1 = float(trade.get("amount_bought", 0))
-                        op_trade.code1 = trade.get("bought_asset_code", "XLM" if trade.get("bought_asset_type") == "native" else "?")
+                        op_trade.code1 = trade.get("bought_asset_code", "XLM" if trade.get("bought_asset_type") in ("native", 0) else "?")
                         
                         # Sold (Sent): amount_sold
                         op_trade.amount2 = float(trade.get("amount_sold", 0))
-                        op_trade.code2 = trade.get("sold_asset_code", "XLM" if trade.get("sold_asset_type") == "native" else "?")
+                        op_trade.code2 = trade.get("sold_asset_code", "XLM" if trade.get("sold_asset_type") in ("native", 0) else "?")
                         
                         await self._send_notification_to_user(wallet, op_trade)
 
@@ -570,7 +573,7 @@ class NotificationService:
                 op.for_account = op_data.get("to") or op_data.get("destination")
                 op.amount1 = float(op_data.get("amount", 0))
                 op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
-                if op_data.get("asset", {}).get("asset_type") == "native":
+                if op_data.get("asset", {}).get("asset_type") in ("native", 0):
                     op.code1 = "XLM"
 
             elif op_type == "create_account":
@@ -586,8 +589,12 @@ class NotificationService:
                 )
                 op.amount1 = float(op_data.get("amount", 0))
                 op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
+                if op_data.get("asset", {}).get("asset_type") in ("native", 0):
+                    op.code1 = "XLM"
                 op.amount2 = float(op_data.get("source_amount", 0))
                 op.code2 = op_data.get("source_asset", {}).get("asset_code", "XLM")
+                if op_data.get("source_asset", {}).get("asset_type") in ("native", 0):
+                    op.code2 = "XLM"
 
             elif op_type == "manage_sell_offer":
                 op.for_account = op_data.get("account")
@@ -595,7 +602,7 @@ class NotificationService:
                 op.amount1 = float(op_data.get("amount", 0))
                 # Asset to sell
                 op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
-                if op_data.get("asset", {}).get("asset_type") == "native":
+                if op_data.get("asset", {}).get("asset_type") in ("native", 0):
                     op.code1 = "XLM"
 
                 # Price per unit
@@ -604,7 +611,7 @@ class NotificationService:
                 # Asset to receive - in this case source_asset contains the asset being received
                 if "source_asset" in op_data:
                     op.code2 = op_data.get("source_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("source_asset", {}).get("asset_type") == "native":
+                    if op_data.get("source_asset", {}).get("asset_type") in ("native", 0):
                         op.code2 = "XLM"
                 else:
                     # Если source_asset не указан, просто укажем, что второй актив неизвестен
@@ -621,7 +628,7 @@ class NotificationService:
                 # Asset to buy
                 if "buying_asset" in op_data:
                     op.code1 = op_data.get("buying_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("buying_asset", {}).get("asset_type") == "native":
+                    if op_data.get("buying_asset", {}).get("asset_type") in ("native", 0):
                         op.code1 = "XLM"
                 else:
                     op.code1 = "unknown"
@@ -632,7 +639,7 @@ class NotificationService:
                 # Asset to sell
                 if "selling_asset" in op_data:
                     op.code2 = op_data.get("selling_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("selling_asset", {}).get("asset_type") == "native":
+                    if op_data.get("selling_asset", {}).get("asset_type") in ("native", 0):
                         op.code2 = "XLM"
                 else:
                     op.code2 = "unknown"
