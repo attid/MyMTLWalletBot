@@ -540,6 +540,22 @@ class NotificationService:
                 # Store offer ID in transaction_hash for reuse
                 op.transaction_hash = op_data.get("offerId", "")
 
+            elif op_type == "manage_data":
+                op.for_account = op_data.get("source_account") or op_data.get("account")
+                op.code1 = op_data.get("name")  # Data Name
+                
+                # Decode value from Base64
+                data_value = op_data.get("value")
+                if data_value:
+                    try:
+                        op.code2 = base64.b64decode(data_value).decode("utf-8")
+                    except Exception:
+                         # Fallback if not utf-8 text or decode error
+                        op.code2 = str(data_value)
+                else:
+                    # Value is None -> Data Removed
+                    op.code2 = None
+
             else:
                 op.for_account = op_data.get("to") or op_data.get("account")
                 op.amount1 = 0.0
