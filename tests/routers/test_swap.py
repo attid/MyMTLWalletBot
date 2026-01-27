@@ -314,3 +314,96 @@ async def test_cmd_swap_start_custom_token(mock_telegram, router_app_context, se
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
     assert "UNLIMITED" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_swap_text_command(mock_telegram, router_app_context, setup_swap_mocks, mock_horizon, horizon_server_config):
+    """Test /swap text command: /swap 10 XLM EURMTL"""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+
+    user_id = 123
+    valid_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+
+    # Configure Mock Horizon for strict-send path
+    mock_horizon.set_paths([
+        {
+            "destination_asset_type": "credit_alphanum12",
+            "destination_asset_code": "EURMTL",
+            "destination_asset_issuer": valid_issuer,
+            "destination_amount": "9.5",
+            "source_amount": "10.0",
+            "path": []
+        }
+    ])
+
+    # Patch external check for estimated receive sum
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+        update = create_message_update(user_id, "/swap 10.0 XLM EURMTL")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    assert "confirm_swap" in req["data"]["text"]
+    
+    # Check that state has been updated
+    state = dp.fsm.get_context(bot=router_app_context.bot, chat_id=user_id, user_id=user_id)
+    data = await state.get_data()
+    assert data.get("operation") == "swap"
+    assert data.get("send_sum") == 10.0
+    assert data.get("send_asset_code") == "XLM"
+    assert data.get("receive_asset_code") == "EURMTL"
+    assert data.get("xdr") == "XDR_SWAP"
+
+
+
+@pytest.mark.asyncio
+async def test_cmd_swap_text_flexible_syntax(mock_telegram, router_app_context, setup_swap_mocks, mock_horizon, horizon_server_config):
+    """Test flexible syntax: /swap XLM 10 EURMTL and slippage"""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+
+    user_id = 123
+    valid_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+
+    mock_horizon.set_paths([
+        {
+            "destination_asset_type": "credit_alphanum12",
+            "destination_asset_code": "EURMTL",
+            "destination_asset_issuer": valid_issuer,
+            "destination_amount": "9.5",
+            "source_amount": "10.0",
+            "path": []
+        }
+    ])
+
+    # Test 1: /swap XLM 10 EURMTL
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+        update = create_message_update(user_id, "/swap XLM 10 EURMTL")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "confirm_swap" in req["data"]["text"]
+    
+    # Verify Amount parsed correctly in state
+    state = dp.fsm.get_context(bot=router_app_context.bot, chat_id=user_id, user_id=user_id)
+    data = await state.get_data()
+    assert data.get("send_sum") == 10.0
+
+    # Test 2: /swap 10 XLM EURMTL 5%
+    # We verify state update to ensure parsing worked
+    
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+        update = create_message_update(user_id, "/swap 10 XLM EURMTL 5%")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+
+    # Slippage check in state
+    data = await state.get_data()
+    assert data.get("slippage") == 5.0
+
+
+    
+

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import jsonpickle  # type: ignore
 from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -76,8 +77,236 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
+
+@router.message(Command(commands=["swap"]))
+async def cmd_swap_text(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    """
+    Handle text command /swap allowing flexible formats:
+    /swap 10 XLM EURMTL
+    /swap XLM 10 EURMTL
+    /swap 10 XLM EURMTL 5%
+    """
+    if not message.text:
+        return
+
+    parts = message.text.split()
+    args = []
+    # Clean args: remove '/swap' and optional 'to'
+    for p in parts[1:]:
+        if p.lower() != 'to':
+            args.append(p)
+            
+    if len(args) < 3:
+        await send_message(session, message, "Формат: /swap <сумма> <отдает> <получаем> [проскальзывание%]\nПример: /swap 10 XLM EURMTL 1%", app_context=app_context)
+        return
+
+    try:
+        # Parsed variables
+        amount = 0.0
+        from_code = ""
+        to_code = ""
+        slippage = 1.0 # default 1%
+
+        # 1. Check for slippage at the end
+        last_arg = args[-1]
+        if last_arg.endswith('%'):
+            try:
+                slippage = float(last_arg[:-1])
+                args.pop()
+            except ValueError:
+                pass # Not a slippage
+
+        elif len(args) == 4:
+             # Check if the 4th argument is a number (slippage)
+             try:
+                 slippage = my_float(last_arg)
+                 args.pop()
+             except Exception:
+                 pass
+        
+        # 2. Find amount in the first 2 arguments
+        amount_idx = -1
+        
+        # Try first arg
+        try:
+            val = my_float(args[0])
+            amount = val
+            amount_idx = 0
+        except Exception:
+            # Try second arg
+            try:
+                val = my_float(args[1])
+                amount = val
+                amount_idx = 1
+            except Exception:
+                pass
+
+            
+        if amount_idx == -1:
+             await send_message(session, message, "Не удалось определить сумму (число).", app_context=app_context)
+             return
+             
+        if amount <= 0:
+             await send_message(session, message, "Сумма должна быть больше 0.", app_context=app_context)
+             return
+
+        # 3. Extract assets
+        remaining_args = [a for i, a in enumerate(args) if i != amount_idx]
+        if len(remaining_args) < 2:
+             await send_message(session, message, "Не указаны валюты обмена.", app_context=app_context)
+             return
+             
+        from_code = remaining_args[0].upper()
+        to_code = remaining_args[1].upper()
+
+        # Resolve assets
+        if message.from_user is None:
+            return
+            
+        use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+        balances = await use_case.execute(user_id=message.from_user.id)
+        
+        # Check Ambiguity and Find Source
+        matching_from = [b for b in balances if b.asset_code == from_code]
+        if len(matching_from) == 0:
+            await send_message(session, message, f"У вас нет актива {from_code}", app_context=app_context)
+            return
+        if len(matching_from) > 1:
+            await send_message(session, message, f"Найдено несколько активов с кодом {from_code}. Пожалуйста, используйте меню (кнопку Swap), чтобы выбрать конкретный актив.", app_context=app_context)
+            return
+        
+        found_from = matching_from[0]
+
+        # Check Ambiguity and Find Destination
+        matching_to = [b for b in balances if b.asset_code == to_code]
+        if len(matching_to) == 0:
+             # Try common trustlines? For now restrict to existing trustlines as per user request context implied "check existing"
+             await send_message(session, message, f"Актива {to_code} нет в ваших доверенных линиях (trustlines). Добавьте его через меню.", app_context=app_context)
+             return
+        if len(matching_to) > 1:
+            await send_message(session, message, f"Найдено несколько активов с кодом {to_code}. Пожалуйста, используйте меню.", app_context=app_context)
+            return
+
+        found_to = matching_to[0]
+
+        # Prepare for swap
+        send_asset_code = found_from.asset_code
+        send_asset_issuer = found_from.asset_issuer
+        receive_asset_code = found_to.asset_code
+        receive_asset_issuer = found_to.asset_issuer
+        
+        # Check blocked amount (offers)
+        wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+        wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+        if not wallet:
+            return
+            
+        offers = await app_context.stellar_service.get_selling_offers(wallet.public_key)
+        blocked_token_sum = 0.0
+        for offer in offers:
+            selling = offer.get('selling', {})
+            s_code = selling.get('asset_code')
+            s_issuer = selling.get('asset_issuer')
+            if s_code == send_asset_code and s_issuer == send_asset_issuer:
+                blocked_token_sum += float(offer.get('amount', 0))
+
+        # Check balance
+        available_balance = my_float(found_from.balance)
+        if amount > available_balance:
+             await send_message(session, message, f"Недостаточно средств. У вас {available_balance} {from_code}", app_context=app_context)
+             return
+
+        # Calculate swap path
+        receive_sum_str, need_alert = await stellar_check_receive_sum(
+            Asset(send_asset_code, send_asset_issuer),
+            float2str(amount),
+            Asset(receive_asset_code, receive_asset_issuer)
+        )
+        receive_sum = my_float(receive_sum_str)
+        
+        # Prepare execution
+        use_case_swap = app_context.use_case_factory.create_swap_assets(session)
+        
+        # Apply slippage
+        receive_sum_with_slippage = my_round(receive_sum * (1 - slippage / 100), 7)
+
+        result = await use_case_swap.execute(
+            user_id=message.from_user.id,
+            send_asset=DomainAsset(code=send_asset_code, issuer=send_asset_issuer),
+            send_amount=amount,
+            receive_asset=DomainAsset(code=receive_asset_code, issuer=receive_asset_issuer),
+            receive_amount=receive_sum_with_slippage,
+            strict_receive=False,
+            cancel_offers=False
+        )
+        
+        if not result.success:
+             await send_message(session, message, f"Ошибка подготовки обмена: {result.error_message}", app_context=app_context)
+             return
+             
+        xdr = result.xdr
+
+        # Build message
+        msg_text = build_swap_confirm_message(
+            message,
+            send_sum=float2str(amount),
+            send_asset=send_asset_code,
+            receive_sum=receive_sum,
+            receive_asset=receive_asset_code,
+            scenario="send",
+            need_alert=need_alert,
+            cancel_offers=False,
+            app_context=app_context
+        )
+        
+        # Add Slippage info to message if it differs from default or just always?
+        # User requested adding slippage param, maybe show it?
+        # Standard build_swap_confirm_message doesn't show slippage explicitly, but shows updated amounts.
+        # We can append it.
+        if slippage != 1.0:
+            msg_text += f"\nПроскальзывание: {slippage}%"
+
+        if blocked_token_sum > 0:
+             msg_text += '\n\n' + my_gettext(
+                message,
+                'swap_summ_blocked_by_offers',
+                (float2str(blocked_token_sum), send_asset_code),
+                app_context=app_context
+            )
+
+        # Save state
+        await state.update_data(
+            xdr=xdr, 
+            operation='swap',
+            send_asset_code=send_asset_code,
+            send_asset_issuer=send_asset_issuer,
+            receive_asset_code=receive_asset_code,
+            receive_asset_issuer=receive_asset_issuer,
+            send_sum=amount,
+            slippage=slippage,
+            cancel_offers=False
+        )
+        
+        # Show confirmation
+        await send_message(
+            session,
+            message,
+            msg_text,
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
+
+    except ValueError:
+        await send_message(session, message, "Неверный формат числа.", app_context=app_context)
+    except Exception as e:
+        logger.error(f"Error in swap command: {e}")
+        await send_message(session, message, "Произошла ошибка при подготовке обмена.", app_context=app_context)
+
+
+
 @router.callback_query(F.data == "Swap")
 async def cmd_swap_01(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+
     if callback.from_user is None:
         return
     msg = my_gettext(callback, 'choose_token_swap', app_context=app_context)
