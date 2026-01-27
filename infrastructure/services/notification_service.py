@@ -622,14 +622,31 @@ class NotificationService:
                     or op_data.get("destination")
                     or op_data.get("account")
                 )
-                op.amount1 = float(op_data.get("amount", 0))
-                op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
-                if op_data.get("asset", {}).get("asset_type") in ("native", 0):
-                    op.code1 = "XLM"
-                op.amount2 = float(op_data.get("source_amount", 0))
-                op.code2 = op_data.get("source_asset", {}).get("asset_code", "XLM")
-                if op_data.get("source_asset", {}).get("asset_type") in ("native", 0):
-                    op.code2 = "XLM"
+                
+                # Helper for asset code
+                def get_asset_code_local(asset_obj):
+                    if not asset_obj: return "XLM"
+                    if asset_obj.get("asset_type") in ("native", 0, "0"): return "XLM"
+                    return asset_obj.get("asset_code", "XLM")
+
+                # Destination Asset (Received) -> amount1, code1
+                op.code1 = get_asset_code_local(op_data.get("asset"))
+                
+                # Source Asset (Sent) -> amount2, code2
+                op.code2 = get_asset_code_local(op_data.get("source_asset"))
+
+                # Amount Mapping depends on type
+                if op_type == "path_payment_strict_send":
+                    # We sent exact 'amount' of source_asset
+                    # We received at least 'dest_min' of asset
+                    op.amount2 = float(op_data.get("amount", 0)) # Sent
+                    op.amount1 = float(op_data.get("dest_min", 0)) # Received (Approx/Min)
+                else:
+                    # path_payment_strict_receive
+                    # We received exact 'amount' of asset
+                    # We sent at most 'source_max' of source_asset
+                    op.amount1 = float(op_data.get("amount", 0)) # Received
+                    op.amount2 = float(op_data.get("source_max", 0)) # Sent (Approx/Max)
 
             elif op_type == "manage_sell_offer":
                 op.for_account = op_data.get("account")
