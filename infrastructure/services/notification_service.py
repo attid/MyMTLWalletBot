@@ -522,17 +522,39 @@ class NotificationService:
                             transaction_hash=tx_hash
                         )
                         
-                        # Maker perspective:
-                        # Bought (Received): amount_bought
-                        op_trade.amount1 = float(trade.get("amount_bought", 0))
-                        op_trade.code1 = trade.get("bought_asset_code", "XLM" if trade.get("bought_asset_type") in ("native", 0) else "?")
+                        # Notifier sends amounts for trades. User requested to NOT scale them locally.
+                        def scale_amount(val):
+                            try:
+                                return float(val or 0)
+                            except:
+                                return 0.0
+
+                        # Helper to get asset code from trade object
+                        def get_asset_code(trade_obj, prefix):
+                            code = trade_obj.get(f"{prefix}_asset_code")
+                            if code: return code
+                            
+                            asset_obj = trade_obj.get(f"asset_{prefix}")
+                            if isinstance(asset_obj, dict):
+                                code = asset_obj.get("asset_code")
+                                if code: return code
+                                if asset_obj.get("asset_type") in ("native", 0):
+                                    return "XLM"
+                            
+                            if trade_obj.get(f"{prefix}_asset_type") in ("native", 0):
+                                return "XLM"
+                                
+                            return "?"
+
+                        # Mapping: amount1=SOLD, amount2=BOUGHT
+                        op_trade.amount1 = scale_amount(trade.get("amount_sold"))
+                        op_trade.code1 = get_asset_code(trade, "sold")
                         
-                        # Sold (Sent): amount_sold
-                        op_trade.amount2 = float(trade.get("amount_sold", 0))
-                        op_trade.code2 = trade.get("sold_asset_code", "XLM" if trade.get("sold_asset_type") in ("native", 0) else "?")
+                        op_trade.amount2 = scale_amount(trade.get("amount_bought"))
+                        op_trade.code2 = get_asset_code(trade, "bought")
                         
                         await self._send_notification_to_user(wallet, op_trade)
-
+        
     def _map_payload_to_operation(self, payload: dict) -> Optional[TOperations]:
         """Maps JSON payload to TOperations entity."""
         try:
