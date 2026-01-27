@@ -372,38 +372,15 @@ class NotificationService:
             )
             return
 
-        # Deduplicate by operation ID
-        op_id = payload.get("id")
-        if op_id and op_id in self.notified_operations:
-            logger.info(f"Skipping duplicate operation {op_id}")
+        # Deduplicate by Stellar operation ID
+        stellar_op_id = op_info.get("id")
+        if stellar_op_id and stellar_op_id in self.notified_operations:
+            logger.info(f"Skipping duplicate operation {stellar_op_id}")
             return
-        if op_id:
-            self.notified_operations.add(op_id)
-            if len(self.notified_operations) > 1000:
+        if stellar_op_id:
+            self.notified_operations.add(stellar_op_id)
+            if len(self.notified_operations) > 1024:
                 self.notified_operations.clear()
-
-        # Deduplicate by transaction hash - to prevent multiple notifications for the same transaction
-        # when both sender and receiver are registered in the bot
-        tx_hash = payload.get("transaction", {}).get("hash")
-        if tx_hash:
-            # Check if this transaction has already been processed
-            if tx_hash in self.notified_transactions_set:
-                logger.info(f"Skipping duplicate transaction {tx_hash}")
-                return
-
-            # Mark transaction as processed
-            self.notified_transactions_queue.append(tx_hash)
-            self.notified_transactions_set.add(tx_hash)
-
-            # If we've exceeded our max size, remove oldest entries
-            if len(self.notified_transactions_queue) > self.max_cache_size:
-                # Get the oldest transaction hash
-                oldest_hash = self.notified_transactions_queue.pop(0)
-                # Remove it from the set as well
-                self.notified_transactions_set.remove(oldest_hash)
-                logger.debug(
-                    f"Removed oldest transaction hash from cache: {oldest_hash}"
-                )
 
         # 2. Convert Payload to TOperations-like object
         op_data_mapped = self._map_payload_to_operation(payload)
@@ -429,6 +406,15 @@ class NotificationService:
 
             for wallet in wallets:
                 await self._send_notification_to_user(wallet, op_data_mapped)
+                
+                # Special case: Self-payment to the same wallet.
+                # User wants to see both "Sent" and "Received" messages.
+                if (op_data_mapped.operation == "payment" and 
+                    wallet.public_key == op_data_mapped.from_account and 
+                    wallet.public_key == op_data_mapped.for_account):
+                    # Trigger the "Debit" (Sent) perspective, as the default is "Credit" (Received)
+                    # when decode_for == for_account.
+                    await self._send_notification_to_user(wallet, op_data_mapped, force_perspective='debit')
 
         # 4. Process internal trades (for Match Orders / Makers)
         trades = payload.get("operation", {}).get("trades", [])
@@ -738,7 +724,7 @@ class NotificationService:
             return None
 
     async def _send_notification_to_user(
-        self, wallet: MyMtlWalletBot, operation: TOperations
+        self, wallet: MyMtlWalletBot, operation: TOperations, force_perspective: str = None
     ):
         try:
             message_text = decode_db_effect(
@@ -746,6 +732,7 @@ class NotificationService:
                 str(wallet.public_key),
                 int(wallet.user_id),
                 localization_service=self.localization_service,
+                force_perspective=force_perspective,
             )
 
             if not message_text:

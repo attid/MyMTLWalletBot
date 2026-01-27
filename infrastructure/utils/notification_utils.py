@@ -12,6 +12,7 @@ def decode_db_effect(
     user_id: int,
     app_context: AppContext = None,
     localization_service: Any = None,
+    force_perspective: str = None,
 ):
     """Formats message about operation for sending to user
 
@@ -141,7 +142,13 @@ def decode_db_effect(
         if operation.memo:
             memo_text = f"\nMemo: {operation.memo}"
 
-        if decode_for == operation.for_account:
+        is_incoming = (decode_for == operation.for_account)
+        if force_perspective == 'debit':
+            is_incoming = False
+        elif force_perspective == 'credit':
+            is_incoming = True
+
+        if is_incoming:
             # This is an incoming payment
             return (
                 my_gettext(
