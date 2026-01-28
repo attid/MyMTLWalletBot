@@ -13,11 +13,11 @@ from stellar_sdk import Asset
 from loguru import logger
 
 
-from infrastructure.utils.telegram_utils import my_gettext, send_message
+from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_state, clear_last_message_id
 from keyboards.common_keyboards import get_kb_yesno_send_xdr, get_return_button, get_kb_offers_cancel, get_kb_return
 from other.mytypes import Balance
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
-from infrastructure.utils.common_utils import float2str
+from infrastructure.utils.common_utils import float2str, get_user_id
 from infrastructure.utils.stellar_utils import my_float, my_round, stellar_get_market_link
 from other.stellar_tools import stellar_check_receive_asset, \
     stellar_check_receive_sum, \
@@ -89,6 +89,11 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
     if not message.text:
         return
 
+    await clear_state(state)
+    chat_id = get_user_id(message)
+    await clear_last_message_id(chat_id, app_context=app_context)
+
+
     parts = message.text.split()
     args = []
     # Clean args: remove '/swap' and optional 'to'
@@ -97,7 +102,7 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
             args.append(p)
             
     if len(args) < 3:
-        await send_message(session, message, "Формат: /swap <сумма> <отдает> <получаем> [проскальзывание%]\nПример: /swap 10 XLM EURMTL 1%", app_context=app_context)
+        await send_message(session, message, "Формат: /swap &lt;сумма&gt; &lt;отдает&gt; &lt;получаем&gt; [проскальзывание%]\nПример: /swap 10 XLM EURMTL 1%", app_context=app_context)
         return
 
     try:
@@ -158,6 +163,11 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
              
         from_code = remaining_args[0].upper()
         to_code = remaining_args[1].upper()
+        
+        # Determine direction:
+        # If amount is first (idx=0) -> 10 XLM EURMTL -> Sell 10 XLM (Strict Send)
+        # If amount is NOT first (idx>0) -> XLM 10 EURMTL -> Buy 10 EURMTL (Strict Receive)
+        strict_receive = (amount_idx > 0)
 
         # Resolve assets
         if message.from_user is None:
@@ -210,35 +220,85 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
             if s_code == send_asset_code and s_issuer == send_asset_issuer:
                 blocked_token_sum += float(offer.get('amount', 0))
 
-        # Check balance
-        available_balance = my_float(found_from.balance)
-        if amount > available_balance:
-             await send_message(session, message, f"Недостаточно средств. У вас {available_balance} {from_code}", app_context=app_context)
-             return
-
-        # Calculate swap path
-        receive_sum_str, need_alert = await stellar_check_receive_sum(
-            Asset(send_asset_code, send_asset_issuer),
-            float2str(amount),
-            Asset(receive_asset_code, receive_asset_issuer)
-        )
-        receive_sum = my_float(receive_sum_str)
-        
-        # Prepare execution
+        # Prepare execution variables
         use_case_swap = app_context.use_case_factory.create_swap_assets(session)
+        need_alert = False
         
-        # Apply slippage
-        receive_sum_with_slippage = my_round(receive_sum * (1 - slippage / 100), 7)
+        if not strict_receive:
+            # STRICT SEND: Sell exact amount
+            send_sum = amount
+            
+            # Check balance
+            available_balance = my_float(found_from.balance)
+            if send_sum > available_balance:
+                 await send_message(session, message, f"Недостаточно средств. У вас {available_balance} {from_code}", app_context=app_context)
+                 return
+                 
+            # Calculate Receive Path
+            receive_sum_str, need_alert = await stellar_check_receive_sum(
+                Asset(send_asset_code, send_asset_issuer),
+                float2str(send_sum),
+                Asset(receive_asset_code, receive_asset_issuer)
+            )
+            receive_sum = my_float(receive_sum_str)
+            
+            # Apply slippage
+            receive_sum_with_slippage = my_round(receive_sum * (1 - slippage / 100), 7)
+            
+            # Execute (Dry Run / Get XDR)
+            result = await use_case_swap.execute(
+                user_id=message.from_user.id,
+                send_asset=DomainAsset(code=send_asset_code, issuer=send_asset_issuer),
+                send_amount=send_sum,
+                receive_asset=DomainAsset(code=receive_asset_code, issuer=receive_asset_issuer),
+                receive_amount=receive_sum_with_slippage,
+                strict_receive=False,
+                cancel_offers=False
+            )
+            scenario = "send"
+            
+        else:
+            # STRICT RECEIVE: Buy exact amount
+            receive_sum = amount
+            
+            # Calculate Send Path (How much to spend?)
+            send_sum_str, need_alert = await stellar_check_send_sum(
+                Asset(send_asset_code, send_asset_issuer),
+                float2str(receive_sum),
+                Asset(receive_asset_code, receive_asset_issuer)
+            )
+            send_sum = my_float(send_sum_str)
+            
+            # Check balance for max send amount (including slippage?)
+            # Usually we add slippage to the SEND amount in strict receive? 
+            # "Max send amount" in common_keyboards indicates `send_sum * 1.001` (0.1% buffer? or slippage?)
+            # The code `cmd_swap_receive_sum` used `send_sum * 1.001`.
+            # Let's use user specified slippage: `send_sum * (1 + slippage/100)`
+            
+            max_send_sum = my_round(send_sum * (1 + slippage / 100), 7)
+            
+            available_balance = my_float(found_from.balance)
+            if max_send_sum > available_balance:
+                 await send_message(session, message, f"Недостаточно средств (с учетом проскальзывания {slippage}% нужно {max_send_sum} {from_code}). У вас {available_balance} {from_code}", app_context=app_context)
+                 return
 
-        result = await use_case_swap.execute(
-            user_id=message.from_user.id,
-            send_asset=DomainAsset(code=send_asset_code, issuer=send_asset_issuer),
-            send_amount=amount,
-            receive_asset=DomainAsset(code=receive_asset_code, issuer=receive_asset_issuer),
-            receive_amount=receive_sum_with_slippage,
-            strict_receive=False,
-            cancel_offers=False
-        )
+            # Execute (Dry Run / Get XDR)
+            result = await use_case_swap.execute(
+                user_id=message.from_user.id,
+                send_asset=DomainAsset(code=send_asset_code, issuer=send_asset_issuer),
+                send_amount=max_send_sum, # Upper bound
+                receive_asset=DomainAsset(code=receive_asset_code, issuer=receive_asset_issuer),
+                receive_amount=receive_sum,
+                strict_receive=True,
+                cancel_offers=False
+            )
+            scenario = "receive"
+            # In message we want to show ESTIMATED send sum, not max?
+            # `build_swap_confirm_message` takes `send_sum`.
+            # For strict receive, we should show the estimated send sum, and warn it might be more?
+            # Logic in `cmd_swap_receive_sum` sends `float2str(send_sum)` (estimated) to message.
+            # But the Confirmation says "Do you want to exchange ~X -> Y".
+            
         
         if not result.success:
              await send_message(session, message, f"Ошибка подготовки обмена: {result.error_message}", app_context=app_context)
@@ -249,20 +309,16 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
         # Build message
         msg_text = build_swap_confirm_message(
             message,
-            send_sum=float2str(amount),
+            send_sum=float2str(send_sum),
             send_asset=send_asset_code,
-            receive_sum=receive_sum,
+            receive_sum=float2str(receive_sum),
             receive_asset=receive_asset_code,
-            scenario="send",
+            scenario=scenario,
             need_alert=need_alert,
             cancel_offers=False,
             app_context=app_context
         )
         
-        # Add Slippage info to message if it differs from default or just always?
-        # User requested adding slippage param, maybe show it?
-        # Standard build_swap_confirm_message doesn't show slippage explicitly, but shows updated amounts.
-        # We can append it.
         if slippage != 1.0:
             msg_text += f"\nПроскальзывание: {slippage}%"
 
@@ -275,6 +331,12 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
             )
 
         # Save state
+        # Note: we need to save correct sums for future steps if user confirms? 
+        # But 'yes_no_send_xdr' usually submits the XDR directly. 
+        # Checking `get_kb_yesno_send_xdr`. The callback is `Yes_send_xdr`.
+        # Handler `routers/sign.py`? Or general handler?
+        # Usually it sends the `xdr` stored in the state.
+        
         await state.update_data(
             xdr=xdr, 
             operation='swap',
@@ -282,9 +344,10 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
             send_asset_issuer=send_asset_issuer,
             receive_asset_code=receive_asset_code,
             receive_asset_issuer=receive_asset_issuer,
-            send_sum=amount,
+            send_sum=send_sum, # Estimated or exact depending on mode
             slippage=slippage,
-            cancel_offers=False
+            cancel_offers=False,
+            strict_receive=strict_receive # Save mode just in case
         )
         
         # Show confirmation
