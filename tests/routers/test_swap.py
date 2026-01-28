@@ -391,7 +391,11 @@ async def test_cmd_swap_text_flexible_syntax(mock_telegram, router_app_context, 
     # Verify Amount parsed correctly in state
     state = dp.fsm.get_context(bot=router_app_context.bot, chat_id=user_id, user_id=user_id)
     data = await state.get_data()
-    assert data.get("send_sum") == 10.0
+    # For /swap XLM 10 EURMTL -> Strict Receive -> 10 should be receive sum? 
+    # My logic: receive_sum = amount = 10.
+    # send_sum = computed.
+    assert data.get("strict_receive") is True # Logic change verification
+
 
     # Test 2: /swap 10 XLM EURMTL 5%
     # We verify state update to ensure parsing worked

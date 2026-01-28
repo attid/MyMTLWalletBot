@@ -189,6 +189,51 @@ async def mock_telegram(telegram_server_config):
             chat_id = 12345
             
         text = data.get('text', 'test_text')
+        parse_mode = data.get('parse_mode')
+
+        # --- HTML Validation ---
+        if parse_mode == 'HTML':
+            allowed_tags = {
+                'b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 
+                'span', 'tg-spoiler', 'a', 'code', 'pre'
+            }
+            import re
+            
+            # Simple tag parser
+            tag_regex = re.compile(r'</?([a-zA-Z0-9-]+)([^>]*)>')
+            stack = []
+            
+            for match in tag_regex.finditer(text):
+                full_tag = match.group(0)
+                tag_name = match.group(1).lower()
+                is_closing = full_tag.startswith('</')
+                
+                if tag_name not in allowed_tags:
+                    return web.json_response({
+                        "ok": False,
+                        "error_code": 400,
+                        "description": f"Bad Request: can't parse entities: Unsupported start tag \"{tag_name}\""
+                    }, status=400)
+                
+                if is_closing:
+                    if not stack or stack[-1] != tag_name:
+                         return web.json_response({
+                            "ok": False,
+                            "error_code": 400,
+                            "description": f"Bad Request: can't parse entities: Found closing tag \"{tag_name}\" which was not opened"
+                        }, status=400)
+                    stack.pop()
+                else:
+                    # Self-closing check not strictly needed for these text formatting tags except maybe <br> which isn't allowed
+                    stack.append(tag_name)
+            
+            if stack:
+                 return web.json_response({
+                    "ok": False,
+                    "error_code": 400,
+                    "description": f"Bad Request: can't parse entities: Tag \"{stack[-1]}\" was not closed"
+                }, status=400)
+        # -----------------------
 
         received_requests.append({"method": "sendMessage", "token": request.match_info['token'], "data": data})
         return web.json_response({
@@ -510,8 +555,9 @@ class RouterTestMiddleware(BaseMiddleware):
 @pytest.fixture
 async def router_bot(mock_telegram, telegram_server_config):
     """Creates a Bot instance connected to mock Telegram server."""
+    from aiogram.client.default import DefaultBotProperties
     session = AiohttpSession(api=TelegramAPIServer.from_base(telegram_server_config["url"]))
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
+    bot = Bot(token=TEST_BOT_TOKEN, session=session, default=DefaultBotProperties(parse_mode="HTML"))
     yield bot
     await bot.session.close()
 
