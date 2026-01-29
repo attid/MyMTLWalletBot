@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
+from aiogram.exceptions import TelegramBadRequest
 from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
 
@@ -468,7 +469,10 @@ async def cmd_sign(
     )
     await state.set_state(StateSign.sending_xdr)
     await state.update_data(part_xdr="")
-    await callback.answer()
+    try:
+        await callback.answer()
+    except TelegramBadRequest:
+        pass
 
 
 @router.message(StateSign.sending_xdr)
