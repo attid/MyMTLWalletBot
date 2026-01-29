@@ -302,7 +302,7 @@ async def cmd_usdt_check(
             raise Exception("User wallet not found")
 
         pay_use_case = app_context.use_case_factory.create_send_payment(session)
-        await pay_use_case.execute(
+        payment_result = await pay_use_case.execute(
             user_id=0,
             destination_address=user_wallet.public_key,
             asset=DomainAsset(
@@ -310,6 +310,50 @@ async def cmd_usdt_check(
             ),  # usdm_asset imported from tools
             amount=income_usdt_balance - usdt_in_fee,
         )
+
+        if not payment_result.success:
+            logger.error(f"Payment failed: {payment_result.error_message}")
+            await cmd_info_message(
+                session,
+                callback,
+                f"Payment failed: {payment_result.error_message}",
+                app_context=app_context,
+            )
+            return
+
+        # Sign and Submit
+        wallet_secret_service = (
+            app_context.use_case_factory.create_wallet_secret_service(session)
+        )
+        # Assuming user_id=0 is the bot's wallet/distribution wallet
+        secret_key = await wallet_secret_service.get_wallet_type(0)
+        if not secret_key:
+            logger.error("Bot wallet secret not found (user_id=0)")
+            await cmd_info_message(
+                session,
+                callback,
+                "Internal error: Bot wallet secret not found",
+                app_context=app_context,
+            )
+            return
+
+        stellar_service = app_context.stellar_service
+        try:
+            signed_xdr = await stellar_service.sign_transaction(
+                payment_result.xdr, secret_key
+            )
+            submit_resp = await stellar_service.submit_transaction(signed_xdr)
+            logger.info(f"Payment submitted: {submit_resp}")
+        except Exception as e:
+            logger.error(f"Transaction submission failed: {e}")
+            await cmd_info_message(
+                session,
+                callback,
+                f"Transaction submission failed: {e}",
+                app_context=app_context,
+            )
+            return
+
         await cmd_info_message(
             session, callback, "All works done!", app_context=app_context
         )

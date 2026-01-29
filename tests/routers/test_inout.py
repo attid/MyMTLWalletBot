@@ -130,8 +130,17 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
     mock_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
     
     mock_pay_uc = MagicMock()
-    mock_pay_uc.execute = AsyncMock(return_value=PaymentResult(success=True))
+    mock_pay_uc.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="FAKE_XDR"))
     mock_app_context.use_case_factory.create_send_payment.return_value = mock_pay_uc
+
+    # Mock WalletSecretService
+    mock_wallet_secret_service = AsyncMock()
+    mock_wallet_secret_service.get_wallet_type.return_value = "S_FAKE_SECRET"
+    mock_app_context.use_case_factory.create_wallet_secret_service.return_value = mock_wallet_secret_service
+
+    # Mock StellarService
+    mock_app_context.stellar_service.sign_transaction = AsyncMock(return_value="SIGNED_XDR")
+    mock_app_context.stellar_service.submit_transaction = AsyncMock(return_value={"hash": "tx_hash"})
 
     with patch("routers.inout.new_wallet_lock", mock_lock), \
          patch("routers.inout.get_usdt_balance", AsyncMock(return_value=100.0)), \
@@ -158,6 +167,10 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
                 asset=Asset(code="USDM", issuer=USDM_ISSUER),
                 amount=50,
             )
+            # Verify submission flow
+            mock_wallet_secret_service.get_wallet_type.assert_called_once_with(0)
+            mock_app_context.stellar_service.sign_transaction.assert_called_once_with("FAKE_XDR", "S_FAKE_SECRET")
+            mock_app_context.stellar_service.submit_transaction.assert_called_once_with("SIGNED_XDR")
 
 
 @pytest.mark.asyncio
