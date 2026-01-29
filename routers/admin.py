@@ -446,7 +446,8 @@ async def cmd_help(message: types.Message):
         "/usdt id — принудительный вывод USDT\n"
         "/usdt1 — автовывод первого в очереди\n"
         "/check_usdt @user — сверка баланса БД и блокчейна\n"
-        "/set_usdt @user amount — установка баланса БД"
+        "/set_usdt @user amount — установка баланса БД\n"
+        "/balance — проверить баланс"
     )
 
 
