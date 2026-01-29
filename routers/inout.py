@@ -309,7 +309,6 @@ async def cmd_usdt_check(
                 code="USDM", issuer=usdm_asset.issuer
             ),  # usdm_asset imported from tools
             amount=income_usdt_balance - usdt_in_fee,
-            password="0",
         )
         await cmd_info_message(
             session, callback, "All works done!", app_context=app_context

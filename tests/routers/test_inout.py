@@ -9,7 +9,8 @@ import datetime
 
 from routers.inout import router as inout_router
 from tests.conftest import TEST_BOT_TOKEN
-from core.domain.value_objects import Balance, PaymentResult
+from core.domain.value_objects import Balance, PaymentResult, Asset
+from core.constants import USDM_ISSUER
 from infrastructure.services.localization_service import LocalizationService
 
 class MockDbMiddleware(BaseMiddleware):
@@ -145,10 +146,18 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
                     data="USDT_CHECK"
                 )
             ))
+
             
             sent = [r for r in mock_telegram if r['method'] == 'sendMessage']
             assert any("All works done" in str(m['data']) or "text" in str(m['data']) for m in sent)
-            mock_pay_uc.execute.assert_called_once()
+            
+            # Verify arguments to ensure no password is passed
+            mock_pay_uc.execute.assert_called_once_with(
+                user_id=0,
+                destination_address="GUSER",
+                asset=Asset(code="USDM", issuer=USDM_ISSUER),
+                amount=50,
+            )
 
 
 @pytest.mark.asyncio
