@@ -100,6 +100,7 @@ async def test_notification_service_sends_message_without_app_context(
     operation.code1 = "XLM"
     operation.account_from = "GFROM" + "A" * 51
     operation.account_to = "GTO" + "B" * 51
+    operation.memo = None
 
     # Mock database to return empty notification filters
     async def mock_execute(*args, **kwargs):
