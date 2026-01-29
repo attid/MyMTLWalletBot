@@ -145,7 +145,12 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
     with patch("routers.inout.new_wallet_lock", mock_lock), \
          patch("routers.inout.get_usdt_balance", AsyncMock(return_value=100.0)), \
          patch("routers.inout.check_unconfirmed_usdt_transactions", AsyncMock(return_value=False)), \
-         patch("routers.inout.tron_get_public", return_value="TRON_ADDR"):
+         patch("routers.inout.tron_get_public", return_value="TRON_ADDR"), \
+         patch("other.stellar_tools.stellar_get_master", new_callable=AsyncMock) as mock_get_master:
+            
+            mock_keypair = MagicMock()
+            mock_keypair.secret = "S_FAKE_SECRET"
+            mock_get_master.return_value = mock_keypair
          
             await dp.feed_update(bot=bot, update=types.Update(
                 update_id=2,
@@ -168,7 +173,7 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
                 amount=50,
             )
             # Verify submission flow
-            mock_wallet_secret_service.get_wallet_type.assert_called_once_with(0)
+            # mock_wallet_secret_service.get_wallet_type.assert_called_once_with(0)  # Removed in favor of stellar_get_master
             mock_app_context.stellar_service.sign_transaction.assert_called_once_with("FAKE_XDR", "S_FAKE_SECRET")
             mock_app_context.stellar_service.submit_transaction.assert_called_once_with("SIGNED_XDR")
 

@@ -322,23 +322,13 @@ async def cmd_usdt_check(
             return
 
         # Sign and Submit
-        wallet_secret_service = (
-            app_context.use_case_factory.create_wallet_secret_service(session)
-        )
-        # Assuming user_id=0 is the bot's wallet/distribution wallet
-        secret_key = await wallet_secret_service.get_wallet_type(0)
-        if not secret_key:
-            logger.error("Bot wallet secret not found (user_id=0)")
-            await cmd_info_message(
-                session,
-                callback,
-                "Internal error: Bot wallet secret not found",
-                app_context=app_context,
-            )
-            return
-
-        stellar_service = app_context.stellar_service
         try:
+            from other.stellar_tools import stellar_get_master
+            # Use established clean architecture method to get master keypair (handles decryption internally)
+            master_keypair = await stellar_get_master(session)
+            secret_key = master_keypair.secret
+
+            stellar_service = app_context.stellar_service
             signed_xdr = await stellar_service.sign_transaction(
                 payment_result.xdr, secret_key
             )
@@ -349,7 +339,7 @@ async def cmd_usdt_check(
             await cmd_info_message(
                 session,
                 callback,
-                f"Transaction submission failed: {e}",
+                "Transaction submission failed. Administrator has been notified.",
                 app_context=app_context,
             )
             return
