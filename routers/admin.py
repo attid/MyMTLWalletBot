@@ -22,6 +22,7 @@ from other.config_reader import config, horizont_urls
 # from other.global_data import global_data
 from other.stellar_tools import async_stellar_check_fee
 from infrastructure.services.app_context import AppContext
+from routers.inout import get_usdt_balance
 
 
 class ExitState(StatesGroup):
@@ -336,7 +337,100 @@ async def cmd_delete_address(message: types.Message, session: AsyncSession):
     wallet.need_delete = 1
     await session.commit()
     await message.answer("Адрес помечен удалённым")
-    await message.answer("Адрес помечен удалённым")
+
+
+@router.message(Command(commands=["check_usdt"]))
+async def cmd_check_usdt(message: types.Message, session: AsyncSession):
+    if not message.text:
+        return
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: /check_usdt @username_or_id")
+        return
+
+    target = args[1]
+    user_id = None
+    with suppress(ValueError):
+        user_id = int(target)
+    
+    query = select(MyMtlWalletBotUsers)
+    if user_id is not None:
+        query = query.filter(MyMtlWalletBotUsers.user_id == user_id)
+    else:
+        user_name = target.lstrip("@").lower()
+        query = query.filter(MyMtlWalletBotUsers.user_name == user_name)
+
+    user = (await session.execute(query)).scalar_one_or_none()
+    
+    if user is None:
+        await message.answer("Пользователь не найден")
+        return
+
+    db_balance = user.usdt_amount or 0
+    usdt_address = "Нет ключа"
+    chain_balance = "N/A"
+
+    if user.usdt and len(user.usdt) == 64:
+        from other.tron_tools import private_key_to_address
+        try:
+            # user.usdt stores private key
+            usdt_address = private_key_to_address(user.usdt)
+            chain_balance_val = await get_usdt_balance(private_key=user.usdt)
+            chain_balance = str(chain_balance_val)
+        except Exception as e:
+            chain_balance = f"Error: {e}"
+    
+    await message.answer(
+        f"👤 User: {user.user_name} (ID: {user.user_id})\n"
+        f"🔑 TRC20 Address: `{usdt_address}`\n"
+        f"📚 DB Balance: {db_balance}\n"
+        f"⛓️ Chain Balance: {chain_balance}"
+    )
+
+
+@router.message(Command(commands=["set_usdt"]))
+async def cmd_set_usdt(message: types.Message, session: AsyncSession):
+    if not message.text:
+        return
+    args = message.text.split()
+    if len(args) < 3:
+        await message.answer("Использование: /set_usdt @username_or_id amount")
+        return
+
+    target = args[1]
+    try:
+        amount = int(args[2])
+    except ValueError:
+        await message.answer("Сумма должна быть целым числом")
+        return
+
+    user_id = None
+    with suppress(ValueError):
+        user_id = int(target)
+    
+    query = select(MyMtlWalletBotUsers)
+    if user_id is not None:
+        query = query.filter(MyMtlWalletBotUsers.user_id == user_id)
+    else:
+        user_name = target.lstrip("@").lower()
+        query = query.filter(MyMtlWalletBotUsers.user_name == user_name)
+
+    user = (await session.execute(query)).scalar_one_or_none()
+    
+    if user is None:
+        await message.answer("Пользователь не найден")
+        return
+
+    old_balance = user.usdt_amount
+    user.usdt_amount = amount
+    await session.commit()
+
+    await message.answer(
+        f"✅ Баланс обновлен.\n"
+        f"Пользователь: {user.user_name} (ID: {user.user_id})\n"
+        f"Было: {old_balance}\n"
+        f"Стало: {amount}"
+    )
 
 
 @router.message(Command(commands=["help"]))
@@ -348,7 +442,11 @@ async def cmd_help(message: types.Message):
         "/horizon | /horizon_rw — переключить horizon\n"
         "/user_wallets @user_or_id — кошельки пользователя\n"
         "/address_info address — найти владельца адреса\n"
-        "/delete_address address — пометить адрес удалённым"
+        "/delete_address address — пометить адрес удалённым\n"
+        "/usdt id — принудительный вывод USDT\n"
+        "/usdt1 — автовывод первого в очереди\n"
+        "/check_usdt @user — сверка баланса БД и блокчейна\n"
+        "/set_usdt @user amount — установка баланса БД"
     )
 
 
