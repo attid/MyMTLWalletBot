@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     test_mode: bool = True
     fest_menu: dict = {}
     admins: list = []
+    
+    # Master Key Encryption Password (defaults to "0" for backward compatibility)
+    master_password: SecretStr = SecretStr("0")
+
     toncenter_token: Optional[str] = None
     debank: Optional[SecretStr] = None
     start_path: str = start_path

@@ -371,10 +371,10 @@ async def cmd_check_usdt(message: types.Message, session: AsyncSession):
     chain_balance = "N/A"
 
     if user.usdt and len(user.usdt) == 64:
-        from other.tron_tools import private_key_to_address
+        from other.tron_tools import tron_get_public
         try:
             # user.usdt stores private key
-            usdt_address = private_key_to_address(user.usdt)
+            usdt_address = tron_get_public(user.usdt)
             chain_balance_val = await get_usdt_balance(private_key=user.usdt)
             chain_balance = str(chain_balance_val)
         except Exception as e:

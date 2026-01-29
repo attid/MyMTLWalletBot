@@ -346,19 +346,23 @@ async def stellar_get_user_account(session: AsyncSession, user_id: int, public_k
 
 
 async def stellar_get_master(session: AsyncSession) -> Keypair:
-    return await stellar_get_user_keypair(session, 0, '0')
+    return await stellar_get_user_keypair(session, 0, config.master_password.get_secret_value())
 
 
-async def stellar_delete_account(master_account: Keypair, delete_account: Keypair):
+async def stellar_delete_account(master_account: Keypair, delete_account: Keypair, master_source_address: str):
     async with ServerAsync(
             horizon_url=config.horizon_url, client=AiohttpClient()
     ) as server:
         logger.info(['delete_account', delete_account.public_key])
-        source_account = await server.load_account(master_account)
+        
+        # Use master_source_address (Public Key from DB) as the source account
+        # This ensures we use the correct sequence number owner, even if signing key is rotated
+        source_account = await server.load_account(master_source_address)
+        
         transaction = TransactionBuilder(source_account=source_account,
                                          network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE, base_fee=base_fee)
         account = await server.accounts().account_id(delete_account.public_key).call()
-        master_account_details = await server.accounts().account_id(master_account.public_key).call()
+        master_account_details = await server.accounts().account_id(master_source_address).call()
         master_account_trustlines = {(balance['asset_code'], balance['asset_issuer']): balance
                                      for balance in master_account_details['balances'] if
                                      balance['asset_type'] != "native"}
@@ -368,9 +372,11 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
                 asset = Asset(balance['asset_code'], balance['asset_issuer'])
                 if float(balance['balance']) > 0.0:
                     if (balance['asset_code'], balance['asset_issuer']) not in master_account_trustlines:
-                        transaction.append_change_trust_op(asset=asset, source=master_account.public_key)
+                        # Trustline source must be the account HOLDING the assets (Master)
+                        transaction.append_change_trust_op(asset=asset, source=master_source_address)
 
-                    transaction.append_payment_op(destination=master_account.public_key, amount=balance['balance'],
+                    # Payment destination is Master
+                    transaction.append_payment_op(destination=master_source_address, amount=balance['balance'],
                                                   asset=asset,
                                                   source=delete_account.public_key)
                 transaction.append_change_trust_op(asset=asset, limit='0', source=delete_account.public_key)
@@ -379,7 +385,7 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
         for data_key in data_entries.keys():
             transaction.append_manage_data_op(data_name=data_key, data_value=None, source=delete_account.public_key)
 
-        transaction.append_account_merge_op(master_account.public_key, delete_account.public_key)
+        transaction.append_account_merge_op(master_source_address, delete_account.public_key)
         transaction.add_text_memo('Eat MyMTLWalletbot')
         transaction.set_timeout(60 * 60)
         full_transaction = transaction.build()
@@ -391,8 +397,16 @@ async def stellar_delete_account(master_account: Keypair, delete_account: Keypai
 
 
 async def stellar_delete_all_deleted(session: AsyncSession):
-    master = await stellar_get_master(session)
+    master_keypair = await stellar_get_master(session) # Contains the Signer Secret
+    
+    # Fetch proper Master Address from DB (User 0)
     repo = SqlAlchemyWalletRepository(session)
+    master_wallet = await repo.get_default_wallet(0)
+    if not master_wallet:
+        logger.error("Master wallet not found in DB!")
+        return
+    master_address = master_wallet.public_key
+
     wallets = await repo.get_all_deleted()
     
     for wallet in wallets:
@@ -403,9 +417,10 @@ async def stellar_delete_all_deleted(session: AsyncSession):
                 # Entity: wallet.is_free
                 if wallet.is_free:
                     with suppress(NotFoundError):
-                        await stellar_delete_account(master,
+                        await stellar_delete_account(master_keypair,
                                                      Keypair.from_secret(
-                                                         decrypt(wallet.secret_key, str(wallet.user_id))))
+                                                         decrypt(wallet.secret_key, str(wallet.user_id))),
+                                                     master_source_address=master_address)
                 
                 # Delete hard
                 # Checking Repo.delete signature: delete(user_id, public_key, erase=False, wallet_id=None)
