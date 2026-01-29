@@ -4,6 +4,8 @@ from aiogram.fsm.storage.base import StorageKey
 
 from routers.notification_settings import (
     router as notification_router,
+    NotificationFilterAction,
+    NotificationMenuAction,
 )
 from tests.conftest import (
     RouterTestMiddleware,
@@ -49,6 +51,7 @@ def setup_notification_mocks(router_app_context):
             # Notification Repo
             self.notif_repo = MagicMock()
             self.notif_repo.get_by_user_id = AsyncMock(return_value=[])
+            self.notif_repo.get_by_id = AsyncMock(return_value=None)
             self.notif_repo.find_duplicate = AsyncMock(return_value=None)
             self.notif_repo.create = AsyncMock()
             self.notif_repo.delete_all_by_user = AsyncMock()
@@ -83,11 +86,14 @@ async def test_notification_settings_shows_filters(mock_telegram, router_app_con
     setup_notification_mocks.notif_repo.get_by_user_id = AsyncMock(return_value=[mock_filter])
 
     user_id = 123
-    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "NotificationSettings"))
+    # Use explicit action "list" to simulate entry properly
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, NotificationMenuAction(action="list").pack()))
 
     req = get_latest_msg(mock_telegram)
     assert "notification_filters_title" in req["data"]["text"]
-    assert "delete_filter:1" in req["data"]["reply_markup"]
+    # Check that filter button uses new callback data format
+    expected_callback = NotificationFilterAction(action="info", filter_id=1).pack()
+    assert expected_callback in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
@@ -98,11 +104,44 @@ async def test_notification_settings_no_filters(mock_telegram, router_app_contex
     dp.include_router(notification_router)
 
     user_id = 123
+    # Use "NotificationSettings" (string) entry point which redirects to typed callback
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "NotificationSettings"))
 
     req = get_latest_msg(mock_telegram)
     assert "no_filters" in req["data"]["text"]
     assert "add_filter_menu" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_notification_filter_info(mock_telegram, router_app_context, setup_notification_mocks):
+    """Test showing extended info for a filter."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+
+    user_id = 123
+    filter_id = 5
+    
+    mock_filter = MagicMock()
+    mock_filter.id = filter_id
+    mock_filter.user_id = user_id
+    mock_filter.asset_code = "EURMTL"
+    mock_filter.min_amount = 50.0
+    mock_filter.operation_type = "payment"
+    mock_filter.public_key = "G...KEY"
+    
+    setup_notification_mocks.notif_repo.get_by_id = AsyncMock(return_value=mock_filter)
+
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, NotificationFilterAction(action="info", filter_id=filter_id).pack()))
+
+    req = get_latest_msg(mock_telegram)
+    text = req["data"]["text"]
+    assert "Filter Info" in text
+    assert "EURMTL" in text
+    assert "50" in text # 50.0 formatted
+    
+    markup = req["data"]["reply_markup"]
+    assert NotificationFilterAction(action="delete", filter_id=filter_id).pack() in markup
 
 
 @pytest.mark.asyncio
@@ -176,7 +215,8 @@ async def test_delete_all_filters(mock_telegram, router_app_context, setup_notif
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(notification_router)
 
-    await dp.feed_update(router_app_context.bot, create_callback_update(123, "delete_all_filters"))
+    # Use typed callback for delete all
+    await dp.feed_update(router_app_context.bot, create_callback_update(123, NotificationMenuAction(action="delete_all").pack()))
 
     setup_notification_mocks.notif_repo.delete_all_by_user.assert_called_once_with(123)
     req = get_latest_msg(mock_telegram)
@@ -191,7 +231,8 @@ async def test_delete_single_filter(mock_telegram, router_app_context, setup_not
     dp.include_router(notification_router)
 
     user_id = 123
-    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "delete_filter:5"))
+    # Use typed callback for delete
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, NotificationFilterAction(action="delete", filter_id=5).pack()))
 
     setup_notification_mocks.notif_repo.delete_by_id.assert_called_once_with(5, user_id)
 

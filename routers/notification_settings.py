@@ -1,4 +1,5 @@
 from aiogram import Router, types, F
+from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
@@ -6,9 +7,20 @@ from keyboards.common_keyboards import get_return_button, get_kb_return
 from infrastructure.utils.telegram_utils import send_message
 from other.lang_tools import my_gettext
 from infrastructure.services.app_context import AppContext
+from infrastructure.utils.common_utils import float2str
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+class NotificationFilterAction(CallbackData, prefix="notif_filter"):
+    action: str  # 'info', 'delete'
+    filter_id: int
+
+
+class NotificationMenuAction(CallbackData, prefix="notif_menu"):
+    action: str  # 'list', 'delete_all'
+    page: int = 0
 
 
 async def send_notification_settings_menu(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
@@ -24,7 +36,7 @@ async def send_notification_settings_menu(callback: types.CallbackQuery, state: 
         [types.InlineKeyboardButton(text=my_gettext(user_id, 'toggle_token_button',
                                                    (('✅' if is_token_notify else '❌'),), app_context=app_context),
                                    callback_data="toggle_token_notify")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'change_amount_button', (user_data.get('min_amount', 0),), app_context=app_context),
+        [types.InlineKeyboardButton(text=my_gettext(user_id, 'change_amount_button', (float2str(user_data.get('min_amount', 0)),), app_context=app_context),
                                     callback_data="change_amount")],
         [types.InlineKeyboardButton(
             text=my_gettext(user_id, 'toggle_wallets_button',
@@ -141,21 +153,36 @@ async def save_filter_callback(callback: types.CallbackQuery, state: FSMContext,
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("NotificationSettings"))
-async def notification_settings_callback(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+@router.callback_query(F.data == "NotificationSettings")
+async def notification_settings_entry(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    # Redirect to the main handler with page 0 using the new logic
+    await notification_settings_callback(callback, NotificationMenuAction(action="list", page=0), state, session, app_context)
+
+
+@router.callback_query(NotificationMenuAction.filter())
+async def notification_settings_callback(
+        callback: types.CallbackQuery,
+        callback_data: NotificationMenuAction,
+        state: FSMContext,
+        session: AsyncSession,
+        app_context: AppContext
+    ):
     """Show notification filters list with pagination."""
     user_id = callback.from_user.id
     repo = app_context.repository_factory.get_notification_repository(session)
+
+    if callback_data.action == "delete_all":
+        await repo.delete_all_by_user(user_id)
+        await send_message(session, callback, my_gettext(user_id, 'all_filters_deleted', app_context=app_context),
+                           reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
+        await callback.answer()
+        return
+
+    # List action
     filters = await repo.get_by_user_id(user_id)
     filters_count = len(filters)
 
-    # Parse page number from callback data
-    page = 0
-    if ":" in (callback.data or ""):
-        try:
-            page = int(callback.data.split(":")[1])
-        except (ValueError, IndexError):
-            page = 0
+    page = callback_data.page
 
     # Pagination: 10 filters per page
     items_per_page = 10
@@ -173,32 +200,40 @@ async def notification_settings_callback(callback: types.CallbackQuery, state: F
 
     buttons = []
 
-    # Show filters with delete buttons
+    # Show filters with optimized info buttons
     for f in page_filters:
         asset_display = f.asset_code or "*"
-        amount_display = int(f.min_amount) if f.min_amount else 0
+        amount_display = float2str(f.min_amount) if f.min_amount else "0"
         op_display = f.operation_type[:10] if f.operation_type else "*"
 
         filter_text = my_gettext(user_id, 'notification_filter_item',
                                  (op_display, amount_display, asset_display), app_context=app_context)
-        delete_btn = my_gettext(user_id, 'kb_delete_filter', app_context=app_context)
-
+        
+        # Only one button per filter to show info/delete options
         buttons.append([
-            types.InlineKeyboardButton(text=filter_text, callback_data=f"filter_info:{f.id}"),
-            types.InlineKeyboardButton(text=delete_btn, callback_data=f"delete_filter:{f.id}")
+            types.InlineKeyboardButton(
+                text=filter_text,
+                callback_data=NotificationFilterAction(action="info", filter_id=f.id).pack()
+            )
         ])
 
     # Pagination buttons
     if total_pages > 1:
         pagination_row = []
         if page > 0:
-            pagination_row.append(types.InlineKeyboardButton(text="⬅️", callback_data=f"NotificationSettings:{page - 1}"))
+            pagination_row.append(types.InlineKeyboardButton(
+                text="⬅️", 
+                callback_data=NotificationMenuAction(action="list", page=page - 1).pack()
+            ))
         pagination_row.append(types.InlineKeyboardButton(
             text=my_gettext(user_id, 'filters_page', (page + 1, total_pages), app_context=app_context),
             callback_data="noop"
         ))
         if page < total_pages - 1:
-            pagination_row.append(types.InlineKeyboardButton(text="➡️", callback_data=f"NotificationSettings:{page + 1}"))
+            pagination_row.append(types.InlineKeyboardButton(
+                text="➡️", 
+                callback_data=NotificationMenuAction(action="list", page=page + 1).pack()
+            ))
         buttons.append(pagination_row)
 
     # Add filter button
@@ -211,49 +246,82 @@ async def notification_settings_callback(callback: types.CallbackQuery, state: F
     if filters_count > 0:
         buttons.append([types.InlineKeyboardButton(
             text=my_gettext(user_id, 'kb_delete_all_filters', app_context=app_context),
-            callback_data="delete_all_filters"
+            callback_data=NotificationMenuAction(action="delete_all").pack()
         )])
 
     buttons.append(get_return_button(user_id, app_context=app_context))
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
+    # Use edit if possible to avoid flickering if called from within the same menu
+    if callback.message.text == text: # Simple check, might need more robust way
+         try:
+             await callback.message.edit_reply_markup(reply_markup=keyboard)
+             await callback.answer()
+             return
+         except Exception:
+             pass
+
     await send_message(session, callback, text, reply_markup=keyboard, app_context=app_context)
     await callback.answer()
 
 
-@router.callback_query(F.data == "delete_all_filters")
-async def delete_all_filters_callback(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
+@router.callback_query(NotificationFilterAction.filter())
+async def handle_filter_action(
+    callback: types.CallbackQuery,
+    callback_data: NotificationFilterAction,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext
+):
     user_id = callback.from_user.id
     repo = app_context.repository_factory.get_notification_repository(session)
-    await repo.delete_all_by_user(user_id)
+    filter_id = callback_data.filter_id
 
-    await send_message(session, callback, my_gettext(user_id, 'all_filters_deleted', app_context=app_context),
-                       reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("delete_filter:"))
-async def delete_single_filter_callback(callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext):
-    """Delete a single notification filter."""
-    user_id = callback.from_user.id
-    filter_id_str = (callback.data or "").split(":")[1]
-
-    try:
-        filter_id = int(filter_id_str)
-    except ValueError:
-        await callback.answer(my_gettext(user_id, 'notification_settings_error', app_context=app_context), show_alert=True)
+    if callback_data.action == "delete":
+        success = await repo.delete_by_id(filter_id, user_id)
+        if success:
+            await callback.answer(my_gettext(user_id, 'filter_deleted', app_context=app_context))
+            # Return to list
+            await notification_settings_callback(callback, NotificationMenuAction(action="list"), state, session, app_context)
+        else:
+            await callback.answer(my_gettext(user_id, 'notification_settings_error', app_context=app_context), show_alert=True)
         return
 
-    repo = app_context.repository_factory.get_notification_repository(session)
-    success = await repo.delete_by_id(filter_id, user_id)
+    if callback_data.action == "info":
+        notif_filter = await repo.get_by_id(filter_id)
+        if not notif_filter or notif_filter.user_id != user_id:
+             await callback.answer(my_gettext(user_id, 'notification_settings_error', app_context=app_context), show_alert=True)
+             # Refresh list as it might be deleted
+             await notification_settings_callback(callback, NotificationMenuAction(action="list"), state, session, app_context)
+             return
 
-    if success:
-        await callback.answer(my_gettext(user_id, 'filter_deleted', app_context=app_context))
-        # Refresh the filters list
-        fake_callback = callback.model_copy(update={"data": "NotificationSettings"})
-        await notification_settings_callback(fake_callback, None, session, app_context)  # type: ignore
-    else:
-        await callback.answer(my_gettext(user_id, 'notification_settings_error', app_context=app_context), show_alert=True)
+        # Prepare detailed info
+        asset_display = notif_filter.asset_code or "Any (*)"
+        amount_display = float2str(notif_filter.min_amount) if notif_filter.min_amount else "0"
+        op_display = notif_filter.operation_type or "Any (*)"
+        wallet_display = str(notif_filter.public_key) if notif_filter.public_key else "All Wallets"
+
+        info_text = (
+            f"📋 <b>Filter Info</b>\n\n"
+            f"<b>Operation:</b> {op_display}\n"
+            f"<b>Asset:</b> {asset_display}\n"
+            f"<b>Min Amount:</b> {amount_display}\n"
+            f"<b>Wallet:</b> <code>{wallet_display}</code>\n"
+        )
+        
+        buttons = [
+            [types.InlineKeyboardButton(
+                text=my_gettext(user_id, 'kb_delete_filter', app_context=app_context),
+                callback_data=NotificationFilterAction(action="delete", filter_id=filter_id).pack()
+            )],
+            [types.InlineKeyboardButton(
+                text="🔙 " + my_gettext(user_id, 'kb_back', app_context=app_context),
+                callback_data=NotificationMenuAction(action="list").pack()
+            )]
+        ]
+        
+        await send_message(session, callback, info_text, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
+        await callback.answer()
 
 
 @router.callback_query(F.data == "add_filter_menu")
@@ -280,7 +348,7 @@ async def add_filter_menu_callback(callback: types.CallbackQuery, state: FSMCont
 
     for op in recent_ops:
         op_display = op.operation_type[:10] if op.operation_type else "*"
-        amount_display = int(op.amount) if op.amount else 0
+        amount_display = float2str(float(op.amount)) if op.amount else "0"
         asset_display = op.asset_code or "XLM"
 
         btn_text = my_gettext(user_id, 'notification_filter_item',
