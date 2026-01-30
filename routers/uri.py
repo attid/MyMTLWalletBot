@@ -41,6 +41,10 @@ async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, s
         # Process the URI
         result = await process_uri_uc.execute(uri_data, chat_id)
 
+        if not result.success:
+            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', (result.error_message,), app_context=app_context), app_context=app_context)
+            return
+
         # Save data for state
         await state.update_data(
             xdr=result.xdr,
@@ -96,6 +100,10 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
         
         # Process the transaction URI
         result = await process_uri_uc.execute(qr_data, message.from_user.id)
+
+        if not result.success:
+            await send_message(session, message.from_user.id, my_gettext(message.from_user.id, 'remote_uri_error', (result.error_message,), app_context=app_context), app_context=app_context)
+            return
 
         # Save data for state
         await state.update_data(
