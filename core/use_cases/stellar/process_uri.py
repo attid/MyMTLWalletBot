@@ -39,52 +39,12 @@ class ProcessStellarUri:
                      return ProcessStellarUriResult(success=False, error_message="User wallet not found")
 
                 # Fetch generic account details (to get sequence number)
-                # IStellarService.get_account_details returns dict, but we need object for SDK builder?
-                # Actually, SDK TransactionBuilder needs a 'source_account' object which has 'sequence'.
-                # IStellarService doesn't expose 'load_account' returning SDK object directly to avoid leaking SDK types to Core?
-                # But here we are dealing with SDK internals (TransactionBuilder) anyway.
-                # However, this use case is in Core.
-                # Ideally Core should not import stellar_sdk if possible, or only value objects.
-                # But we are already importing stellar_sdk ... 
-                # Let's use IStellarService to load account. 
-                # Wait, IStellarService.get_account_details returns Dict.
-                pass
-                # The issue is TransactionBuilder source_account requirement. 
-                # It needs an object with `account.account_id` and `account.sequence`.
-                # We can create a dummy object or extend IStellarService to return something usable.
-                # Or, we can move this logic to IStellarService completely? e.g. service.process_uri(...)
-                # The plan said "Move process_transaction_stellar_uri to ProcessStellarUri.py".
-                
-                # Let's fetch account details via service and wrap manually?
-                # Or better: `service.load_account_for_builder(public_key)`?
-                # But `stellar_tools.py` uses `server.load_account`.
-                
-                # I'll implement a helper in this file to mimic Account object if needed, 
-                # using data from service.get_account_details.
-                
                 account_details = await self.stellar_service.get_account_details(wallet.public_key)
                 if not account_details:
                      return ProcessStellarUriResult(success=False, error_message="Account details not found")
                 
-                # Mock object for SDK
-                class SimpleAccount:
-                    def __init__(self, account_id, sequence):
-                        self.account_id = account_id
-                        self.sequence = int(sequence)
-                        
-                    async def get_sequence(self):
-                         # SDK might not await this, it just accesses .sequence 
-                         # But wait, SDK TransactionBuilder calls `source_account.increment_sequence_number()` 
-                         # and accesses .sequence.
-                         pass
-                    
-                    @property
-                    def increment_sequence_number(self):
-                         def func():
-                             self.sequence += 1
-                         return func
-
-                source_account = SimpleAccount(wallet.public_key, account_details['sequence'])
+                from stellar_sdk import Account
+                source_account = Account(wallet.public_key, int(account_details['sequence']))
                 
                 # Rebuild transaction
                 # We need base_fee. Config? Constants?
