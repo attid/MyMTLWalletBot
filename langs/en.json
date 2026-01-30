@@ -163,6 +163,7 @@
   "only_3": "Only 3 trust lines are possible in a free account",
   "open_asset": "Select a trust line to open",
   "resend": "Attempting to resend the transaction to the blockchain. Please, wait up to 5 minutes.",
+  "remote_uri_error": "Error processing link",
   "resend_password": "Please re-enter the password",
   "return_to_site": "Return to site",
   "kb_return": "Back",

@@ -42,7 +42,8 @@ async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, s
         result = await process_uri_uc.execute(uri_data, chat_id)
 
         if not result.success:
-            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', (result.error_message,), app_context=app_context), app_context=app_context)
+            logger.error(f"process_remote_uri failed: {result.error_message}")
+            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
             return
 
         # Save data for state
@@ -63,10 +64,11 @@ async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, s
             app_context=app_context
         )
     except Exception as e:
+        logger.error(f"process_remote_uri exception: {e}")
         await send_message(
             session,
             chat_id,
-            my_gettext(chat_id, 'remote_uri_error', (str(e),), app_context=app_context),
+            my_gettext(chat_id, 'remote_uri_error', app_context=app_context),
             app_context=app_context
         )
 
@@ -102,7 +104,8 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
         result = await process_uri_uc.execute(qr_data, message.from_user.id)
 
         if not result.success:
-            await send_message(session, message.from_user.id, my_gettext(message.from_user.id, 'remote_uri_error', (result.error_message,), app_context=app_context), app_context=app_context)
+            logger.error(f"process_stellar_uri failed: {result.error_message}")
+            await send_message(session, message.from_user.id, my_gettext(message.from_user.id, 'remote_uri_error', app_context=app_context), app_context=app_context)
             return
 
         # Save data for state
@@ -122,10 +125,11 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
             app_context=app_context
         )
     except Exception as e:
+        logger.error(f"process_stellar_uri exception: {e}")
         await send_message(
             session,
             message.from_user.id,
-            my_gettext(message.from_user.id, 'remote_uri_error', (str(e),), app_context=app_context),
+            my_gettext(message.from_user.id, 'remote_uri_error', app_context=app_context),
             app_context=app_context
         )
 
