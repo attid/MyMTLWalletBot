@@ -70,7 +70,7 @@ async def test_repro_bug(mock_telegram, router_app_context, setup_uri_mocks):
         # This should trigger the bug
         try:
             await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
-        except TypeError as e:
+        except TypeError:
              # If we catch the TypeError here, it means the bug is reproduced (if unhandled in app)
              # But aiogram might swallow generic exceptions in handlers? 
              # Let's check if mock_check_xdr was called with None
