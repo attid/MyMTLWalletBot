@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
 from core.models.notification import NotificationOperation
@@ -8,9 +8,9 @@ def decode_db_effect(
     operation: NotificationOperation,
     decode_for: str,
     user_id: int,
-    app_context: AppContext = None,
+    app_context: Optional[AppContext] = None,
     localization_service: Any = None,
-    force_perspective: str = None,
+    force_perspective: Optional[str] = None,
 ):
     """Formats message about operation for sending to user
 
