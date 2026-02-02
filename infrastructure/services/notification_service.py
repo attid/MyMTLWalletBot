@@ -443,6 +443,15 @@ class NotificationService:
 
 
                         
+                    # Prepare common data
+                    tx_hash = payload.get("transaction", {}).get("hash")
+                    op_info = payload.get("operation", {})            # Helper to create trade op
+            for i, trade in enumerate(trades):
+                if trade.get("type") == "order_book":
+                    seller = trade.get("seller_id")
+                    wallet = maker_map.get(seller)
+                    
+                    if wallet:
                         # Ensure we use the Stellar Operation ID
                         stellar_op_id = op_info.get("id")
                         if not stellar_op_id and tx_hash:
@@ -462,15 +471,19 @@ class NotificationService:
                             # side is "sold" or "bought"
                             # Try explicit code first
                             code = trade_item.get(f"{side}_asset_code")
-                            if code: return code
+                            if code:
+                                return code
                             
                             type_ = trade_item.get(f"{side}_asset_type")
-                            if type_ in ("native", 0): return "XLM"
+                            if type_ in ("native", 0):
+                                return "XLM"
                             
                             # Try nested object if flat fields missing
                             asset_obj = trade_item.get(f"asset_{side}") or {}
-                            if asset_obj.get("asset_code"): return asset_obj.get("asset_code")
-                            if asset_obj.get("asset_type") in ("native", 0): return "XLM"
+                            if asset_obj.get("asset_code"):
+                                return asset_obj.get("asset_code")
+                            if asset_obj.get("asset_type") in ("native", 0):
+                                return "XLM"
                             
                             return "?"
 
@@ -579,6 +592,14 @@ class NotificationService:
                 op.for_account = op_data.get("account")
                 # Amount to sell
                 op.offer_amount = float(op_data.get("amount", 0))
+                # Amount to sell
+                op.offer_amount = float(op_data.get("amount", 0))
+                
+                # Check offer_id, fallback to created_offer_id if 0
+                o_id = int(op_data.get("offer_id", 0))
+                if o_id == 0:
+                     o_id = int(op_data.get("created_offer_id", 0))
+                op.offer_id = o_id
                 
                 # Selling Asset
                 if "source_asset" in op_data:
@@ -613,6 +634,12 @@ class NotificationService:
                 op.for_account = op_data.get("account")
                 # Amount of buying asset
                 op.offer_amount = float(op_data.get("amount", 0))
+                
+                # Check offer_id, fallback to created_offer_id if 0
+                o_id = int(op_data.get("offer_id", 0))
+                if o_id == 0:
+                     o_id = int(op_data.get("created_offer_id", 0))
+                op.offer_id = o_id
                 
                 # Buying Asset
                 if "buying_asset" in op_data:

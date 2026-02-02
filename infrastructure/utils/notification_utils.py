@@ -200,9 +200,10 @@ def decode_db_effect(
     elif operation.operation == "manage_sell_offer":
         # Handle sell offer operations
         # Format: account_link is creating/updating sell offer of amount(1) code1 for code2 at price amount2
-        offer_id = ""
-        if operation.transaction_hash:
-            offer_id = f" (ID: {operation.transaction_hash})"
+        offer_id_text = ""
+        if operation.offer_id and operation.offer_id > 0:
+            link = f"https://viewer.eurmtl.me/offer/{operation.offer_id}"
+            offer_id_text = f' (ID: <a href="{link}">{operation.offer_id}</a>)'
 
         # Adjust price formatting - if price is a number, format it nicely
         price_str = str(operation.offer_price)
@@ -235,20 +236,20 @@ def decode_db_effect(
             "info_sell_offer",
             (
                 account_link,
-                amount_str, # Amount being sold
+                amount_str,
                 selling_asset,
                 buying_asset,
                 price_str,
-                offer_id,
-                op_link,
+                offer_id_text,
             ),
             localization_service=loc_service,
         )
     elif operation.operation == "manage_buy_offer":
         # Handle buy offer operations
-        offer_id = ""
-        if operation.transaction_hash:
-            offer_id = f" (Offer ID: {operation.transaction_hash})"
+        offer_id_text = ""
+        if operation.offer_id and operation.offer_id > 0:
+            link = f"https://viewer.eurmtl.me/offer/{operation.offer_id}"
+            offer_id_text = f' (ID: <a href="{link}">{operation.offer_id}</a>)'
 
         # Use localization for buy offer message
         # Buy Offer:
@@ -265,12 +266,11 @@ def decode_db_effect(
             "info_buy_offer",
             (
                 account_link,
-                buying_asset,
                 amount_buying,
+                buying_asset,
                 selling_asset,
                 price_unit,
-                offer_id,
-                op_link,
+                offer_id_text,
             ),
             localization_service=loc_service,
         )

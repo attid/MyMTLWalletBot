@@ -38,6 +38,7 @@ class NotificationOperation:
     offer_price: float = 0.0
     offer_selling_asset: str = "XLM"
     offer_buying_asset: str = "XLM"
+    offer_id: int = 0
 
     # Manage Data
     data_name: Optional[str] = None
