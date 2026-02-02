@@ -12,6 +12,7 @@ with bot/dispatcher but WITHOUT app_context, which caused the bug:
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from aiogram import Dispatcher
+import pytest_asyncio
 
 from infrastructure.services.notification_service import NotificationService
 from core.models.notification import NotificationOperation
@@ -54,14 +55,15 @@ def mock_db_pool():
     return pool
 
 
-@pytest.fixture
-def notification_service(mock_config, mock_db_pool, router_bot):
+@pytest_asyncio.fixture
+async def notification_service(mock_config, mock_db_pool, router_bot):
     """Create NotificationService instance with real bot connected to mock_telegram."""
     from infrastructure.services.localization_service import LocalizationService
 
     dispatcher = Dispatcher()
     # Use real localization service with mock db_pool
     localization = LocalizationService(db_pool=mock_db_pool)
+    await localization.load_languages("langs")
 
     service = NotificationService(
         config=mock_config,
@@ -164,3 +166,58 @@ async def test_send_message_works_with_bot_parameter(router_bot):
     assert success, (
         "send_message should work with bot parameter and minimal app_context"
     )
+
+@pytest.mark.asyncio
+async def test_notification_sell_offer_link(
+    notification_service, mock_telegram, mock_db_pool
+):
+    """
+    Test that manage_sell_offer notifications include a clickable link to the offer
+    when offer_id > 0.
+    """
+    # Setup
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.user_id = 12345
+    wallet.public_key = "GSELLER" + "A" * 50
+    wallet.id = 1
+
+    operation = MagicMock(spec=NotificationOperation)
+    operation.id = "op-123"
+    operation.operation = "manage_sell_offer"
+    operation.offer_amount = "10.0"
+    operation.offer_price = "2.0"
+    operation.offer_selling_asset = "USDM"
+    operation.offer_buying_asset = "XLM"
+    operation.offer_id = 1821833749  # This should be the result after processing logic
+    # In integration test with full service, we should simulate the payload.
+    # But here we are calling _send_notification_to_user with an already mapped operation.
+    # So we just ensure the operation object HAS the correct ID, assuming _map_payload_to_operation works.
+    # To test logic properly, we should actually test _map_payload_to_operation or mocked behavior.
+    
+    # Let's trust that we are testing _send_notification_to_user's handling of the ID.
+    # We will add a simpler unit test for mapping logic if needed.
+    operation.from_account = wallet.public_key
+    operation.for_account = wallet.public_key
+    operation.transaction_hash = "txhash123"
+    operation.display_amount_value = "10.0" # needed for filter check logic
+    operation.memo = None
+    
+    # Mock db for filters
+    async def mock_execute(*args, **kwargs):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        return mock_result
+    mock_db_pool._session.execute = mock_execute
+
+    # Execute
+    await notification_service._send_notification_to_user(wallet, operation)
+
+    # Assert
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    text = req["data"]["text"]
+    
+    # Check for link
+    expected_link = 'https://viewer.eurmtl.me/offer/1821833749'
+    assert expected_link in text, f"Message text should contain link: {expected_link}"
+    assert "ID: <a href=" in text, "Message should contain HTML link tag"
