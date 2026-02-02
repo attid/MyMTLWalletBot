@@ -49,11 +49,11 @@ class NotificationService:
 
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
-        self.notified_operations = set()
+        self.notified_operations: set[str] = set()
         # Track transaction hashes to prevent duplicate notifications
         # Using list as a FIFO queue to keep track of the order of transactions
-        self.notified_transactions_queue = []
-        self.notified_transactions_set = set()
+        self.notified_transactions_queue: list[str] = []
+        self.notified_transactions_set: set[str] = set()
         self.max_cache_size = (
             100  # Reduced cache size - sufficient for short-term deduplication
         )
@@ -97,51 +97,7 @@ class NotificationService:
             raise e
 
     # ... (skipping lines)
-    async def _get_active_subscriptions(self) -> set:
-        nonce = await self._get_next_nonce()
-        pairs = [("nonce", nonce)]
-
-        payload_str = self._encode_url_params(pairs)
-        auth_header = self._sign_payload(payload_str)
-
-        url = f"{self.config.notifier_url}/api/subscription?{payload_str}"
-
-        headers = {"Authorization": auth_header}
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        results = set()
-                        if isinstance(data, list):
-                            for item in data:
-                                if isinstance(item, dict):
-                                    key = item.get("account") or item.get("resource_id")
-                                    if key:
-                                        results.add(key)
-                        return results
-                    else:
-                        logger.error(
-                            f"Get subs failed: {resp.status} {await resp.text()}"
-                        )
-                        logger.error(f"DEBUG GET: Payload Signed: '{payload_str}'")
-                        logger.error(f"DEBUG GET: Auth Header: '{auth_header}'")
-                        return set()
-            except Exception as e:
-                logger.error(f"Error fetching subs: {e}")
-                return set()
-
-    def _sign_payload(self, payload: str) -> str:
-        """Signs the payload string using the service secret."""
-        try:
-            kp = Keypair.from_secret(self.config.service_secret.get_secret_value())
-            # Notifier ожидает сигнатуру в HEX формате
-            signature = kp.sign(payload.encode("utf-8")).hex()
-            return f"ed25519 {kp.public_key}.{signature}"
-        except Exception as e:
-            logger.error(f"Failed to sign payload: {e}")
-            raise e
+    # _get_active_subscriptions moved to end of class to unify implementation
 
     async def _fetch_notifier_public_key(self):
         """Fetches the Notifier's public key from /api/status."""
@@ -449,9 +405,9 @@ class NotificationService:
             for i, trade in enumerate(trades):
                 if trade.get("type") == "order_book":
                     seller = trade.get("seller_id")
-                    wallet = maker_map.get(seller)
+                    maker_wallet = maker_map.get(seller)
                     
-                    if wallet:
+                    if maker_wallet:
                         # Ensure we use the Stellar Operation ID
                         stellar_op_id = op_info.get("id")
                         if not stellar_op_id and tx_hash:
@@ -493,7 +449,7 @@ class NotificationService:
                         op_trade.trade_bought_amount = float(trade.get("amount_bought") or 0)
                         op_trade.trade_bought_asset = get_trade_asset(trade, "bought")
                         
-                        await self._send_notification_to_user(wallet, op_trade)
+                        await self._send_notification_to_user(maker_wallet, op_trade)
         
     def _map_payload_to_operation(self, payload: dict) -> Optional[NotificationOperation]:
         """Maps JSON payload to NotificationOperation entity."""
@@ -578,15 +534,27 @@ class NotificationService:
                 # Amount Mapping depends on type
                 if op_type == "path_payment_strict_send":
                     # We sent exact 'amount' of source_asset
-                    # We received at least 'dest_min' of asset
+                    # We received at least 'dest_min' of asset, but prefer 'dest_amount' (actual)
                     op.path_sent_amount = float(op_data.get("amount", 0)) # Sent
-                    op.path_received_amount = float(op_data.get("dest_min", 0)) # Received (Approx/Min)
+                    
+                    # Use actual dest_amount if available (Notifier update), else dest_min
+                    dest_amt = op_data.get("dest_amount")
+                    if dest_amt:
+                        op.path_received_amount = float(dest_amt)
+                    else:
+                        op.path_received_amount = float(op_data.get("dest_min", 0)) # Received (Approx/Min)
                 else:
                     # path_payment_strict_receive
                     # We received exact 'amount' of asset
-                    # We sent at most 'source_max' of source_asset
+                    # We sent at most 'source_max' of source_asset, but prefer 'source_amount' (actual)
                     op.path_received_amount = float(op_data.get("amount", 0)) # Received
-                    op.path_sent_amount = float(op_data.get("source_max", 0)) # Sent (Approx/Max)
+                    
+                    # Use actual source_amount if available (Notifier update), else source_max
+                    src_amt = op_data.get("source_amount")
+                    if src_amt:
+                        op.path_sent_amount = float(src_amt)
+                    else:
+                        op.path_sent_amount = float(op_data.get("source_max", 0)) # Sent (Approx/Max)
 
             elif op_type == "manage_sell_offer":
                 op.for_account = op_data.get("account")
@@ -699,13 +667,17 @@ class NotificationService:
             return None
 
     async def _send_notification_to_user(
-        self, wallet: MyMtlWalletBot, operation: NotificationOperation, force_perspective: str = None
+        self, wallet: MyMtlWalletBot, operation: NotificationOperation, force_perspective: Optional[str] = None
     ):
+        if wallet.user_id is None:
+            return
+        user_id = int(wallet.user_id)
+
         try:
             message_text = decode_db_effect(
                 operation,
                 str(wallet.public_key),
-                int(wallet.user_id),
+                user_id,
                 localization_service=self.localization_service,
                 force_perspective=force_perspective,
             )
@@ -715,7 +687,7 @@ class NotificationService:
 
             async with self.db_pool.get_session() as session:
                 stmt_filter = select(NotificationFilter).where(
-                    NotificationFilter.user_id == wallet.user_id
+                    NotificationFilter.user_id == user_id
                 )
                 result_filter = await session.execute(stmt_filter)
                 user_filters = result_filter.scalars().all()
@@ -727,7 +699,7 @@ class NotificationService:
                 if (
                     (f.public_key is None or f.public_key == wallet.public_key)
                     and (f.asset_code is None or f.asset_code == operation.display_asset_code)
-                    and f.min_amount > msg_amount
+                    and (f.min_amount or 0.0) > msg_amount
                     and f.operation_type == operation.operation
                 ):
                     should_send = False
@@ -738,12 +710,12 @@ class NotificationService:
 
             if not self.bot:
                 logger.warning(
-                    f"Bot not initialized, cannot send notification to {wallet.user_id}"
+                    f"Bot not initialized, cannot send notification to {user_id}"
                 )
                 return
 
             fsm_storage_key = StorageKey(
-                bot_id=self.bot.id, user_id=wallet.user_id, chat_id=wallet.user_id
+                bot_id=self.bot.id, user_id=user_id, chat_id=user_id
             )
             if self.dispatcher:
                 await self.dispatcher.storage.update_data(
@@ -752,7 +724,7 @@ class NotificationService:
 
             await cmd_info_message(
                 None,
-                wallet.user_id,
+                user_id,
                 message_text,
                 operation_id=operation.id,
                 public_key=str(wallet.public_key),
@@ -766,7 +738,7 @@ class NotificationService:
             if self.notification_history:
                 try:
                     self.notification_history.add(
-                        user_id=wallet.user_id,
+                        user_id=user_id,
                         operation=operation,
                         wallet_id=int(wallet.id) if wallet.id else 0,
                         public_key=str(wallet.public_key),
@@ -783,16 +755,16 @@ class NotificationService:
 
                 async with self.db_pool.get_session() as session:
                     repo = SqlAlchemyWalletRepository(session)
-                    await repo.reset_balance_cache(wallet.user_id)
+                    await repo.reset_balance_cache(user_id)
                     await session.commit()
-                    logger.debug(f"Balance cache reset for user {wallet.user_id}")
+                    logger.debug(f"Balance cache reset for user {user_id}")
             except Exception as cache_error:
                 logger.error(
-                    f"Failed to reset balance cache for user {wallet.user_id}: {cache_error}"
+                    f"Failed to reset balance cache for user {user_id}: {cache_error}"
                 )
 
         except Exception as e:
-            logger.exception(f"Failed to send notification to {wallet.user_id}: {e}")
+            logger.exception(f"Failed to send notification to {user_id}: {e}")
 
     async def subscribe(self, public_key: str):
         """Subscribe a wallet to the notifier."""

@@ -221,3 +221,58 @@ async def test_notification_sell_offer_link(
     expected_link = 'https://viewer.eurmtl.me/offer/1821833749'
     assert expected_link in text, f"Message text should contain link: {expected_link}"
     assert "ID: <a href=" in text, "Message should contain HTML link tag"
+
+@pytest.mark.asyncio
+async def test_notification_payload_mapping(notification_service):
+    """
+    Test _map_payload_to_operation logic for various scenarios.
+    """
+    # 1. Test created_offer_id fallback
+    payload_offer = {
+        "operation": {
+            "id": "123",
+            "type": "manage_sell_offer",
+            "account": "GABC",
+            "amount": "100",
+            "price": "1.0",
+            "offer_id": "0",
+            "created_offer_id": "99999",
+            "asset": {"asset_type": "native"}
+        }
+    }
+    op_offer = notification_service._map_payload_to_operation(payload_offer)
+    assert op_offer.offer_id == 99999
+    
+    # 2. Test path_payment_strict_send (uses dest_amount)
+    payload_path_send = {
+        "operation": {
+            "id": "124",
+            "type": "path_payment_strict_send",
+            "to": "GTO",
+            "amount": "10.0",        # Sent
+            "dest_min": "20.0",      # Min Received
+            "dest_amount": "21.5",   # Actual Received
+            "asset": {"asset_code": "EURMTL", "asset_type": "credit_alphanum4"},
+            "source_asset": {"asset_type": "native"}
+        }
+    }
+    op_send = notification_service._map_payload_to_operation(payload_path_send)
+    assert op_send.path_sent_amount == 10.0
+    assert op_send.path_received_amount == 21.5
+
+    # 3. Test path_payment_strict_receive (uses source_amount)
+    payload_path_recv = {
+        "operation": {
+            "id": "125",
+            "type": "path_payment_strict_receive",
+            "to": "GTO",
+            "amount": "50.0",        # Received
+            "source_max": "60.0",    # Max Sent
+            "source_amount": "55.5", # Actual Sent
+            "asset": {"asset_code": "EURMTL", "asset_type": "credit_alphanum4"},
+            "source_asset": {"asset_type": "native"}
+        }
+    }
+    op_recv = notification_service._map_payload_to_operation(payload_path_recv)
+    assert op_recv.path_received_amount == 50.0 # Strict receive means we got exactly this
+    assert op_recv.path_sent_amount == 55.5
