@@ -32,8 +32,6 @@ def mock_wallet_repo():
     repo.get_default_wallet.return_value = wallet
     return repo, wallet
 
-# moved to top
-
 class CaptureSessionMiddleware(BaseMiddleware):
     def __init__(self, app_context, session):
         self.app_context = app_context
