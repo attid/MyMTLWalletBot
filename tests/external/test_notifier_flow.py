@@ -4,12 +4,11 @@ import aiohttp
 from aiohttp import web
 import time
 import json
-import os
 from urllib.parse import quote
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.waiting_utils import wait_for_logs
-from stellar_sdk import Keypair, Server, Network as StellarNetwork, TransactionBuilder
+from stellar_sdk import Keypair
 from unittest.mock import MagicMock
 from infrastructure.services.notification_service import NotificationService
 

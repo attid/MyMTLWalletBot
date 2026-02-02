@@ -59,12 +59,9 @@ async def toggle_token_callback(callback: types.CallbackQuery, state: FSMContext
     if user_data.get('asset_code'):
         await state.update_data(asset_code=None)
     else:
-        op_repo = app_context.repository_factory.get_operation_repository(session)
-        operation_id = user_data.get('operation_id')
-        if operation_id:
-            operation = await op_repo.get_by_id(str(operation_id))
-            if operation:
-                await state.update_data(asset_code=operation.code1)
+        cached_code = user_data.get('cached_asset_code')
+        if cached_code:
+            await state.update_data(asset_code=cached_code)
 
     await send_notification_settings_menu(callback, state, session, app_context=app_context)
 
@@ -387,7 +384,8 @@ async def create_filter_from_history_callback(callback: types.CallbackQuery, sta
         asset_code=record.asset_code,
         min_amount=float(record.amount) if record.amount else 0,
         operation_type=record.operation_type,
-        for_all_wallets=False
+        for_all_wallets=False,
+        cached_asset_code=record.asset_code  # Cache for toggling logic
     )
 
     await send_notification_settings_menu(callback, state, session, app_context=app_context)

@@ -1,11 +1,5 @@
 import asyncio
 import warnings
-
-# Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
-warnings.filterwarnings(
-    "ignore", message=".*has conflict with protected namespace .model_."
-)
-
 import uvloop
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -58,16 +52,22 @@ from other.faststream_tools import start_broker, stop_broker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
 
+from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService
+from middleware.app_context import AppContextMiddleware
+from middleware.localization import LocalizationMiddleware
 
+
+# Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
+warnings.filterwarnings(
+    "ignore", message=".*has conflict with protected namespace .model_."
+)
 # https://docs.aiogram.dev/en/latest/quick_start.html
 # https://docs.aiogram.dev/en/dev-3.x/dispatcher/filters/index.html
 # https://surik00.gitbooks.io/aiogram-lessons/content/chapter3.html
 # https://mastergroosha.github.io/aiogram-3-guide/buttons/
 
-from infrastructure.services.app_context import AppContext
-from infrastructure.services.localization_service import LocalizationService
-from middleware.app_context import AppContextMiddleware
-from middleware.localization import LocalizationMiddleware
+
 
 
 @logger.catch
@@ -298,7 +298,6 @@ async def main():
         repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY
     )
 
-    from infrastructure.services.notification_service import NotificationService
     from infrastructure.services.notification_history_service import NotificationHistoryService
 
     notification_history = NotificationHistoryService(ttl_hours=12, max_per_user=50)

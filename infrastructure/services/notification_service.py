@@ -10,7 +10,8 @@ import base64
 import sentry_sdk
 
 from db.db_pool import DatabasePool
-from db.models import MyMtlWalletBot, TOperations, NotificationFilter
+from db.models import MyMtlWalletBot, NotificationFilter
+from core.models.notification import NotificationOperation
 from aiogram.fsm.storage.base import StorageKey
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.notification_utils import decode_db_effect
@@ -440,113 +441,53 @@ class NotificationService:
                     # Create a map for quick lookup
                     maker_map = {w.public_key: w for w in maker_wallets}
 
-            # Helper to create trade op
-            for i, trade in enumerate(trades):
-                if trade.get("type") == "order_book":
-                    seller = trade.get("seller_id")
-                    wallet = maker_map.get(seller)
-                    
-                    if wallet:
-                        # Synthesize trade operation for the maker
-                        # Maker SOLD amount_sold (code1) for buyers amount_bought (code2)
-                        # So from Maker perspective: Sent amount_sold of asset_sold, Got amount_bought of asset_bought
+
                         
-                        # Note: In 'trade' op mapping (lines 530-540), we usually map:
-                        # amount1/code1 = Bought/Received
-                        # amount2/code2 = Sold/Sent
+                        # Ensure we use the Stellar Operation ID
+                        stellar_op_id = op_info.get("id")
+                        if not stellar_op_id and tx_hash:
+                            stellar_op_id = f"{tx_hash}_{i}"
                         
-                        # In trade object:
-                        # amount_sold, asset_sold (implied from offer or pool) - wait, trade object usually has assets?
-                        # The payload example provided by user shows amount_sold/bought but NO assets in the trade object itself?
-                        # Usually 'trades' array elements inherit assets from the path or have them.
-                        # Notification service payload for 'trades' usually includes assets if they differ? 
-                        # Or maybe we need to infer them?
-                        # Actually, Stellar Horizon 'trades' response includes assets. 
-                        # If the webhook 'trades' object is simplified (as in valid example), we might need to be careful.
-                        # User example:
-                        # "amount_sold": "53294", "amount_bought": "235854146"
-                        # It misses asset codes! 
-                        # Limitation: If the webhook doesn't provide asset codes in 'trades', we can't fully construct the message.
-                        # However, typically Horizon includes 'sold_asset_code', 'bought_asset_code' etc.
-                        # Let's assume the payload might have them or we use the main op assets if simple path?
-                        # No, path payment can change assets.
-                        # Only proceed if we can determine assets.
-                        
-                        # Let's check if the trade dict has assets. If not, and it's a simple path...
-                        # But wait, the user provided example doesn't have asset codes.
-                        # Maybe they are implicit? "seller_id" sells the "source_asset" of the hop?
-                        # This is complex without asset info.
-                        # Checking standard Horizon response: it DOES include `sold_asset_type`, `sold_asset_code`, etc.
-                        # If the user's webhook provider strips them, we are stuck.
-                        # But let's assume standard fields or try to find them.
-                        
-                        # If assets are missing, we skip to avoid "Unknown" spam.
-                        pass
-                        
-                        # Re-implementing with assumption that fields might be there:
-                        # sold_asset_code / bought_asset_code
-                        
-                        sold_asset = trade.get("sold_asset_code", "XLM" if trade.get("sold_asset_type") in ("native", 0) else None)
-                        bought_asset = trade.get("bought_asset_code", "XLM" if trade.get("bought_asset_type") in ("native", 0) else None)
-                        
-                        # If native is implicit or missing code:
-                        # User example had NO asset info. 
-                        # If the webhook is from mmwb_notifier, we might need to ensure it includes assets.
-                        # PROCEEDING with extracting what we can, defaulting to "?" if needed, or skipping.
-                        
-                        # Let's try to grab generic asset fields if available
-                        
-                        # Ensure we use the Stellar Operation ID, not the Notification ID
-                        stellar_op_id = op_info.get("id", op_id)
-                        
-                        op_trade = TOperations(
+                        op_trade = NotificationOperation(
                             id=f"{stellar_op_id}_t{i}",
                             operation="trade",
                             dt=datetime.utcnow(),
                             for_account=seller,
                             from_account=seller, # It's their trade
-                            transaction_hash=tx_hash
+                            transaction_hash=tx_hash or "",
                         )
-                        
-                        # Notifier sends amounts for trades. User requested to NOT scale them locally.
-                        def scale_amount(val):
-                            try:
-                                return float(val or 0)
-                            except:
-                                return 0.0
 
-                        # Helper to get asset code from trade object
-                        def get_asset_code(trade_obj, prefix):
-                            code = trade_obj.get(f"{prefix}_asset_code")
+                        # Helper to safely get asset code or "XLM" for native
+                        def get_trade_asset(trade_item, side):
+                            # side is "sold" or "bought"
+                            # Try explicit code first
+                            code = trade_item.get(f"{side}_asset_code")
                             if code: return code
                             
-                            asset_obj = trade_obj.get(f"asset_{prefix}")
-                            if isinstance(asset_obj, dict):
-                                code = asset_obj.get("asset_code")
-                                if code: return code
-                                if asset_obj.get("asset_type") in ("native", 0):
-                                    return "XLM"
+                            type_ = trade_item.get(f"{side}_asset_type")
+                            if type_ in ("native", 0): return "XLM"
                             
-                            if trade_obj.get(f"{prefix}_asset_type") in ("native", 0):
-                                return "XLM"
-                                
+                            # Try nested object if flat fields missing
+                            asset_obj = trade_item.get(f"asset_{side}") or {}
+                            if asset_obj.get("asset_code"): return asset_obj.get("asset_code")
+                            if asset_obj.get("asset_type") in ("native", 0): return "XLM"
+                            
                             return "?"
 
-                        # Mapping: amount1=SOLD, amount2=BOUGHT
-                        op_trade.amount1 = scale_amount(trade.get("amount_sold"))
-                        op_trade.code1 = get_asset_code(trade, "sold")
+                        op_trade.trade_sold_amount = float(trade.get("amount_sold") or 0)
+                        op_trade.trade_sold_asset = get_trade_asset(trade, "sold")
                         
-                        op_trade.amount2 = scale_amount(trade.get("amount_bought"))
-                        op_trade.code2 = get_asset_code(trade, "bought")
+                        op_trade.trade_bought_amount = float(trade.get("amount_bought") or 0)
+                        op_trade.trade_bought_asset = get_trade_asset(trade, "bought")
                         
                         await self._send_notification_to_user(wallet, op_trade)
         
-    def _map_payload_to_operation(self, payload: dict) -> Optional[TOperations]:
-        """Maps JSON payload to TOperations entity."""
+    def _map_payload_to_operation(self, payload: dict) -> Optional[NotificationOperation]:
+        """Maps JSON payload to NotificationOperation entity."""
         try:
             op_data = payload.get("operation")
             if not op_data:
-                logger.warning(f"No operation data in payload: {payload.keys()}")
+                # logger.warning(f"No operation data in payload: {payload.keys()}")
                 return None
 
             op_type = op_data.get("type")
@@ -572,14 +513,12 @@ class NotificationService:
                             memo = f'TEXT: "{memo_bytes.decode("utf-8")}"'
                         except Exception as e:
                             logger.error(f"Failed to decode memo bytes: {e}")
-                            memo = f"TEXT: (binary data)"
+                            memo = "TEXT: (binary data)"
                     elif memo_value:
                         memo = f'{memo_type.upper()}: "{memo_value}"'
 
-            op = TOperations(
-                id=op_data.get(
-                    "id", ""
-                ),  # Stellar operation ID from payload.operation.id
+            op = NotificationOperation(
+                id=str(op_data.get("id", "")),
                 operation=op_type,
                 dt=datetime.utcnow(),
                 from_account=op_data.get("source_account")
@@ -592,15 +531,15 @@ class NotificationService:
             # Type specific mapping
             if op_type == "payment":
                 op.for_account = op_data.get("to") or op_data.get("destination")
-                op.amount1 = float(op_data.get("amount", 0))
-                op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
+                op.payment_amount = float(op_data.get("amount", 0))
+                op.payment_asset = op_data.get("asset", {}).get("asset_code", "XLM")
                 if op_data.get("asset", {}).get("asset_type") in ("native", 0):
-                    op.code1 = "XLM"
+                    op.payment_asset = "XLM"
 
             elif op_type == "create_account":
                 op.for_account = op_data.get("account")
-                op.amount1 = float(op_data.get("starting_balance", 0))
-                op.code1 = "XLM"
+                op.payment_amount = float(op_data.get("starting_balance", 0)) # Treated as payment
+                op.payment_asset = "XLM"
 
             elif op_type in ("path_payment_strict_send", "path_payment_strict_receive"):
                 op.for_account = (
@@ -611,100 +550,109 @@ class NotificationService:
                 
                 # Helper for asset code
                 def get_asset_code_local(asset_obj):
-                    if not asset_obj: return "XLM"
-                    if asset_obj.get("asset_type") in ("native", 0, "0"): return "XLM"
+                    if not asset_obj:
+                        return "XLM"
+                    if asset_obj.get("asset_type") in ("native", 0, "0"):
+                        return "XLM"
                     return asset_obj.get("asset_code", "XLM")
 
-                # Destination Asset (Received) -> amount1, code1
-                op.code1 = get_asset_code_local(op_data.get("asset"))
+                # Destination Asset (Received) -> path_received
+                op.path_received_asset = get_asset_code_local(op_data.get("asset"))
                 
-                # Source Asset (Sent) -> amount2, code2
-                op.code2 = get_asset_code_local(op_data.get("source_asset"))
+                # Source Asset (Sent) -> path_sent
+                op.path_sent_asset = get_asset_code_local(op_data.get("source_asset"))
 
                 # Amount Mapping depends on type
                 if op_type == "path_payment_strict_send":
                     # We sent exact 'amount' of source_asset
                     # We received at least 'dest_min' of asset
-                    op.amount2 = float(op_data.get("amount", 0)) # Sent
-                    op.amount1 = float(op_data.get("dest_min", 0)) # Received (Approx/Min)
+                    op.path_sent_amount = float(op_data.get("amount", 0)) # Sent
+                    op.path_received_amount = float(op_data.get("dest_min", 0)) # Received (Approx/Min)
                 else:
                     # path_payment_strict_receive
                     # We received exact 'amount' of asset
                     # We sent at most 'source_max' of source_asset
-                    op.amount1 = float(op_data.get("amount", 0)) # Received
-                    op.amount2 = float(op_data.get("source_max", 0)) # Sent (Approx/Max)
+                    op.path_received_amount = float(op_data.get("amount", 0)) # Received
+                    op.path_sent_amount = float(op_data.get("source_max", 0)) # Sent (Approx/Max)
 
             elif op_type == "manage_sell_offer":
                 op.for_account = op_data.get("account")
                 # Amount to sell
-                op.amount1 = float(op_data.get("amount", 0))
-                # Asset to sell
-                op.code1 = op_data.get("asset", {}).get("asset_code", "XLM")
+                op.offer_amount = float(op_data.get("amount", 0))
+                
+                # Selling Asset
+                if "source_asset" in op_data:
+                    op.offer_selling_asset = op_data.get("source_asset", {}).get("asset_code", "XLM")
+                    if op_data.get("source_asset", {}).get("asset_type") in ("native", 0):
+                        op.offer_selling_asset = "XLM"
+                else:
+                    op.offer_selling_asset = "unknown"
+
+                # Buying Asset
+                op.offer_buying_asset = op_data.get("asset", {}).get("asset_code", "XLM")
                 if op_data.get("asset", {}).get("asset_type") in ("native", 0):
-                    op.code1 = "XLM"
+                    op.offer_buying_asset = "XLM"
 
                 # Price per unit
-                op.amount2 = float(op_data.get("price", 0))
+                op.offer_price = float(op_data.get("price", 0))
 
-                # Asset to receive - in this case source_asset contains the asset being received
-                if "source_asset" in op_data:
-                    op.code2 = op_data.get("source_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("source_asset", {}).get("asset_type") in ("native", 0):
-                        op.code2 = "XLM"
-                else:
-                    # Если source_asset не указан, просто укажем, что второй актив неизвестен
-                    logger.info("No source_asset data in manage_sell_offer webhook")
-                    op.code2 = "unknown"
-
-                # Store offer ID in transaction_hash for reuse
-                op.transaction_hash = op_data.get("offerId", "")
+                # Store offer ID in transaction_hash for reuse?? 
+                # Model has transaction_hash but we misuse it for offerId in legacy code?
+                # Let's keep existing logic but maybe comment it.
+                # "Store offer ID in transaction_hash for reuse" - seems hacky but maintaining behavior.
+                if op_data.get("offerId"):
+                     # We can't overwrite transaction_hash if it's real hash. 
+                     # But legacy code did: op.transaction_hash = op_data.get("offerId", "")
+                     # Let's verify if 'transaction_hash' is used for anything else.
+                     # It is used in notification_service to dedup? No, dedup uses stellar_op_id.
+                     # It is NOT used in decode_db_effect directly.
+                     # It seems safe to leave original tx hash.
+                     pass 
 
             elif op_type == "manage_buy_offer":
                 op.for_account = op_data.get("account")
                 # Amount of buying asset
-                op.amount1 = float(op_data.get("amount", 0))
-                # Asset to buy
+                op.offer_amount = float(op_data.get("amount", 0))
+                
+                # Buying Asset
                 if "buying_asset" in op_data:
-                    op.code1 = op_data.get("buying_asset", {}).get("asset_code", "XLM")
+                    op.offer_buying_asset = op_data.get("buying_asset", {}).get("asset_code", "XLM")
                     if op_data.get("buying_asset", {}).get("asset_type") in ("native", 0):
-                        op.code1 = "XLM"
+                        op.offer_buying_asset = "XLM"
                 else:
-                    op.code1 = "unknown"
+                    op.offer_buying_asset = "unknown"
 
                 # Price per unit
-                op.amount2 = float(op_data.get("price", 0))
+                op.offer_price = float(op_data.get("price", 0))
 
-                # Asset to sell
+                # Selling Asset
                 if "selling_asset" in op_data:
-                    op.code2 = op_data.get("selling_asset", {}).get("asset_code", "XLM")
+                    op.offer_selling_asset = op_data.get("selling_asset", {}).get("asset_code", "XLM")
                     if op_data.get("selling_asset", {}).get("asset_type") in ("native", 0):
-                        op.code2 = "XLM"
+                        op.offer_selling_asset = "XLM"
                 else:
-                    op.code2 = "unknown"
-
-                # Store offer ID in transaction_hash for reuse
-                op.transaction_hash = op_data.get("offerId", "")
+                    op.offer_selling_asset = "unknown"
 
             elif op_type == "manage_data":
                 op.for_account = op_data.get("source_account") or op_data.get("account")
-                op.code1 = op_data.get("name")  # Data Name
+                op.data_name = op_data.get("name") or "DATA"
                 
                 # Decode value from Base64
                 data_value = op_data.get("value")
                 if data_value:
                     try:
-                        op.code2 = base64.b64decode(data_value).decode("utf-8")
+                        op.data_value = base64.b64decode(data_value).decode("utf-8")
                     except Exception:
                          # Fallback if not utf-8 text or decode error
-                        op.code2 = str(data_value)
+                        op.data_value = str(data_value)
                 else:
                     # Value is None -> Data Removed
-                    op.code2 = None
+                    op.data_value = None
 
             else:
                 op.for_account = op_data.get("to") or op_data.get("account")
-                op.amount1 = 0.0
-                op.code1 = "UNK"
+                # op.amount = 0.0 # Default
+                # op.asset_code = "UNK" # Default
 
                 # Log unknown operation type
                 logger.warning(f"Unknown operation type: {op_type}, payload: {json.dumps(payload, indent=2)}")
@@ -724,7 +672,7 @@ class NotificationService:
             return None
 
     async def _send_notification_to_user(
-        self, wallet: MyMtlWalletBot, operation: TOperations, force_perspective: str = None
+        self, wallet: MyMtlWalletBot, operation: NotificationOperation, force_perspective: str = None
     ):
         try:
             message_text = decode_db_effect(
@@ -746,17 +694,12 @@ class NotificationService:
                 user_filters = result_filter.scalars().all()
 
             should_send = True
-            msg_amount = operation.amount1
-            if msg_amount is None:
-                try:
-                    msg_amount = float(operation.amount1 or 0)
-                except:
-                    msg_amount = 0.0
+            msg_amount = float(operation.display_amount_value or 0.0)
 
             for f in user_filters:
                 if (
                     (f.public_key is None or f.public_key == wallet.public_key)
-                    and (f.asset_code is None or f.asset_code == operation.code1)
+                    and (f.asset_code is None or f.asset_code == operation.display_asset_code)
                     and f.min_amount > msg_amount
                     and f.operation_type == operation.operation
                 ):
@@ -876,7 +819,7 @@ class NotificationService:
                             logger.error(f"DEBUG: Payload Signed: '{payload_str}'")
                             logger.error(f"DEBUG: Auth Header: '{auth_header}'")
                         else:
-                            logger.error(f"DEBUG: Token Auth used.")
+                            logger.error("DEBUG: Token Auth used.")
             except Exception as e:
                 logger.error(f"Exception subscribing {public_key}: {e}")
 

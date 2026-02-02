@@ -7,28 +7,7 @@ from sqlalchemy import Column, Integer, BigInteger, DateTime
 Base = declarative_base()
 metadata = Base.metadata
 
-class TLOperations(Base):
-    __tablename__ = 'TL_OPERATIONS'
-    id = Column(String(32))
-    dt = Column(DateTime)
-    account = Column(String(64), primary_key=True)
 
-
-class TOperations(Base):
-    __tablename__ = 'T_OPERATIONS'
-    id = Column(String(32), primary_key=True)
-    dt = Column(DateTime)
-    operation = Column(String(32))
-    amount1 = Column(String(32))
-    code1 = Column(String(64))
-    amount2 = Column(String(32))
-    code2 = Column(String(64))
-    from_account = Column(String(64))
-    for_account = Column(String(64))
-    memo = Column(String(64))
-    transaction_hash = Column(String(64))
-    ledger = Column(Integer)
-    arhived = Column(Integer)
 
 
 class MyMtlWalletBot(Base):

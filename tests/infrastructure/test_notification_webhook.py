@@ -14,7 +14,8 @@ from unittest.mock import MagicMock, AsyncMock
 from aiogram import Dispatcher
 
 from infrastructure.services.notification_service import NotificationService
-from db.models import MyMtlWalletBot, TOperations
+from core.models.notification import NotificationOperation
+from db.models import MyMtlWalletBot
 from tests.conftest import get_telegram_request
 
 
@@ -93,13 +94,13 @@ async def test_notification_service_sends_message_without_app_context(
     wallet.public_key = "GTEST" + "A" * 51
     wallet.id = 1
 
-    operation = MagicMock(spec=TOperations)
+    operation = MagicMock(spec=NotificationOperation)
     operation.id = "test-op-123"
     operation.operation = "payment"
-    operation.amount1 = "100.0"
-    operation.code1 = "XLM"
-    operation.account_from = "GFROM" + "A" * 51
-    operation.account_to = "GTO" + "B" * 51
+    operation.payment_amount = "100.0"
+    operation.payment_asset = "XLM"
+    operation.from_account = "GFROM" + "A" * 51
+    operation.for_account = "GTO" + "B" * 51
     operation.memo = None
 
     # Mock database to return empty notification filters

@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from db.models import Base
 from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
-from core.domain.entities import User, Wallet, Cheque
+from core.domain.entities import User, Wallet
 from infrastructure.persistence.sqlalchemy_cheque_repository import SqlAlchemyChequeRepository
 from db.models import MyMtlWalletBotCheque, MyMtlWalletBotChequeHistory, ChequeStatus
 

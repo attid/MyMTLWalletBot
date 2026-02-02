@@ -204,7 +204,7 @@ async def clear_state(state: FSMContext):
 
 
 def long_line() -> str:
-    return "".ljust(53, "⠀")
+    return "".ljust(30, "⠀") # was 53
 
 
 async def set_last_message_id(chat_id: int, msg_id: int, app_context: AppContext):

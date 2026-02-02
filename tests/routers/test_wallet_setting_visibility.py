@@ -3,19 +3,14 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram import Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message, User, Chat, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, Message
+from aiogram import BaseMiddleware
+from aiogram.exceptions import TelegramBadRequest
 
 from routers.wallet_setting import router as wallet_setting_router, AssetVisibilityCallbackData
 from infrastructure.services.app_context import AppContext
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from aiogram import Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message, User, Chat, InlineKeyboardMarkup
 
-from routers.wallet_setting import router as wallet_setting_router, AssetVisibilityCallbackData
-from infrastructure.services.app_context import AppContext
-from tests.conftest import RouterTestMiddleware, create_callback_update
+from tests.conftest import create_callback_update
 
 @pytest.fixture
 def mock_app_context():
@@ -37,7 +32,7 @@ def mock_wallet_repo():
     repo.get_default_wallet.return_value = wallet
     return repo, wallet
 
-from aiogram import BaseMiddleware
+# moved to top
 
 class CaptureSessionMiddleware(BaseMiddleware):
     def __init__(self, app_context, session):
@@ -96,8 +91,6 @@ async def test_asset_visibility_toggle(mock_app_context, mock_wallet_repo):
     # Verify wallet visibility updated
     assert wallet.assets_visibility != "{}"
 
-
-from aiogram.exceptions import TelegramBadRequest
 
 @pytest.mark.asyncio
 async def test_asset_visibility_ui_handled_gracefully(mock_app_context, mock_wallet_repo):

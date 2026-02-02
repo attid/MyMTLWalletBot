@@ -1,13 +1,11 @@
 from typing import Any
-from loguru import logger
-from db.models import TOperations
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
+from core.models.notification import NotificationOperation
 from infrastructure.services.app_context import AppContext
 
-
 def decode_db_effect(
-    operation: TOperations,
+    operation: NotificationOperation,
     decode_for: str,
     user_id: int,
     app_context: AppContext = None,
@@ -37,15 +35,21 @@ def decode_db_effect(
     op_id_clean = operation.id.split('_')[0] if operation.id else ""
     op_link = f'<a href="https://viewer.eurmtl.me/operation/{op_id_clean}">viewer</a>'
     if operation.operation == "trade":
+        # Trade: Bought (amount/asset_code), Sold (amount2/asset2_code)
+        amount_bought = float2str(operation.trade_bought_amount)
+        asset_bought = str(operation.trade_bought_asset)
+        amount_sold = float2str(operation.trade_sold_amount)
+        asset_sold = str(operation.trade_sold_asset)
+
         return my_gettext(
             user_id,
             "info_trade",
             (
                 account_link,
-                float2str(operation.amount1),
-                str(operation.code1),
-                float2str(operation.amount2),
-                str(operation.code2),
+                amount_bought,
+                asset_bought,
+                amount_sold,
+                asset_sold,
                 op_link,
             ),
             localization_service=loc_service,
@@ -54,7 +58,7 @@ def decode_db_effect(
         return my_gettext(
             user_id,
             "info_debit",
-            (account_link, float2str(operation.amount1), str(operation.code1), op_link),
+            (account_link, float2str(operation.payment_amount), str(operation.payment_asset), op_link),
             localization_service=loc_service,
         )
     elif operation.operation == "create_account":
@@ -63,8 +67,8 @@ def decode_db_effect(
             "info_create_account",
             (
                 account_link,
-                float2str(operation.amount1),
-                str(operation.code1),
+                float2str(operation.payment_amount),
+                str(operation.payment_asset),
                 op_link,
             ),
             localization_service=loc_service,
@@ -73,40 +77,46 @@ def decode_db_effect(
         return my_gettext(
             user_id,
             "info_credit",
-            (account_link, float2str(operation.amount1), str(operation.code1), op_link),
+            (account_link, float2str(operation.payment_amount), str(operation.payment_asset), op_link),
             localization_service=loc_service,
         )
     elif operation.operation in (
         "path_payment_strict_send",
         "path_payment_strict_receive",
     ):
+        # Path Payment: Sent (amount2/asset2_code) -> Received (amount/asset_code)
+        amount_sent = float2str(operation.amount2)
+        asset_sent = str(operation.asset2_code)
+        amount_received = float2str(operation.amount)
+        asset_received = str(operation.asset_code)
+
         return my_gettext(
             user_id,
             "info_trade",
             (
                 account_link,
-                float2str(operation.amount2),  # Sent amount (Source)
-                str(operation.code2),  # Sent asset (Source)
-                float2str(operation.amount1),  # Received amount (Dest)
-                str(operation.code1),  # Received asset (Dest)
+                amount_sent,
+                asset_sent,
+                amount_received,
+                asset_received,
                 op_link,
             ),
             localization_service=loc_service,
         )
     elif operation.operation == "manage_data":
-        if operation.code2 is None:
+        if operation.asset2_code is None:
             # Data Removed
             return my_gettext(
                 user_id,
                 "info_data_removed",
                 (
-                    str(operation.code1),
+                    str(operation.asset_code),
                     account_link,
                     op_link,
                 ),
                 localization_service=loc_service,
             )
-        elif operation.code2 == decode_for:
+        elif operation.asset2_code == decode_for:
              # User mentioned in Data
              simple_decode_for = decode_for[:4] + ".." + decode_for[-4:]
              decode_for_link = "https://viewer.eurmtl.me/account/" + decode_for
@@ -119,20 +129,22 @@ def decode_db_effect(
                     account_link,
                     decode_for_link,
                     op_link,
-                    str(operation.code1)
+                    str(operation.asset_code)
                 ),
                 localization_service=loc_service,
              )
         else:
              # Data Set / Updated
+             data_name = str(operation.asset_code)
+             data_value = str(operation.asset2_code)
              return my_gettext(
                 user_id,
                 "info_data_set",
                 (
                     account_link,
                     op_link,
-                    str(operation.code1),
-                    str(operation.code2)
+                    data_name,
+                    data_value
                 ),
                 localization_service=loc_service,
              )
@@ -156,8 +168,8 @@ def decode_db_effect(
                     "info_credit",
                     (
                         account_link,
-                        float2str(operation.amount1),
-                        str(operation.code1),
+                        float2str(operation.payment_amount),
+                        str(operation.payment_asset),
                         op_link,
                     ),
                     localization_service=loc_service,
@@ -177,8 +189,8 @@ def decode_db_effect(
                     "info_debit",
                     (
                         source_link_html,
-                        float2str(operation.amount1),
-                        str(operation.code1),
+                        float2str(operation.payment_amount),
+                        str(operation.payment_asset),
                         op_link,
                     ),
                     localization_service=loc_service,
@@ -187,38 +199,45 @@ def decode_db_effect(
             )
     elif operation.operation == "manage_sell_offer":
         # Handle sell offer operations
-        # Format: account_link is creating/updating sell offer of amount1 code1 for code2 at price amount2
+        # Format: account_link is creating/updating sell offer of amount(1) code1 for code2 at price amount2
         offer_id = ""
         if operation.transaction_hash:
             offer_id = f" (ID: {operation.transaction_hash})"
 
         # Adjust price formatting - if price is a number, format it nicely
-        price_str = operation.amount2
+        price_str = str(operation.offer_price)
         try:
-            price = float(operation.amount2 or 0)
-            price_str = float2str(price)
-        except:
+            price_val = float(operation.offer_price or 0)
+            price_str = float2str(price_val)
+        except Exception:
             pass
 
         # Format larger amounts for better readability (like 2480 EURMTL)
-        amount_str = float2str(operation.amount1)
-        if operation.amount1 and float(operation.amount1) > 1000:
+        amount_str = float2str(operation.offer_amount)
+        if operation.offer_amount and float(operation.offer_amount) > 1000:
             # Add spaces for large numbers: 2480.2366399 -> 2 480.24
             try:
-                amount = float(operation.amount1)
-                amount_str = f"{amount:,.2f}".replace(",", " ").replace(".", ",")
-            except:
+                amt_val = float(operation.offer_amount)
+                amount_str = f"{amt_val:,.2f}".replace(",", " ").replace(".", ",")
+            except Exception:
                 pass
 
         # Use localization for sell offer message
+        # Manage Sell Offer: 
+        # Selling: asset2_code (Amount: operation.amount)
+        # Buying: asset_code (Price: operation.amount2)
+        
+        selling_asset = str(operation.offer_selling_asset)
+        buying_asset = str(operation.offer_buying_asset)
+        
         return my_gettext(
             user_id,
             "info_sell_offer",
             (
                 account_link,
-                amount_str,
-                str(operation.code1),
-                str(operation.code2),
+                amount_str, # Amount being sold
+                selling_asset,
+                buying_asset,
                 price_str,
                 offer_id,
                 op_link,
@@ -232,15 +251,24 @@ def decode_db_effect(
             offer_id = f" (Offer ID: {operation.transaction_hash})"
 
         # Use localization for buy offer message
+        # Buy Offer:
+        # Buying: asset_code (Amount: operation.amount)
+        # Selling: asset2_code (Price: operation.amount2)
+        
+        buying_asset = str(operation.offer_buying_asset)
+        amount_buying = float2str(operation.offer_amount)
+        selling_asset = str(operation.offer_selling_asset)
+        price_unit = float2str(operation.offer_price)
+
         return my_gettext(
             user_id,
             "info_buy_offer",
             (
                 account_link,
-                str(operation.code1),
-                float2str(operation.amount1),
-                str(operation.code2),
-                float2str(operation.amount2),
+                buying_asset,
+                amount_buying,
+                selling_asset,
+                price_unit,
                 offer_id,
                 op_link,
             ),

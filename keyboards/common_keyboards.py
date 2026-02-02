@@ -1,7 +1,6 @@
 from typing import Union, Any
 from aiogram import types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters.callback_data import CallbackData
 from loguru import logger
 
 from infrastructure.utils.common_utils import get_user_id

@@ -1,7 +1,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from stellar_sdk import Keypair, Asset
+from stellar_sdk import Keypair
 from other.stellar_tools import stellar_delete_account, stellar_delete_all_deleted
 
 # Mock Keypairs
@@ -31,8 +31,8 @@ async def test_stellar_delete_account_uses_master_source_address(mock_keypairs):
     
     with patch("other.stellar_tools.ServerAsync") as MockServerAsync, \
          patch("other.stellar_tools.TransactionBuilder") as MockTransactionBuilder, \
-         patch("other.stellar_tools.stellar_sign") as mock_stellar_sign, \
-         patch("other.stellar_tools.async_stellar_send", new_callable=AsyncMock) as mock_send, \
+         patch("other.stellar_tools.stellar_sign"), \
+         patch("other.stellar_tools.async_stellar_send", new_callable=AsyncMock), \
          patch("other.stellar_tools.base_fee", 100):
         
         # Setup Server Mock

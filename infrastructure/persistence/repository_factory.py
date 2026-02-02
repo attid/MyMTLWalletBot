@@ -8,7 +8,6 @@ from core.interfaces.repositories import (
     IAddressBookRepository,
     IChequeRepository,
     INotificationRepository,
-    IOperationRepository,
     IMessageRepository,
 )
 from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
@@ -16,7 +15,7 @@ from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUser
 from infrastructure.persistence.sqlalchemy_addressbook_repository import SqlAlchemyAddressBookRepository
 from infrastructure.persistence.sqlalchemy_cheque_repository import SqlAlchemyChequeRepository
 from infrastructure.persistence.sqlalchemy_notification_repository import SqlAlchemyNotificationRepository
-from infrastructure.persistence.sqlalchemy_operation_repository import SqlAlchemyOperationRepository
+
 from infrastructure.persistence.sqlalchemy_message_repository import SqlAlchemyMessageRepository
 
 class SqlAlchemyRepositoryFactory(IRepositoryFactory):
@@ -49,10 +48,7 @@ class SqlAlchemyRepositoryFactory(IRepositoryFactory):
             raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
         return SqlAlchemyNotificationRepository(session)
 
-    def get_operation_repository(self, session: Any) -> IOperationRepository:
-        if not isinstance(session, AsyncSession):
-            raise ValueError("SqlAlchemyRepositoryFactory requires a SQLAlchemy AsyncSession")
-        return SqlAlchemyOperationRepository(session)
+
 
     def get_message_repository(self, session: Any) -> IMessageRepository:
         if not isinstance(session, AsyncSession):

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import uuid
 
-from db.models import TOperations
+from core.models.notification import NotificationOperation
 
 
 @dataclass
@@ -37,7 +37,7 @@ class NotificationHistoryService:
         self._ttl = timedelta(hours=ttl_hours)
         self._max_per_user = max_per_user
 
-    def add(self, user_id: int, operation: TOperations, wallet_id: int, public_key: str) -> None:
+    def add(self, user_id: int, operation: NotificationOperation, wallet_id: int, public_key: str) -> None:
         """
         Add an operation to user's notification history.
         Should be called AFTER notification is successfully sent.
@@ -51,14 +51,14 @@ class NotificationHistoryService:
 
         # Extract operation data
         try:
-            amount = float(operation.amount1 or 0)
+            amount = float(operation.display_amount_value or 0)
         except (ValueError, TypeError):
             amount = 0.0
 
         record = NotificationRecord(
             id=str(uuid.uuid4())[:8],
             operation_type=operation.operation or "",
-            asset_code=operation.code1 or "XLM",
+            asset_code=operation.display_asset_code or "XLM",
             amount=amount,
             wallet_id=wallet_id,
             public_key=public_key,

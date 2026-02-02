@@ -1,6 +1,5 @@
 
 import pytest
-from tests.conftest import get_telegram_request
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram import Bot
