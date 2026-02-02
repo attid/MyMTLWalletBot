@@ -55,4 +55,4 @@ class SqlAlchemyNotificationRepository(INotificationRepository):
         )
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return result.rowcount > 0
+        return result.rowcount > 0  # type: ignore
