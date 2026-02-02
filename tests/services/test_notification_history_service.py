@@ -51,8 +51,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "EURMTL"
-        operation.amount1 = "100.5"
+        operation.display_asset_code = "EURMTL"
+        operation.display_amount_value = "100.5"
 
         service.add(
             user_id=123,
@@ -77,8 +77,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "XLM"
-        operation.amount1 = None
+        operation.display_asset_code = "XLM"
+        operation.display_amount_value = None
 
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
@@ -91,8 +91,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "XLM"
-        operation.amount1 = "invalid"
+        operation.display_asset_code = "XLM"
+        operation.display_amount_value = "invalid"
 
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
@@ -106,8 +106,8 @@ class TestNotificationHistoryService:
         for i in range(3):
             operation = MagicMock()
             operation.operation = f"payment_{i}"
-            operation.code1 = "EURMTL"
-            operation.amount1 = str(i * 10)
+            operation.display_asset_code = "EURMTL"
+            operation.display_amount_value = str(i * 10)
             service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         assert len(service._history[123]) == 3
@@ -122,8 +122,8 @@ class TestNotificationHistoryService:
         for i in range(10):
             operation = MagicMock()
             operation.operation = f"payment_{i}"
-            operation.code1 = "EURMTL"
-            operation.amount1 = "10"
+            operation.display_asset_code = "EURMTL"
+            operation.display_amount_value = "10"
             service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         assert len(service._history[123]) == 5
@@ -138,8 +138,8 @@ class TestNotificationHistoryService:
         for i in range(5):
             operation = MagicMock()
             operation.operation = f"payment_{i}"
-            operation.code1 = "EURMTL"
-            operation.amount1 = "10"
+            operation.display_asset_code = "EURMTL"
+            operation.display_amount_value = "10"
             service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         recent = service.get_recent(123, limit=3)
@@ -158,8 +158,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "EURMTL"
-        operation.amount1 = "10"
+        operation.display_asset_code = "EURMTL"
+        operation.display_amount_value = "10"
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         recent = service.get_recent(123, limit=10)
@@ -171,8 +171,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "EURMTL"
-        operation.amount1 = "10"
+        operation.display_asset_code = "EURMTL"
+        operation.display_amount_value = "10"
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         record_id = service._history[123][0].id
@@ -193,8 +193,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "EURMTL"
-        operation.amount1 = "10"
+        operation.display_asset_code = "EURMTL"
+        operation.display_amount_value = "10"
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         record_id = service._history[123][0].id
@@ -230,8 +230,8 @@ class TestNotificationHistoryService:
 
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "EURMTL"
-        operation.amount1 = "10"
+        operation.display_asset_code = "EURMTL"
+        operation.display_amount_value = "10"
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         recent = service.get_recent(123, limit=10)
@@ -244,8 +244,8 @@ class TestNotificationHistoryService:
         # Add fresh record for user 123
         operation = MagicMock()
         operation.operation = "payment"
-        operation.code1 = "EURMTL"
-        operation.amount1 = "10"
+        operation.display_asset_code = "EURMTL"
+        operation.display_amount_value = "10"
         service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
 
         # Add old record for user 456
@@ -276,8 +276,8 @@ class TestNotificationHistoryService:
         for user_id in [123, 456, 789]:
             operation = MagicMock()
             operation.operation = f"payment_{user_id}"
-            operation.code1 = "EURMTL"
-            operation.amount1 = "10"
+            operation.display_asset_code = "EURMTL"
+            operation.display_amount_value = "10"
             service.add(user_id=user_id, operation=operation, wallet_id=1, public_key="GKEY")
 
         assert len(service._history) == 3
