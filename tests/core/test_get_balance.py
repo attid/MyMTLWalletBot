@@ -3,7 +3,6 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.domain.entities import Wallet
-from core.domain.value_objects import Balance
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE
 
 @pytest.mark.asyncio

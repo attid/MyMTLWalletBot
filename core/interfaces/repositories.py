@@ -3,7 +3,7 @@ from typing import List, Optional, Any, TYPE_CHECKING, Callable
 from core.domain.entities import User, Wallet, AddressBookEntry, Cheque
 
 if TYPE_CHECKING:
-    from db.models import NotificationFilter, TOperations, MyMtlWalletBotMessages
+    from db.models import NotificationFilter, MyMtlWalletBotMessages
 
 class IUserRepository(ABC):
     @abstractmethod
@@ -249,24 +249,7 @@ class INotificationRepository(ABC):
         pass
 
 
-class IOperationRepository(ABC):
-    """Interface for operation (transaction) retrieval."""
-    
-    @abstractmethod
-    async def get_by_id(self, operation_id: str) -> Optional['TOperations']:
-        """Retrieve an operation by its ID."""
-        pass
 
-    @abstractmethod
-    async def get_recent_for_addresses(self, addresses: List[str], last_event_id: int, 
-                                     minutes: int = 30) -> List['TOperations']:
-        """Get recent operations for a list of addresses efficiently."""
-        pass
-    
-    @abstractmethod
-    async def get_by_account_since_id(self, account: str, last_id: int, minutes: int = 30) -> List['TOperations']:
-        """Get operations for a specific account since a given ID."""
-        pass
 
 
 class IMessageRepository(ABC):
@@ -316,9 +299,7 @@ class IRepositoryFactory(ABC):
     def get_notification_repository(self, session: Any) -> INotificationRepository:
         pass
 
-    @abstractmethod
-    def get_operation_repository(self, session: Any) -> IOperationRepository:
-        pass
+
 
     @abstractmethod
     def get_message_repository(self, session: Any) -> IMessageRepository:

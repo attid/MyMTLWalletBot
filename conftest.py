@@ -10,4 +10,3 @@ if _project_root not in sys.path:
 # Pre-import services.ton_service to ensure it's available for all test modules
 # This is needed because the services/ directory at project root can conflict
 # with tests/services/ namespace during pytest collection
-from services.ton_service import TonService

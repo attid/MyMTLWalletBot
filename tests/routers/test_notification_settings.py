@@ -38,15 +38,7 @@ def setup_notification_mocks(router_app_context):
             self.wallet_repo.get_by_id = AsyncMock(return_value=self.wallet)
             self.ctx.repository_factory.get_wallet_repository.return_value = self.wallet_repo
 
-            # Operation Repo
-            self.operation = MagicMock()
-            self.operation.id = 10
-            self.operation.code1 = "EURMTL"
-            self.operation.amount1 = "5.0"
-            self.operation.operation = "payment"
-            self.op_repo = MagicMock()
-            self.op_repo.get_by_id = AsyncMock(return_value=self.operation)
-            self.ctx.repository_factory.get_operation_repository.return_value = self.op_repo
+
 
             # Notification Repo
             self.notif_repo = MagicMock()
@@ -155,7 +147,7 @@ async def test_toggle_token_notify(mock_telegram, router_app_context, setup_noti
     state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
 
     # Initial state: token set
-    await dp.storage.update_data(state_key, {'asset_code': 'EURMTL', 'operation_id': 10})
+    await dp.storage.update_data(state_key, {'asset_code': 'EURMTL', 'cached_asset_code': 'EURMTL', 'operation_id': 10})
 
     # 1. Toggle OFF
     await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "toggle_token_notify"))

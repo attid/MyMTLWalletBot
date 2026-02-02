@@ -9,6 +9,7 @@ from db.db_pool import DatabasePool
 
 if TYPE_CHECKING:
     from infrastructure.services.notification_history_service import NotificationHistoryService
+    from infrastructure.services.notification_service import NotificationService
 
 class AppContext:
     """

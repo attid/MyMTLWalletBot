@@ -6,7 +6,6 @@ These tests verify that the bot correctly parses amounts with both:
 - Comma as decimal separator (0,5)
 """
 
-import pytest
 from infrastructure.utils.stellar_utils import my_float
 
 

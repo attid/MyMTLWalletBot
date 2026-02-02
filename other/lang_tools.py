@@ -3,6 +3,7 @@ from aiogram import types
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import MyMtlWalletBotUsers
 from infrastructure.services.app_context import AppContext
+from loguru import logger
 
 from sqlalchemy import select
 
