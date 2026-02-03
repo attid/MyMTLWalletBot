@@ -3,17 +3,18 @@ from typing import List, Union
 
 from infrastructure.services.app_context import AppContext
 from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset
 
-from infrastructure.utils.telegram_utils import my_gettext, send_message
+from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_state, clear_last_message_id
+from infrastructure.utils.common_utils import get_user_id, float2str
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr, get_return_button
 from other.mytypes import Balance, MyOffer
 from infrastructure.utils.stellar_utils import my_float, stellar_get_market_link
-from infrastructure.utils.common_utils import float2str
 from other.asset_visibility_tools import get_asset_visibility, ASSET_VISIBLE, ASSET_EXCHANGE_ONLY
 from core.domain.value_objects import Asset as DomainAsset
 from loguru import logger
@@ -40,6 +41,337 @@ class EditOrderCallbackData(CallbackData, prefix="EditOrderCallbackData"):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+@router.message(Command(commands=["trade"]))
+async def cmd_trade(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+    """
+    Handle /trade command:
+    /trade list                     - show active orders
+    /trade cancel <offer_id>        - cancel order
+    /trade 10 MTL USDT 0.25         - sell 10 MTL at 0.25 USDT each
+    /trade 10 MTL 2.5 USDT          - sell 10 MTL for 2.5 USDT total
+    """
+    if not message.text or message.from_user is None:
+        return
+
+    await clear_state(state)
+    chat_id = get_user_id(message)
+    await clear_last_message_id(chat_id, app_context=app_context)
+
+    parts = message.text.split()
+    args = parts[1:]  # Remove '/trade'
+
+    if len(args) == 0:
+        await send_message(
+            session, message,
+            "Формат:\n"
+            "/trade list - показать ордера\n"
+            "/trade cancel &lt;id&gt; - отменить ордер\n"
+            "/trade &lt;сумма&gt; &lt;продаём&gt; &lt;получаем&gt; &lt;цена&gt;\n"
+            "/trade &lt;сумма&gt; &lt;продаём&gt; &lt;сумма_получения&gt; &lt;получаем&gt;\n\n"
+            "Примеры:\n"
+            "/trade 10 MTL USDT 0.25 - продать 10 MTL по 0.25 USDT\n"
+            "/trade 10 MTL 2.5 USDT - продать 10 MTL за 2.5 USDT",
+            app_context=app_context
+        )
+        return
+
+    # /trade list
+    if args[0].lower() == "list":
+        await cmd_trade_list(message, session, app_context)
+        return
+
+    # /trade cancel <id>
+    if args[0].lower() == "cancel":
+        if len(args) < 2:
+            await send_message(session, message, "Формат: /trade cancel &lt;offer_id&gt;", app_context=app_context)
+            return
+        try:
+            offer_id = int(args[1])
+        except ValueError:
+            await send_message(session, message, "ID ордера должен быть числом", app_context=app_context)
+            return
+        await cmd_trade_cancel(message, state, session, app_context, offer_id)
+        return
+
+    # Create order: need at least 4 args
+    if len(args) < 4:
+        await send_message(
+            session, message,
+            "Недостаточно аргументов.\n"
+            "Формат: /trade &lt;сумма&gt; &lt;продаём&gt; &lt;получаем&gt; &lt;цена&gt;\n"
+            "Или: /trade &lt;сумма&gt; &lt;продаём&gt; &lt;сумма_получения&gt; &lt;получаем&gt;",
+            app_context=app_context
+        )
+        return
+
+    await cmd_trade_create(message, state, session, app_context, args)
+
+
+async def cmd_trade_list(message: types.Message, session: AsyncSession, app_context: AppContext):
+    """Show user's active orders."""
+    if message.from_user is None:
+        return
+
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+    if not wallet:
+        await send_message(session, message, "Кошелек не найден", app_context=app_context)
+        return
+
+    offers_dicts = await app_context.stellar_service.get_selling_offers(wallet.public_key)
+    offers = [MyOffer.from_dict(o) for o in offers_dicts]
+
+    if not offers:
+        await send_message(session, message, "У вас нет активных ордеров", app_context=app_context)
+        return
+
+    lines = ["Ваши ордера:\n"]
+    for i, offer in enumerate(offers, 1):
+        selling_code = offer.selling.asset_code if offer.selling else "?"
+        buying_code = offer.buying.asset_code if offer.buying else "?"
+        amount = float(offer.amount or 0)
+        price = float(offer.price or 0)
+        total = amount * price
+        lines.append(
+            f"{i}. #{offer.id}: {float2str(amount)} {selling_code} → "
+            f"{float2str(total)} {buying_code} ({float2str(price)}/шт)"
+        )
+
+    await send_message(session, message, "\n".join(lines), app_context=app_context)
+
+
+async def cmd_trade_cancel(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+    offer_id: int
+):
+    """Cancel order by ID."""
+    if message.from_user is None:
+        return
+
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(message.from_user.id)
+    if not wallet:
+        await send_message(session, message, "Кошелек не найден", app_context=app_context)
+        return
+
+    # Find the offer
+    offers_dicts = await app_context.stellar_service.get_selling_offers(wallet.public_key)
+    offers = [MyOffer.from_dict(o) for o in offers_dicts]
+    offer = next((o for o in offers if o.id == offer_id), None)
+
+    if not offer:
+        await send_message(
+            session, message,
+            f"Ордер #{offer_id} не найден. Используйте /trade list для просмотра ордеров.",
+            app_context=app_context
+        )
+        return
+
+    selling_code = offer.selling.asset_code if offer.selling else "?"
+    selling_issuer = offer.selling.asset_issuer if offer.selling else None
+    buying_code = offer.buying.asset_code if offer.buying else "?"
+    buying_issuer = offer.buying.asset_issuer if offer.buying else None
+    amount = float(offer.amount or 0)
+    price = float(offer.price or 0)
+
+    # Build cancel XDR
+    use_case = app_context.use_case_factory.create_manage_offer(session)
+    result = await use_case.execute(
+        user_id=message.from_user.id,
+        selling=DomainAsset(code=str(selling_code), issuer=selling_issuer),
+        buying=DomainAsset(code=str(buying_code), issuer=buying_issuer),
+        amount=0,  # 0 amount = delete
+        price=1.0,
+        offer_id=offer_id
+    )
+
+    if not result.success:
+        await send_message(
+            session, message,
+            f"Ошибка: {result.error_message}",
+            app_context=app_context
+        )
+        return
+
+    await state.update_data(
+        xdr=result.xdr,
+        operation='trade',
+        send_sum=amount,
+        send_asset_code=selling_code,
+        receive_sum=amount * price,
+        receive_asset_code=buying_code,
+        delete_order=True
+    )
+
+    msg = my_gettext(
+        message, 'delete_sale',
+        (amount, selling_code, amount * price, buying_code),
+        app_context=app_context
+    )
+    await send_message(
+        session, message, msg,
+        reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+        app_context=app_context
+    )
+
+
+async def cmd_trade_create(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+    args: list
+):
+    """Create a new order."""
+    if message.from_user is None:
+        return
+
+    # Parse arguments
+    # Format 1: /trade 10 MTL USDT 0.25 -> amount=10, sell=MTL, buy=USDT, price=0.25
+    # Format 2: /trade 10 MTL 2.5 USDT -> amount=10, sell=MTL, receive=2.5, buy=USDT
+
+    try:
+        # First arg is always amount
+        send_amount = my_float(args[0])
+        if send_amount <= 0:
+            await send_message(session, message, "Сумма должна быть больше 0", app_context=app_context)
+            return
+    except Exception:
+        await send_message(session, message, "Не удалось определить сумму", app_context=app_context)
+        return
+
+    # Determine format by checking if last arg is a number (price) or token
+    try:
+        # Try to parse last arg as number
+        last_as_number = my_float(args[3])
+        # Format 1: amount asset1 asset2 price
+        sell_code = args[1].upper()
+        buy_code = args[2].upper()
+        price = last_as_number
+        receive_amount = send_amount * price
+    except Exception:
+        # Format 2: amount asset1 receive_amount asset2
+        try:
+            receive_amount = my_float(args[2])
+            sell_code = args[1].upper()
+            buy_code = args[3].upper()
+            price = receive_amount / send_amount
+        except Exception:
+            await send_message(
+                session, message,
+                "Не удалось разобрать аргументы.\n"
+                "Формат: /trade 10 MTL USDT 0.25\n"
+                "Или: /trade 10 MTL 2.5 USDT",
+                app_context=app_context
+            )
+            return
+
+    if sell_code == buy_code:
+        await send_message(session, message, "Нельзя обменять токен на себя", app_context=app_context)
+        return
+
+    # Get user balances and validate
+    use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    balances = await use_case.execute(user_id=message.from_user.id)
+
+    # Find selling asset
+    matching_sell = [b for b in balances if b.asset_code == sell_code]
+    if len(matching_sell) == 0:
+        await send_message(session, message, f"У вас нет актива {sell_code}", app_context=app_context)
+        return
+    if len(matching_sell) > 1:
+        await send_message(
+            session, message,
+            f"Найдено несколько активов {sell_code}. Используйте меню.",
+            app_context=app_context
+        )
+        return
+    sell_asset = matching_sell[0]
+
+    # Check balance
+    available = my_float(sell_asset.balance)
+    if send_amount > available:
+        await send_message(
+            session, message,
+            f"Недостаточно средств. У вас {float2str(available)} {sell_code}",
+            app_context=app_context
+        )
+        return
+
+    # Find buying asset (trustline check)
+    matching_buy = [b for b in balances if b.asset_code == buy_code]
+    if len(matching_buy) == 0:
+        await send_message(
+            session, message,
+            f"У вас нет trustline на {buy_code}. Добавьте через меню.",
+            app_context=app_context
+        )
+        return
+    if len(matching_buy) > 1:
+        await send_message(
+            session, message,
+            f"Найдено несколько активов {buy_code}. Используйте меню.",
+            app_context=app_context
+        )
+        return
+    buy_asset = matching_buy[0]
+
+    # Check 5000 limit
+    user_repo = app_context.repository_factory.get_user_repository(session)
+    db_user = await user_repo.get_by_id(message.from_user.id)
+    if db_user and db_user.can_5000 == 0 and send_amount > 5000:
+        await send_message(
+            session, message,
+            my_gettext(message, 'need_update_limits', app_context=app_context),
+            app_context=app_context
+        )
+        return
+
+    # Build XDR
+    use_case_offer = app_context.use_case_factory.create_manage_offer(session)
+    result = await use_case_offer.execute(
+        user_id=message.from_user.id,
+        selling=DomainAsset(code=sell_code, issuer=sell_asset.asset_issuer),
+        buying=DomainAsset(code=buy_code, issuer=buy_asset.asset_issuer),
+        amount=send_amount,
+        price=price,
+        offer_id=0  # New offer
+    )
+
+    if not result.success:
+        await send_message(
+            session, message,
+            f"Ошибка: {result.error_message}",
+            app_context=app_context
+        )
+        return
+
+    await state.update_data(
+        xdr=result.xdr,
+        operation='trade',
+        send_sum=send_amount,
+        send_asset_code=sell_code,
+        send_asset_issuer=sell_asset.asset_issuer,
+        receive_sum=receive_amount,
+        receive_asset_code=buy_code,
+        receive_asset_issuer=buy_asset.asset_issuer
+    )
+
+    msg = my_gettext(
+        message, 'confirm_sale',
+        (send_amount, sell_code, receive_amount, buy_code),
+        app_context=app_context
+    )
+    await send_message(
+        session, message, msg,
+        reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+        app_context=app_context
+    )
 
 
 @router.callback_query(F.data == "Market")
