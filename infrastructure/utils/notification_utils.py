@@ -242,6 +242,7 @@ def decode_db_effect(
                 buying_asset,
                 price_str,
                 offer_id_text,
+                op_link,
             ),
             localization_service=loc_service,
         )
@@ -272,6 +273,7 @@ def decode_db_effect(
                 selling_asset,
                 price_unit,
                 offer_id_text,
+                op_link,
             ),
             localization_service=loc_service,
         )
