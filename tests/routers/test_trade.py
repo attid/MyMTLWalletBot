@@ -246,3 +246,200 @@ async def test_delete_order_execution(mock_telegram, router_app_context, setup_t
     
     req = get_latest_msg(mock_telegram)
     assert "delete_sale" in req["data"]["text"]
+
+
+# ============================================================================
+# Tests for /trade text command
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_cmd_trade_help(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test /trade without args: should show help."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade"))
+
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    assert "/trade list" in req["data"]["text"]
+    assert "/trade cancel" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_list_empty(mock_telegram, mock_horizon, router_app_context, setup_trade_mocks):
+    """Test /trade list with no orders."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    mock_horizon.set_offers(setup_trade_mocks.wallet.public_key, [])
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade list"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "нет активных ордеров" in req["data"]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_list_with_orders(mock_telegram, mock_horizon, router_app_context, setup_trade_mocks):
+    """Test /trade list with active orders."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    mock_offer = {
+        "id": "12345",
+        "amount": "100.0",
+        "price": "0.5",
+        "selling": {"asset_code": "XLM", "asset_type": "native"},
+        "buying": {"asset_code": "EURMTL", "asset_issuer": VALID_ISSUER}
+    }
+    mock_horizon.set_offers(setup_trade_mocks.wallet.public_key, [mock_offer])
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade list"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "#12345" in req["data"]["text"]
+    assert "100" in req["data"]["text"]
+    assert "XLM" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_cancel_not_found(mock_telegram, mock_horizon, router_app_context, setup_trade_mocks):
+    """Test /trade cancel with non-existent order ID."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    mock_horizon.set_offers(setup_trade_mocks.wallet.public_key, [])
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade cancel 99999"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "не найден" in req["data"]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_cancel_success(mock_telegram, mock_horizon, router_app_context, setup_trade_mocks):
+    """Test /trade cancel with valid order ID."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    mock_offer = {
+        "id": "12345",
+        "amount": "100.0",
+        "price": "0.5",
+        "selling": {"asset_code": "XLM", "asset_type": "native"},
+        "buying": {"asset_code": "EURMTL", "asset_issuer": VALID_ISSUER}
+    }
+    mock_horizon.set_offers(setup_trade_mocks.wallet.public_key, [mock_offer])
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade cancel 12345"))
+
+    # Verify deletion UseCase call
+    router_app_context.use_case_factory.create_manage_offer.return_value.execute.assert_called_once()
+    args = router_app_context.use_case_factory.create_manage_offer.return_value.execute.call_args[1]
+    assert args['amount'] == 0  # Delete = amount 0
+    assert args['offer_id'] == 12345
+
+    req = get_latest_msg(mock_telegram)
+    assert "delete_sale" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_create_with_price(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test /trade 10 MTL USDT 0.25 - create order with price."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    # Add USDT to balances
+    from core.domain.value_objects import Balance
+    setup_trade_mocks.balances.append(
+        Balance(asset_code="USDT", balance="100.0", asset_issuer=VALID_ISSUER, asset_type="credit_alphanum12")
+    )
+
+    # Update balances with new list
+    setup_trade_mocks.ctx.use_case_factory.create_get_wallet_balance.return_value.execute.return_value = setup_trade_mocks.balances
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade 10 XLM USDT 0.25"))
+
+    # Verify UseCase call
+    router_app_context.use_case_factory.create_manage_offer.return_value.execute.assert_called_once()
+    args = router_app_context.use_case_factory.create_manage_offer.return_value.execute.call_args[1]
+    assert args['amount'] == 10.0
+    assert args['price'] == 0.25
+    assert args['offer_id'] == 0  # New order
+
+    req = get_latest_msg(mock_telegram)
+    assert "confirm_sale" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_create_with_receive_amount(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test /trade 10 MTL 2.5 USDT - create order with receive amount."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    # Add USDT to balances
+    from core.domain.value_objects import Balance
+    setup_trade_mocks.balances.append(
+        Balance(asset_code="USDT", balance="100.0", asset_issuer=VALID_ISSUER, asset_type="credit_alphanum12")
+    )
+    setup_trade_mocks.ctx.use_case_factory.create_get_wallet_balance.return_value.execute.return_value = setup_trade_mocks.balances
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade 10 XLM 2.5 USDT"))
+
+    # Verify UseCase call: price = 2.5 / 10 = 0.25
+    router_app_context.use_case_factory.create_manage_offer.return_value.execute.assert_called_once()
+    args = router_app_context.use_case_factory.create_manage_offer.return_value.execute.call_args[1]
+    assert args['amount'] == 10.0
+    assert args['price'] == 0.25
+
+    req = get_latest_msg(mock_telegram)
+    assert "confirm_sale" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_insufficient_balance(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test /trade with insufficient balance."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    # XLM balance is 100, try to sell 200
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade 200 XLM EURMTL 0.5"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "недостаточно" in req["data"]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_no_trustline(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test /trade with missing trustline on receive asset."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    # Try to receive USDC which is not in balances
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade 10 XLM USDC 0.5"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "trustline" in req["data"]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_cmd_trade_same_asset(mock_telegram, router_app_context, setup_trade_mocks):
+    """Test /trade with same sell and buy asset."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(trade_router)
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/trade 10 XLM XLM 1"))
+
+    req = get_latest_msg(mock_telegram)
+    assert "на себя" in req["data"]["text"].lower()
