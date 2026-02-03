@@ -974,7 +974,7 @@ async def handle_docs_photo(
 
                 # Update state with payment data
                 await state.update_data(
-                    send_sum=payment_data["amount"],
+                    send_sum=my_float(payment_data["amount"]),
                     send_address=payment_data["destination"],
                     memo=payment_data["memo"],
                     send_asset_code=payment_data["asset_code"],

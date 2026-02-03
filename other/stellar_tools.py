@@ -677,7 +677,11 @@ async def stellar_check_receive_sum(send_asset: Asset, send_sum: str, receive_as
     actual_receive = await stellar_check_receive_sum_one(send_asset, send_sum, receive_asset)
 
     # Считаем, на сколько процентов цена отличается при разных объемах сделки
-    difference_percentage = abs((float(actual_receive) - float(expected_receive)) / float(expected_receive) * 100)
+    expected_receive_float = float(expected_receive)
+    if expected_receive_float == 0:
+        return actual_receive, True  # No path found or zero liquidity - warn user
+
+    difference_percentage = abs((float(actual_receive) - expected_receive_float) / expected_receive_float * 100)
 
     # Если разница больше 10%, возвращаем предупреждение
     if difference_percentage > 10:
