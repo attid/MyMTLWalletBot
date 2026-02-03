@@ -347,6 +347,10 @@ class NotificationService:
 
         # 3. Find Users watching this wallet
         involved_accounts = {op_data_mapped.for_account, op_data_mapped.from_account}
+        # Add trustor for set_trustline_flags operation
+        op_info = payload.get("operation", {})
+        if op_info.get("trustor"):
+            involved_accounts.add(op_info.get("trustor"))
         involved_accounts.discard(None)
 
         if not involved_accounts:
@@ -645,20 +649,35 @@ class NotificationService:
                     op.data_value = None
 
             else:
-                op.for_account = op_data.get("to") or op_data.get("account")
+                op.for_account = (
+                    op_data.get("to")
+                    or op_data.get("account")
+                    or op_data.get("trustor")  # change_trust
+                    or op_data.get("source_account")
+                )
                 # op.amount = 0.0 # Default
                 # op.asset_code = "UNK" # Default
 
-                # Log unknown operation type
-                logger.warning(f"Unknown operation type: {op_type}, payload: {json.dumps(payload, indent=2)}")
+                # Log unknown operation type (skip known ops that just need cache reset)
+                known_cache_only_ops = {
+                    "change_trust",
+                    "claim_claimable_balance",
+                    "clawback",
+                    "create_claimable_balance",  # only notify creator, not claimants (spam)
+                    "invoke_host_function",
+                    "set_options",
+                    "set_trustline_flags",
+                }
+                if op_type not in known_cache_only_ops:
+                    logger.warning(f"Unknown operation type: {op_type}, payload: {json.dumps(payload, indent=2)}")
 
-                # Send to Sentry if initialized
-                if sentry_sdk.Hub.current.client is not None:
-                    sentry_sdk.capture_message(
-                        f"Unknown operation type: {op_type}",
-                        level="warning",
-                        extras={"payload": payload, "op_type": op_type}
-                    )
+                    # Send to Sentry if initialized
+                    if sentry_sdk.Hub.current.client is not None:
+                        sentry_sdk.capture_message(
+                            f"Unknown operation type: {op_type}",
+                            level="warning",
+                            extras={"payload": payload, "op_type": op_type}
+                        )
 
             return op
 
