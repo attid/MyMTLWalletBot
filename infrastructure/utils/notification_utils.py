@@ -85,10 +85,11 @@ def decode_db_effect(
         "path_payment_strict_receive",
     ):
         # Path Payment: Sent (amount2/asset2_code) -> Received (amount/asset_code)
-        amount_sent = float2str(operation.amount2)
-        asset_sent = str(operation.asset2_code)
-        amount_received = float2str(operation.amount)
-        asset_received = str(operation.asset_code)
+        # Path Payment: Sent (path_sent_amount/path_sent_asset) -> Received (path_received_amount/path_received_asset)
+        amount_sent = float2str(operation.path_sent_amount)
+        asset_sent = str(operation.path_sent_asset)
+        amount_received = float2str(operation.path_received_amount)
+        asset_received = str(operation.path_received_asset)
 
         return my_gettext(
             user_id,
@@ -104,19 +105,19 @@ def decode_db_effect(
             localization_service=loc_service,
         )
     elif operation.operation == "manage_data":
-        if operation.asset2_code is None:
+        if operation.data_value is None:
             # Data Removed
             return my_gettext(
                 user_id,
                 "info_data_removed",
                 (
-                    str(operation.asset_code),
+                    str(operation.data_name),
                     account_link,
                     op_link,
                 ),
                 localization_service=loc_service,
             )
-        elif operation.asset2_code == decode_for:
+        elif operation.data_value == decode_for:
              # User mentioned in Data
              simple_decode_for = decode_for[:4] + ".." + decode_for[-4:]
              decode_for_link = "https://viewer.eurmtl.me/account/" + decode_for
@@ -129,14 +130,14 @@ def decode_db_effect(
                     account_link,
                     decode_for_link,
                     op_link,
-                    str(operation.asset_code)
+                    str(operation.data_name)
                 ),
                 localization_service=loc_service,
              )
         else:
              # Data Set / Updated
-             data_name = str(operation.asset_code)
-             data_value = str(operation.asset2_code)
+             data_name = str(operation.data_name)
+             data_value = str(operation.data_value)
              return my_gettext(
                 user_id,
                 "info_data_set",
