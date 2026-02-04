@@ -2,21 +2,84 @@ services:
   bot:
     build: .
     restart: always
-    env_file:
-      - .env
     environment:
+      # === Bot Identity ===
+      # Telegram Bot Token (from @BotFather)
+      - BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+      # Environment: 'production' or 'test'
       - ENVIRONMENT=production
+
+      # === Database & Storage ===
+      # Firebird Database URL
+      - DB_URL=firebird+fdb://SYSDBA:sysdba@host.docker.internal///db/mmwb.fdb
+      # MongoDB URL for document storage
+      - MONGODB_URL=mongodb://mongo:27017/mmwb
+      # Redis URL (internal docker network)
+      - REDIS_URL=redis://redis:6379/0
+
+      # === Stellar Blockchain ===
+      # Transaction fee in stroops (100 = 0.00001 XLM)
+      - BASE_FEE=100
+      # Horizon API URL (public, for reads)
+      - HORIZON_URL=https://horizon.stellar.org/
+      # Horizon API URL (for writes, can be dedicated server)
+      - HORIZON_URL_RW=https://horizon.stellar.org
+
+      # === Tron Blockchain ===
+      - TRON_API_KEY=your_tron_api_key
+      - TRON_MASTER_ADDRESS=your_tron_master_address
+      - TRON_MASTER_KEY=your_tron_master_private_key
+
+      # === TON Blockchain ===
+      - TONCONSOLE_TOKEN=your_tonconsole_token
+      - TON_TOKEN=your_ton_token
+      - TONCENTER_TOKEN=your_toncenter_token
+
+      # === External Integrations ===
+      # OpenAI API Key for AI features
+      - OPENAI_KEY=sk-your-openai-key
+      # ThothPay API Key
+      - THOTHPAY_API=your_thothpay_key
+      # EURMTL Key
+      - EURMTL_KEY=your_eurmtl_key
+      # Grist Token (spreadsheets)
+      - GRIST_TOKEN=your_grist_token
+      # DeBank API Key (optional)
+      - DEBANK=your_debank_key
+      # Sentry DSN for error tracking
+      - SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+
+      # === Bot Configuration ===
+      # Cost to create a wallet
+      - WALLET_COST=1.0
+      # Admin user IDs (comma-separated)
+      - ADMIN_LIST=12345678,87654321
+
+      # === Notification Service ===
+      # Operations Notifier service URL
+      - NOTIFIER_URL=http://operations-notifier:8000
+      # Public URL for receiving webhooks
+      - WEBHOOK_PUBLIC_URL=http://bot:8081/webhook
+      # Internal webhook port
+      - WEBHOOK_PORT=8081
+      # Notifier public key (for signature verification)
+      - NOTIFIER_PUBLIC_KEY=GXXXXXXX
+      # Service secret key (for signing requests)
+      - SERVICE_SECRET=SXXXXXXX
+      # Auth token (alternative to SERVICE_SECRET)
+      - NOTIFIER_AUTH_TOKEN=
+
+      # === WebApp ===
+      # URL of WebApp for biometric signing (must be HTTPS)
+      - WEBAPP_URL=https://webapp.example.com
+
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
-      # Mount db directory if using local Firebird file
       - ./db:/app/db
     depends_on:
       - redis
       - mongo
-    # If using host network for Firebird on localhost (not recommended for other services)
-    # network_mode: "host"
-    # Otherwise, use standard networking:
 
   webapp:
     build:
@@ -24,7 +87,10 @@ services:
       dockerfile: Dockerfile.webapp
     restart: always
     environment:
+      # Redis URL (internal docker network)
       - REDIS_URL=redis://redis:6379/0
+      # Bot token for validating Telegram WebApp initData
+      - BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
     ports:
       - "8000:8000"
     depends_on:
