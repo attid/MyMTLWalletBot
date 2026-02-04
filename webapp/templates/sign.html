@@ -74,6 +74,11 @@ const tg = Telegram.WebApp;
 tg.ready();
 tg.expand();
 
+// Auth header for API requests
+const AUTH_HEADERS = {
+    "X-Telegram-Init-Data": tg.initData || ""
+};
+
 // Apply Telegram theme
 document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
 document.body.style.color = tg.themeParams.text_color || '#000';
@@ -85,7 +90,9 @@ async function init() {
     }
 
     try {
-        const response = await fetch(`/api/tx/${TX_ID}`);
+        const response = await fetch(`/api/tx/${TX_ID}`, {
+            headers: AUTH_HEADERS
+        });
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || "Транзакция не найдена");
@@ -144,7 +151,10 @@ async function signTransaction() {
         // Submit signed XDR
         const response = await fetch(`/api/tx/${TX_ID}/sign`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                ...AUTH_HEADERS
+            },
             body: JSON.stringify({ signed_xdr: signedXdr }),
         });
 
