@@ -51,6 +51,8 @@ from loguru import logger
 from other.faststream_tools import start_broker, stop_broker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
+# Import signing worker to register its FastStream handlers
+import infrastructure.workers.signing_worker  # noqa: F401
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService

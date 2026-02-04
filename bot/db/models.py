@@ -28,6 +28,7 @@ class MyMtlWalletBot(Base):
     balances = Column(Text)  # Now using Text for the balances field
     balances_event_id = Column(String(32), default='0')
     assets_visibility = Column(Text, default="{}")
+    signing_mode = Column(String(10), default='server')  # 'server' | 'local'
 
 # @event.listens_for(Session, 'before_flush')
 # def receive_before_flush(session, flush_context, instances):

@@ -12,8 +12,11 @@ from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from aiogram.exceptions import TelegramBadRequest
 from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
+import redis.asyncio as aioredis
 
 from infrastructure.services.app_context import AppContext
+from other.config_reader import config as app_config
+from shared.constants import REDIS_TX_PREFIX
 
 
 from other.mytypes import MyResponse
@@ -902,3 +905,68 @@ async def cmd_decode_xdr(
         parse_mode=SULGUK_PARSE_MODE,
         app_context=app_context,
     )
+
+
+@router.callback_query(F.data.startswith("cancel_biometric_sign:"))
+async def cmd_cancel_biometric_sign(
+    callback: types.CallbackQuery,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    """Отмена биометрического подписания транзакции."""
+    tx_id = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+
+    # Удаляем TX из Redis
+    redis_client = aioredis.from_url(app_config.redis_url)
+    try:
+        tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
+        deleted = await redis_client.delete(tx_key)
+
+        if deleted:
+            logger.info(f"User {user_id} cancelled biometric signing for TX {tx_id}")
+            await callback.answer(
+                my_gettext(user_id, "sign_cancelled", app_context=app_context)
+                if my_gettext(user_id, "sign_cancelled", app_context=app_context) != "sign_cancelled"
+                else "Подписание отменено",
+                show_alert=True,
+            )
+        else:
+            logger.warning(f"TX {tx_id} not found in Redis (already expired or processed)")
+            await callback.answer(
+                my_gettext(user_id, "sign_expired", app_context=app_context)
+                if my_gettext(user_id, "sign_expired", app_context=app_context) != "sign_expired"
+                else "Транзакция истекла или уже обработана",
+                show_alert=True,
+            )
+    finally:
+        await redis_client.aclose()
+
+    # Удаляем сообщение с кнопкой
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(F.data == "cancel_import_key")
+async def cmd_cancel_import_key(
+    callback: types.CallbackQuery,
+    app_context: AppContext,
+):
+    """Отмена импорта ключа."""
+    user_id = callback.from_user.id
+    logger.info(f"User {user_id} cancelled key import")
+
+    await callback.answer(
+        my_gettext(user_id, "import_cancelled", app_context=app_context)
+        if my_gettext(user_id, "import_cancelled", app_context=app_context) != "import_cancelled"
+        else "Импорт отменён",
+        show_alert=True,
+    )
+
+    # Удаляем сообщение с кнопкой
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass

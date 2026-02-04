@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     service_secret: Optional[SecretStr] = None # Secret Key to sign requests to Notifier
     notifier_auth_token: Optional[str] = None # Token for Notifier Authentication (alternative to signature)
 
+    # Web App for biometric signing
+    webapp_url: str = "https://webapp.example.com"
+
     # horizon_url_id: Optional[int] = 0
 
     model_config = SettingsConfigDict(

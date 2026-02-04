@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 import jsonpickle  # type: ignore
@@ -15,6 +16,21 @@ from other.config_reader import config
 from other.lang_tools import my_gettext
 
 from infrastructure.services.app_context import AppContext
+
+from shared.schemas import PendingTxMessage, TxSignedMessage
+from shared.constants import (
+    CHANNEL_TX_PENDING,
+    CHANNEL_TX_SIGNED,
+    REDIS_TX_PREFIX,
+    REDIS_TX_TTL,
+    FIELD_USER_ID,
+    FIELD_WALLET_ADDRESS,
+    FIELD_UNSIGNED_XDR,
+    FIELD_MEMO,
+    FIELD_STATUS,
+    FIELD_CREATED_AT,
+    STATUS_PENDING,
+)
 
 APP_CONTEXT: Optional[AppContext] = None
 
@@ -37,6 +53,68 @@ async def start_broker(app_context: AppContext):
 async def stop_broker():
     """Останавливает брокер FastStream."""
     await broker.stop()
+
+
+# --- Логика для биометрического подписания ---
+
+async def publish_pending_tx(
+    user_id: int,
+    wallet_address: str,
+    unsigned_xdr: str,
+    memo: str,
+) -> str:
+    """
+    Публикует транзакцию для подписания через Web App.
+
+    Args:
+        user_id: Telegram user ID
+        wallet_address: Public key of the wallet (GXXX...)
+        unsigned_xdr: XDR транзакции без подписи
+        memo: Описание для пользователя ("Отправка 100 XLM на GXXX...")
+
+    Returns:
+        tx_id: Уникальный ID транзакции
+    """
+    if APP_CONTEXT is None:
+        raise RuntimeError("APP_CONTEXT is not initialized. Call start_broker() first.")
+
+    # Генерируем уникальный tx_id
+    tx_id = f"{user_id}_{uuid.uuid4().hex[:8]}"
+
+    # Получаем Redis клиент
+    redis = APP_CONTEXT.bot.session._connector._pool  # type: ignore
+    # Используем aiohttp session's redis, но лучше использовать отдельный клиент
+    # Для простоты используем прямое подключение через broker's redis
+    import redis.asyncio as aioredis
+    redis_client = aioredis.from_url(config.redis_url)
+
+    try:
+        # Сохраняем в Redis Hash
+        tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
+        await redis_client.hset(tx_key, mapping={
+            FIELD_USER_ID: str(user_id),
+            FIELD_WALLET_ADDRESS: wallet_address,
+            FIELD_UNSIGNED_XDR: unsigned_xdr,
+            FIELD_MEMO: memo,
+            FIELD_STATUS: STATUS_PENDING,
+            FIELD_CREATED_AT: datetime.now(timezone.utc).isoformat(),
+        })
+        await redis_client.expire(tx_key, REDIS_TX_TTL)
+
+        # Публикуем событие через FastStream
+        message = PendingTxMessage(
+            tx_id=tx_id,
+            user_id=user_id,
+            wallet_address=wallet_address,
+            unsigned_xdr=unsigned_xdr,
+            memo=memo,
+        )
+        await broker.publish(message.model_dump(), channel=CHANNEL_TX_PENDING)
+
+        logger.info(f"Published pending TX {tx_id} for user {user_id}")
+        return tx_id
+    finally:
+        await redis_client.aclose()
 
 
 # --- Логика для WalletConnect ---
