@@ -116,7 +116,7 @@ async def cmd_sending_private(
             public_key=public_key,
             secret_key=encrypted_secret,
             is_free=False,
-            is_default=False,
+            is_default=True,
         )
         await session.commit()
 
@@ -209,7 +209,7 @@ async def cq_add_new_key(
                 secret_key=encrypted_secret,
                 seed_key=encrypted_seed,
                 is_free=True,
-                is_default=False,
+                is_default=True,
             )
             await session.commit()
 
@@ -370,7 +370,7 @@ async def cmd_sending_public(
             secret_key=public_key,
             is_free=False,
             is_read_only=True,
-            is_default=False,
+            is_default=True,
         )
         await session.commit()
 
@@ -492,7 +492,7 @@ async def cq_add_ton(
             secret_key="TON",
             seed_key=seed_str,
             is_free=True,
-            is_default=False,
+            is_default=True,
         )
         await session.commit()
 
