@@ -72,7 +72,7 @@ class AddWallet:
              wallet.use_pin = 0
              
         created_wallet = await self.wallet_repo.create(wallet)
-        
+
         if is_default:
              await self.wallet_repo.set_default_wallet(user_id, public_key)
              created_wallet.is_default = True
