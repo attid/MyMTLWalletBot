@@ -6,18 +6,29 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
-# Copy all project files for workspace resolution
-COPY pyproject.toml uv.lock ./
-COPY bot ./bot
-COPY shared ./shared
-COPY webapp ./webapp
-
 # Configure uv to install to system location
 ENV UV_PROJECT_ENVIRONMENT="/usr/local"
 ENV UV_COMPILE_BYTECODE=1
 
-# Install dependencies for bot package
+# Step 1: Copy only dependency files (cached layer)
+COPY pyproject.toml uv.lock ./
+COPY bot/pyproject.toml ./bot/
+COPY shared/pyproject.toml ./shared/
+COPY webapp/pyproject.toml ./webapp/
+
+# Create minimal package structure for uv workspace resolution
+RUN mkdir -p bot/other shared/src/shared webapp && \
+    touch bot/__init__.py bot/other/__init__.py && \
+    touch shared/src/shared/__init__.py && \
+    touch webapp/__init__.py
+
+# Step 2: Install dependencies (cached unless pyproject.toml/uv.lock change)
 RUN uv sync --frozen --no-dev --package mmwb-bot
+
+# Step 3: Copy actual source code (invalidates only on code changes)
+COPY bot ./bot
+COPY shared ./shared
+COPY webapp ./webapp
 
 # --- Final Stage ---
 FROM python:3.12-slim-bookworm
