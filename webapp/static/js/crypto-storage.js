@@ -200,6 +200,66 @@ const CryptoStorage = (function() {
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = () => reject(request.error);
             });
+        },
+
+        // --- Wallet → Signer Mapping (localStorage) ---
+
+        /**
+         * Save wallet → signer mapping
+         * @param {string} walletAddress - Wallet address (the one TX is for)
+         * @param {string} signerAddress - Signer's public key address
+         */
+        setWalletSigner(walletAddress, signerAddress) {
+            const signers = JSON.parse(localStorage.getItem('mmwb_wallet_signers') || '{}');
+            signers[walletAddress] = signerAddress;
+            localStorage.setItem('mmwb_wallet_signers', JSON.stringify(signers));
+        },
+
+        /**
+         * Get signer address for a wallet
+         * @param {string} walletAddress - Wallet address
+         * @returns {string|null} Signer address or null if not mapped
+         */
+        getWalletSigner(walletAddress) {
+            const signers = JSON.parse(localStorage.getItem('mmwb_wallet_signers') || '{}');
+            return signers[walletAddress] || null;
+        },
+
+        /**
+         * Remove wallet → signer mapping
+         * @param {string} walletAddress - Wallet address to remove
+         */
+        removeWalletSigner(walletAddress) {
+            const signers = JSON.parse(localStorage.getItem('mmwb_wallet_signers') || '{}');
+            delete signers[walletAddress];
+            localStorage.setItem('mmwb_wallet_signers', JSON.stringify(signers));
+        },
+
+        /**
+         * Get all wallets mapped to a signer
+         * @param {string} signerAddress - Signer's public key address
+         * @returns {string[]} Array of wallet addresses
+         */
+        getWalletsForSigner(signerAddress) {
+            const signers = JSON.parse(localStorage.getItem('mmwb_wallet_signers') || '{}');
+            return Object.entries(signers)
+                .filter(([_, signer]) => signer === signerAddress)
+                .map(([wallet, _]) => wallet);
+        },
+
+        /**
+         * Remove all wallet mappings for a signer (call when deleting key)
+         * @param {string} signerAddress - Signer's public key address
+         */
+        removeSignerMappings(signerAddress) {
+            const signers = JSON.parse(localStorage.getItem('mmwb_wallet_signers') || '{}');
+            const updated = {};
+            for (const [wallet, signer] of Object.entries(signers)) {
+                if (signer !== signerAddress) {
+                    updated[wallet] = signer;
+                }
+            }
+            localStorage.setItem('mmwb_wallet_signers', JSON.stringify(updated));
         }
     };
 })();

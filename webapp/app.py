@@ -243,6 +243,14 @@ async def import_page(request: Request, address: str | None = None):
     })
 
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    """Render key management settings page."""
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+    })
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint."""

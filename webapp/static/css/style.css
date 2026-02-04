@@ -239,6 +239,98 @@ input[type="checkbox"] {
     background: #f44336;
 }
 
+/* Key list */
+.key-list {
+    margin-bottom: 16px;
+}
+
+.key-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: var(--tg-theme-bg-color, #fff);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.key-item .key-address {
+    font-family: monospace;
+    font-size: 14px;
+}
+
+.btn-select {
+    padding: 8px 16px;
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #fff);
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.btn-select:active {
+    opacity: 0.8;
+}
+
+/* Key card (settings page) */
+.key-card {
+    background: var(--tg-theme-bg-color, #fff);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.key-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.key-header .key-address {
+    font-family: monospace;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.btn-delete {
+    width: 32px;
+    height: 32px;
+    background: #f44336;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-delete:active {
+    opacity: 0.8;
+}
+
+.linked-wallets {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--tg-theme-hint-color, #999);
+}
+
+.linked-wallets .label {
+    margin-right: 4px;
+}
+
+.wallet-tag {
+    display: inline-block;
+    background: var(--tg-theme-secondary-bg-color, #e0e0e0);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin: 2px 4px 2px 0;
+    font-family: monospace;
+    font-size: 11px;
+}
+
 /* Utility */
 .hidden {
     display: none !important;
