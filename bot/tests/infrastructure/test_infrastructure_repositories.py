@@ -86,6 +86,125 @@ async def test_wallet_repository(db_session):
     assert default_wallet.public_key == "GABC123"
 
 @pytest.mark.asyncio
+async def test_wallet_repository_use_pin_read_only(db_session):
+    """Test that read-only wallet (use_pin=10) is saved correctly."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1001, username="ro_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1001,
+        public_key="GREADONLY123",
+        is_default=True,
+        is_free=False,
+        use_pin=10,  # Read-only
+        secret_key="GREADONLY123",  # For read-only, secret = public
+    )
+    created = await wallet_repo.create(wallet)
+
+    assert created.use_pin == 10
+
+    # Verify from DB
+    fetched = await wallet_repo.get_default_wallet(1001)
+    assert fetched is not None
+    assert fetched.use_pin == 10
+    assert fetched.public_key == "GREADONLY123"
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_use_pin_with_pin(db_session):
+    """Test that wallet with PIN (use_pin=1) is saved correctly."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1002, username="pin_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1002,
+        public_key="GPINWALLET123",
+        is_default=True,
+        is_free=False,
+        use_pin=1,  # Has PIN
+        secret_key="ENCRYPTED_SECRET",
+    )
+    created = await wallet_repo.create(wallet)
+
+    assert created.use_pin == 1
+
+    fetched = await wallet_repo.get_default_wallet(1002)
+    assert fetched is not None
+    assert fetched.use_pin == 1
+    assert fetched.secret_key == "ENCRYPTED_SECRET"
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_use_pin_no_pin(db_session):
+    """Test that wallet without PIN (use_pin=0) is saved correctly."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1003, username="nopin_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1003,
+        public_key="GNOPINWALLET123",
+        is_default=True,
+        is_free=False,
+        use_pin=0,  # No PIN
+        secret_key="PLAIN_SECRET",
+    )
+    created = await wallet_repo.create(wallet)
+
+    assert created.use_pin == 0
+
+    fetched = await wallet_repo.get_default_wallet(1003)
+    assert fetched is not None
+    assert fetched.use_pin == 0
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_deleted_not_default(db_session):
+    """Test that deleted wallet is not returned as default."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1004, username="delete_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1004,
+        public_key="GDELETE123",
+        is_default=True,
+        is_free=False,
+        use_pin=10,
+    )
+    created = await wallet_repo.create(wallet)
+    await wallet_repo.set_default_wallet(1004, "GDELETE123")
+    await db_session.commit()
+
+    # Verify it's default
+    default = await wallet_repo.get_default_wallet(1004)
+    assert default is not None
+    assert default.public_key == "GDELETE123"
+
+    # Delete wallet
+    await wallet_repo.delete(1004, "GDELETE123")
+    await db_session.commit()
+
+    # Should not return deleted wallet as default
+    default_after = await wallet_repo.get_default_wallet(1004)
+    assert default_after is None
+
+
+@pytest.mark.asyncio
 async def test_cheque_repository(db_session):
     repo = SqlAlchemyChequeRepository(db_session)
     user_id = 12345
