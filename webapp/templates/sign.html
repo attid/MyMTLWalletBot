@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Подписание транзакции{% endblock %}
+
+{% block content %}
+<div class="card" id="loading-card">
+    <div class="spinner"></div>
+    <p>Загрузка транзакции...</p>
+</div>
+
+<div class="card hidden" id="error-card">
+    <div class="icon error-icon">!</div>
+    <h2>Ошибка</h2>
+    <p id="error-message"></p>
+    <button class="btn btn-secondary" onclick="Telegram.WebApp.close()">Закрыть</button>
+</div>
+
+<div class="card hidden" id="tx-card">
+    <h2>Подтвердите транзакцию</h2>
+
+    <div class="tx-info">
+        <div class="tx-memo" id="tx-memo"></div>
+        <div class="tx-address">
+            <span class="label">Кошелек:</span>
+            <span class="value" id="tx-address"></span>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Вариант 1: Есть сохраненный ключ -->
+    <div id="sign-section" class="hidden">
+        <p class="hint">Ключ сохранен в этом устройстве</p>
+        <button class="btn btn-primary" id="btn-sign" onclick="signTransaction()">
+            Подписать
+        </button>
+    </div>
+
+    <!-- Вариант 2: Нет ключа -->
+    <div id="no-key-section" class="hidden">
+        <p class="hint">Ключ не найден на этом устройстве</p>
+        <button class="btn btn-primary" id="btn-import" onclick="goToImport()">
+            Добавить ключ
+        </button>
+        <button class="btn btn-secondary" id="btn-show-xdr" onclick="showXdr()">
+            Показать XDR
+        </button>
+    </div>
+
+    <!-- XDR для копирования -->
+    <div id="xdr-section" class="hidden">
+        <p class="hint">Скопируйте XDR и подпишите вручную:</p>
+        <textarea class="xdr-text" id="xdr-text" readonly></textarea>
+        <button class="btn btn-secondary" onclick="copyXdr()">
+            Копировать XDR
+        </button>
+    </div>
+</div>
+
+<div class="card hidden" id="success-card">
+    <div class="icon success-icon">&#10003;</div>
+    <h2>Транзакция подписана</h2>
+    <p>Транзакция отправлена на обработку</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TX_ID = "{{ tx_id }}";
+let txData = null;
+
+// Initialize Telegram WebApp
+const tg = Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+// Apply Telegram theme
+document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
+document.body.style.color = tg.themeParams.text_color || '#000';
+
+async function init() {
+    if (!TX_ID) {
+        showError("ID транзакции не указан");
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/tx/${TX_ID}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Транзакция не найдена");
+        }
+
+        txData = await response.json();
+
+        if (txData.status !== "pending") {
+            showError(`Транзакция уже ${txData.status === 'signed' ? 'подписана' : 'обработана'}`);
+            return;
+        }
+
+        // Display TX info
+        document.getElementById("tx-memo").textContent = txData.memo;
+        document.getElementById("tx-address").textContent = formatAddress(txData.wallet_address);
+        document.getElementById("xdr-text").value = txData.unsigned_xdr;
+
+        // Check if we have saved key
+        const hasKey = await CryptoStorage.hasKey(txData.wallet_address);
+
+        hideElement("loading-card");
+        showElement("tx-card");
+
+        if (hasKey) {
+            showElement("sign-section");
+        } else {
+            showElement("no-key-section");
+        }
+
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+async function signTransaction() {
+    const btn = document.getElementById("btn-sign");
+    btn.disabled = true;
+    btn.textContent = "Подписание...";
+
+    try {
+        // Get secret key from storage
+        const secretKey = await CryptoStorage.getKey(txData.wallet_address);
+        if (!secretKey) {
+            throw new Error("Ключ не найден");
+        }
+
+        // Sign XDR
+        const keypair = StellarSdk.Keypair.fromSecret(secretKey);
+        const transaction = new StellarSdk.Transaction(
+            txData.unsigned_xdr,
+            StellarSdk.Networks.PUBLIC
+        );
+        transaction.sign(keypair);
+        const signedXdr = transaction.toXDR();
+
+        // Submit signed XDR
+        const response = await fetch(`/api/tx/${TX_ID}/sign`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ signed_xdr: signedXdr }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "Ошибка отправки");
+        }
+
+        // Show success
+        hideElement("tx-card");
+        showElement("success-card");
+
+        // Close WebApp after delay
+        setTimeout(() => {
+            tg.close();
+        }, 2000);
+
+    } catch (error) {
+        showToast(error.message, "error");
+        btn.disabled = false;
+        btn.textContent = "Подписать";
+    }
+}
+
+function goToImport() {
+    window.location.href = `/import?address=${txData.wallet_address}&return_tx=${TX_ID}`;
+}
+
+function showXdr() {
+    hideElement("no-key-section");
+    showElement("xdr-section");
+}
+
+function copyXdr() {
+    const xdrText = document.getElementById("xdr-text");
+    xdrText.select();
+    document.execCommand("copy");
+    showToast("XDR скопирован");
+}
+
+// Helpers
+function formatAddress(addr) {
+    if (!addr || addr.length < 12) return addr;
+    return addr.substring(0, 6) + "..." + addr.substring(addr.length - 6);
+}
+
+function showElement(id) {
+    document.getElementById(id).classList.remove("hidden");
+}
+
+function hideElement(id) {
+    document.getElementById(id).classList.add("hidden");
+}
+
+function showError(message) {
+    document.getElementById("error-message").textContent = message;
+    hideElement("loading-card");
+    hideElement("tx-card");
+    showElement("error-card");
+}
+
+function showToast(message, type = "info") {
+    const toast = document.getElementById("toast");
+    toast.textContent = message;
+    toast.className = `toast show ${type}`;
+    setTimeout(() => {
+        toast.className = "toast";
+    }, 3000);
+}
+
+// Start
+init();
+</script>
+{% endblock %}

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить ключ{% endblock %}
+
+{% block content %}
+<div class="card" id="import-card">
+    <h2>Добавить ключ</h2>
+
+    <div class="tx-address">
+        <span class="label">Кошелек:</span>
+        <span class="value" id="wallet-address"></span>
+    </div>
+
+    <div class="divider"></div>
+
+    <p class="hint">
+        Введите секретный ключ (начинается с S).
+        Ключ будет зашифрован и сохранен только на этом устройстве.
+    </p>
+
+    <div class="form-group">
+        <label for="secret-key">Секретный ключ</label>
+        <input
+            type="password"
+            id="secret-key"
+            class="input"
+            placeholder="SXXXX..."
+            autocomplete="off"
+            autocapitalize="characters"
+        >
+        <button type="button" class="btn-toggle-visibility" onclick="toggleKeyVisibility()">
+            <span id="visibility-icon">&#128065;</span>
+        </button>
+    </div>
+
+    <div class="form-group">
+        <label>
+            <input type="checkbox" id="confirm-checkbox">
+            Я понимаю, что ключ будет сохранен в браузере этого устройства
+        </label>
+    </div>
+
+    <button class="btn btn-primary" id="btn-save" onclick="saveKey()" disabled>
+        Сохранить ключ
+    </button>
+
+    <button class="btn btn-secondary" onclick="cancel()">
+        Отмена
+    </button>
+</div>
+
+<div class="card hidden" id="success-card">
+    <div class="icon success-icon">&#10003;</div>
+    <h2>Ключ сохранен</h2>
+    <p>Теперь вы можете подписывать транзакции</p>
+</div>
+
+<div class="card hidden" id="error-card">
+    <div class="icon error-icon">!</div>
+    <h2>Ошибка</h2>
+    <p id="error-message"></p>
+    <button class="btn btn-secondary" onclick="location.reload()">Попробовать снова</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const WALLET_ADDRESS = "{{ wallet_address }}";
+const RETURN_TX = new URLSearchParams(window.location.search).get("return_tx");
+
+// Initialize Telegram WebApp
+const tg = Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+// Apply Telegram theme
+document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
+document.body.style.color = tg.themeParams.text_color || '#000';
+
+function init() {
+    if (!WALLET_ADDRESS) {
+        showError("Адрес кошелька не указан");
+        return;
+    }
+
+    document.getElementById("wallet-address").textContent = formatAddress(WALLET_ADDRESS);
+
+    // Enable save button when checkbox is checked
+    const checkbox = document.getElementById("confirm-checkbox");
+    const saveBtn = document.getElementById("btn-save");
+
+    checkbox.addEventListener("change", () => {
+        saveBtn.disabled = !checkbox.checked;
+    });
+
+    // Validate key on input
+    const keyInput = document.getElementById("secret-key");
+    keyInput.addEventListener("input", () => {
+        keyInput.value = keyInput.value.toUpperCase();
+    });
+}
+
+function toggleKeyVisibility() {
+    const input = document.getElementById("secret-key");
+    const icon = document.getElementById("visibility-icon");
+
+    if (input.type === "password") {
+        input.type = "text";
+        icon.innerHTML = "&#128064;"; // closed eye
+    } else {
+        input.type = "password";
+        icon.innerHTML = "&#128065;"; // open eye
+    }
+}
+
+async function saveKey() {
+    const secretKey = document.getElementById("secret-key").value.trim();
+    const btn = document.getElementById("btn-save");
+
+    // Validate secret key format
+    if (!secretKey.startsWith("S") || secretKey.length !== 56) {
+        showToast("Неверный формат ключа", "error");
+        return;
+    }
+
+    // Validate key matches wallet address
+    try {
+        const keypair = StellarSdk.Keypair.fromSecret(secretKey);
+        const publicKey = keypair.publicKey();
+
+        if (publicKey !== WALLET_ADDRESS) {
+            showToast("Ключ не соответствует адресу кошелька", "error");
+            return;
+        }
+    } catch (e) {
+        showToast("Неверный секретный ключ", "error");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Сохранение...";
+
+    try {
+        // Save encrypted key
+        await CryptoStorage.saveKey(WALLET_ADDRESS, secretKey);
+
+        // Show success
+        hideElement("import-card");
+        showElement("success-card");
+
+        // Return to sign page or close
+        setTimeout(() => {
+            if (RETURN_TX) {
+                window.location.href = `/sign?tx=${RETURN_TX}`;
+            } else {
+                tg.close();
+            }
+        }, 1500);
+
+    } catch (error) {
+        showToast("Ошибка сохранения: " + error.message, "error");
+        btn.disabled = false;
+        btn.textContent = "Сохранить ключ";
+    }
+}
+
+function cancel() {
+    if (RETURN_TX) {
+        window.location.href = `/sign?tx=${RETURN_TX}`;
+    } else {
+        tg.close();
+    }
+}
+
+// Helpers
+function formatAddress(addr) {
+    if (!addr || addr.length < 12) return addr;
+    return addr.substring(0, 6) + "..." + addr.substring(addr.length - 6);
+}
+
+function showElement(id) {
+    document.getElementById(id).classList.remove("hidden");
+}
+
+function hideElement(id) {
+    document.getElementById(id).classList.add("hidden");
+}
+
+function showError(message) {
+    document.getElementById("error-message").textContent = message;
+    hideElement("import-card");
+    showElement("error-card");
+}
+
+function showToast(message, type = "info") {
+    const toast = document.getElementById("toast");
+    toast.textContent = message;
+    toast.className = `toast show ${type}`;
+    setTimeout(() => {
+        toast.className = "toast";
+    }, 3000);
+}
+
+// Start
+init();
+</script>
+{% endblock %}

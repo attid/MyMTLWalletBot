@@ -16,8 +16,6 @@ import redis.asyncio as aioredis
 
 from infrastructure.services.app_context import AppContext
 from other.config_reader import config as app_config
-from shared.constants import REDIS_TX_PREFIX
-
 
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager
@@ -32,6 +30,9 @@ from other.web_tools import get_web_decoded_xdr
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
+from shared.constants import REDIS_TX_PREFIX
+from other.faststream_tools import publish_pending_tx
+from keyboards.webapp import webapp_sign_keyboard
 
 
 class PinState(StatesGroup):
@@ -149,16 +150,29 @@ async def cmd_ask_pin(
             app_context=app_context,
         )
 
-    if pin_type == 10:  # ro
+    if pin_type == 10:  # без ключа - WebApp подписание
         await state.update_data(pin="ro")
-        msg = my_gettext(chat_id, "your_xdr", (data["xdr"],), app_context=app_context)
-        await cmd_show_sign(
+        xdr = data.get("xdr")
+        memo = data.get("operation", "Transaction")
+
+        # Публикуем TX в Redis для WebApp
+        tx_id = await publish_pending_tx(
+            user_id=chat_id,
+            wallet_address=user_account,
+            unsigned_xdr=xdr,
+            memo=memo,
+        )
+
+        # Показываем кнопку WebApp
+        text = my_gettext(chat_id, 'biometric_sign_prompt', app_context=app_context)
+        if text == 'biometric_sign_prompt':
+            text = f"Подтвердите транзакцию:\n\n{memo}"
+
+        await send_message(
             session,
             chat_id,
-            state,
-            msg,
-            use_send=False,
-            xdr_uri=data["xdr"],
+            text,
+            reply_markup=webapp_sign_keyboard(tx_id),
             app_context=app_context,
         )
 
