@@ -15,8 +15,20 @@ services:
       - redis
       - mongo
     # If using host network for Firebird on localhost (not recommended for other services)
-    # network_mode: "host" 
+    # network_mode: "host"
     # Otherwise, use standard networking:
+
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.webapp
+    restart: always
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
 
   redis:
     image: redis:alpine

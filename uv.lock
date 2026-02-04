@@ -1435,8 +1435,8 @@ version = "0.1.0"
 source = { virtual = "webapp" }
 dependencies = [
     { name = "fastapi" },
-    { name = "faststream", extra = ["redis"] },
     { name = "jinja2" },
+    { name = "loguru" },
     { name = "mmwb-shared" },
     { name = "redis" },
     { name = "uvicorn" },
@@ -1445,8 +1445,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "faststream", extras = ["redis"], specifier = "==0.6.0rc1" },
     { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "loguru", specifier = ">=0.7.0" },
     { name = "mmwb-shared", editable = "shared" },
     { name = "redis", specifier = ">=5.1.0" },
     { name = "uvicorn", specifier = ">=0.34.0" },

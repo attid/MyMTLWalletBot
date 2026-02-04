@@ -1,6 +1,13 @@
 import asyncio
 import warnings
-import uvloop
+
+# Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
+# Must be before aiogram imports
+warnings.filterwarnings(
+    "ignore", message=".*has conflict with protected namespace .model_."
+)
+
+import uvloop  # noqa: E402
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 
@@ -60,10 +67,6 @@ from middleware.app_context import AppContextMiddleware
 from middleware.localization import LocalizationMiddleware
 
 
-# Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
-warnings.filterwarnings(
-    "ignore", message=".*has conflict with protected namespace .model_."
-)
 # https://docs.aiogram.dev/en/latest/quick_start.html
 # https://docs.aiogram.dev/en/dev-3.x/dispatcher/filters/index.html
 # https://surik00.gitbooks.io/aiogram-lessons/content/chapter3.html

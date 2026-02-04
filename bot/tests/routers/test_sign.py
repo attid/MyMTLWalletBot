@@ -175,12 +175,120 @@ async def test_cmd_yes_send_integration(mock_telegram, router_app_context, setup
     user_id = 123
     bot = router_app_context.bot
     state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
-    
+
     # Pre-set user_lang
     await dp.storage.update_data(state_key, {'user_lang': 'en'})
 
     await dp.feed_update(bot, create_callback_update(user_id, "Yes_send_xdr"))
-    
+
     assert await dp.storage.get_state(state_key) == PinState.sign_and_send
     latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
     assert "enter_pin" in latest_req['data']['text'] or "enter_password" in latest_req['data']['text']
+
+
+@pytest.mark.asyncio
+async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context, setup_sign_mocks):
+    """
+    Test use_pin=10 (read-only) shows WebApp sign button instead of XDR text.
+    """
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+
+    # Set wallet to use_pin=10 (read-only mode)
+    setup_sign_mocks.wallet.use_pin = 10
+
+    # Mock publish_pending_tx to avoid Redis dependency
+    with patch("routers.sign.publish_pending_tx", new_callable=AsyncMock) as mock_publish:
+        mock_publish.return_value = f"{user_id}_abc12345"
+
+        # 1. Click "Sign" button
+        await dp.feed_update(bot, create_callback_update(user_id, "Sign"))
+        assert await dp.storage.get_state(state_key) == StateSign.sending_xdr
+        mock_telegram.clear()
+
+        # Pre-set user_lang
+        await dp.storage.update_data(state_key, {'user_lang': 'en'})
+
+        # 2. Send XDR text
+        xdr = "AAAAAgAAAAA="
+        await dp.feed_update(bot, create_message_update(user_id, xdr))
+
+        # Should move to PinState.sign
+        assert await dp.storage.get_state(state_key) == PinState.sign
+
+        # Verify publish_pending_tx was called
+        mock_publish.assert_called_once()
+        call_kwargs = mock_publish.call_args.kwargs
+        assert call_kwargs["user_id"] == user_id
+        assert call_kwargs["unsigned_xdr"] == xdr
+
+        # Verify WebApp button is shown in the message
+        latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
+        markup = latest_req['data'].get('reply_markup', '')
+        # WebApp keyboard contains web_app URL and cancel_biometric_sign callback
+        assert "web_app" in markup or "cancel_biometric_sign" in markup
+
+
+@pytest.mark.asyncio
+async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_sign_mocks):
+    """
+    Test cancelling biometric signing deletes TX from Redis and removes message.
+    """
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    tx_id = f"{user_id}_test1234"
+    bot = router_app_context.bot
+
+    # Mock Redis client
+    mock_redis = MagicMock()
+    mock_redis.delete = AsyncMock(return_value=1)  # 1 = key was deleted
+    mock_redis.aclose = AsyncMock()
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        # Trigger cancel callback
+        await dp.feed_update(
+            bot,
+            create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
+        )
+
+        # Verify Redis delete was called with correct key
+        mock_redis.delete.assert_called_once_with(f"tx:{tx_id}")
+        mock_redis.aclose.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cancel_biometric_sign_expired_tx(mock_telegram, router_app_context, setup_sign_mocks):
+    """
+    Test cancelling already expired/processed TX shows appropriate message.
+    """
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    tx_id = f"{user_id}_expired123"
+    bot = router_app_context.bot
+
+    # Mock Redis client returning 0 (key not found)
+    mock_redis = MagicMock()
+    mock_redis.delete = AsyncMock(return_value=0)  # 0 = key not found
+    mock_redis.aclose = AsyncMock()
+
+    with patch("redis.asyncio.from_url", return_value=mock_redis):
+        await dp.feed_update(
+            bot,
+            create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
+        )
+
+        # Verify Redis delete was still called
+        mock_redis.delete.assert_called_once_with(f"tx:{tx_id}")
+        mock_redis.aclose.assert_called_once()
