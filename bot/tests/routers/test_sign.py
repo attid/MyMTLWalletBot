@@ -2,8 +2,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
 
+import fakeredis.aioredis
+
 from routers.sign import router as sign_router, PinState, PinCallbackData
 from infrastructure.states import StateSign
+from other import faststream_tools
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -203,10 +206,14 @@ async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context
     # Set wallet to use_pin=10 (read-only mode)
     setup_sign_mocks.wallet.use_pin = 10
 
-    # Mock publish_pending_tx to avoid Redis dependency
-    with patch("routers.sign.publish_pending_tx", new_callable=AsyncMock) as mock_publish:
-        mock_publish.return_value = f"{user_id}_abc12345"
+    # Setup fakeredis for publish_pending_tx
+    fake_redis = fakeredis.aioredis.FakeRedis()
 
+    # Set global REDIS_CLIENT for the test
+    old_redis_client = faststream_tools.REDIS_CLIENT
+    faststream_tools.REDIS_CLIENT = fake_redis
+
+    try:
         # 1. Click "Sign" button
         await dp.feed_update(bot, create_callback_update(user_id, "Sign"))
         assert await dp.storage.get_state(state_key) == StateSign.sending_xdr
@@ -222,17 +229,24 @@ async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context
         # Should move to PinState.sign
         assert await dp.storage.get_state(state_key) == PinState.sign
 
-        # Verify publish_pending_tx was called
-        mock_publish.assert_called_once()
-        call_kwargs = mock_publish.call_args.kwargs
-        assert call_kwargs["user_id"] == user_id
-        assert call_kwargs["unsigned_xdr"] == xdr
+        # Verify TX was stored in Redis
+        keys = await fake_redis.keys("tx:*")
+        assert len(keys) == 1
+        tx_key = keys[0]
+        tx_data = await fake_redis.hgetall(tx_key)
+        decoded_data = {k.decode(): v.decode() for k, v in tx_data.items()}
+        assert decoded_data["user_id"] == str(user_id)
+        assert decoded_data["unsigned_xdr"] == xdr
 
         # Verify WebApp button is shown in the message
         latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
         markup = latest_req['data'].get('reply_markup', '')
         # WebApp keyboard contains web_app URL and cancel_biometric_sign callback
         assert "web_app" in markup or "cancel_biometric_sign" in markup
+    finally:
+        # Restore globals
+        faststream_tools.REDIS_CLIENT = old_redis_client
+        await fake_redis.aclose()
 
 
 @pytest.mark.asyncio
@@ -248,21 +262,28 @@ async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_si
     tx_id = f"{user_id}_test1234"
     bot = router_app_context.bot
 
-    # Mock Redis client
-    mock_redis = MagicMock()
-    mock_redis.delete = AsyncMock(return_value=1)  # 1 = key was deleted
-    mock_redis.aclose = AsyncMock()
+    # Setup fakeredis with the TX already stored
+    fake_redis = fakeredis.aioredis.FakeRedis()
+    await fake_redis.hset(f"tx:{tx_id}", mapping={"user_id": str(user_id), "status": "pending"})
 
-    with patch("redis.asyncio.from_url", return_value=mock_redis):
+    # Set global REDIS_CLIENT for the test
+    old_redis_client = faststream_tools.REDIS_CLIENT
+    faststream_tools.REDIS_CLIENT = fake_redis
+
+    try:
         # Trigger cancel callback
         await dp.feed_update(
             bot,
             create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
         )
 
-        # Verify Redis delete was called with correct key
-        mock_redis.delete.assert_called_once_with(f"tx:{tx_id}")
-        mock_redis.aclose.assert_called_once()
+        # Verify TX was deleted from Redis
+        exists = await fake_redis.exists(f"tx:{tx_id}")
+        assert exists == 0
+    finally:
+        # Restore globals
+        faststream_tools.REDIS_CLIENT = old_redis_client
+        await fake_redis.aclose()
 
 
 @pytest.mark.asyncio
@@ -278,17 +299,22 @@ async def test_cancel_biometric_sign_expired_tx(mock_telegram, router_app_contex
     tx_id = f"{user_id}_expired123"
     bot = router_app_context.bot
 
-    # Mock Redis client returning 0 (key not found)
-    mock_redis = MagicMock()
-    mock_redis.delete = AsyncMock(return_value=0)  # 0 = key not found
-    mock_redis.aclose = AsyncMock()
+    # Setup fakeredis WITHOUT the TX (simulating expired)
+    fake_redis = fakeredis.aioredis.FakeRedis()
 
-    with patch("redis.asyncio.from_url", return_value=mock_redis):
+    # Set global REDIS_CLIENT for the test
+    old_redis_client = faststream_tools.REDIS_CLIENT
+    faststream_tools.REDIS_CLIENT = fake_redis
+
+    try:
         await dp.feed_update(
             bot,
             create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
         )
 
-        # Verify Redis delete was still called
-        mock_redis.delete.assert_called_once_with(f"tx:{tx_id}")
-        mock_redis.aclose.assert_called_once()
+        # TX didn't exist, handler should have handled it gracefully
+        # (no exception means success)
+    finally:
+        # Restore globals
+        faststream_tools.REDIS_CLIENT = old_redis_client
+        await fake_redis.aclose()

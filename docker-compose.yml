@@ -10,8 +10,8 @@ services:
       - ENVIRONMENT=production
 
       # === Database & Storage ===
-      # Firebird Database URL
-      - DB_URL=firebird+fdb://SYSDBA:sysdba@host.docker.internal///db/mmwb.fdb
+      # Firebird Database URL (external server)
+      - DB_URL=firebird+fdb://SYSDBA:password@firebird-server///path/to/mmwb.fdb
       # MongoDB URL for document storage
       - MONGODB_URL=mongodb://mongo:27017/mmwb
       # Redis URL (internal docker network)
@@ -76,7 +76,6 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
-      - ./db:/app/db
     depends_on:
       - redis
       - mongo

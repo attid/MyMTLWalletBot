@@ -1,8 +1,7 @@
-"""Shared constants for FastStream channels, Redis keys, and TX statuses."""
+"""Shared constants for FastStream queues, Redis keys, and TX statuses."""
 
-# FastStream channels
-CHANNEL_TX_PENDING = "tx_pending"
-CHANNEL_TX_SIGNED = "tx_signed"
+# FastStream queues (Redis lists)
+QUEUE_TX_SIGNED = "tx_signed"
 
 # Redis keys
 REDIS_TX_PREFIX = "tx:"

@@ -12,8 +12,6 @@ from stellar_sdk.exceptions import BadRequestError, BaseHorizonError
 from aiogram.exceptions import TelegramBadRequest
 from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
-import redis.asyncio as aioredis
-
 from infrastructure.services.app_context import AppContext
 from other.config_reader import config as app_config
 
@@ -31,6 +29,7 @@ from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
 from shared.constants import REDIS_TX_PREFIX
+from other import faststream_tools
 from other.faststream_tools import publish_pending_tx
 from keyboards.webapp import webapp_sign_keyboard
 
@@ -931,30 +930,32 @@ async def cmd_cancel_biometric_sign(
     tx_id = callback.data.split(":")[1]
     user_id = callback.from_user.id
 
-    # Удаляем TX из Redis
-    redis_client = aioredis.from_url(app_config.redis_url)
-    try:
-        tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
-        deleted = await redis_client.delete(tx_key)
+    # Используем глобальный REDIS_CLIENT из faststream_tools
+    redis_client = faststream_tools.REDIS_CLIENT
+    if redis_client is None:
+        logger.error("REDIS_CLIENT is not initialized")
+        await callback.answer("Ошибка: Redis не доступен", show_alert=True)
+        return
 
-        if deleted:
-            logger.info(f"User {user_id} cancelled biometric signing for TX {tx_id}")
-            await callback.answer(
-                my_gettext(user_id, "sign_cancelled", app_context=app_context)
-                if my_gettext(user_id, "sign_cancelled", app_context=app_context) != "sign_cancelled"
-                else "Подписание отменено",
-                show_alert=True,
-            )
-        else:
-            logger.warning(f"TX {tx_id} not found in Redis (already expired or processed)")
-            await callback.answer(
-                my_gettext(user_id, "sign_expired", app_context=app_context)
-                if my_gettext(user_id, "sign_expired", app_context=app_context) != "sign_expired"
-                else "Транзакция истекла или уже обработана",
-                show_alert=True,
-            )
-    finally:
-        await redis_client.aclose()
+    tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
+    deleted = await redis_client.delete(tx_key)
+
+    if deleted:
+        logger.info(f"User {user_id} cancelled biometric signing for TX {tx_id}")
+        await callback.answer(
+            my_gettext(user_id, "sign_cancelled", app_context=app_context)
+            if my_gettext(user_id, "sign_cancelled", app_context=app_context) != "sign_cancelled"
+            else "Подписание отменено",
+            show_alert=True,
+        )
+    else:
+        logger.warning(f"TX {tx_id} not found in Redis (already expired or processed)")
+        await callback.answer(
+            my_gettext(user_id, "sign_expired", app_context=app_context)
+            if my_gettext(user_id, "sign_expired", app_context=app_context) != "sign_expired"
+            else "Транзакция истекла или уже обработана",
+            show_alert=True,
+        )
 
     # Удаляем сообщение с кнопкой
     try:

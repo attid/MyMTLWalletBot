@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 import jsonpickle  # type: ignore
+import redis.asyncio as aioredis
 from aiogram.fsm.context import FSMContext
 from faststream.redis import RedisBroker, BinaryMessageFormatV1
 from loguru import logger
@@ -17,10 +18,7 @@ from other.lang_tools import my_gettext
 
 from infrastructure.services.app_context import AppContext
 
-from shared.schemas import PendingTxMessage, TxSignedMessage
 from shared.constants import (
-    CHANNEL_TX_PENDING,
-    CHANNEL_TX_SIGNED,
     REDIS_TX_PREFIX,
     REDIS_TX_TTL,
     FIELD_USER_ID,
@@ -33,6 +31,7 @@ from shared.constants import (
 )
 
 APP_CONTEXT: Optional[AppContext] = None
+REDIS_CLIENT: Optional[aioredis.Redis] = None
 
 # --- Глобальные переменные и объекты брокера ---
 
@@ -45,13 +44,18 @@ broker_task = None
 # --- Управление жизненным циклом брокера ---
 
 async def start_broker(app_context: AppContext):
-    global APP_CONTEXT
+    global APP_CONTEXT, REDIS_CLIENT
     APP_CONTEXT = app_context
+    REDIS_CLIENT = aioredis.from_url(config.redis_url)
     await broker.start()
 
 
 async def stop_broker():
-    """Останавливает брокер FastStream."""
+    """Останавливает брокер FastStream и Redis клиент."""
+    global REDIS_CLIENT
+    if REDIS_CLIENT:
+        await REDIS_CLIENT.aclose()
+        REDIS_CLIENT = None
     await broker.stop()
 
 
@@ -62,59 +66,44 @@ async def publish_pending_tx(
     wallet_address: str,
     unsigned_xdr: str,
     memo: str,
+    *,
+    redis_client: Optional[aioredis.Redis] = None,
 ) -> str:
     """
-    Публикует транзакцию для подписания через Web App.
+    Сохраняет транзакцию в Redis для подписания через Web App.
 
     Args:
         user_id: Telegram user ID
         wallet_address: Public key of the wallet (GXXX...)
         unsigned_xdr: XDR транзакции без подписи
         memo: Описание для пользователя ("Отправка 100 XLM на GXXX...")
+        redis_client: Optional Redis client for dependency injection (uses global by default)
 
     Returns:
         tx_id: Уникальный ID транзакции
     """
-    if APP_CONTEXT is None:
-        raise RuntimeError("APP_CONTEXT is not initialized. Call start_broker() first.")
+    _redis = redis_client or REDIS_CLIENT
+
+    if _redis is None:
+        raise RuntimeError("REDIS_CLIENT is not initialized. Call start_broker() first.")
 
     # Генерируем уникальный tx_id
     tx_id = f"{user_id}_{uuid.uuid4().hex[:8]}"
 
-    # Получаем Redis клиент
-    redis = APP_CONTEXT.bot.session._connector._pool  # type: ignore
-    # Используем aiohttp session's redis, но лучше использовать отдельный клиент
-    # Для простоты используем прямое подключение через broker's redis
-    import redis.asyncio as aioredis
-    redis_client = aioredis.from_url(config.redis_url)
+    # Сохраняем в Redis Hash
+    tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
+    await _redis.hset(tx_key, mapping={
+        FIELD_USER_ID: str(user_id),
+        FIELD_WALLET_ADDRESS: wallet_address,
+        FIELD_UNSIGNED_XDR: unsigned_xdr,
+        FIELD_MEMO: memo,
+        FIELD_STATUS: STATUS_PENDING,
+        FIELD_CREATED_AT: datetime.now(timezone.utc).isoformat(),
+    })
+    await _redis.expire(tx_key, REDIS_TX_TTL)
 
-    try:
-        # Сохраняем в Redis Hash
-        tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
-        await redis_client.hset(tx_key, mapping={
-            FIELD_USER_ID: str(user_id),
-            FIELD_WALLET_ADDRESS: wallet_address,
-            FIELD_UNSIGNED_XDR: unsigned_xdr,
-            FIELD_MEMO: memo,
-            FIELD_STATUS: STATUS_PENDING,
-            FIELD_CREATED_AT: datetime.now(timezone.utc).isoformat(),
-        })
-        await redis_client.expire(tx_key, REDIS_TX_TTL)
-
-        # Публикуем событие через FastStream
-        message = PendingTxMessage(
-            tx_id=tx_id,
-            user_id=user_id,
-            wallet_address=wallet_address,
-            unsigned_xdr=unsigned_xdr,
-            memo=memo,
-        )
-        await broker.publish(message.model_dump(), channel=CHANNEL_TX_PENDING)
-
-        logger.info(f"Published pending TX {tx_id} for user {user_id}")
-        return tx_id
-    finally:
-        await redis_client.aclose()
+    logger.info(f"Stored pending TX {tx_id} for user {user_id}")
+    return tx_id
 
 
 # --- Логика для WalletConnect ---
