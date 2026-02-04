@@ -100,6 +100,7 @@
   "kb_create_cheque": "Create a cheque",
   "kb_delete": "Delete",
   "kb_delete_one": "Delete one",
+  "kb_delete_and_return": "Delete and back",
   "kb_donate": "Donate",
   "kb_edit_price": "Edit cost",
   "kb_edit_sum": "Edit value",

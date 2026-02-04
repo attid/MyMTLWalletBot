@@ -201,5 +201,6 @@
   "select_operation_for_filter": "Select operation:",
   "no_recent_operations": "No recent operations",
   "filters_page": "Page {} of {}",
-  "notification_settings_error": "Սխալ տեղի ունեցավ. Տվյալները չեն գտնվել."
+  "notification_settings_error": "Սխալ տեղի ունեցավ. Տվյալները չեն գտնվել.",
+  "kb_delete_and_return": " Delays мекալ և delays мека"
 }
