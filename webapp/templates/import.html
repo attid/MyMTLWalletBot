@@ -146,6 +146,11 @@ async function saveKey() {
         // Save encrypted key with its actual public address
         await CryptoStorage.saveKey(publicKey, secretKey);
 
+        // Save wallet → signer mapping if wallet address was provided
+        if (WALLET_ADDRESS) {
+            CryptoStorage.setWalletSigner(WALLET_ADDRESS, publicKey);
+        }
+
         // Show success with saved address
         document.getElementById("saved-address").textContent = formatAddress(publicKey);
         hideElement("import-card");

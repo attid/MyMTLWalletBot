@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Управление ключами{% endblock %}
+
+{% block content %}
+<div class="card" id="settings-card">
+    <h2>Сохраненные ключи</h2>
+
+    <div id="keys-list" class="key-list"></div>
+
+    <div id="no-keys-message" class="hidden">
+        <p class="hint">Нет сохраненных ключей</p>
+    </div>
+
+    <div class="divider"></div>
+
+    <button class="btn btn-secondary" onclick="goBack()">
+        Назад
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize Telegram WebApp
+const tg = Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+// Apply Telegram theme
+document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
+document.body.style.color = tg.themeParams.text_color || '#000';
+
+async function init() {
+    await loadKeys();
+}
+
+async function loadKeys() {
+    const listEl = document.getElementById("keys-list");
+    const noKeysEl = document.getElementById("no-keys-message");
+    listEl.innerHTML = "";
+
+    const addresses = await CryptoStorage.listAddresses();
+
+    if (addresses.length === 0) {
+        showElement("no-keys-message");
+        return;
+    }
+
+    hideElement("no-keys-message");
+
+    for (const addr of addresses) {
+        const wallets = CryptoStorage.getWalletsForSigner(addr);
+        const item = document.createElement("div");
+        item.className = "key-card";
+        item.innerHTML = `
+            <div class="key-header">
+                <span class="key-address" title="${addr}">${formatAddress(addr)}</span>
+                <button class="btn-delete" onclick="deleteKey('${addr}')" title="Удалить">&#10005;</button>
+            </div>
+            ${wallets.length > 0 ? `
+                <div class="linked-wallets">
+                    <span class="label">Кошельки:</span>
+                    ${wallets.map(w => `<span class="wallet-tag" title="${w}">${formatAddress(w)}</span>`).join('')}
+                </div>
+            ` : ''}
+        `;
+        listEl.appendChild(item);
+    }
+}
+
+async function deleteKey(address) {
+    if (!confirm(`Удалить ключ ${formatAddress(address)}?`)) {
+        return;
+    }
+
+    try {
+        // Remove all wallet mappings for this signer
+        CryptoStorage.removeSignerMappings(address);
+
+        // Delete the key itself
+        await CryptoStorage.deleteKey(address);
+
+        showToast("Ключ удален");
+        await loadKeys();
+    } catch (error) {
+        showToast("Ошибка: " + error.message, "error");
+    }
+}
+
+function goBack() {
+    if (window.history.length > 1) {
+        window.history.back();
+    } else {
+        tg.close();
+    }
+}
+
+// Helpers
+function formatAddress(addr) {
+    if (!addr || addr.length < 12) return addr;
+    return addr.substring(0, 6) + "..." + addr.substring(addr.length - 6);
+}
+
+function showElement(id) {
+    document.getElementById(id).classList.remove("hidden");
+}
+
+function hideElement(id) {
+    document.getElementById(id).classList.add("hidden");
+}
+
+function showToast(message, type = "info") {
+    const toast = document.getElementById("toast");
+    toast.textContent = message;
+    toast.className = `toast show ${type}`;
+    setTimeout(() => {
+        toast.className = "toast";
+    }, 3000);
+}
+
+// Start
+init();
+</script>
+{% endblock %}

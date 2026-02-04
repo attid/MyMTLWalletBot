@@ -36,7 +36,19 @@
         </button>
     </div>
 
-    <!-- Вариант 2: Нет ключа -->
+    <!-- Вариант 2: Выбор ключа из сохраненных -->
+    <div id="key-selector-section" class="hidden">
+        <p class="hint">Выберите ключ для подписания или добавьте новый</p>
+        <div id="saved-keys-list" class="key-list"></div>
+        <button class="btn btn-primary" onclick="goToImport()">
+            Добавить новый ключ
+        </button>
+        <button class="btn btn-secondary" onclick="showXdr()">
+            Показать XDR
+        </button>
+    </div>
+
+    <!-- Вариант 3: Нет сохраненных ключей -->
     <div id="no-key-section" class="hidden">
         <p class="hint">Ключ не найден на этом устройстве</p>
         <button class="btn btn-primary" id="btn-import" onclick="goToImport()">
@@ -68,6 +80,7 @@
 <script>
 const TX_ID = "{{ tx_id }}";
 let txData = null;
+let selectedSignerAddress = null;
 
 // Initialize Telegram WebApp
 const tg = Telegram.WebApp;
@@ -110,14 +123,29 @@ async function init() {
         document.getElementById("tx-address").textContent = formatAddress(txData.wallet_address);
         document.getElementById("xdr-text").value = txData.unsigned_xdr;
 
-        // Check if we have saved key
-        const hasKey = await CryptoStorage.hasKey(txData.wallet_address);
-
         hideElement("loading-card");
         showElement("tx-card");
 
-        if (hasKey) {
-            showElement("sign-section");
+        // Check for saved signer mapping
+        const signerAddress = CryptoStorage.getWalletSigner(txData.wallet_address);
+
+        if (signerAddress) {
+            // Have mapping, check if key still exists
+            const hasKey = await CryptoStorage.hasKey(signerAddress);
+            if (hasKey) {
+                selectedSignerAddress = signerAddress;
+                showElement("sign-section");
+                return;
+            }
+            // Key was deleted, remove stale mapping
+            CryptoStorage.removeWalletSigner(txData.wallet_address);
+        }
+
+        // No mapping - show key selector or no-key section
+        const savedKeys = await CryptoStorage.listAddresses();
+
+        if (savedKeys.length > 0) {
+            showKeySelector(savedKeys);
         } else {
             showElement("no-key-section");
         }
@@ -127,14 +155,38 @@ async function init() {
     }
 }
 
+function showKeySelector(keys) {
+    const listEl = document.getElementById("saved-keys-list");
+    listEl.innerHTML = "";
+
+    for (const addr of keys) {
+        const item = document.createElement("div");
+        item.className = "key-item";
+        item.innerHTML = `
+            <span class="key-address">${formatAddress(addr)}</span>
+            <button class="btn-select" onclick="selectKey('${addr}')">Выбрать</button>
+        `;
+        listEl.appendChild(item);
+    }
+
+    showElement("key-selector-section");
+}
+
+async function selectKey(signerAddress) {
+    selectedSignerAddress = signerAddress;
+    hideElement("key-selector-section");
+    showElement("sign-section");
+}
+
 async function signTransaction() {
     const btn = document.getElementById("btn-sign");
     btn.disabled = true;
     btn.textContent = "Подписание...";
 
     try {
-        // Get secret key from storage
-        const secretKey = await CryptoStorage.getKey(txData.wallet_address);
+        // Get secret key from storage using signer address
+        const signerAddress = selectedSignerAddress || txData.wallet_address;
+        const secretKey = await CryptoStorage.getKey(signerAddress);
         if (!secretKey) {
             throw new Error("Ключ не найден");
         }
@@ -163,6 +215,9 @@ async function signTransaction() {
             throw new Error(error.detail || "Ошибка отправки");
         }
 
+        // Save wallet → signer mapping for future transactions
+        CryptoStorage.setWalletSigner(txData.wallet_address, signerAddress);
+
         // Show success
         hideElement("tx-card");
         showElement("success-card");
@@ -185,6 +240,7 @@ function goToImport() {
 
 function showXdr() {
     hideElement("no-key-section");
+    hideElement("key-selector-section");
     showElement("xdr-section");
 }
 
