@@ -1,3 +1,10 @@
+"""
+Notification service for handling Stellar operations webhooks.
+
+Notifier payload format documentation:
+https://github.com/Montelibero/operations-notifier/blob/master/RESPONSE_EXAMPLES.md
+"""
+
 import asyncio
 import aiohttp
 from aiohttp import web
@@ -510,8 +517,8 @@ class NotificationService:
                     op.payment_asset = "XLM"
 
             elif op_type == "create_account":
-                op.for_account = op_data.get("account")
-                op.payment_amount = float(op_data.get("starting_balance", 0)) # Treated as payment
+                op.for_account = op_data.get("account") or op_data.get("destination")
+                op.payment_amount = float(op_data.get("amount", 0))
                 op.payment_asset = "XLM"
 
             elif op_type in ("path_payment_strict_send", "path_payment_strict_receive"):
