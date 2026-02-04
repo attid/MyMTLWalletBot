@@ -101,6 +101,7 @@
   "kb_create_cheque": "Создать чек",
   "kb_delete": "Удалить",
   "kb_delete_one": "Удалить один",
+  "kb_delete_and_return": "Удалить и назад",
   "kb_donate": "Сделать пожертвование",
   "kb_edit_price": "Редактировать стоимость",
   "kb_edit_sum": "Редактировать сумму",

@@ -93,6 +93,7 @@
   "kb_create_cheque": "Створити чек",
   "kb_delete": "Видалити",
   "kb_delete_one": "Видалити один",
+  "kb_delete_and_return": "Видалити і назад",
   "kb_donate": "Donate",
   "kb_edit_price": "Редагувати вартість",
   "kb_edit_sum": "Редагувати суму",

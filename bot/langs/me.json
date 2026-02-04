@@ -224,5 +224,6 @@
   "kb_delete_all_filters": "🗑 Obriši sve filtere",
   "all_filters_deleted": "Svi filteri obavještenja su obrisani.",
   "filter_already_exists": "Filter sa istim parametrima već postoji.",
-  "notification_settings_error": "Došlo je do greške. Podaci nisu pronađeni."
+  "notification_settings_error": "Došlo je do greške. Podaci nisu pronađeni.",
+  "kb_delete_and_return": "Izbrišite i nazad"
 }
