@@ -63,6 +63,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             public_key=wallet.public_key,
             default_wallet=1 if wallet.is_default else 0,
             free_wallet=1 if wallet.is_free else 0,
+            use_pin=wallet.use_pin,
             assets_visibility=wallet.assets_visibility,
             secret_key=wallet.secret_key,
             seed_key=wallet.seed_key,
