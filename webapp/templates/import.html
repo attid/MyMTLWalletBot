@@ -52,6 +52,7 @@
 <div class="card hidden" id="success-card">
     <div class="icon success-icon">&#10003;</div>
     <h2>Ключ сохранен</h2>
+    <p>Адрес: <span id="saved-address" class="value"></span></p>
     <p>Теперь вы можете подписывать транзакции</p>
 </div>
 
@@ -123,14 +124,15 @@ async function saveKey() {
         return;
     }
 
-    // Validate key matches wallet address
+    // Validate key and get public address
+    let publicKey;
     try {
         const keypair = StellarSdk.Keypair.fromSecret(secretKey);
-        const publicKey = keypair.publicKey();
+        publicKey = keypair.publicKey();
 
         if (publicKey !== WALLET_ADDRESS) {
-            showToast("Ключ не соответствует адресу кошелька", "error");
-            return;
+            // Warn but don't block - user may be replacing a compromised key
+            console.warn(`Key address ${publicKey} differs from expected ${WALLET_ADDRESS}`);
         }
     } catch (e) {
         showToast("Неверный секретный ключ", "error");
@@ -141,10 +143,11 @@ async function saveKey() {
     btn.textContent = "Сохранение...";
 
     try {
-        // Save encrypted key
-        await CryptoStorage.saveKey(WALLET_ADDRESS, secretKey);
+        // Save encrypted key with its actual public address
+        await CryptoStorage.saveKey(publicKey, secretKey);
 
-        // Show success
+        // Show success with saved address
+        document.getElementById("saved-address").textContent = formatAddress(publicKey);
         hideElement("import-card");
         showElement("success-card");
 
