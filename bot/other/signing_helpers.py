@@ -1,15 +1,19 @@
-"""Helpers for transaction signing with support for biometric signing mode."""
+"""Helpers for transaction signing with support for biometric signing mode.
+
+NOTE: signing_mode field is not yet in DB. These functions are prepared
+for future integration when the field is added. Currently all signing
+goes through server mode.
+"""
 
 from typing import Optional, Any
 from aiogram.types import Message
 from loguru import logger
-from stellar_sdk import Transaction, TransactionEnvelope
+from stellar_sdk import TransactionEnvelope
 
 from core.domain.entities import User, Wallet
 from infrastructure.services.app_context import AppContext
 from other.faststream_tools import publish_pending_tx
 from keyboards.webapp import webapp_sign_keyboard
-from other.config_reader import config
 
 
 async def request_signature(
@@ -24,13 +28,14 @@ async def request_signature(
     """
     Универсальный метод запроса подписи транзакции.
 
-    В зависимости от signing_mode кошелька:
+    NOTE: В данный момент всегда использует server mode.
+    Когда signing_mode будет добавлено в БД, функция будет поддерживать:
     - 'server': Подписываем на сервере и отправляем (текущая логика)
     - 'local': Публикуем TX для подписания через Web App
 
     Args:
         user: Пользователь
-        wallet: Кошелёк с signing_mode
+        wallet: Кошелёк
         transaction: TransactionEnvelope для подписания
         memo: Описание транзакции для отображения пользователю
         app_context: Контекст приложения
@@ -39,56 +44,72 @@ async def request_signature(
             Сигнатура: async def callback() -> dict
 
     Returns:
-        - Для server mode: результат отправки транзакции
-        - Для local mode: None (результат придёт через FastStream)
+        Результат отправки транзакции
     """
-    signing_mode = wallet.signing_mode
+    # TODO: когда signing_mode будет в БД, добавить проверку:
+    # signing_mode = getattr(wallet, 'signing_mode', 'server')
+    # if signing_mode == "local": ... (WebApp flow)
 
-    if signing_mode == "server":
-        # Текущая логика — подписываем на сервере
-        logger.info(f"User {user.id}: signing TX on server")
-        return await sign_and_submit_callback()
+    # Сейчас всегда server mode
+    logger.info(f"User {user.id}: signing TX on server")
+    return await sign_and_submit_callback()
 
-    elif signing_mode == "local":
-        # Новая логика — Web App
-        logger.info(f"User {user.id}: requesting local signing via Web App")
 
-        # Получаем unsigned XDR
-        unsigned_xdr = transaction.to_xdr()
+async def request_local_signature(
+    user_id: int,
+    wallet_address: str,
+    unsigned_xdr: str,
+    memo: str,
+    app_context: AppContext,
+    message: Message,
+) -> str:
+    """
+    Запрашивает подпись через Web App (биометрия/пароль).
 
-        # Публикуем TX для подписания
-        tx_id = await publish_pending_tx(
-            user_id=user.id,
-            wallet_address=wallet.public_key,
-            unsigned_xdr=unsigned_xdr,
-            memo=memo,
-        )
+    Args:
+        user_id: ID пользователя Telegram
+        wallet_address: Публичный адрес кошелька
+        unsigned_xdr: XDR транзакции без подписи
+        memo: Описание транзакции
+        app_context: Контекст приложения
+        message: Telegram сообщение для ответа
 
-        # Отправляем кнопку Web App
-        from other.lang_tools import my_gettext
-        text = my_gettext(user.id, 'biometric_sign_prompt', app_context=app_context)
-        if text == 'biometric_sign_prompt':
-            # Fallback if translation not found
-            text = f"Подтвердите транзакцию:\n\n{memo}"
+    Returns:
+        tx_id для отслеживания подписания
+    """
+    tx_id = await publish_pending_tx(
+        user_id=user_id,
+        wallet_address=wallet_address,
+        unsigned_xdr=unsigned_xdr,
+        memo=memo,
+    )
 
-        await message.answer(
-            text,
-            reply_markup=webapp_sign_keyboard(tx_id),
-        )
+    from other.lang_tools import my_gettext
+    text = my_gettext(user_id, 'biometric_sign_prompt', app_context=app_context)
+    if text == 'biometric_sign_prompt':
+        text = f"Подтвердите транзакцию:\n\n{memo}"
 
-        # Результат придёт через FastStream
-        return None
+    await message.answer(
+        text,
+        reply_markup=webapp_sign_keyboard(tx_id),
+    )
 
-    else:
-        logger.error(f"Unknown signing_mode: {signing_mode}")
-        raise ValueError(f"Unknown signing_mode: {signing_mode}")
+    return tx_id
 
 
 def is_local_signing(wallet: Wallet) -> bool:
-    """Проверяет, использует ли кошелёк локальное подписание."""
-    return wallet.signing_mode == "local"
+    """Проверяет, использует ли кошелёк локальное подписание.
+
+    NOTE: Всегда False пока signing_mode не добавлено в БД.
+    """
+    # TODO: return getattr(wallet, 'signing_mode', 'server') == 'local'
+    return False
 
 
 def is_server_signing(wallet: Wallet) -> bool:
-    """Проверяет, использует ли кошелёк серверное подписание."""
-    return wallet.signing_mode == "server"
+    """Проверяет, использует ли кошелёк серверное подписание.
+
+    NOTE: Всегда True пока signing_mode не добавлено в БД.
+    """
+    # TODO: return getattr(wallet, 'signing_mode', 'server') == 'server'
+    return True
