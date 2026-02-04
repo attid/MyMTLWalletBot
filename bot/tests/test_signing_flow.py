@@ -1,13 +1,14 @@
 """Tests for biometric signing flow."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from datetime import datetime, timezone
+
+import fakeredis.aioredis
 
 from shared.schemas import PendingTxMessage, TxSignedMessage
 from shared.constants import (
-    CHANNEL_TX_PENDING,
-    CHANNEL_TX_SIGNED,
+    QUEUE_TX_SIGNED,
     REDIS_TX_PREFIX,
     REDIS_TX_TTL,
     FIELD_USER_ID,
@@ -91,10 +92,9 @@ class TestTxSignedMessage:
 class TestConstants:
     """Tests for shared constants."""
 
-    def test_channel_names(self):
-        """Should have correct channel names."""
-        assert CHANNEL_TX_PENDING == "tx_pending"
-        assert CHANNEL_TX_SIGNED == "tx_signed"
+    def test_queue_name(self):
+        """Should have correct queue name."""
+        assert QUEUE_TX_SIGNED == "tx_signed"
 
     def test_redis_prefix_and_ttl(self):
         """Should have correct Redis prefix and TTL."""
@@ -118,131 +118,79 @@ class TestConstants:
 
 
 class TestPublishPendingTx:
-    """Tests for publish_pending_tx function."""
+    """Tests for publish_pending_tx function using dependency injection."""
+
+    @pytest.fixture
+    def fake_redis(self):
+        """Create a fake Redis client for testing."""
+        return fakeredis.aioredis.FakeRedis()
 
     @pytest.mark.asyncio
-    async def test_publish_pending_tx_generates_tx_id(self):
+    async def test_publish_pending_tx_generates_tx_id(self, fake_redis):
         """Should generate unique tx_id with user_id prefix."""
         from other.faststream_tools import publish_pending_tx
 
-        # Mock APP_CONTEXT
-        mock_context = MagicMock()
-        mock_redis = AsyncMock()
-        mock_redis.hset = AsyncMock()
-        mock_redis.expire = AsyncMock()
-        mock_redis.aclose = AsyncMock()
+        tx_id = await publish_pending_tx(
+            user_id=123,
+            wallet_address="GXXX...",
+            unsigned_xdr="AAAA...",
+            memo="Test TX",
+            redis_client=fake_redis,
+        )
 
-        with patch('other.faststream_tools.APP_CONTEXT', mock_context), \
-             patch('redis.asyncio.from_url', return_value=mock_redis), \
-             patch('other.faststream_tools.broker') as mock_broker:
+        # Check tx_id format
+        assert tx_id.startswith("123_")
+        assert len(tx_id) == 12  # "123_" + 8 chars
 
-            mock_broker.publish = AsyncMock()
-
-            tx_id = await publish_pending_tx(
-                user_id=123,
-                wallet_address="GXXX...",
-                unsigned_xdr="AAAA...",
-                memo="Test TX",
-            )
-
-            # Check tx_id format
-            assert tx_id.startswith("123_")
-            assert len(tx_id) == 12  # "123_" + 8 chars
+        await fake_redis.aclose()
 
     @pytest.mark.asyncio
-    async def test_publish_pending_tx_stores_in_redis(self):
+    async def test_publish_pending_tx_stores_in_redis(self, fake_redis):
         """Should store TX data in Redis hash with TTL."""
         from other.faststream_tools import publish_pending_tx
 
-        mock_context = MagicMock()
-        mock_redis = AsyncMock()
-        mock_redis.hset = AsyncMock()
-        mock_redis.expire = AsyncMock()
-        mock_redis.aclose = AsyncMock()
+        tx_id = await publish_pending_tx(
+            user_id=123,
+            wallet_address="GXXX...",
+            unsigned_xdr="AAAA...",
+            memo="Test TX",
+            redis_client=fake_redis,
+        )
 
-        with patch('other.faststream_tools.APP_CONTEXT', mock_context), \
-             patch('redis.asyncio.from_url', return_value=mock_redis), \
-             patch('other.faststream_tools.broker') as mock_broker:
+        # Verify data was stored in Redis
+        tx_key = f"tx:{tx_id}"
+        stored_data = await fake_redis.hgetall(tx_key)
 
-            mock_broker.publish = AsyncMock()
+        # Decode bytes to strings for comparison
+        decoded_data = {k.decode(): v.decode() for k, v in stored_data.items()}
 
-            tx_id = await publish_pending_tx(
+        assert decoded_data[FIELD_USER_ID] == "123"
+        assert decoded_data[FIELD_WALLET_ADDRESS] == "GXXX..."
+        assert decoded_data[FIELD_UNSIGNED_XDR] == "AAAA..."
+        assert decoded_data[FIELD_MEMO] == "Test TX"
+        assert decoded_data[FIELD_STATUS] == STATUS_PENDING
+        assert FIELD_CREATED_AT in decoded_data
+
+        # Verify TTL was set
+        ttl = await fake_redis.ttl(tx_key)
+        assert ttl > 0
+        assert ttl <= REDIS_TX_TTL
+
+        await fake_redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_publish_pending_tx_raises_without_redis(self):
+        """Should raise RuntimeError if redis_client is None and global not set."""
+        from other.faststream_tools import publish_pending_tx
+
+        with pytest.raises(RuntimeError, match="REDIS_CLIENT is not initialized"):
+            await publish_pending_tx(
                 user_id=123,
                 wallet_address="GXXX...",
                 unsigned_xdr="AAAA...",
                 memo="Test TX",
+                redis_client=None,
             )
-
-            # Verify hset was called
-            mock_redis.hset.assert_called_once()
-            call_args = mock_redis.hset.call_args
-
-            # Check key
-            assert call_args[0][0] == f"tx:{tx_id}"
-
-            # Check mapping
-            mapping = call_args[1]["mapping"]
-            assert mapping[FIELD_USER_ID] == "123"
-            assert mapping[FIELD_WALLET_ADDRESS] == "GXXX..."
-            assert mapping[FIELD_UNSIGNED_XDR] == "AAAA..."
-            assert mapping[FIELD_MEMO] == "Test TX"
-            assert mapping[FIELD_STATUS] == STATUS_PENDING
-
-            # Verify expire was called with TTL
-            mock_redis.expire.assert_called_once_with(f"tx:{tx_id}", REDIS_TX_TTL)
-
-    @pytest.mark.asyncio
-    async def test_publish_pending_tx_publishes_to_channel(self):
-        """Should publish message to tx_pending channel."""
-        from other.faststream_tools import publish_pending_tx
-
-        mock_context = MagicMock()
-        mock_redis = AsyncMock()
-        mock_redis.hset = AsyncMock()
-        mock_redis.expire = AsyncMock()
-        mock_redis.aclose = AsyncMock()
-
-        with patch('other.faststream_tools.APP_CONTEXT', mock_context), \
-             patch('redis.asyncio.from_url', return_value=mock_redis), \
-             patch('other.faststream_tools.broker') as mock_broker:
-
-            mock_broker.publish = AsyncMock()
-
-            tx_id = await publish_pending_tx(
-                user_id=123,
-                wallet_address="GXXX...",
-                unsigned_xdr="AAAA...",
-                memo="Test TX",
-            )
-
-            # Verify publish was called
-            mock_broker.publish.assert_called_once()
-            call_args = mock_broker.publish.call_args
-
-            # Check channel
-            assert call_args[1]["channel"] == CHANNEL_TX_PENDING
-
-            # Check message
-            message = call_args[0][0]
-            assert message["tx_id"] == tx_id
-            assert message["user_id"] == 123
-            assert message["wallet_address"] == "GXXX..."
-            assert message["unsigned_xdr"] == "AAAA..."
-            assert message["memo"] == "Test TX"
-
-    @pytest.mark.asyncio
-    async def test_publish_pending_tx_raises_without_context(self):
-        """Should raise RuntimeError if APP_CONTEXT is not initialized."""
-        from other.faststream_tools import publish_pending_tx
-
-        with patch('other.faststream_tools.APP_CONTEXT', None):
-            with pytest.raises(RuntimeError, match="APP_CONTEXT is not initialized"):
-                await publish_pending_tx(
-                    user_id=123,
-                    wallet_address="GXXX...",
-                    unsigned_xdr="AAAA...",
-                    memo="Test TX",
-                )
 
 
 class TestSigningHelpers:

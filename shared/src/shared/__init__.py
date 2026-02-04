@@ -2,8 +2,7 @@
 
 from shared.schemas import PendingTxMessage, TxSignedMessage
 from shared.constants import (
-    CHANNEL_TX_PENDING,
-    CHANNEL_TX_SIGNED,
+    QUEUE_TX_SIGNED,
     REDIS_TX_PREFIX,
     REDIS_TX_TTL,
     FIELD_USER_ID,
@@ -23,8 +22,7 @@ from shared.constants import (
 __all__ = [
     "PendingTxMessage",
     "TxSignedMessage",
-    "CHANNEL_TX_PENDING",
-    "CHANNEL_TX_SIGNED",
+    "QUEUE_TX_SIGNED",
     "REDIS_TX_PREFIX",
     "REDIS_TX_TTL",
     "FIELD_USER_ID",

@@ -24,8 +24,9 @@ from shared.constants import (
     FIELD_SIGNED_XDR,
     STATUS_PENDING,
     STATUS_SIGNED,
-    CHANNEL_TX_SIGNED,
+    QUEUE_TX_SIGNED,
 )
+from shared.schemas import TxSignedMessage
 
 
 # Config
@@ -214,8 +215,9 @@ async def submit_signed_transaction(
         FIELD_STATUS: STATUS_SIGNED,
     })
 
-    # Publish event for bot to process
-    await redis_client.publish(CHANNEL_TX_SIGNED, tx_id)
+    # Push to queue for bot to process
+    message = TxSignedMessage(tx_id=tx_id, user_id=tx_user_id)
+    await redis_client.lpush(QUEUE_TX_SIGNED, message.model_dump_json())
 
     logger.info(f"TX {tx_id} signed by user {tx_user_id}")
     return {"success": True, "tx_id": tx_id}

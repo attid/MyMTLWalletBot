@@ -12,7 +12,7 @@ from other.lang_tools import my_gettext
 
 from shared.schemas import TxSignedMessage
 from shared.constants import (
-    CHANNEL_TX_SIGNED,
+    QUEUE_TX_SIGNED,
     REDIS_TX_PREFIX,
     FIELD_SIGNED_XDR,
     FIELD_STATUS,
@@ -20,8 +20,8 @@ from shared.constants import (
 )
 
 
-@broker.subscriber(channel=CHANNEL_TX_SIGNED)
-async def handle_tx_signed(msg: dict) -> None:
+@broker.subscriber(list=QUEUE_TX_SIGNED)
+async def handle_tx_signed(msg: TxSignedMessage) -> None:
     """
     Обрабатывает событие о подписанной транзакции.
 
@@ -31,9 +31,8 @@ async def handle_tx_signed(msg: dict) -> None:
     4. Удаляет TX из Redis
     """
     try:
-        tx_signed = TxSignedMessage(**msg)
-        tx_id = tx_signed.tx_id
-        user_id = tx_signed.user_id
+        tx_id = msg.tx_id
+        user_id = msg.user_id
 
         logger.info(f"Received tx_signed event for TX {tx_id}, user {user_id}")
 
