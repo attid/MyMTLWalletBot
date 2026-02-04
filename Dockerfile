@@ -6,15 +6,18 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
-# Copy dependency files
+# Copy all project files for workspace resolution
 COPY pyproject.toml uv.lock ./
+COPY bot ./bot
+COPY shared ./shared
+COPY webapp ./webapp
 
 # Configure uv to install to system location
 ENV UV_PROJECT_ENVIRONMENT="/usr/local"
 ENV UV_COMPILE_BYTECODE=1
 
-# Install dependencies
-RUN uv sync --frozen --no-dev
+# Install dependencies for bot package
+RUN uv sync --frozen --no-dev --package mmwb-bot
 
 # --- Final Stage ---
 FROM python:3.12-slim-bookworm
@@ -48,6 +51,9 @@ COPY . .
 
 # Create directories for volumes
 RUN mkdir -p logs data db
+
+# Set working directory to bot
+WORKDIR /app/bot
 
 # Run the application directly with python
 CMD ["python", "start.py"]
