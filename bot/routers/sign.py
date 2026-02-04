@@ -163,9 +163,7 @@ async def cmd_ask_pin(
         )
 
         # Показываем кнопку WebApp
-        text = my_gettext(chat_id, 'biometric_sign_prompt', app_context=app_context)
-        if text == 'biometric_sign_prompt':
-            text = f"Подтвердите транзакцию:\n\n{memo}"
+        text = my_gettext(chat_id, 'biometric_sign_prompt', (memo,), app_context=app_context)
 
         await send_message(
             session,
@@ -943,17 +941,13 @@ async def cmd_cancel_biometric_sign(
     if deleted:
         logger.info(f"User {user_id} cancelled biometric signing for TX {tx_id}")
         await callback.answer(
-            my_gettext(user_id, "sign_cancelled", app_context=app_context)
-            if my_gettext(user_id, "sign_cancelled", app_context=app_context) != "sign_cancelled"
-            else "Подписание отменено",
+            my_gettext(user_id, "sign_cancelled", app_context=app_context),
             show_alert=True,
         )
     else:
         logger.warning(f"TX {tx_id} not found in Redis (already expired or processed)")
         await callback.answer(
-            my_gettext(user_id, "sign_expired", app_context=app_context)
-            if my_gettext(user_id, "sign_expired", app_context=app_context) != "sign_expired"
-            else "Транзакция истекла или уже обработана",
+            my_gettext(user_id, "sign_expired", app_context=app_context),
             show_alert=True,
         )
 
