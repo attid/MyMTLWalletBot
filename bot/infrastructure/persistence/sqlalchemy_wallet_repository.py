@@ -100,6 +100,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             db_wallet.seed_key = wallet.seed_key
             db_wallet.use_pin = wallet.use_pin
             db_wallet.free_wallet = 1 if wallet.is_free else 0
+            db_wallet.signing_mode = wallet.signing_mode
 
             await self.session.flush()
             return self._to_entity(db_wallet)
@@ -249,4 +250,5 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             balances=balances,
             balances_event_id=str(db_wallet.balances_event_id or "0"),
             last_event_id=str(db_wallet.last_event_id or "0"),
+            signing_mode=str(db_wallet.signing_mode or "server"),
         )

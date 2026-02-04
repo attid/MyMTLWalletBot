@@ -31,6 +31,7 @@ class Wallet:
     balances: Optional[list] = None # List[Balance]
     balances_event_id: str = "0"
     last_event_id: str = "0"
+    signing_mode: str = "server"  # 'server' | 'local'
 
 @dataclass
 class AddressBookEntry:
