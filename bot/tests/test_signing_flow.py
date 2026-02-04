@@ -246,10 +246,14 @@ class TestPublishPendingTx:
 
 
 class TestSigningHelpers:
-    """Tests for signing_helpers module."""
+    """Tests for signing_helpers module.
 
-    def test_is_local_signing(self):
-        """Should return True for local signing mode."""
+    NOTE: signing_mode not yet in DB, so is_local_signing always False,
+    is_server_signing always True.
+    """
+
+    def test_is_local_signing_always_false(self):
+        """Should return False (signing_mode not in DB yet)."""
         from other.signing_helpers import is_local_signing
         from core.domain.entities import Wallet
 
@@ -259,13 +263,12 @@ class TestSigningHelpers:
             public_key="GXXX...",
             is_default=True,
             is_free=False,
-            signing_mode="local",
         )
 
-        assert is_local_signing(wallet) is True
+        assert is_local_signing(wallet) is False
 
-    def test_is_server_signing(self):
-        """Should return True for server signing mode."""
+    def test_is_server_signing_always_true(self):
+        """Should return True (signing_mode not in DB yet)."""
         from other.signing_helpers import is_server_signing
         from core.domain.entities import Wallet
 
@@ -275,24 +278,9 @@ class TestSigningHelpers:
             public_key="GXXX...",
             is_default=True,
             is_free=False,
-            signing_mode="server",
         )
 
         assert is_server_signing(wallet) is True
-
-    def test_default_signing_mode_is_server(self):
-        """Default signing_mode should be 'server'."""
-        from core.domain.entities import Wallet
-
-        wallet = Wallet(
-            id=1,
-            user_id=123,
-            public_key="GXXX...",
-            is_default=True,
-            is_free=False,
-        )
-
-        assert wallet.signing_mode == "server"
 
 
 class TestWebAppKeyboard:
