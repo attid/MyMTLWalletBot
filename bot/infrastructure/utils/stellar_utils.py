@@ -177,12 +177,12 @@ async def parse_pay_stellar_uri(uri_data: str):
 
 
 def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset) -> str:
-    """Generate Stellar.Expert market link for an asset pair."""
+    """Generate viewer.eurmtl.me orderbook link for an asset pair."""
     from aiogram.utils.text_decorations import html_decoration
-    
+
     sale_asset_str = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
     buy_asset_str = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
-    market_link = f'https://eurmtl.me/cup/orderbook/{sale_asset_str}/{buy_asset_str}'
+    market_link = f'https://viewer.eurmtl.me/asset/{sale_asset_str}/orderbook?counter={buy_asset_str}'
     market_link = html_decoration.link(value='viewer', link=market_link)
     return market_link
 
