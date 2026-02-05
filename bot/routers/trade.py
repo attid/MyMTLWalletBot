@@ -681,6 +681,12 @@ async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderC
         msg = f"{amount} {selling_code} -> ({price}) " \
               f"-> {amount * price} {buying_code}"
 
+        # Add viewer link
+        if o.selling and o.buying:
+            selling_asset = Asset(o.selling.asset_code, o.selling.asset_issuer) if o.selling.asset_issuer else Asset.native()
+            buying_asset = Asset(o.buying.asset_code, o.buying.asset_issuer) if o.buying.asset_issuer else Asset.native()
+            msg += f"\n{stellar_get_market_link(selling_asset, buying_asset)}"
+
         await send_message(session, callback, msg, reply_markup=get_kb_edit_order(callback.from_user.id, app_context=app_context), app_context=app_context)
 
     await callback.answer()
