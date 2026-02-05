@@ -460,8 +460,12 @@ class TestHandleTxSigned:
         mock_db_pool = MagicMock()
         mock_db_pool.get_session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
 
+        mock_state = AsyncMock()
+        mock_state.get_data = AsyncMock(return_value={})
+
         mock_app_context = MagicMock()
         mock_app_context.db_pool = mock_db_pool
+        mock_app_context.dispatcher.fsm.get_context.return_value = mock_state
 
         # Set APP_CONTEXT AFTER import (simulates start_broker being called)
         original_context = faststream_tools.APP_CONTEXT
