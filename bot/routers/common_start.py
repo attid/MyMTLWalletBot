@@ -171,6 +171,7 @@ async def cb_return(
                 f"Please wait {remaining_seconds} seconds", show_alert=True
             )
     else:
+        await clear_state(state)
         await cmd_show_balance(
             session, callback.message.chat.id, state, app_context=app_context
         )

@@ -89,9 +89,6 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                 successful = result.get("successful", False)
                 logger.info(f"TX {tx_id}: submitted to Stellar, successful={successful}")
 
-                # Clear last_message_id to prevent interference with subsequent commands
-                await state.update_data(last_message_id=0)
-
                 # Вызываем fsm_after_send callback если транзакция успешна
                 if successful and fsm_after_send_pickled:
                     try:
@@ -102,6 +99,10 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                         logger.info(f"TX {tx_id}: fsm_after_send callback completed")
                     except Exception as e:
                         logger.exception(f"TX {tx_id}: error in fsm_after_send: {e}")
+
+                # Clear state to prevent interference with subsequent commands
+                from infrastructure.utils.telegram_utils import clear_state
+                await clear_state(state)
 
             # Удаляем TX из Redis
             await redis_client.delete(tx_key)
