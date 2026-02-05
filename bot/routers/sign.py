@@ -1063,7 +1063,7 @@ async def cmd_show_xdr_webapp(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    """Показывает декодированный XDR из Redis для WebApp подписания."""
+    """Показывает XDR из Redis для WebApp подписания."""
     tx_id = callback.data.split(":")[1]
     user_id = callback.from_user.id
 
@@ -1088,16 +1088,14 @@ async def cmd_show_xdr_webapp(
         await callback.answer("XDR не найден", show_alert=True)
         return
 
-    # Декодируем XDR через API
-    msg = await get_web_decoded_xdr(unsigned_xdr)
+    # Показываем XDR в моноширинном формате для копирования
+    msg = f"<code>{unsigned_xdr[:4000]}</code>"
 
-    # Показываем декодированный XDR
     await send_message(
         session,
         user_id,
-        msg[:4000],
+        msg,
         reply_markup=webapp_sign_keyboard(tx_id, user_id, app_context),
-        parse_mode=SULGUK_PARSE_MODE,
         app_context=app_context,
     )
     await callback.answer()
