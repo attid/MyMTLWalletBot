@@ -340,6 +340,9 @@ async def main():
 
 
 if __name__ == "__main__":
+    import os
+    git_commit = os.environ.get("GIT_COMMIT", "unknown")
+    logger.info(f"Starting MMWB Bot (commit: {git_commit})")
     logger.add("logs/mmwb.log", rotation="1 MB")
     try:
         uvloop.install()
