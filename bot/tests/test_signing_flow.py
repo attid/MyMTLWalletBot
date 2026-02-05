@@ -289,13 +289,13 @@ class TestWebAppKeyboard:
     """Tests for webapp keyboard."""
 
     def test_webapp_sign_keyboard_structure(self):
-        """Should create keyboard with sign button and return button."""
+        """Should create keyboard with sign button, show XDR button, and return button."""
         from keyboards.webapp import webapp_sign_keyboard
 
         tx_id = "123_abc12345"
         keyboard = webapp_sign_keyboard(tx_id)
 
-        assert len(keyboard.inline_keyboard) == 2
+        assert len(keyboard.inline_keyboard) == 3
 
         # First row - Web App button
         assert len(keyboard.inline_keyboard[0]) == 1
@@ -304,9 +304,15 @@ class TestWebAppKeyboard:
         assert sign_btn.web_app is not None
         assert f"tx={tx_id}" in sign_btn.web_app.url
 
-        # Second row - Return button (uses get_return_button)
+        # Second row - Show XDR button
         assert len(keyboard.inline_keyboard[1]) == 1
-        return_btn = keyboard.inline_keyboard[1][0]
+        show_xdr_btn = keyboard.inline_keyboard[1][0]
+        assert show_xdr_btn.text == "📄 Показать XDR"
+        assert show_xdr_btn.callback_data == f"show_xdr_webapp:{tx_id}"
+
+        # Third row - Return button (uses get_return_button)
+        assert len(keyboard.inline_keyboard[2]) == 1
+        return_btn = keyboard.inline_keyboard[2][0]
         assert return_btn.callback_data == "Return"
 
     def test_webapp_import_key_keyboard_structure(self):

@@ -1055,3 +1055,49 @@ async def cmd_cancel_import_key(
         await callback.message.delete()
     except TelegramBadRequest:
         pass
+
+
+@router.callback_query(F.data.startswith("show_xdr_webapp:"))
+async def cmd_show_xdr_webapp(
+    callback: types.CallbackQuery,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    """Показывает декодированный XDR из Redis для WebApp подписания."""
+    tx_id = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+
+    # Получаем XDR из Redis
+    redis_client = faststream_tools.REDIS_CLIENT
+    if redis_client is None:
+        await callback.answer("Redis недоступен", show_alert=True)
+        return
+
+    tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
+    tx_data = await redis_client.hgetall(tx_key)
+
+    if not tx_data:
+        await callback.answer("Транзакция не найдена или истекла", show_alert=True)
+        return
+
+    # Decode bytes to strings
+    tx_data = {k.decode(): v.decode() for k, v in tx_data.items()}
+    unsigned_xdr = tx_data.get("unsigned_xdr")
+
+    if not unsigned_xdr:
+        await callback.answer("XDR не найден", show_alert=True)
+        return
+
+    # Декодируем XDR через API
+    msg = await get_web_decoded_xdr(unsigned_xdr)
+
+    # Показываем декодированный XDR
+    await send_message(
+        session,
+        user_id,
+        msg[:4000],
+        reply_markup=webapp_sign_keyboard(tx_id, user_id, app_context),
+        parse_mode=SULGUK_PARSE_MODE,
+        app_context=app_context,
+    )
+    await callback.answer()
