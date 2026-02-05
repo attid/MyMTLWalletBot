@@ -189,6 +189,13 @@ async def check_username(
 async def clear_state(state: FSMContext):
     # если надо очистить стейт то удаляем все кроме этого
     data = await state.get_data()
+
+    # Очищаем pending TX в Redis
+    user_id = data.get("user_id")
+    if user_id:
+        from other import faststream_tools
+        await faststream_tools.clear_pending_tx(user_id)
+
     await state.set_data(
         {
             "show_more": data.get("show_more", False),
