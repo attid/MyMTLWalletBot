@@ -32,6 +32,7 @@ from shared.schemas import TxSignedMessage
 # Config
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+GIT_COMMIT = os.getenv("GIT_COMMIT", "dev")[:7]  # Short hash
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -115,6 +116,7 @@ app = FastAPI(title="MMWB WebApp", lifespan=lifespan)
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+templates.env.globals["git_commit"] = GIT_COMMIT
 
 
 # --- Models ---
@@ -253,5 +255,19 @@ async def settings_page(request: Request):
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """Health check endpoint with Redis connectivity check."""
+    checks = {"app": "ok"}
+
+    # Check Redis
+    if redis_client:
+        try:
+            await redis_client.ping()
+            checks["redis"] = "ok"
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+            raise HTTPException(status_code=503, detail=checks)
+    else:
+        checks["redis"] = "not connected"
+        raise HTTPException(status_code=503, detail=checks)
+
+    return {"status": "ok", "checks": checks}

@@ -48,5 +48,10 @@ COPY webapp ./webapp
 # Expose port
 EXPOSE 8000
 
+# Git commit (at the end to not break cache)
+ARG GIT_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 # Run uvicorn
 CMD ["uvicorn", "webapp.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -27,6 +27,8 @@ from shared.constants import (
     FIELD_MEMO,
     FIELD_STATUS,
     FIELD_CREATED_AT,
+    FIELD_FSM_AFTER_SEND,
+    FIELD_SUCCESS_MSG,
     STATUS_PENDING,
 )
 
@@ -67,6 +69,8 @@ async def publish_pending_tx(
     unsigned_xdr: str,
     memo: str,
     *,
+    fsm_after_send: Optional[str] = None,
+    success_msg: Optional[str] = None,
     redis_client: Optional[aioredis.Redis] = None,
 ) -> str:
     """
@@ -77,6 +81,8 @@ async def publish_pending_tx(
         wallet_address: Public key of the wallet (GXXX...)
         unsigned_xdr: XDR транзакции без подписи
         memo: Описание для пользователя ("Отправка 100 XLM на GXXX...")
+        fsm_after_send: jsonpickle-сериализованный callback для вызова после успешной отправки
+        success_msg: Сообщение об успехе для пользователя
         redis_client: Optional Redis client for dependency injection (uses global by default)
 
     Returns:
@@ -92,14 +98,22 @@ async def publish_pending_tx(
 
     # Сохраняем в Redis Hash
     tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
-    await _redis.hset(tx_key, mapping={
+    mapping = {
         FIELD_USER_ID: str(user_id),
         FIELD_WALLET_ADDRESS: wallet_address,
         FIELD_UNSIGNED_XDR: unsigned_xdr,
         FIELD_MEMO: memo,
         FIELD_STATUS: STATUS_PENDING,
         FIELD_CREATED_AT: datetime.now(timezone.utc).isoformat(),
-    })
+    }
+
+    # Добавляем опциональные поля только если они заданы
+    if fsm_after_send:
+        mapping[FIELD_FSM_AFTER_SEND] = fsm_after_send
+    if success_msg:
+        mapping[FIELD_SUCCESS_MSG] = success_msg
+
+    await _redis.hset(tx_key, mapping=mapping)
     await _redis.expire(tx_key, REDIS_TX_TTL)
 
     logger.info(f"Stored pending TX {tx_id} for user {user_id}")

@@ -29,11 +29,11 @@ clean-docker:
 
 push-gitdocker tag="latest":
     # Build and push bot image
-    docker build -t {{IMAGE_NAME}}:{{tag}} .
+    docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) -t {{IMAGE_NAME}}:{{tag}} .
     docker tag {{IMAGE_NAME}}:{{tag}} ghcr.io/montelibero/{{IMAGE_NAME}}:{{tag}}
     docker push ghcr.io/montelibero/{{IMAGE_NAME}}:{{tag}}
     # Build and push webapp image
-    docker build -f Dockerfile.webapp -t {{IMAGE_NAME}}-webapp:{{tag}} .
+    docker build -f Dockerfile.webapp --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) -t {{IMAGE_NAME}}-webapp:{{tag}} .
     docker tag {{IMAGE_NAME}}-webapp:{{tag}} ghcr.io/montelibero/{{IMAGE_NAME}}-webapp:{{tag}}
     docker push ghcr.io/montelibero/{{IMAGE_NAME}}-webapp:{{tag}}
 

@@ -76,7 +76,7 @@ class StellarService(IStellarService):
             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
             base_fee=base_fee
         )
-        transaction.set_timeout(180)
+        transaction.set_timeout(3000)  # 50 min for WebApp signing
         
         if asset_code == "XLM" and not asset_issuer:
             asset = Asset.native()
@@ -164,7 +164,7 @@ class StellarService(IStellarService):
             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
             base_fee=base_fee
         )
-        transaction.set_timeout(180)
+        transaction.set_timeout(3000)  # 50 min for WebApp signing
 
         # Helper to convert domain Asset to SDK Asset
         def to_sdk_asset(a: Asset) -> SdkAsset:
@@ -244,7 +244,7 @@ class StellarService(IStellarService):
             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
             base_fee=10000
         )
-        transaction.set_timeout(180)
+        transaction.set_timeout(3000)  # 50 min for WebApp signing
 
         def to_sdk_asset(a: Asset) -> SdkAsset:
             if a.code == "XLM":
@@ -303,7 +303,7 @@ class StellarService(IStellarService):
         if memo:
              tx_builder.add_text_memo(memo)
              
-        tx = tx_builder.set_timeout(30).build()
+        tx = tx_builder.set_timeout(3000).build()  # 50 min for WebApp signing
         return tx
 
     async def build_change_trust_transaction(
@@ -324,7 +324,7 @@ class StellarService(IStellarService):
             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
             base_fee=10000
         )
-        transaction.set_timeout(180)
+        transaction.set_timeout(3000)  # 50 min for WebApp signing
 
         asset = SdkAsset(asset_code, asset_issuer)
         
@@ -349,7 +349,7 @@ class StellarService(IStellarService):
             network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
             base_fee=10000
         )
-        transaction.set_timeout(180)
+        transaction.set_timeout(3000)  # 50 min for WebApp signing
         
         for name, value in data.items():
             transaction.append_manage_data_op(data_name=name, data_value=value)

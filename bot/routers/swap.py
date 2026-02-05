@@ -338,8 +338,8 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
         # Usually it sends the `xdr` stored in the state.
         
         await state.update_data(
-            xdr=xdr, 
-            operation='swap',
+            xdr=xdr,
+            operation=f"Swap {float2str(send_sum)} {send_asset_code} → {receive_asset_code}",
             send_asset_code=send_asset_code,
             send_asset_issuer=send_asset_issuer,
             receive_asset_code=receive_asset_code,
@@ -708,7 +708,7 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Async
         if cancel_offers:
             msg = msg + my_gettext(message, 'confirm_cancel_offers', (send_asset,), app_context=app_context)
 
-        await state.update_data(xdr=xdr, operation='swap', msg=None)
+        await state.update_data(xdr=xdr, operation=f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}", msg=None)
         await send_message(
             session,
             message,
@@ -842,7 +842,7 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
             app_context=app_context
         )
 
-        await state.update_data(xdr=xdr, operation='swap', msg=None)
+        await state.update_data(xdr=xdr, operation=f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}", msg=None)
         await send_message(
             session,
             message,

@@ -66,5 +66,9 @@ RUN mkdir -p logs data db
 # Set working directory to bot
 WORKDIR /app/bot
 
+# Git commit (at the end to not break cache)
+ARG GIT_COMMIT=unknown
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
+
 # Run the application directly with python
 CMD ["python", "start.py"]

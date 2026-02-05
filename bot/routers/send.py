@@ -809,7 +809,7 @@ async def cmd_send_04(
 
     await state.update_data(
         xdr=xdr,
-        operation="send",
+        operation=f"Send {float2str(send_sum)} {send_asset_name}",
         msg=None,
         success_msg=my_gettext(
             message,

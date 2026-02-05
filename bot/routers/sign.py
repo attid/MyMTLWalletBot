@@ -34,6 +34,78 @@ from other.faststream_tools import publish_pending_tx
 from keyboards.webapp import webapp_sign_keyboard
 
 
+async def submit_signed_xdr(
+    session: AsyncSession,
+    user_id: int,
+    signed_xdr: str,
+    success_msg: str | None = None,
+    *,
+    app_context: AppContext,
+) -> dict:
+    """
+    Общая функция отправки подписанной транзакции.
+    Используется в sign_xdr и signing_worker.
+
+    Returns: dict with 'successful', 'hash', 'error' keys
+    """
+    from other.stellar_tools import async_stellar_send
+
+    result = {"successful": False, "hash": None, "error": None}
+
+    try:
+        resp = await async_stellar_send(signed_xdr)
+        result["successful"] = resp.get("successful", False)
+        result["hash"] = resp.get("hash")
+        result["error"] = resp.get("error")
+
+        # Формируем сообщение
+        if result["successful"]:
+            link_msg = ""
+            if result["hash"]:
+                link_msg = f'\n(<a href="https://viewer.eurmtl.me/transaction/{result["hash"]}">viewer</a>)'
+
+            msg = my_gettext(user_id, "send_good", app_context=app_context) + link_msg
+
+            if success_msg:
+                msg = msg + "\n\n" + success_msg
+        else:
+            msg = my_gettext(user_id, "send_error", app_context=app_context)
+
+        await send_message(
+            session,
+            user_id,
+            msg,
+            reply_markup=get_kb_return(user_id, app_context=app_context),
+            app_context=app_context,
+        )
+
+    except BadRequestError as ex:
+        extras = ex.extras.get("result_codes", "no extras") if ex.extras else ex.detail
+        result["error"] = f"{ex.title}: {extras}"
+        msg = my_gettext(user_id, "send_error", app_context=app_context)
+        await send_message(
+            session,
+            user_id,
+            msg,
+            reply_markup=get_kb_return(user_id, app_context=app_context),
+            app_context=app_context,
+        )
+
+    except Exception as e:
+        logger.exception(f"submit_signed_xdr error: {e}")
+        result["error"] = str(e)
+        msg = my_gettext(user_id, "send_error", app_context=app_context)
+        await send_message(
+            session,
+            user_id,
+            msg,
+            reply_markup=get_kb_return(user_id, app_context=app_context),
+            app_context=app_context,
+        )
+
+    return result
+
+
 class PinState(StatesGroup):
     sign = State()
     sign_and_send = State()
@@ -153,6 +225,8 @@ async def cmd_ask_pin(
         await state.update_data(pin="ro")
         xdr = data.get("xdr")
         memo = data.get("operation", "Transaction")
+        fsm_after_send = data.get("fsm_after_send")
+        success_msg = data.get("success_msg")
 
         # Публикуем TX в Redis для WebApp
         tx_id = await publish_pending_tx(
@@ -160,6 +234,8 @@ async def cmd_ask_pin(
             wallet_address=user_account,
             unsigned_xdr=xdr,
             memo=memo,
+            fsm_after_send=fsm_after_send,
+            success_msg=success_msg,
         )
 
         # Показываем кнопку WebApp
@@ -169,7 +245,7 @@ async def cmd_ask_pin(
             session,
             chat_id,
             text,
-            reply_markup=webapp_sign_keyboard(tx_id),
+            reply_markup=webapp_sign_keyboard(tx_id, chat_id, app_context),
             app_context=app_context,
         )
 
