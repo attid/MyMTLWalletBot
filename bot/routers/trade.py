@@ -682,7 +682,7 @@ async def cb_edit_order(callback: types.CallbackQuery, callback_data: EditOrderC
               f"-> {amount * price} {buying_code}"
 
         # Add viewer link
-        if o.selling and o.buying:
+        if o.selling and o.buying and o.selling.asset_code and o.buying.asset_code:
             selling_asset = Asset(o.selling.asset_code, o.selling.asset_issuer) if o.selling.asset_issuer else Asset.native()
             buying_asset = Asset(o.buying.asset_code, o.buying.asset_issuer) if o.buying.asset_issuer else Asset.native()
             msg += f"\n{stellar_get_market_link(selling_asset, buying_asset)}"

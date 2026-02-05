@@ -38,4 +38,4 @@ push-gitdocker tag="latest":
     docker push ghcr.io/montelibero/{{IMAGE_NAME}}-webapp:{{tag}}
 
 test:
-    uv run --package mmwb-bot pytest
+    cd bot && uv run --package mmwb-bot pytest tests/
