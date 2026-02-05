@@ -26,6 +26,10 @@ def webapp_sign_keyboard(tx_id: str, user_id: int = None, app_context: AppContex
             text="✍️ Подписать",
             web_app=WebAppInfo(url=f"{webapp_url}/sign?tx={tx_id}")
         )],
+        [InlineKeyboardButton(
+            text="📄 Показать XDR",
+            callback_data=f"show_xdr_webapp:{tx_id}"
+        )],
         get_return_button(user_id, app_context=app_context),
     ])
 
