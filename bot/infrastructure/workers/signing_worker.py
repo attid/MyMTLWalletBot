@@ -70,6 +70,12 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
             # Отправляем в Stellar через единую функцию
             from routers.sign import submit_signed_xdr
 
+            # Получаем FSM state для пользователя (нужен для очистки last_message_id)
+            bot = faststream_tools.APP_CONTEXT.bot
+            dispatcher = faststream_tools.APP_CONTEXT.dispatcher
+            assert dispatcher is not None, "Dispatcher must be initialized"
+            state = dispatcher.fsm.get_context(bot, user_id, user_id)
+
             db_pool = faststream_tools.APP_CONTEXT.db_pool
             async with db_pool.get_session() as session:
                 result = await submit_signed_xdr(
@@ -83,17 +89,14 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                 successful = result.get("successful", False)
                 logger.info(f"TX {tx_id}: submitted to Stellar, successful={successful}")
 
+                # Clear last_message_id to prevent interference with subsequent commands
+                await state.update_data(last_message_id=0)
+
                 # Вызываем fsm_after_send callback если транзакция успешна
                 if successful and fsm_after_send_pickled:
                     try:
                         fsm_after_send = jsonpickle.loads(fsm_after_send_pickled)
                         logger.info(f"TX {tx_id}: calling fsm_after_send callback")
-
-                        # Получаем FSM state для пользователя
-                        bot = faststream_tools.APP_CONTEXT.bot
-                        dispatcher = faststream_tools.APP_CONTEXT.dispatcher
-                        assert dispatcher is not None, "Dispatcher must be initialized"
-                        state = dispatcher.fsm.get_context(bot, user_id, user_id)
 
                         await fsm_after_send(session, user_id, state)
                         logger.info(f"TX {tx_id}: fsm_after_send callback completed")
