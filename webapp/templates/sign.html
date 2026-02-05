@@ -69,6 +69,29 @@
     </div>
 </div>
 
+<!-- Password prompt modal -->
+<div id="password-prompt" class="password-prompt hidden">
+    <div class="password-prompt-content">
+        <h3>Введите пароль</h3>
+        <p class="hint">Для доступа к ключу</p>
+        <div class="form-group">
+            <input
+                type="password"
+                id="password-input"
+                class="input"
+                placeholder="Пароль"
+                autocomplete="current-password"
+            >
+        </div>
+        <button class="btn btn-primary" id="btn-submit-password" onclick="submitPassword()">
+            Подтвердить
+        </button>
+        <button class="btn btn-secondary" onclick="cancelPassword()">
+            Отмена
+        </button>
+    </div>
+</div>
+
 <div class="card hidden" id="success-card">
     <div class="icon success-icon">&#10003;</div>
     <h2>Транзакция подписана</h2>
@@ -186,11 +209,96 @@ async function signTransaction() {
     try {
         // Get secret key from storage using signer address
         const signerAddress = selectedSignerAddress || txData.wallet_address;
-        const secretKey = await CryptoStorage.getKey(signerAddress);
-        if (!secretKey) {
+        const keyInfo = await CryptoStorage.getKeyInfo(signerAddress);
+
+        if (!keyInfo) {
             throw new Error("Ключ не найден");
         }
 
+        let secretKey;
+
+        if (keyInfo.mode === "biometric") {
+            // Use biometric authentication
+            try {
+                secretKey = await CryptoStorage.getKeyBiometric(signerAddress, "Подписание транзакции");
+                if (!secretKey) {
+                    btn.disabled = false;
+                    btn.textContent = "Подписать";
+                    showToast("Биометрия отменена", "error");
+                    return;
+                }
+                await doSign(secretKey, signerAddress);
+            } catch (bioError) {
+                btn.disabled = false;
+                btn.textContent = "Подписать";
+                showToast(bioError.message || "Ошибка биометрии", "error");
+                return;
+            }
+        } else if (keyInfo.mode === "password") {
+            // Show password prompt
+            showPasswordPrompt();
+            return;
+        } else {
+            throw new Error("Неизвестный тип защиты ключа");
+        }
+
+    } catch (error) {
+        showToast(error.message, "error");
+        btn.disabled = false;
+        btn.textContent = "Подписать";
+    }
+}
+
+function showPasswordPrompt() {
+    document.getElementById("password-input").value = "";
+    showElement("password-prompt");
+    document.getElementById("password-input").focus();
+}
+
+function cancelPassword() {
+    hideElement("password-prompt");
+    const btn = document.getElementById("btn-sign");
+    btn.disabled = false;
+    btn.textContent = "Подписать";
+}
+
+async function submitPassword() {
+    const password = document.getElementById("password-input").value;
+    const submitBtn = document.getElementById("btn-submit-password");
+
+    if (!password) {
+        showToast("Введите пароль", "error");
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Проверка...";
+
+    try {
+        const signerAddress = selectedSignerAddress || txData.wallet_address;
+        const secretKey = await CryptoStorage.getKeyPassword(signerAddress, password);
+
+        if (!secretKey) {
+            showToast("Неверный пароль", "error");
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Подтвердить";
+            return;
+        }
+
+        hideElement("password-prompt");
+        await doSign(secretKey, signerAddress);
+
+    } catch (error) {
+        showToast(error.message, "error");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Подтвердить";
+    }
+}
+
+async function doSign(secretKey, signerAddress) {
+    const btn = document.getElementById("btn-sign");
+
+    try {
         // Sign XDR
         const keypair = StellarSdk.Keypair.fromSecret(secretKey);
         const transaction = new StellarSdk.Transaction(

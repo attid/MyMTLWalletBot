@@ -9,6 +9,7 @@ with bot/dispatcher but WITHOUT app_context, which caused the bug:
 'NoneType' object has no attribute 'bot'
 """
 
+import os
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from aiogram import Dispatcher
@@ -63,7 +64,9 @@ async def notification_service(mock_config, mock_db_pool, router_bot):
     dispatcher = Dispatcher()
     # Use real localization service with mock db_pool
     localization = LocalizationService(db_pool=mock_db_pool)
-    await localization.load_languages("langs")
+    # Use absolute path to ensure langs are found regardless of working directory
+    langs_path = os.path.join(os.path.dirname(__file__), "..", "..", "langs")
+    await localization.load_languages(langs_path)
 
     service = NotificationService(
         config=mock_config,

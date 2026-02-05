@@ -311,6 +311,19 @@ input[type="checkbox"] {
     opacity: 0.8;
 }
 
+.key-mode {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--tg-theme-hint-color, #999);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.key-mode .mode-icon {
+    font-size: 14px;
+}
+
 .linked-wallets {
     margin-top: 8px;
     font-size: 12px;
@@ -331,6 +344,80 @@ input[type="checkbox"] {
     font-size: 11px;
 }
 
+/* Mode selection */
+.mode-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mode-option {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    background: var(--tg-theme-bg-color, #fff);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.mode-option:has(input:checked) {
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #fff);
+}
+
+.mode-option:has(input:checked) .mode-desc {
+    color: var(--tg-theme-button-text-color, #fff);
+    opacity: 0.8;
+}
+
+.mode-option input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.mode-label {
+    font-weight: 500;
+    margin-right: 8px;
+}
+
+.mode-desc {
+    font-size: 12px;
+    color: var(--tg-theme-hint-color, #999);
+}
+
+/* Password prompt modal */
+.password-prompt {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+}
+
+.password-prompt-content {
+    background: var(--tg-theme-bg-color, #fff);
+    border-radius: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 320px;
+}
+
+.password-prompt h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
 /* Utility */
 .hidden {
     display: none !important;
@@ -338,4 +425,14 @@ input[type="checkbox"] {
 
 .text-center {
     text-align: center;
+}
+
+/* Version footer */
+.version {
+    position: fixed;
+    bottom: 8px;
+    right: 8px;
+    font-size: 10px;
+    color: var(--tg-theme-hint-color, #999);
+    opacity: 0.5;
 }

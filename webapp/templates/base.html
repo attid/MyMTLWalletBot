@@ -6,7 +6,7 @@
     <title>{% block title %}MMWB{% endblock %}</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/12.3.0/stellar-sdk.min.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v={{ git_commit }}">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -15,8 +15,9 @@
     </div>
 
     <div id="toast" class="toast"></div>
+    <div class="version">{{ git_commit }}</div>
 
-    <script src="/static/js/crypto-storage.js"></script>
+    <script src="/static/js/crypto-storage.js?v={{ git_commit }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -41,22 +41,31 @@ async function loadKeys() {
     listEl.innerHTML = "";
 
     const addresses = await CryptoStorage.listAddresses();
-
-    if (addresses.length === 0) {
-        showElement("no-keys-message");
-        return;
-    }
-
-    hideElement("no-keys-message");
+    let validKeysCount = 0;
 
     for (const addr of addresses) {
+        const keyInfo = await CryptoStorage.getKeyInfo(addr);
+
+        // Skip legacy keys without mode
+        if (!keyInfo) {
+            continue;
+        }
+
+        validKeysCount++;
         const wallets = CryptoStorage.getWalletsForSigner(addr);
+        const modeLabel = keyInfo.mode === "biometric" ? "Биометрия" : "Пароль";
+        const modeIcon = keyInfo.mode === "biometric" ? "&#128274;" : "&#128273;";
+
         const item = document.createElement("div");
         item.className = "key-card";
         item.innerHTML = `
             <div class="key-header">
                 <span class="key-address" title="${addr}">${formatAddress(addr)}</span>
                 <button class="btn-delete" onclick="deleteKey('${addr}')" title="Удалить">&#10005;</button>
+            </div>
+            <div class="key-mode">
+                <span class="mode-icon">${modeIcon}</span>
+                <span class="mode-text">${modeLabel}</span>
             </div>
             ${wallets.length > 0 ? `
                 <div class="linked-wallets">
@@ -66,6 +75,12 @@ async function loadKeys() {
             ` : ''}
         `;
         listEl.appendChild(item);
+    }
+
+    if (validKeysCount === 0) {
+        showElement("no-keys-message");
+    } else {
+        hideElement("no-keys-message");
     }
 }
 

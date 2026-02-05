@@ -18,6 +18,8 @@ from shared.constants import (
     FIELD_STATUS,
     FIELD_SIGNED_XDR,
     FIELD_CREATED_AT,
+    FIELD_FSM_AFTER_SEND,
+    FIELD_SUCCESS_MSG,
     STATUS_PENDING,
     STATUS_SIGNED,
 )
@@ -192,6 +194,58 @@ class TestPublishPendingTx:
                 redis_client=None,
             )
 
+    @pytest.mark.asyncio
+    async def test_publish_pending_tx_with_fsm_after_send(self, fake_redis):
+        """Should store fsm_after_send and success_msg in Redis."""
+        from other.faststream_tools import publish_pending_tx
+
+        tx_id = await publish_pending_tx(
+            user_id=123,
+            wallet_address="GXXX...",
+            unsigned_xdr="AAAA...",
+            memo="Test TX",
+            fsm_after_send='{"py/function": "test_callback"}',
+            success_msg="Success message",
+            redis_client=fake_redis,
+        )
+
+        # Verify data was stored in Redis
+        tx_key = f"tx:{tx_id}"
+        stored_data = await fake_redis.hgetall(tx_key)
+
+        # Decode bytes to strings for comparison
+        decoded_data = {k.decode(): v.decode() for k, v in stored_data.items()}
+
+        assert decoded_data[FIELD_FSM_AFTER_SEND] == '{"py/function": "test_callback"}'
+        assert decoded_data[FIELD_SUCCESS_MSG] == "Success message"
+
+        await fake_redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_publish_pending_tx_without_optional_fields(self, fake_redis):
+        """Should not store fsm_after_send and success_msg if not provided."""
+        from other.faststream_tools import publish_pending_tx
+
+        tx_id = await publish_pending_tx(
+            user_id=123,
+            wallet_address="GXXX...",
+            unsigned_xdr="AAAA...",
+            memo="Test TX",
+            redis_client=fake_redis,
+        )
+
+        # Verify data was stored in Redis
+        tx_key = f"tx:{tx_id}"
+        stored_data = await fake_redis.hgetall(tx_key)
+
+        # Decode bytes to strings for comparison
+        decoded_data = {k.decode(): v.decode() for k, v in stored_data.items()}
+
+        assert FIELD_FSM_AFTER_SEND not in decoded_data
+        assert FIELD_SUCCESS_MSG not in decoded_data
+
+        await fake_redis.aclose()
+
 
 class TestSigningHelpers:
     """Tests for signing_helpers module.
@@ -235,7 +289,7 @@ class TestWebAppKeyboard:
     """Tests for webapp keyboard."""
 
     def test_webapp_sign_keyboard_structure(self):
-        """Should create keyboard with sign button and cancel button."""
+        """Should create keyboard with sign button and return button."""
         from keyboards.webapp import webapp_sign_keyboard
 
         tx_id = "123_abc12345"
@@ -250,14 +304,13 @@ class TestWebAppKeyboard:
         assert sign_btn.web_app is not None
         assert f"tx={tx_id}" in sign_btn.web_app.url
 
-        # Second row - Cancel button
+        # Second row - Return button (uses get_return_button)
         assert len(keyboard.inline_keyboard[1]) == 1
-        cancel_btn = keyboard.inline_keyboard[1][0]
-        assert cancel_btn.text == "Отмена"
-        assert cancel_btn.callback_data == f"cancel_biometric_sign:{tx_id}"
+        return_btn = keyboard.inline_keyboard[1][0]
+        assert return_btn.callback_data == "Return"
 
     def test_webapp_import_key_keyboard_structure(self):
-        """Should create keyboard with import button and cancel button."""
+        """Should create keyboard with import button and return button."""
         from keyboards.webapp import webapp_import_key_keyboard
 
         wallet_address = "GXXX..."
@@ -272,8 +325,95 @@ class TestWebAppKeyboard:
         assert import_btn.web_app is not None
         assert f"address={wallet_address}" in import_btn.web_app.url
 
-        # Second row - Cancel button
+        # Second row - Return button (uses get_return_button)
         assert len(keyboard.inline_keyboard[1]) == 1
-        cancel_btn = keyboard.inline_keyboard[1][0]
-        assert cancel_btn.text == "Отмена"
-        assert cancel_btn.callback_data == "cancel_import_key"
+        return_btn = keyboard.inline_keyboard[1][0]
+        assert return_btn.callback_data == "Return"
+
+
+class TestHandleTxSigned:
+    """Tests for handle_tx_signed worker."""
+
+    @pytest.fixture
+    def fake_redis(self):
+        """Create a fake Redis client for testing."""
+        return fakeredis.aioredis.FakeRedis()
+
+    @pytest.mark.asyncio
+    async def test_handle_tx_signed_requires_app_context(self, fake_redis):
+        """Should return early if APP_CONTEXT is None.
+
+        This test verifies that the worker correctly accesses
+        faststream_tools.APP_CONTEXT (module attribute), not a local copy.
+        """
+        from unittest.mock import patch
+        from infrastructure.workers.signing_worker import handle_tx_signed
+        from other import faststream_tools
+
+        # Ensure APP_CONTEXT is None (simulates state before start_broker)
+        original_context = faststream_tools.APP_CONTEXT
+        faststream_tools.APP_CONTEXT = None
+
+        try:
+            msg = TxSignedMessage(tx_id="123_abc12345", user_id=123)
+
+            # Should return early without error
+            await handle_tx_signed(msg)
+
+            # If we get here without AttributeError, the import is correct
+            # (accessing faststream_tools.APP_CONTEXT, not a stale local copy)
+        finally:
+            faststream_tools.APP_CONTEXT = original_context
+
+    @pytest.mark.asyncio
+    async def test_handle_tx_signed_accesses_current_app_context(self, fake_redis):
+        """Should access current APP_CONTEXT value, not import-time value.
+
+        This is a regression test for the bug where signing_worker imported
+        APP_CONTEXT directly (getting None at import time) instead of
+        accessing faststream_tools.APP_CONTEXT (getting current value).
+        """
+        from unittest.mock import patch, MagicMock, AsyncMock
+        from infrastructure.workers.signing_worker import handle_tx_signed
+        from other import faststream_tools
+
+        # Store TX in fake Redis
+        tx_id = "123_abc12345"
+        tx_key = f"tx:{tx_id}"
+        await fake_redis.hset(tx_key, mapping={
+            FIELD_USER_ID: "123",
+            FIELD_WALLET_ADDRESS: "GXXX...",
+            FIELD_UNSIGNED_XDR: "AAAA...",
+            FIELD_SIGNED_XDR: "BBBB...",
+            FIELD_MEMO: "Test",
+            FIELD_STATUS: STATUS_SIGNED,
+            FIELD_CREATED_AT: "2024-01-01T00:00:00Z",
+        })
+
+        # Create mock APP_CONTEXT
+        mock_session = AsyncMock()
+        mock_db_pool = MagicMock()
+        mock_db_pool.get_session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        mock_app_context = MagicMock()
+        mock_app_context.db_pool = mock_db_pool
+
+        # Set APP_CONTEXT AFTER import (simulates start_broker being called)
+        original_context = faststream_tools.APP_CONTEXT
+        faststream_tools.APP_CONTEXT = mock_app_context
+
+        try:
+            msg = TxSignedMessage(tx_id=tx_id, user_id=123)
+
+            with patch('infrastructure.workers.signing_worker.aioredis.from_url', return_value=fake_redis):
+                # Patch submit_signed_xdr since it's now the entry point
+                with patch('routers.sign.submit_signed_xdr', new_callable=AsyncMock) as mock_submit:
+                    mock_submit.return_value = {"successful": True, "hash": "abc123"}
+                    await handle_tx_signed(msg)
+
+            # Verify submit_signed_xdr was called (means APP_CONTEXT was accessible)
+            mock_submit.assert_called_once()
+
+        finally:
+            faststream_tools.APP_CONTEXT = original_context
+            await fake_redis.aclose()

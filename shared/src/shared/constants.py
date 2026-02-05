@@ -16,6 +16,8 @@ FIELD_STATUS = "status"
 FIELD_SIGNED_XDR = "signed_xdr"
 FIELD_CREATED_AT = "created_at"
 FIELD_ERROR = "error"
+FIELD_FSM_AFTER_SEND = "fsm_after_send"
+FIELD_SUCCESS_MSG = "success_msg"
 
 # TX statuses
 STATUS_PENDING = "pending"

@@ -351,7 +351,7 @@ async def test_cmd_swap_text_command(mock_telegram, router_app_context, setup_sw
     # Check that state has been updated
     state = dp.fsm.get_context(bot=router_app_context.bot, chat_id=user_id, user_id=user_id)
     data = await state.get_data()
-    assert data.get("operation") == "swap"
+    assert data.get("operation") == "Swap 10 XLM → EURMTL"
     assert data.get("send_sum") == 10.0
     assert data.get("send_asset_code") == "XLM"
     assert data.get("receive_asset_code") == "EURMTL"

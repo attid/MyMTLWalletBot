@@ -33,6 +33,43 @@
         </button>
     </div>
 
+    <!-- Mode selection -->
+    <div class="form-group" id="mode-section">
+        <label>Способ защиты ключа:</label>
+        <div class="mode-options">
+            <label class="mode-option" id="mode-biometric-option">
+                <input type="radio" name="storage-mode" value="biometric" id="mode-biometric">
+                <span class="mode-label">Биометрия</span>
+                <span class="mode-desc">Face ID / Touch ID / Отпечаток</span>
+            </label>
+            <label class="mode-option">
+                <input type="radio" name="storage-mode" value="password" id="mode-password">
+                <span class="mode-label">Пароль</span>
+                <span class="mode-desc">Защита паролем</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Password fields (shown when password mode selected) -->
+    <div class="form-group hidden" id="password-section">
+        <label for="password">Пароль</label>
+        <input
+            type="password"
+            id="password"
+            class="input"
+            placeholder="Введите пароль"
+            autocomplete="new-password"
+        >
+        <label for="password-confirm" style="margin-top: 12px">Подтверждение пароля</label>
+        <input
+            type="password"
+            id="password-confirm"
+            class="input"
+            placeholder="Повторите пароль"
+            autocomplete="new-password"
+        >
+    </div>
+
     <div class="form-group">
         <label>
             <input type="checkbox" id="confirm-checkbox">
@@ -78,13 +115,19 @@ tg.expand();
 document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
 document.body.style.color = tg.themeParams.text_color || '#000';
 
-function init() {
+let biometricAvailable = false;
+
+async function init() {
     if (!WALLET_ADDRESS) {
         showError("Адрес кошелька не указан");
         return;
     }
 
     document.getElementById("wallet-address").textContent = formatAddress(WALLET_ADDRESS);
+
+    // Check biometric availability
+    biometricAvailable = await BiometricStorage.isAvailable();
+    setupModeSelection();
 
     // Enable save button when checkbox is checked
     const checkbox = document.getElementById("confirm-checkbox");
@@ -98,6 +141,34 @@ function init() {
     const keyInput = document.getElementById("secret-key");
     keyInput.addEventListener("input", () => {
         keyInput.value = keyInput.value.toUpperCase();
+    });
+}
+
+function setupModeSelection() {
+    const biometricOption = document.getElementById("mode-biometric-option");
+    const biometricRadio = document.getElementById("mode-biometric");
+    const passwordRadio = document.getElementById("mode-password");
+    const passwordSection = document.getElementById("password-section");
+
+    if (!biometricAvailable) {
+        // Hide biometric option if not available
+        biometricOption.style.display = "none";
+        passwordRadio.checked = true;
+        showElement("password-section");
+    } else {
+        // Default to biometric if available
+        biometricRadio.checked = true;
+    }
+
+    // Toggle password fields based on mode selection
+    document.querySelectorAll('input[name="storage-mode"]').forEach(radio => {
+        radio.addEventListener("change", () => {
+            if (passwordRadio.checked) {
+                showElement("password-section");
+            } else {
+                hideElement("password-section");
+            }
+        });
     });
 }
 
@@ -117,6 +188,7 @@ function toggleKeyVisibility() {
 async function saveKey() {
     const secretKey = document.getElementById("secret-key").value.trim();
     const btn = document.getElementById("btn-save");
+    const mode = document.querySelector('input[name="storage-mode"]:checked')?.value;
 
     // Validate secret key format
     if (!secretKey.startsWith("S") || secretKey.length !== 56) {
@@ -139,12 +211,48 @@ async function saveKey() {
         return;
     }
 
+    // Validate mode selection
+    if (!mode) {
+        showToast("Выберите способ защиты ключа", "error");
+        return;
+    }
+
+    // Validate password if password mode
+    if (mode === "password") {
+        const password = document.getElementById("password").value;
+        const passwordConfirm = document.getElementById("password-confirm").value;
+
+        if (!password || password.length < 4) {
+            showToast("Пароль должен быть минимум 4 символа", "error");
+            return;
+        }
+
+        if (password !== passwordConfirm) {
+            showToast("Пароли не совпадают", "error");
+            return;
+        }
+    }
+
     btn.disabled = true;
     btn.textContent = "Сохранение...";
 
     try {
-        // Save encrypted key with its actual public address
-        await CryptoStorage.saveKey(publicKey, secretKey);
+        if (mode === "biometric") {
+            // Request biometric access first
+            const granted = await BiometricStorage.requestAccess(
+                "Для безопасного хранения ключа"
+            );
+            if (!granted) {
+                throw new Error("Доступ к биометрии не предоставлен");
+            }
+
+            // Save key using biometric storage
+            await CryptoStorage.saveKeyBiometric(publicKey, secretKey);
+        } else {
+            // Save key using password encryption
+            const password = document.getElementById("password").value;
+            await CryptoStorage.saveKeyPassword(publicKey, secretKey, password);
+        }
 
         // Save wallet → signer mapping if wallet address was provided
         if (WALLET_ADDRESS) {

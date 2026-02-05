@@ -62,6 +62,8 @@ async def request_local_signature(
     memo: str,
     app_context: AppContext,
     message: Message,
+    fsm_after_send: Optional[str] = None,
+    success_msg: Optional[str] = None,
 ) -> str:
     """
     Запрашивает подпись через Web App (биометрия/пароль).
@@ -73,6 +75,8 @@ async def request_local_signature(
         memo: Описание транзакции
         app_context: Контекст приложения
         message: Telegram сообщение для ответа
+        fsm_after_send: jsonpickle-сериализованный callback для вызова после успешной отправки
+        success_msg: Сообщение об успехе для пользователя
 
     Returns:
         tx_id для отслеживания подписания
@@ -82,6 +86,8 @@ async def request_local_signature(
         wallet_address=wallet_address,
         unsigned_xdr=unsigned_xdr,
         memo=memo,
+        fsm_after_send=fsm_after_send,
+        success_msg=success_msg,
     )
 
     from other.lang_tools import my_gettext
@@ -91,7 +97,7 @@ async def request_local_signature(
 
     await message.answer(
         text,
-        reply_markup=webapp_sign_keyboard(tx_id),
+        reply_markup=webapp_sign_keyboard(tx_id, user_id, app_context),
     )
 
     return tx_id
