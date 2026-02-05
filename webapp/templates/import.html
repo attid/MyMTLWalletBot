@@ -59,6 +59,7 @@
             class="input"
             placeholder="Введите пароль"
             autocomplete="new-password"
+            oninput="checkKeyboardLayout()"
         >
         <label for="password-confirm" style="margin-top: 12px">Подтверждение пароля</label>
         <input
@@ -67,7 +68,11 @@
             class="input"
             placeholder="Повторите пароль"
             autocomplete="new-password"
+            oninput="checkKeyboardLayout()"
         >
+        <div id="layout-warning" class="layout-warning hidden">
+            ⚠️ Включена русская раскладка
+        </div>
     </div>
 
     <div class="form-group">
@@ -285,6 +290,19 @@ function cancel() {
         window.location.href = `/sign?tx=${RETURN_TX}`;
     } else {
         tg.close();
+    }
+}
+
+// Check for Cyrillic characters in password input
+function checkKeyboardLayout() {
+    const password = document.getElementById("password").value;
+    const passwordConfirm = document.getElementById("password-confirm").value;
+    const hasCyrillic = /[а-яёА-ЯЁ]/.test(password + passwordConfirm);
+    const warning = document.getElementById("layout-warning");
+    if (hasCyrillic) {
+        warning.classList.remove("hidden");
+    } else {
+        warning.classList.add("hidden");
     }
 }
 

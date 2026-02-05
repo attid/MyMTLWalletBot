@@ -81,7 +81,12 @@
                 class="input"
                 placeholder="Пароль"
                 autocomplete="current-password"
+                onkeydown="if(event.key==='Enter') submitPassword()"
+                oninput="checkKeyboardLayout(this.value)"
             >
+            <div id="layout-warning" class="layout-warning hidden">
+                ⚠️ Включена русская раскладка
+            </div>
         </div>
         <button class="btn btn-primary" id="btn-submit-password" onclick="submitPassword()">
             Подтвердить
@@ -357,6 +362,17 @@ function copyXdr() {
     xdrText.select();
     document.execCommand("copy");
     showToast("XDR скопирован");
+}
+
+// Check for Cyrillic characters in password input
+function checkKeyboardLayout(value) {
+    const hasCyrillic = /[а-яёА-ЯЁ]/.test(value);
+    const warning = document.getElementById("layout-warning");
+    if (hasCyrillic) {
+        warning.classList.remove("hidden");
+    } else {
+        warning.classList.add("hidden");
+    }
 }
 
 // Helpers

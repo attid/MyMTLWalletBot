@@ -68,6 +68,7 @@ WORKDIR /app/bot
 
 # Git commit (at the end to not break cache)
 ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
 
 # Run the application directly with python

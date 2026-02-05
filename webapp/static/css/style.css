@@ -418,6 +418,17 @@ input[type="checkbox"] {
     text-align: center;
 }
 
+/* Layout warning */
+.layout-warning {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #fff3cd;
+    color: #856404;
+    border-radius: 8px;
+    font-size: 13px;
+    text-align: center;
+}
+
 /* Utility */
 .hidden {
     display: none !important;
