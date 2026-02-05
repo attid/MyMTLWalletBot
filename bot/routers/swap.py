@@ -241,7 +241,19 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
                 Asset(receive_asset_code, receive_asset_issuer)
             )
             receive_sum = my_float(receive_sum_str)
-            
+
+            # Check if path was found
+            if receive_sum <= 0:
+                send_asset_obj = Asset(send_asset_code, send_asset_issuer) if send_asset_issuer else Asset.native()
+                receive_asset_obj = Asset(receive_asset_code, receive_asset_issuer) if receive_asset_issuer else Asset.native()
+                market_link = stellar_get_market_link(send_asset_obj, receive_asset_obj)
+                await send_message(
+                    session, message,
+                    f"Не найден путь обмена {from_code} → {to_code}. Возможно, нет ликвидности в стакане.\n{market_link}",
+                    app_context=app_context
+                )
+                return
+
             # Apply slippage
             receive_sum_with_slippage = my_round(receive_sum * (1 - slippage / 100), 7)
             
@@ -268,7 +280,19 @@ async def cmd_swap_text(message: types.Message, state: FSMContext, session: Asyn
                 Asset(receive_asset_code, receive_asset_issuer)
             )
             send_sum = my_float(send_sum_str)
-            
+
+            # Check if path was found
+            if send_sum <= 0:
+                send_asset_obj = Asset(send_asset_code, send_asset_issuer) if send_asset_issuer else Asset.native()
+                receive_asset_obj = Asset(receive_asset_code, receive_asset_issuer) if receive_asset_issuer else Asset.native()
+                market_link = stellar_get_market_link(send_asset_obj, receive_asset_obj)
+                await send_message(
+                    session, message,
+                    f"Не найден путь обмена {from_code} → {to_code}. Возможно, нет ликвидности в стакане.\n{market_link}",
+                    app_context=app_context
+                )
+                return
+
             # Check balance for max send amount (including slippage?)
             # Usually we add slippage to the SEND amount in strict receive? 
             # "Max send amount" in common_keyboards indicates `send_sum * 1.001` (0.1% buffer? or slippage?)
@@ -644,6 +668,21 @@ async def cmd_swap_sum(message: types.Message, state: FSMContext, session: Async
                                                                   float2str(send_sum),
                                                                   Asset(receive_asset, receive_asset_code))
         receive_sum = my_float(receive_sum_str)
+
+        # Check if path was found
+        if receive_sum <= 0:
+            send_asset_obj = Asset(send_asset, send_asset_code) if send_asset_code else Asset.native()
+            receive_asset_obj = Asset(receive_asset, receive_asset_code) if receive_asset_code else Asset.native()
+            market_link = stellar_get_market_link(send_asset_obj, receive_asset_obj)
+            await send_message(
+                session, message,
+                f"Не найден путь обмена {send_asset} → {receive_asset}. Возможно, нет ликвидности в стакане.\n{market_link}",
+                reply_markup=get_kb_return(message, app_context=app_context),
+                app_context=app_context
+            )
+            await message.delete()
+            return
+
         if receive_sum > 10:
             receive_sum_str = float2str(my_round(receive_sum, 3))
 
@@ -772,18 +811,22 @@ async def cmd_swap_receive_sum(message: types.Message, state: FSMContext, sessio
             Asset(receive_asset, receive_asset_code)
         )
         send_sum = my_float(send_sum_str)
-        max_send_amount = my_round(send_sum * 1.001, 7)
-        if max_send_amount == 0.0:
-            keyboard = get_kb_return(message, app_context=app_context)
+
+        # Check if path was found
+        if send_sum <= 0:
+            send_asset_obj = Asset(send_asset, send_asset_code) if send_asset_code else Asset.native()
+            receive_asset_obj = Asset(receive_asset, receive_asset_code) if receive_asset_code else Asset.native()
+            market_link = stellar_get_market_link(send_asset_obj, receive_asset_obj)
             await send_message(
-                session,
-                message,
-                my_gettext(message, 'bad_sum', app_context=app_context),
-                reply_markup=keyboard,
-                app_context=app_context,
+                session, message,
+                f"Не найден путь обмена {send_asset} → {receive_asset}. Возможно, нет ликвидности в стакане.\n{market_link}",
+                reply_markup=get_kb_return(message, app_context=app_context),
+                app_context=app_context
             )
             await message.delete()
             return
+
+        max_send_amount = my_round(send_sum * 1.001, 7)
 
         try:
             # Build XDR with strict receive, using max_send_amount as send_amount
