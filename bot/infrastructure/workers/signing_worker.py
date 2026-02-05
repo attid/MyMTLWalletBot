@@ -67,42 +67,73 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
             fsm_after_send_pickled = tx_data.get(FIELD_FSM_AFTER_SEND)
             success_msg = tx_data.get(FIELD_SUCCESS_MSG)
 
-            # Отправляем в Stellar через единую функцию
-            from routers.sign import submit_signed_xdr
-
-            # Получаем FSM state для пользователя (нужен для очистки last_message_id)
+            # Получаем FSM state для пользователя
             bot = faststream_tools.APP_CONTEXT.bot
             dispatcher = faststream_tools.APP_CONTEXT.dispatcher
             assert dispatcher is not None, "Dispatcher must be initialized"
             state = dispatcher.fsm.get_context(bot, user_id, user_id)
 
-            db_pool = faststream_tools.APP_CONTEXT.db_pool
-            async with db_pool.get_session() as session:
-                result = await submit_signed_xdr(
-                    session,
-                    user_id,
-                    signed_xdr,
-                    success_msg=success_msg,
-                    app_context=faststream_tools.APP_CONTEXT,
+            # Проверяем FSM data: если есть tools/callback_url/wallet_connect,
+            # показываем кнопки Send/SendTools вместо авто-отправки в Stellar
+            data = await state.get_data()
+            tools = data.get("tools")
+            callback_url = data.get("callback_url")
+            wallet_connect = data.get("wallet_connect")
+
+            app_context = faststream_tools.APP_CONTEXT
+            db_pool = app_context.db_pool
+
+            if tools or callback_url or wallet_connect:
+                # sign_tools flow: сохраняем подписанный XDR в FSM и показываем кнопки
+                await state.update_data(xdr=signed_xdr)
+                logger.info(f"TX {tx_id}: sign_tools flow, showing Send/SendTools buttons")
+
+                from infrastructure.utils.telegram_utils import cmd_show_sign
+                from other.lang_tools import my_gettext
+
+                msg = my_gettext(
+                    user_id, "your_xdr_sign", (signed_xdr,), app_context=app_context
                 )
+                async with db_pool.get_session() as session:
+                    await cmd_show_sign(
+                        session,
+                        user_id,
+                        state,
+                        msg,
+                        use_send=True,
+                        app_context=app_context,
+                    )
+                # НЕ вызываем clear_state — данные нужны для обработки кнопок
+            else:
+                # swap/send flow: авто-отправка в Stellar (текущее поведение)
+                from routers.sign import submit_signed_xdr
 
-                successful = result.get("successful", False)
-                logger.info(f"TX {tx_id}: submitted to Stellar, successful={successful}")
+                async with db_pool.get_session() as session:
+                    result = await submit_signed_xdr(
+                        session,
+                        user_id,
+                        signed_xdr,
+                        success_msg=success_msg,
+                        app_context=app_context,
+                    )
 
-                # Вызываем fsm_after_send callback если транзакция успешна
-                if successful and fsm_after_send_pickled:
-                    try:
-                        fsm_after_send = jsonpickle.loads(fsm_after_send_pickled)
-                        logger.info(f"TX {tx_id}: calling fsm_after_send callback")
+                    successful = result.get("successful", False)
+                    logger.info(f"TX {tx_id}: submitted to Stellar, successful={successful}")
 
-                        await fsm_after_send(session, user_id, state)
-                        logger.info(f"TX {tx_id}: fsm_after_send callback completed")
-                    except Exception as e:
-                        logger.exception(f"TX {tx_id}: error in fsm_after_send: {e}")
+                    # Вызываем fsm_after_send callback если транзакция успешна
+                    if successful and fsm_after_send_pickled:
+                        try:
+                            fsm_after_send = jsonpickle.loads(fsm_after_send_pickled)
+                            logger.info(f"TX {tx_id}: calling fsm_after_send callback")
 
-                # Clear state to prevent interference with subsequent commands
-                from infrastructure.utils.telegram_utils import clear_state
-                await clear_state(state)
+                            await fsm_after_send(session, user_id, state)
+                            logger.info(f"TX {tx_id}: fsm_after_send callback completed")
+                        except Exception as e:
+                            logger.exception(f"TX {tx_id}: error in fsm_after_send: {e}")
+
+                    # Clear state to prevent interference with subsequent commands
+                    from infrastructure.utils.telegram_utils import clear_state
+                    await clear_state(state)
 
             # Удаляем TX из Redis
             await redis_client.delete(tx_key)
