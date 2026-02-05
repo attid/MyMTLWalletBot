@@ -246,6 +246,65 @@ class TestPublishPendingTx:
 
         await fake_redis.aclose()
 
+    @pytest.mark.asyncio
+    async def test_clear_pending_tx_removes_user_transactions(self, fake_redis):
+        """Should remove all pending TX for a specific user."""
+        from other.faststream_tools import publish_pending_tx, clear_pending_tx
+
+        user_id = 456
+
+        # Create multiple TX for the user
+        tx_id1 = await publish_pending_tx(
+            user_id=user_id,
+            wallet_address="GXXX...",
+            unsigned_xdr="AAAA...",
+            memo="Test TX 1",
+            redis_client=fake_redis,
+        )
+        tx_id2 = await publish_pending_tx(
+            user_id=user_id,
+            wallet_address="GXXX...",
+            unsigned_xdr="BBBB...",
+            memo="Test TX 2",
+            redis_client=fake_redis,
+        )
+
+        # Also create TX for another user (should not be affected)
+        other_tx_id = await publish_pending_tx(
+            user_id=789,
+            wallet_address="GYYY...",
+            unsigned_xdr="CCCC...",
+            memo="Other user TX",
+            redis_client=fake_redis,
+        )
+
+        # Verify all TX exist
+        assert await fake_redis.exists(f"tx:{tx_id1}") == 1
+        assert await fake_redis.exists(f"tx:{tx_id2}") == 1
+        assert await fake_redis.exists(f"tx:{other_tx_id}") == 1
+
+        # Clear TX for user 456
+        deleted_count = await clear_pending_tx(user_id, redis_client=fake_redis)
+
+        assert deleted_count == 2
+
+        # Verify user's TX are deleted
+        assert await fake_redis.exists(f"tx:{tx_id1}") == 0
+        assert await fake_redis.exists(f"tx:{tx_id2}") == 0
+
+        # Verify other user's TX still exists
+        assert await fake_redis.exists(f"tx:{other_tx_id}") == 1
+
+        await fake_redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_clear_pending_tx_without_redis(self):
+        """Should return 0 when Redis is not available."""
+        from other.faststream_tools import clear_pending_tx
+
+        result = await clear_pending_tx(123, redis_client=None)
+        assert result == 0
+
 
 class TestSigningHelpers:
     """Tests for signing_helpers module.

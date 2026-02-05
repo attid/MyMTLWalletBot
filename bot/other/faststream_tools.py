@@ -120,6 +120,39 @@ async def publish_pending_tx(
     return tx_id
 
 
+async def clear_pending_tx(
+    user_id: int,
+    redis_client: Optional[aioredis.Redis] = None,
+) -> int:
+    """
+    Удаляет все pending TX пользователя из Redis.
+
+    Args:
+        user_id: Telegram user ID
+        redis_client: Optional Redis client for dependency injection
+
+    Returns:
+        Количество удалённых ключей
+    """
+    _redis = redis_client or REDIS_CLIENT
+
+    if _redis is None:
+        return 0
+
+    # tx_id имеет формат {user_id}_{uuid}, ищем все ключи пользователя
+    pattern = f"{REDIS_TX_PREFIX}{user_id}_*"
+    deleted_count = 0
+
+    async for key in _redis.scan_iter(match=pattern):
+        await _redis.delete(key)
+        deleted_count += 1
+
+    if deleted_count > 0:
+        logger.info(f"Cleared {deleted_count} pending TX for user {user_id}")
+
+    return deleted_count
+
+
 # --- Логика для WalletConnect ---
 
 async def do_wc_sign_and_respond(session: AsyncSession, user_id: int, state: FSMContext):
