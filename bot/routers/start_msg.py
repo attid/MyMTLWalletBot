@@ -301,6 +301,7 @@ USDT: {float2str(usdt_balance, True)}
         b
         for b in balances
         if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE
+        and not (wallet.is_free and b.asset_code == 'XLM')
     ]
 
     if (await state.get_data()).get("show_more", False) is False:

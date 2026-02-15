@@ -110,10 +110,6 @@ class GetWalletBalance:
                 total_locked = float(selling_liabilities) + lock_sum
                 selling_liabilities = str(total_locked)
                 
-                # Legacy Filter: Skip Native if Free Wallet
-                if is_free_wallet:
-                     continue
-                
             domain_balances.append(Balance(
                 asset_code=asset_code,
                 asset_issuer=asset_issuer,
