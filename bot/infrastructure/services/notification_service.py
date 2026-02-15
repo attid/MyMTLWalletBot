@@ -849,16 +849,17 @@ class NotificationService:
                 logger.error(f"Exception subscribing {public_key}: {e}")
 
     async def sync_subscriptions(self):
-        """Syncs all DB wallets with Notifier subscriptions."""
+        """Syncs all DB wallets with Notifier subscriptions.
+
+        Re-subscribes all keys to ensure webhook URL is up-to-date
+        (e.g. after moving to a different node).
+        """
         if not self.config.notifier_url:
             logger.warning("Notifier URL not set, skipping sync")
             return
 
         logger.info("Starting subscription sync...")
         try:
-            notifier_keys = await self._get_active_subscriptions()
-            logger.info(f"Notifier has {len(notifier_keys)} subscriptions")
-
             async with self.db_pool.get_session() as session:
                 stmt = (
                     select(MyMtlWalletBot.public_key)
@@ -868,13 +869,10 @@ class NotificationService:
                 result = await session.execute(stmt)
                 db_keys = set(result.scalars().all())
 
-            logger.info(f"DB has {len(db_keys)} wallets")
+            logger.info(f"DB has {len(db_keys)} wallets, re-subscribing all with webhook {self.config.webhook_public_url}")
 
-            missing = db_keys - notifier_keys
-
-            logger.info(f"Found {len(missing)} missing subscriptions.")
             count = 0
-            for key in missing:
+            for key in db_keys:
                 if not key:
                     continue
                 await self.subscribe(key)
@@ -882,7 +880,7 @@ class NotificationService:
                 if count % 10 == 0:
                     await asyncio.sleep(0.1)  # Rate limit
 
-            logger.info("Sync completed.")
+            logger.info(f"Sync completed: {count} subscriptions updated.")
 
         except Exception as e:
             logger.error(f"Sync failed: {e}")
