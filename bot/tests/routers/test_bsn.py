@@ -128,7 +128,8 @@ async def test_finish_send_bsn(mock_telegram, mock_horizon, router_app_context, 
     await state.update_data(tags=jsonpickle.dumps(test_bsn_data))
 
     # We need to mock cmd_ask_pin because it's imported in bsn.py
-    with patch("routers.bsn.cmd_ask_pin", AsyncMock()) as mock_ask_pin:
+    with patch("routers.bsn.cmd_ask_pin", AsyncMock()) as mock_ask_pin, \
+         patch("routers.bsn.have_free_xlm", AsyncMock(return_value=True)):
         update = create_callback_update(user_id=user_id, callback_data=SEND_CALLBACK_DATA)
         await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
         
