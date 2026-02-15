@@ -22,6 +22,7 @@ from routers.sign import cmd_ask_pin, PinState
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id, clear_state
 from infrastructure.utils.common_utils import get_user_id
 from infrastructure.services.app_context import AppContext
+from other.stellar_tools import have_free_xlm
 
 bsn_router = Router()
 
@@ -403,6 +404,11 @@ async def finish_send_bsn(callback_query: CallbackQuery, state: FSMContext, sess
     if not tags_json:
         return
     bsn_data: BSNData = jsonpickle.loads(tags_json)
+
+    if not await have_free_xlm(session=session, user_id=callback_query.from_user.id, app_context=app_context):
+        await callback_query.answer(my_gettext(callback_query, 'low_xlm', app_context=app_context), show_alert=True)
+        return
+
     xdr = await cmd_gen_data_xdr(bsn_data, app_context=app_context)
     await state.update_data(tags=None)
     await state.update_data(xdr=xdr)

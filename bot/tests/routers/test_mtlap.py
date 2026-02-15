@@ -14,7 +14,7 @@ Follows testing rules from tests/README.md:
 
 import pytest
 import base64
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.mtlap import (
@@ -153,13 +153,10 @@ async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(mock_telegram, mock_horizo
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(mtlap_router)
 
-    # Set state with low free_xlm
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
-    await dp.storage.set_data(key=storage_key, data={"free_xlm": 0.1})  # Low XLM
-
-    # Try to add delegate
-    update = create_callback_update(user_id, "MTLAPToolsAddDelegateA")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    # Try to add delegate with have_free_xlm returning False
+    with patch("routers.mtlap.have_free_xlm", AsyncMock(return_value=False)):
+        update = create_callback_update(user_id, "MTLAPToolsAddDelegateA")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
     # Verify alert was shown (no sendMessage, only answerCallbackQuery with alert)
     msg_req = get_telegram_request(mock_telegram, "sendMessage")
@@ -183,13 +180,12 @@ async def test_cmd_mtlap_tools_add_delegate_a_ok(mock_telegram, mock_horizon, ro
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(mtlap_router)
 
-    # Set state with sufficient free_xlm
     storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
-    await dp.storage.set_data(key=storage_key, data={"free_xlm": 1.0})
 
-    # Add delegate
-    update = create_callback_update(user_id, "MTLAPToolsAddDelegateA")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    # Add delegate with have_free_xlm returning True
+    with patch("routers.mtlap.have_free_xlm", AsyncMock(return_value=True)):
+        update = create_callback_update(user_id, "MTLAPToolsAddDelegateA")
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
     # Verify address prompt was sent
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -357,9 +353,10 @@ async def test_cmd_mtlap_send_recommend_valid(mock_telegram, mock_horizon, route
     storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
     await dp.storage.set_state(key=storage_key, state=MTLAPStateTools.recommend_for)
 
-    # Send recommendation
-    update = create_message_update(user_id, recommend_address)
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    # Send recommendation with have_free_xlm returning True
+    with patch("routers.mtlap.have_free_xlm", AsyncMock(return_value=True)):
+        update = create_message_update(user_id, recommend_address)
+        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
 
     # Verify confirmation message
     req = get_telegram_request(mock_telegram, "sendMessage")

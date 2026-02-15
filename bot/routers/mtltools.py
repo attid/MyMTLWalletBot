@@ -109,7 +109,7 @@ async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContex
 
 @router.callback_query(F.data=="MTLToolsAddDelegate")
 async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
@@ -184,7 +184,7 @@ async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, ses
 
 @router.callback_query(F.data=="AddDonate")
 async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 
@@ -309,7 +309,7 @@ async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, sessio
 
 @router.callback_query(F.data=="AddBIM")
 async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    if not await have_free_xlm(session=session, state=state, user_id = callback.from_user.id):
+    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
 

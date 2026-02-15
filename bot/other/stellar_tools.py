@@ -844,11 +844,11 @@ def gen_new(last_name):
 
 
 
-async def have_free_xlm(session, user_id: int, state=None):
-    data = await state.get_data()
-    if float(data.get('free_xlm', 0.0)) > 0.5:
-        return True
-    return False
+async def have_free_xlm(session, user_id: int, app_context) -> bool:
+    balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
+    balances = await balance_use_case.execute(user_id=user_id)
+    xlm = next((b for b in balances if b.asset_code == "XLM"), None)
+    return xlm is not None and float(xlm.balance) > 0.5
 
 
 async def stellar_get_multi_sign_xdr(public_key) -> str:

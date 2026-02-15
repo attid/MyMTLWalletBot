@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
 from infrastructure.utils.telegram_utils import my_gettext, send_message
 from infrastructure.services.app_context import AppContext
+from other.stellar_tools import have_free_xlm
 
 
 
@@ -139,13 +140,20 @@ async def cmd_mtlap_send_recommend(message: types.Message, state: FSMContext, se
     else:
         new_key = f"{RECOMMEND_PREFIX}{max_index + 1}"
 
+    if not await have_free_xlm(session=session, user_id=message.from_user.id, app_context=app_context):
+        await send_message(session, message,
+            my_gettext(message, 'low_xlm', app_context=app_context),
+            reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
+        await message.delete()
+        return
+
     # Get user's wallet public key via DI
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await wallet_repo.get_default_wallet(message.from_user.id)
     if not wallet:
         return
     source_account = wallet.public_key
-    
+
     # Generate XDR for manage data operation via DI
     xdr = await app_context.stellar_service.build_manage_data_transaction(
         source_account_id=source_account,
@@ -248,10 +256,7 @@ async def cmd_mtlap_tools_del_delegate_a(callback: types.CallbackQuery, state: F
 
 @router.callback_query(F.data == "MTLAPToolsAddDelegateA")
 async def cmd_mtlap_tools_add_delegate_a(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    # Check free XLM via state data
-    data = await state.get_data()
-    free_xlm = data.get("free_xlm", 0.0)
-    if free_xlm < 0.5:
+    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
     await send_message(
@@ -382,10 +387,7 @@ async def cmd_mtlap_tools_del_delegate_c(callback: types.CallbackQuery, state: F
 async def cmd_mtlap_tools_add_delegate_c(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
     if callback.from_user is None:
         return
-    # Check free XLM via state data
-    data = await state.get_data()
-    free_xlm = data.get("free_xlm", 0.0)
-    if free_xlm < 0.5:
+    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
         await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
         return
     await send_message(
