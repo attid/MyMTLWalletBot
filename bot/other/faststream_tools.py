@@ -93,6 +93,9 @@ async def publish_pending_tx(
     if _redis is None:
         raise RuntimeError("REDIS_CLIENT is not initialized. Call start_broker() first.")
 
+    if not unsigned_xdr:
+        raise ValueError(f"unsigned_xdr is required for publish_pending_tx (user_id={user_id})")
+
     # Генерируем уникальный tx_id
     tx_id = f"{user_id}_{uuid.uuid4().hex[:8]}"
 
