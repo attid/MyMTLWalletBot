@@ -754,7 +754,9 @@ async def cmd_add_asset_add(
     wallet = await repo.get_default_wallet(user_id)
     is_free = wallet.is_free if wallet else False
 
-    if is_free and (len(await balance_use_case.execute(user_id=user_id)) > 5):
+    balances = await balance_use_case.execute(user_id=user_id)
+
+    if is_free and len([b for b in balances if b.asset_code != 'XLM']) > 5:
         await send_message(
             session,
             user_id,
@@ -765,7 +767,6 @@ async def cmd_add_asset_add(
         return False
 
     # Check free XLM
-    balances = await balance_use_case.execute(user_id=user_id)
     xlm = next((a for a in balances if a.asset_code == "XLM"), None)
     if not xlm or float(xlm.balance) <= 0.5:
         await callback.answer(
@@ -861,7 +862,9 @@ async def cmd_add_asset_expert(
     wallet = await repo.get_default_wallet(user_id)
     is_free = wallet.is_free if wallet else False
 
-    if is_free and (len(await balance_use_case.execute(user_id=user_id)) > 5):
+    balances = await balance_use_case.execute(user_id=user_id)
+
+    if is_free and len([b for b in balances if b.asset_code != 'XLM']) > 5:
         await send_message(
             session,
             user_id,
@@ -872,7 +875,6 @@ async def cmd_add_asset_expert(
         return False
 
     # Check free XLM
-    balances = await balance_use_case.execute(user_id=user_id)
     xlm = next((a for a in balances if a.asset_code == "XLM"), None)
     if not xlm or float(xlm.balance) <= 0.5:
         await callback.answer(

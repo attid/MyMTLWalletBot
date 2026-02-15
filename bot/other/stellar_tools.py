@@ -469,7 +469,8 @@ async def stellar_get_balance_str(session: AsyncSession, user_id: int, public_ke
     vis_str = wallet.assets_visibility if wallet else None
     
     # Filter VISIBLE assets
-    balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE]
+    balances = [b for b in balances if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE
+                and not (wallet and wallet.is_free and b.asset_code == 'XLM')]
     
     # Filter EURMTL only if needed (legacy logic)
     if public_key is None and state and not (await state.get_data()).get('show_more', False):

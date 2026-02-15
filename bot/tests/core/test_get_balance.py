@@ -109,4 +109,42 @@ async def test_custom_token_visibility_logic():
     # Simulate hidden
     vis_str_hidden = '{"CUSTOM": "hidden"}'
     assert get_asset_visibility(vis_str_hidden, 'CUSTOM') != ASSET_VISIBLE
-    
+
+
+@pytest.mark.asyncio
+async def test_free_wallet_includes_xlm():
+    """Free wallet balances must include XLM so that XLM-balance checks
+    (e.g. trustline opening) work correctly."""
+    mock_repo = MagicMock()
+    mock_stellar = MagicMock()
+
+    wallet = Wallet(
+        id=1, user_id=123, public_key="GFREE", is_default=True, is_free=True,
+        balances_event_id="0", last_event_id="0"
+    )
+    mock_repo.get_default_wallet = AsyncMock(return_value=wallet)
+    mock_repo.update = AsyncMock()
+
+    mock_stellar.get_account_details = AsyncMock(return_value={
+        'balances': [
+            {'asset_type': 'native', 'balance': '10', 'buying_liabilities': '0', 'selling_liabilities': '0'},
+            {'asset_type': 'credit_alphanum4', 'asset_code': 'EURMTL', 'asset_issuer': 'GISSUER', 'balance': '100',
+             'buying_liabilities': '0', 'selling_liabilities': '0'},
+        ],
+        'num_sponsoring': 0,
+        'signers': [{'key': 'GFREE'}],
+        'data': {}
+    })
+    mock_stellar.get_selling_offers = AsyncMock(return_value=[])
+    mock_stellar.get_assets_by_issuer = AsyncMock(return_value=[])
+
+    use_case = GetWalletBalance(mock_repo, mock_stellar)
+    balances = await use_case.execute(user_id=123)
+
+    asset_codes = [b.asset_code for b in balances]
+    assert 'XLM' in asset_codes, "XLM must be present in free wallet balances"
+    assert 'EURMTL' in asset_codes
+
+    xlm = next(b for b in balances if b.asset_code == 'XLM')
+    assert float(xlm.balance) == 10.0
+
