@@ -226,8 +226,9 @@ async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context
         xdr = "AAAAAgAAAAA="
         await dp.feed_update(bot, create_message_update(user_id, xdr))
 
-        # Should move to PinState.sign
-        assert await dp.storage.get_state(state_key) == PinState.sign
+        # State is cleared after WebApp button is shown (to prevent cmd_password_from_pin
+        # from intercepting subsequent messages). FSM data is preserved for the worker.
+        assert await dp.storage.get_state(state_key) is None
 
         # Verify TX was stored in Redis
         keys = await fake_redis.keys("tx:*")
