@@ -853,6 +853,7 @@ class NotificationService:
 
         Re-subscribes all keys to ensure webhook URL is up-to-date
         (e.g. after moving to a different node).
+        Runs in background, does not block bot startup.
         """
         if not self.config.notifier_url:
             logger.warning("Notifier URL not set, skipping sync")
@@ -872,18 +873,49 @@ class NotificationService:
             logger.info(f"DB has {len(db_keys)} wallets, re-subscribing all with webhook {self.config.webhook_public_url}")
 
             count = 0
-            for key in db_keys:
-                if not key:
-                    continue
-                await self.subscribe(key)
-                count += 1
-                if count % 10 == 0:
-                    await asyncio.sleep(0.1)  # Rate limit
+            errors = 0
+            async with aiohttp.ClientSession() as http_session:
+                for key in db_keys:
+                    if not key:
+                        continue
+                    try:
+                        await self._subscribe_with_session(http_session, key)
+                        count += 1
+                    except Exception as e:
+                        errors += 1
+                        logger.error(f"Failed to subscribe {key}: {e}")
+                    if count % 10 == 0:
+                        await asyncio.sleep(1)  # Rate limit, не забиваем event loop
 
-            logger.info(f"Sync completed: {count} subscriptions updated.")
+            logger.info(f"Sync completed: {count} subscriptions updated, {errors} errors.")
 
         except Exception as e:
             logger.error(f"Sync failed: {e}")
+
+    async def _subscribe_with_session(self, http_session: aiohttp.ClientSession, public_key: str):
+        """Subscribe using a shared aiohttp session (for batch operations)."""
+        url = f"{self.config.notifier_url}/api/subscription"
+        webhook = self.config.webhook_public_url
+
+        nonce = await self._get_next_nonce()
+        pairs = [("account", public_key), ("nonce", nonce), ("reaction_url", webhook)]
+        body_json = json.dumps(OrderedDict(pairs), separators=(",", ":"))
+
+        auth_token = getattr(self.config, "notifier_auth_token", None)
+        if auth_token:
+            headers = {
+                "Authorization": auth_token,
+                "Content-Type": "application/json",
+            }
+        else:
+            payload_str = self._encode_url_params(pairs)
+            auth_header = self._sign_payload(payload_str)
+            headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+
+        async with http_session.post(url, data=body_json, headers=headers) as resp:
+            if resp.status not in (200, 201):
+                text = await resp.text()
+                logger.error(f"Failed to subscribe {public_key}: {resp.status} {text}")
 
     async def _get_active_subscriptions(self) -> set:
         nonce = await self._get_next_nonce()
