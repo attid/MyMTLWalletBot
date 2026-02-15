@@ -224,6 +224,9 @@ async def cmd_ask_pin(
     if pin_type == 10:  # без ключа - WebApp подписание
         await state.update_data(pin="ro")
         xdr = data.get("xdr")
+        if not xdr:
+            logger.warning(f"pin_type=10 but xdr is None for user {chat_id}, skipping publish_pending_tx")
+            return
         memo = data.get("operation", "Transaction")
         fsm_after_send = data.get("fsm_after_send")
         success_msg = data.get("success_msg")
@@ -248,6 +251,10 @@ async def cmd_ask_pin(
             reply_markup=webapp_sign_keyboard(tx_id, chat_id, app_context),
             app_context=app_context,
         )
+
+        # Сбрасываем FSM-состояние, чтобы текстовые сообщения не перехватывались
+        # cmd_password_from_pin. Данные FSM сохраняются — воркер их прочитает.
+        await state.set_state(None)
 
 
 def get_kb_pin(data: dict, app_context: AppContext) -> types.InlineKeyboardMarkup:
