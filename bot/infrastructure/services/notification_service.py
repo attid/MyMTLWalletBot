@@ -864,7 +864,11 @@ class NotificationService:
             async with self.db_pool.get_session() as session:
                 stmt = (
                     select(MyMtlWalletBot.public_key)
-                    .where(MyMtlWalletBot.need_delete == 0, MyMtlWalletBot.user_id > 0)
+                    .where(
+                        MyMtlWalletBot.need_delete == 0,
+                        MyMtlWalletBot.user_id > 0,
+                        MyMtlWalletBot.public_key.like("G%"),
+                    )
                     .group_by(MyMtlWalletBot.public_key)
                 )
                 result = await session.execute(stmt)
