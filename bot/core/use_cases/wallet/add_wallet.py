@@ -40,7 +40,7 @@ class AddWallet:
         use_pin = 0
         if is_read_only:
              use_pin = 10
-        elif secret_key:
+        elif secret_key and not is_free:
              use_pin = 1
              
         # Create wallet entity
