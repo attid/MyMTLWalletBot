@@ -177,17 +177,19 @@ async def set_commands(bot: Bot):
     await bot.set_my_commands(
         commands=commands_private, scope=BotCommandScopeAllPrivateChats()
     )
-    await bot.set_my_commands(
-        commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admins[0])
-    )
+    if config.admins:
+        await bot.set_my_commands(
+            commands=commands_admin, scope=BotCommandScopeChat(chat_id=config.admins[0])
+        )
 
 
 async def on_startup(bot: Bot, dispatcher: Dispatcher):
     app_context: AppContext = dispatcher["app_context"]
     await start_broker(app_context)
     await set_commands(bot)
-    with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text="Bot started")
+    if config.admins:
+        with suppress(TelegramBadRequest):
+            await bot.send_message(chat_id=config.admins[0], text="Bot started")
     # fest.fest_menu = await gs_update_fest_menu()
     # Start Notification Service (Webhook Server)
     if app_context.notification_service:
@@ -222,8 +224,9 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
 
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     await stop_broker()
-    with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text="Bot stopped")
+    if config.admins:
+        with suppress(TelegramBadRequest):
+            await bot.send_message(chat_id=config.admins[0], text="Bot stopped")
 
     # Stop Notification Service
     app_context: AppContext = dispatcher["app_context"]
@@ -314,7 +317,7 @@ async def main():
     app_context = AppContext(
         bot=bot,
         db_pool=db_pool,
-        admin_id=config.admins[0],
+        admin_id=config.admins[0] if config.admins else None,
         cheque_queue=cheque_queue,
         log_queue=log_queue,
         repository_factory=repository_factory,
@@ -330,7 +333,7 @@ async def main():
 
     dp["app_context"] = app_context
 
-    setup_async_utils(bot, config.admins[0])
+    setup_async_utils(bot, config.admins[0] if config.admins else None)
     scheduler_jobs(scheduler, db_pool, dp, app_context)
 
     await bot_add_routers(bot, dp, db_pool, app_context, localization_service)

@@ -17,7 +17,7 @@ def kill_task(task):
 _bot: Optional[Bot] = None
 _admin_id: Optional[int] = None
 
-def setup_async_utils(bot: Bot, admin_id: int):
+def setup_async_utils(bot: Bot, admin_id: Optional[int]):
     global _bot, _admin_id
     _bot = bot
     _admin_id = admin_id

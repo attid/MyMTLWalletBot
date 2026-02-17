@@ -133,58 +133,54 @@ async def cmd_stats(message: types.Message, session: AsyncSession):
 @router.message(Command(commands=["restart"]))
 async def cmd_exit(message: types.Message, state: FSMContext, session: AsyncSession):
     my_state = await state.get_state()
-    if message.from_user and message.from_user.username == "itolstov":
-        if my_state == ExitState.need_exit:
-            await state.set_state(None)
-            await message.reply("Chao :[[[")
-            # Skip exit in test mode
-            if not os.getenv("PYTEST_CURRENT_TEST"):
-                exit()
-        else:
-            await state.set_state(ExitState.need_exit)
-            await message.reply(":'[")
+    if my_state == ExitState.need_exit:
+        await state.set_state(None)
+        await message.reply("Chao :[[[")
+        # Skip exit in test mode
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            exit()
+    else:
+        await state.set_state(ExitState.need_exit)
+        await message.reply(":'[")
 
 
 @router.message(Command(commands=["resync"]))
 async def cmd_resync(message: types.Message, app_context: AppContext):
-    if message.from_user and message.from_user.username == "itolstov":
-        if app_context.notification_service:
-            await message.reply("Starting subscription resync...")
-            try:
-                await app_context.notification_service.sync_subscriptions()
-                await message.reply("✅ Resync completed successfully!")
-            except Exception as e:
-                await message.reply(f"❌ Resync failed: {e}")
-        else:
-            await message.reply("⚠️ Notification service not available")
+    if app_context.notification_service:
+        await message.reply("Starting subscription resync...")
+        try:
+            await app_context.notification_service.sync_subscriptions()
+            await message.reply("✅ Resync completed successfully!")
+        except Exception as e:
+            await message.reply(f"❌ Resync failed: {e}")
+    else:
+        await message.reply("⚠️ Notification service not available")
 
 
 @router.message(Command(commands=["horizon"]))
 async def cmd_horizon(message: types.Message, state: FSMContext, session: AsyncSession):
-    if message.from_user and message.from_user.username == "itolstov":
-        if config.horizon_url in horizont_urls:
-            config.horizon_url = horizont_urls[
-                (horizont_urls.index(config.horizon_url) + 1) % len(horizont_urls)
-            ]
-        else:
-            horizont_urls.append(config.horizon_url)
-            config.horizon_url = horizont_urls[0]
-        await message.reply(f"Horizon url: {config.horizon_url}")
+    if config.horizon_url in horizont_urls:
+        config.horizon_url = horizont_urls[
+            (horizont_urls.index(config.horizon_url) + 1) % len(horizont_urls)
+        ]
+    else:
+        horizont_urls.append(config.horizon_url)
+        config.horizon_url = horizont_urls[0]
+    await message.reply(f"Horizon url: {config.horizon_url}")
 
 
 @router.message(Command(commands=["horizon_rw"]))
 async def cmd_horizon_rw(
     message: types.Message, state: FSMContext, session: AsyncSession
 ):
-    if message.from_user and message.from_user.username == "itolstov":
-        if config.horizon_url_rw in horizont_urls:
-            config.horizon_url_rw = horizont_urls[
-                (horizont_urls.index(config.horizon_url_rw) + 1) % len(horizont_urls)
-            ]
-        else:
-            horizont_urls.append(config.horizon_url_rw)
-            config.horizon_url_rw = horizont_urls[0]
-        await message.reply(f"Horizon url: {config.horizon_url_rw}")
+    if config.horizon_url_rw in horizont_urls:
+        config.horizon_url_rw = horizont_urls[
+            (horizont_urls.index(config.horizon_url_rw) + 1) % len(horizont_urls)
+        ]
+    else:
+        horizont_urls.append(config.horizon_url_rw)
+        config.horizon_url_rw = horizont_urls[0]
+    await message.reply(f"Horizon url: {config.horizon_url_rw}")
 
 
 async def cmd_send_file(bot: Bot, message: types.Message, filename):
@@ -201,22 +197,19 @@ async def cmd_delete_file(filename):
 
 @router.message(Command(commands=["log"]))
 async def cmd_log(message: types.Message, app_context: AppContext):
-    if message.from_user and message.from_user.username == "itolstov":
-        await cmd_send_file(app_context.bot, message, "mmwb.log")
-        await cmd_send_file(app_context.bot, message, "mmwb_check_transaction.log")
+    await cmd_send_file(app_context.bot, message, "mmwb.log")
+    await cmd_send_file(app_context.bot, message, "mmwb_check_transaction.log")
 
 
 @router.message(Command(commands=["err"]))
 async def cmd_err(message: types.Message, app_context: AppContext):
-    if message.from_user and message.from_user.username == "itolstov":
-        await cmd_send_file(app_context.bot, message, "MyMTLWallet_bot.err")
+    await cmd_send_file(app_context.bot, message, "MyMTLWallet_bot.err")
 
 
 @router.message(Command(commands=["clear"]))
 async def cmd_clear(message: types.Message):
-    if message.from_user and message.from_user.username == "itolstov":
-        await cmd_delete_file("MMWB.err")
-        await cmd_delete_file("MMWB.log")
+    await cmd_delete_file("MMWB.err")
+    await cmd_delete_file("MMWB.log")
 
 
 @router.message(Command(commands=["fee"]))
@@ -495,10 +488,9 @@ async def cmd_help(message: types.Message):
 
 @router.message(Command(commands=["test"]))
 async def cmd_test(message: types.Message, app_context: AppContext):
-    if message.from_user and message.from_user.username == "itolstov":
-        with suppress(TelegramBadRequest):
-            chat = await app_context.bot.get_chat(215155653)
-            await message.answer(chat.json())
-        with suppress(TelegramBadRequest):
-            chat = await app_context.bot.get_chat(5687567734)
-            await message.answer(chat.json())
+    with suppress(TelegramBadRequest):
+        chat = await app_context.bot.get_chat(215155653)
+        await message.answer(chat.json())
+    with suppress(TelegramBadRequest):
+        chat = await app_context.bot.get_chat(5687567734)
+        await message.answer(chat.json())

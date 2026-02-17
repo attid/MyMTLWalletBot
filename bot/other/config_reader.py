@@ -69,7 +69,7 @@ class Settings(BaseSettings):
 
 
 config = Settings()
-config.admins = env.list("ADMIN_LIST", [84131737])
+config.admins = env.list("ADMIN_LIST", [])
 
 
 if os.getenv('ENVIRONMENT', 'test') == 'production':

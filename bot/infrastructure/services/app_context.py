@@ -20,7 +20,7 @@ class AppContext:
         self,
         bot: Bot,
         db_pool: DatabasePool,
-        admin_id: int,
+        admin_id: Optional[int],
         cheque_queue: asyncio.Queue,
         log_queue: asyncio.Queue,
         repository_factory: IRepositoryFactory,
