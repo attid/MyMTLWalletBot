@@ -25,7 +25,7 @@ from infrastructure.utils.notification_utils import decode_db_effect
 from stellar_sdk import Keypair
 import time
 import json
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from enum import Enum
 
 SAFE = "-_.!~*'()"
@@ -851,8 +851,8 @@ class NotificationService:
     async def sync_subscriptions(self):
         """Syncs all DB wallets with Notifier subscriptions.
 
-        Re-subscribes all keys to ensure webhook URL is up-to-date
-        (e.g. after moving to a different node).
+        Smart sync: deduplicates, removes stale subscriptions,
+        re-subscribes only when parameters differ.
         Runs in background, does not block bot startup.
         """
         if not self.config.notifier_url:
@@ -861,6 +861,7 @@ class NotificationService:
 
         logger.info("Starting subscription sync...")
         try:
+            # 1. Get all active wallet keys from DB
             async with self.db_pool.get_session() as session:
                 stmt = (
                     select(MyMtlWalletBot.public_key)
@@ -874,24 +875,77 @@ class NotificationService:
                 result = await session.execute(stmt)
                 db_keys = set(result.scalars().all())
 
-            logger.info(f"DB has {len(db_keys)} wallets, re-subscribing all with webhook {self.config.webhook_public_url}")
+            # 2. Get all subscriptions with full data
+            all_subs = await self._get_active_subscriptions()
 
-            count = 0
+            # 3. Group subscriptions by account
+            subs_by_account: dict[str, list[dict]] = defaultdict(list)
+            for sub in all_subs:
+                subs_by_account[sub["account"]].append(sub)
+
+            subscribed_accounts = set(subs_by_account.keys())
+            webhook = self.config.webhook_public_url
+
+            # 4. Determine actions
+            to_delete: list[str] = []       # subscription IDs to delete
+            to_subscribe: list[str] = []    # account keys to subscribe
+
+            for account, subs in subs_by_account.items():
+                if account not in db_keys:
+                    # Subscription exists but wallet deleted from DB → remove
+                    for sub in subs:
+                        to_delete.append(sub["id"])
+                elif len(subs) > 1:
+                    # Duplicates → delete all, re-subscribe once
+                    for sub in subs:
+                        to_delete.append(sub["id"])
+                    to_subscribe.append(account)
+                elif subs[0]["reaction_url"] != webhook:
+                    # Single sub but wrong webhook → delete, re-subscribe
+                    to_delete.append(subs[0]["id"])
+                    to_subscribe.append(account)
+                # else: single sub, correct webhook → skip
+
+            # Wallets in DB but not subscribed
+            for key in db_keys - subscribed_accounts:
+                if key:
+                    to_subscribe.append(key)
+
+            logger.info(
+                f"Sync plan: DB={len(db_keys)} wallets, "
+                f"existing={len(all_subs)} subs, "
+                f"to_delete={len(to_delete)}, to_subscribe={len(to_subscribe)}"
+            )
+
+            if not to_delete and not to_subscribe:
+                logger.info("All subscriptions are up to date, nothing to do.")
+                return
+
+            # 5. Execute deletions, then subscriptions
             errors = 0
             async with aiohttp.ClientSession() as http_session:
-                for key in db_keys:
-                    if not key:
-                        continue
+                for i, sub_id in enumerate(to_delete):
+                    try:
+                        await self._unsubscribe_with_session(http_session, sub_id)
+                    except Exception as e:
+                        errors += 1
+                        logger.error(f"Failed to unsubscribe {sub_id}: {e}")
+                    if (i + 1) % 10 == 0:
+                        await asyncio.sleep(1)
+
+                for i, key in enumerate(to_subscribe):
                     try:
                         await self._subscribe_with_session(http_session, key)
-                        count += 1
                     except Exception as e:
                         errors += 1
                         logger.error(f"Failed to subscribe {key}: {e}")
-                    if count % 10 == 0:
-                        await asyncio.sleep(1)  # Rate limit, не забиваем event loop
+                    if (i + 1) % 10 == 0:
+                        await asyncio.sleep(1)
 
-            logger.info(f"Sync completed: {count} subscriptions updated, {errors} errors.")
+            logger.info(
+                f"Sync completed: {len(to_delete)} deleted, "
+                f"{len(to_subscribe)} subscribed, {errors} errors."
+            )
 
         except Exception as e:
             logger.error(f"Sync failed: {e}")
@@ -921,15 +975,33 @@ class NotificationService:
                 text = await resp.text()
                 logger.error(f"Failed to subscribe {public_key}: {resp.status} {text}")
 
-    async def _get_active_subscriptions(self) -> set:
+    async def _unsubscribe_with_session(self, http_session: aiohttp.ClientSession, subscription_id: str):
+        """Delete a subscription by ID using a shared aiohttp session."""
+        url = f"{self.config.notifier_url}/api/subscription/{subscription_id}"
+
+        nonce = await self._get_next_nonce()
+        auth_token = getattr(self.config, "notifier_auth_token", None)
+        if auth_token:
+            headers = {"Authorization": auth_token}
+        else:
+            pairs = [("nonce", nonce)]
+            payload_str = self._encode_url_params(pairs)
+            auth_header = self._sign_payload(payload_str)
+            url = f"{url}?{payload_str}"
+            headers = {"Authorization": auth_header}
+
+        async with http_session.delete(url, headers=headers) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                logger.error(f"Failed to unsubscribe {subscription_id}: {resp.status} {text}")
+
+    async def _get_active_subscriptions(self) -> list[dict]:
+        """Fetch all active subscriptions with full data (id, account, reaction_url)."""
         nonce = await self._get_next_nonce()
 
         auth_token = getattr(self.config, "notifier_auth_token", None)
         if auth_token:
             headers = {"Authorization": auth_token}
-            # Token auth might not require signed params query
-            # Just pass nonce if needed or nothing
-            # Assuming GET /api/subscription returns list for the token user
             url = f"{self.config.notifier_url}/api/subscription?nonce={nonce}"
         else:
             pairs = [("nonce", nonce)]
@@ -943,19 +1015,24 @@ class NotificationService:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        results = set()
+                        results = []
                         if isinstance(data, list):
                             for item in data:
                                 if isinstance(item, dict):
-                                    key = item.get("account") or item.get("resource_id")
-                                    if key:
-                                        results.add(key)
+                                    account = item.get("account") or item.get("resource_id")
+                                    sub_id = item.get("id")
+                                    if account and sub_id:
+                                        results.append({
+                                            "id": str(sub_id),
+                                            "account": account,
+                                            "reaction_url": item.get("reaction_url", ""),
+                                        })
                         return results
                     else:
                         logger.error(
                             f"Get subs failed: {resp.status} {await resp.text()}"
                         )
-                        return set()
+                        return []
             except Exception as e:
                 logger.error(f"Error fetching subs: {e}")
-                return set()
+                return []
