@@ -921,37 +921,38 @@ class NotificationService:
                 logger.info("All subscriptions are up to date, nothing to do.")
                 return
 
-            # 5. Execute deletions, then subscriptions
-            errors = 0
+            # 5. Execute deletions, then bulk subscribe
+            delete_errors = 0
             async with aiohttp.ClientSession() as http_session:
                 for i, sub_id in enumerate(to_delete):
                     try:
                         await self._unsubscribe_with_session(http_session, sub_id)
                     except Exception as e:
-                        errors += 1
+                        delete_errors += 1
                         logger.error(f"Failed to unsubscribe {sub_id}: {e}")
                     if (i + 1) % 10 == 0:
                         await asyncio.sleep(1)
 
-                for i, key in enumerate(to_subscribe):
+                # Bulk subscribe in chunks of 5000
+                subscribed = 0
+                batch_size = 5000
+                for i in range(0, len(to_subscribe), batch_size):
+                    chunk = to_subscribe[i:i + batch_size]
                     try:
-                        await self._subscribe_with_session(http_session, key)
+                        subscribed += await self._subscribe_batch_with_session(http_session, chunk)
                     except Exception as e:
-                        errors += 1
-                        logger.error(f"Failed to subscribe {key}: {e}")
-                    if (i + 1) % 10 == 0:
-                        await asyncio.sleep(1)
+                        logger.error(f"Bulk subscribe failed for chunk {i // batch_size}: {e}")
 
             logger.info(
-                f"Sync completed: {len(to_delete)} deleted, "
-                f"{len(to_subscribe)} subscribed, {errors} errors."
+                f"Sync completed: {len(to_delete)} deleted ({delete_errors} errors), "
+                f"{subscribed}/{len(to_subscribe)} subscribed."
             )
 
         except Exception as e:
             logger.error(f"Sync failed: {e}")
 
     async def _subscribe_with_session(self, http_session: aiohttp.ClientSession, public_key: str):
-        """Subscribe using a shared aiohttp session (for batch operations)."""
+        """Subscribe a single account using a shared aiohttp session."""
         url = f"{self.config.notifier_url}/api/subscription"
         webhook = self.config.webhook_public_url
 
@@ -974,6 +975,37 @@ class NotificationService:
             if resp.status not in (200, 201):
                 text = await resp.text()
                 logger.error(f"Failed to subscribe {public_key}: {resp.status} {text}")
+
+    async def _subscribe_batch_with_session(
+        self, http_session: aiohttp.ClientSession, keys: list[str]
+    ) -> int:
+        """Subscribe multiple accounts in a single bulk POST. Returns count of successful subscriptions."""
+        if not keys:
+            return 0
+
+        url = f"{self.config.notifier_url}/api/subscription"
+        webhook = self.config.webhook_public_url
+
+        batch = [{"account": key, "reaction_url": webhook} for key in keys]
+        body_json = json.dumps(batch, separators=(",", ":"))
+
+        auth_token = getattr(self.config, "notifier_auth_token", None)
+        if auth_token:
+            headers = {"Authorization": auth_token, "Content-Type": "application/json"}
+        else:
+            nonce = await self._get_next_nonce()
+            pairs = [("nonce", nonce)]
+            payload_str = self._encode_url_params(pairs)
+            auth_header = self._sign_payload(payload_str)
+            headers = {"Authorization": auth_header, "Content-Type": "application/json"}
+
+        async with http_session.post(url, data=body_json, headers=headers) as resp:
+            if resp.status in (200, 201):
+                return len(keys)
+            else:
+                text = await resp.text()
+                logger.error(f"Bulk subscribe failed ({len(keys)} keys): {resp.status} {text}")
+                return 0
 
     async def _unsubscribe_with_session(self, http_session: aiohttp.ClientSession, subscription_id: str):
         """Delete a subscription by ID using a shared aiohttp session."""
