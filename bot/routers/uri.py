@@ -55,14 +55,15 @@ async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, s
             return_url=result.return_url
         )
 
-        # Process XDR
-        await cmd_check_xdr(
-            session=session,
-            check_xdr=result.xdr,
-            user_id=chat_id,
-            state=state,
-            app_context=app_context
-        )
+        # Process XDR if present
+        if result.xdr:
+            await cmd_check_xdr(
+                session=session,
+                check_xdr=result.xdr,
+                user_id=chat_id,
+                state=state,
+                app_context=app_context
+            )
     except Exception as e:
         logger.error(f"process_remote_uri exception: {e}")
         await send_message(
@@ -116,14 +117,15 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
             return_url=result.return_url
         )
 
-        # Process XDR
-        await cmd_check_xdr(
-            session=session,
-            check_xdr=result.xdr,
-            user_id=message.from_user.id,
-            state=state,
-            app_context=app_context
-        )
+        # Process XDR if present
+        if result.xdr:
+            await cmd_check_xdr(
+                session=session,
+                check_xdr=result.xdr,
+                user_id=message.from_user.id,
+                state=state,
+                app_context=app_context
+            )
     except Exception as e:
         logger.error(f"process_stellar_uri exception: {e}")
         await send_message(

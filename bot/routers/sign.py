@@ -595,6 +595,9 @@ async def cmd_check_xdr(
     *,
     app_context: AppContext,
 ):
+    if check_xdr is None:
+        logger.error(f"cmd_check_xdr: check_xdr is None for user {user_id}")
+        return
     try:
         data = await state.get_data()
         part_xdr = data.get("part_xdr", "")
