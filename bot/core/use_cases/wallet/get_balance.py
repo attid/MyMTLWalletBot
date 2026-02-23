@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Optional
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
@@ -53,13 +54,16 @@ class GetWalletBalance:
                 # I will trust the cache for now.
                 return wallet.balances
 
-        # 2. Get account details from Stellar
-        account_details = await self.stellar_service.get_account_details(target_key)
+        # 2. Get account details, offers and issued assets from Stellar concurrently
+        results = await asyncio.gather(
+            self.stellar_service.get_account_details(target_key),
+            self.stellar_service.get_selling_offers(target_key),
+            self.stellar_service.get_assets_by_issuer(target_key)
+        )
+        account_details, offers, issued_assets = results
         
         if not account_details:
              return []
-             
-        offers = await self.stellar_service.get_selling_offers(target_key)
 
         # 3. Calculate Reserves (Business Logic)
         lock_sum = 1.0
@@ -119,10 +123,9 @@ class GetWalletBalance:
                 selling_liabilities=selling_liabilities
             ))
             
-        # 3.5 Get issuer tokens (self-issued assets)
+        # 3.5 Process issuer tokens (self-issued assets)
         # If user is an issuer, they don't see their own assets in account balances, 
         # so we need to fetch them separately provided they have executed at least one operation.
-        issued_assets = await self.stellar_service.get_assets_by_issuer(target_key)
         for record in issued_assets:
             domain_balances.append(Balance(
                 balance='unlimited',  # Issuer has unlimited supply
