@@ -260,7 +260,7 @@ async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_si
     dp.include_router(sign_router)
 
     user_id = 123
-    tx_id = f"{user_id}_test1234"
+    tx_id = f"{user_id}_0123456789abcdef0123"
     bot = router_app_context.bot
 
     # Setup fakeredis with the TX already stored
@@ -297,7 +297,7 @@ async def test_cancel_biometric_sign_expired_tx(mock_telegram, router_app_contex
     dp.include_router(sign_router)
 
     user_id = 123
-    tx_id = f"{user_id}_expired123"
+    tx_id = f"{user_id}_fedcba9876543210fedc"
     bot = router_app_context.bot
 
     # Setup fakeredis WITHOUT the TX (simulating expired)
