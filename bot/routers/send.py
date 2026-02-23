@@ -1008,14 +1008,15 @@ async def handle_docs_photo(
                     return_url=result.return_url,
                 )
 
-                # Process XDR
-                await cmd_check_xdr(
-                    session=session,
-                    check_xdr=result.xdr,
-                    user_id=message.from_user.id,
-                    state=state,
-                    app_context=app_context,
-                )
+                # Process XDR if present
+                if result.xdr:
+                    await cmd_check_xdr(
+                        session=session,
+                        check_xdr=result.xdr,
+                        user_id=message.from_user.id,
+                        state=state,
+                        app_context=app_context,
+                    )
 
             elif qr_data.startswith("wc:"):
                 await handle_wc_uri(
