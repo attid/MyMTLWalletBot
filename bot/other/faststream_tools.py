@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
@@ -96,8 +97,10 @@ async def publish_pending_tx(
     if not unsigned_xdr:
         raise ValueError(f"unsigned_xdr is required for publish_pending_tx (user_id={user_id})")
 
-    # Генерируем уникальный tx_id
-    tx_id = f"{user_id}_{uuid.uuid4().hex[:8]}"
+    # Генерируем уникальный tx_id с достаточной энтропией (80 бит)
+    # Используем 20 hex-символов, чтобы callback_data в Telegram (лимит 64 байта)
+    # гарантированно вмещала префикс + user_id + tx_id даже для длинных user_id.
+    tx_id = f"{user_id}_{secrets.token_hex(10)}"
 
     # Сохраняем в Redis Hash
     tx_key = f"{REDIS_TX_PREFIX}{tx_id}"
@@ -142,7 +145,7 @@ async def clear_pending_tx(
     if _redis is None:
         return 0
 
-    # tx_id имеет формат {user_id}_{uuid}, ищем все ключи пользователя
+    # tx_id имеет формат {user_id}_{random}, ищем все ключи пользователя
     pattern = f"{REDIS_TX_PREFIX}{user_id}_*"
     deleted_count = 0
 
