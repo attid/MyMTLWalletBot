@@ -140,9 +140,9 @@ class TestPublishPendingTx:
             redis_client=fake_redis,
         )
 
-        # Check tx_id format
+        # Check tx_id format (user_id_ + 20 hex chars)
         assert tx_id.startswith("123_")
-        assert len(tx_id) == 12  # "123_" + 8 chars
+        assert len(tx_id) == 3 + 1 + 20  # 24 chars
 
         await fake_redis.aclose()
 
