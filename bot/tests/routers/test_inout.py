@@ -179,6 +179,118 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
 
 
 @pytest.mark.asyncio
+async def test_usdt_in_commits_after_get_key(
+    mock_telegram, bot, dp, mock_session, mock_app_context
+):
+    """USDT_IN should commit after get_usdt_key to persist newly generated key."""
+    user_id = 123
+    mock_app_context.bot = bot
+
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(
+        return_value=[
+            Balance(
+                asset_code="USDM",
+                asset_issuer="iss",
+                balance="1000.0",
+                asset_type="credit_alphanum4",
+                limit="1000",
+            )
+        ]
+    )
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        mock_balance_uc
+    )
+
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_usdt_key = AsyncMock(return_value=("PRIVATE_KEY", 0))
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
+
+    with patch("routers.inout.tron_get_public", return_value="TRON_ADDR"):
+        await dp.feed_update(
+            bot=bot,
+            update=types.Update(
+                update_id=101,
+                callback_query=types.CallbackQuery(
+                    id="cb101",
+                    from_user=types.User(
+                        id=user_id, is_bot=False, first_name="U", username="u"
+                    ),
+                    chat_instance="ci",
+                    message=types.Message(
+                        message_id=101,
+                        date=datetime.datetime.now(),
+                        chat=types.Chat(id=user_id, type="private"),
+                        text="USDT Menu",
+                    ),
+                    data="USDT_IN",
+                ),
+            ),
+        )
+
+    mock_session.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_usdt_check_commits_before_early_return(
+    mock_telegram, bot, dp, mock_session, mock_app_context
+):
+    """USDT_CHECK should commit key creation even when income is below minimum."""
+    user_id = 123
+    mock_app_context.bot = bot
+
+    mock_balance_uc = MagicMock()
+    mock_balance_uc.execute = AsyncMock(
+        return_value=[
+            Balance(
+                asset_code="USDM",
+                asset_issuer="iss",
+                balance="1000.0",
+                asset_type="credit_alphanum4",
+                limit="1000",
+            )
+        ]
+    )
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        mock_balance_uc
+    )
+
+    mock_user_repo = MagicMock()
+    mock_user_repo.get_usdt_key = AsyncMock(return_value=("PRIVATE_KEY", 100))
+    mock_app_context.repository_factory.get_user_repository.return_value = mock_user_repo
+
+    mock_lock = AsyncMock()
+    mock_lock.__aenter__.return_value = None
+    mock_lock.__aexit__.return_value = None
+
+    with patch("routers.inout.new_wallet_lock", mock_lock), patch(
+        "routers.inout.get_usdt_balance", AsyncMock(return_value=100.0)
+    ), patch("routers.inout.tron_get_public", return_value="TRON_ADDR"):
+        await dp.feed_update(
+            bot=bot,
+            update=types.Update(
+                update_id=102,
+                callback_query=types.CallbackQuery(
+                    id="cb102",
+                    from_user=types.User(
+                        id=user_id, is_bot=False, first_name="U", username="u"
+                    ),
+                    chat_instance="ci",
+                    message=types.Message(
+                        message_id=102,
+                        date=datetime.datetime.now(),
+                        chat=types.Chat(id=user_id, type="private"),
+                        text="Check",
+                    ),
+                    data="USDT_CHECK",
+                ),
+            ),
+        )
+
+    mock_session.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
     """Test USDT Withdrawal flow"""
     user_id = 123
