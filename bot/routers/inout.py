@@ -157,6 +157,7 @@ async def cmd_usdt_in(
         )
         user_repo = app_context.repository_factory.get_user_repository(session)
         user_tron_private_key, _ = await user_repo.get_usdt_key(get_user_id(callback))
+        await session.commit()
 
         # Check Master USDM Balance (User 0)
         master_balance_list = await balance_use_case.execute(user_id=0)
@@ -241,6 +242,7 @@ async def cmd_usdt_check(
         )
         if user_tron_private_key_opt is None:
             return
+        await session.commit()
         user_tron_private_key = user_tron_private_key_opt
         user_tron_key = tron_get_public(user_tron_private_key)
         full_usdt_balance = int(
@@ -1242,6 +1244,7 @@ async def process_usdt_wallet(
     )
     if usdt_key_opt is None:
         return False
+    await session.commit()
     usdt_key = usdt_key_opt
 
     await notify_admin(
