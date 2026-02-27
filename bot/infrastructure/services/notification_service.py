@@ -111,7 +111,7 @@ class NotificationService:
         if not self.config.notifier_url:
             logger.warning("Notifier URL not configured, cannot fetch public key")
             return
-            
+
         if self.config.test_mode:
             logger.info("Test mode enabled: Skipping Notifier public key fetch")
             return
@@ -374,15 +374,19 @@ class NotificationService:
 
             for wallet in wallets:
                 await self._send_notification_to_user(wallet, op_data_mapped)
-                
+
                 # Special case: Self-payment to the same wallet.
                 # User wants to see both "Sent" and "Received" messages.
-                if (op_data_mapped.operation == "payment" and 
-                    wallet.public_key == op_data_mapped.from_account and 
-                    wallet.public_key == op_data_mapped.for_account):
+                if (
+                    op_data_mapped.operation == "payment"
+                    and wallet.public_key == op_data_mapped.from_account
+                    and wallet.public_key == op_data_mapped.for_account
+                ):
                     # Trigger the "Debit" (Sent) perspective, as the default is "Credit" (Received)
                     # when decode_for == for_account.
-                    await self._send_notification_to_user(wallet, op_data_mapped, force_perspective='debit')
+                    await self._send_notification_to_user(
+                        wallet, op_data_mapped, force_perspective="debit"
+                    )
 
         # 4. Process internal trades (for Match Orders / Makers)
         trades = payload.get("operation", {}).get("trades", [])
@@ -404,32 +408,30 @@ class NotificationService:
                     )
                     result = await session.execute(stmt)
                     maker_wallets = result.scalars().all()
-                    
+
                     # Create a map for quick lookup
                     maker_map = {w.public_key: w for w in maker_wallets}
 
-
-                        
                     # Prepare common data
                     tx_hash = payload.get("transaction", {}).get("hash")
-                    op_info = payload.get("operation", {})            # Helper to create trade op
+                    op_info = payload.get("operation", {})  # Helper to create trade op
             for i, trade in enumerate(trades):
                 if trade.get("type") == "order_book":
                     seller = trade.get("seller_id")
                     maker_wallet = maker_map.get(seller)
-                    
+
                     if maker_wallet:
                         # Ensure we use the Stellar Operation ID
                         stellar_op_id = op_info.get("id")
                         if not stellar_op_id and tx_hash:
                             stellar_op_id = f"{tx_hash}_{i}"
-                        
+
                         op_trade = NotificationOperation(
                             id=f"{stellar_op_id}_t{i}",
                             operation="trade",
                             dt=datetime.utcnow(),
                             for_account=seller,
-                            from_account=seller, # It's their trade
+                            from_account=seller,  # It's their trade
                             transaction_hash=tx_hash or "",
                         )
 
@@ -440,29 +442,35 @@ class NotificationService:
                             code = trade_item.get(f"{side}_asset_code")
                             if code:
                                 return code
-                            
+
                             type_ = trade_item.get(f"{side}_asset_type")
                             if type_ in ("native", 0):
                                 return "XLM"
-                            
+
                             # Try nested object if flat fields missing
                             asset_obj = trade_item.get(f"asset_{side}") or {}
                             if asset_obj.get("asset_code"):
                                 return asset_obj.get("asset_code")
                             if asset_obj.get("asset_type") in ("native", 0):
                                 return "XLM"
-                            
+
                             return "?"
 
-                        op_trade.trade_sold_amount = float(trade.get("amount_sold") or 0)
+                        op_trade.trade_sold_amount = float(
+                            trade.get("amount_sold") or 0
+                        )
                         op_trade.trade_sold_asset = get_trade_asset(trade, "sold")
-                        
-                        op_trade.trade_bought_amount = float(trade.get("amount_bought") or 0)
+
+                        op_trade.trade_bought_amount = float(
+                            trade.get("amount_bought") or 0
+                        )
                         op_trade.trade_bought_asset = get_trade_asset(trade, "bought")
-                        
+
                         await self._send_notification_to_user(maker_wallet, op_trade)
-        
-    def _map_payload_to_operation(self, payload: dict) -> Optional[NotificationOperation]:
+
+    def _map_payload_to_operation(
+        self, payload: dict
+    ) -> Optional[NotificationOperation]:
         """Maps JSON payload to NotificationOperation entity."""
         try:
             op_data = payload.get("operation")
@@ -517,7 +525,7 @@ class NotificationService:
                     op.payment_asset = "XLM"
 
             elif op_type == "create_account":
-                op.for_account = op_data.get("account") or op_data.get("destination")
+                op.for_account = op_data.get("destination") or op_data.get("account")
                 op.payment_amount = float(op_data.get("amount", 0))
                 op.payment_asset = "XLM"
 
@@ -527,7 +535,7 @@ class NotificationService:
                     or op_data.get("destination")
                     or op_data.get("account")
                 )
-                
+
                 # Helper for asset code
                 def get_asset_code_local(asset_obj):
                     if not asset_obj:
@@ -538,7 +546,7 @@ class NotificationService:
 
                 # Destination Asset (Received) -> path_received
                 op.path_received_asset = get_asset_code_local(op_data.get("asset"))
-                
+
                 # Source Asset (Sent) -> path_sent
                 op.path_sent_asset = get_asset_code_local(op_data.get("source_asset"))
 
@@ -546,26 +554,32 @@ class NotificationService:
                 if op_type == "path_payment_strict_send":
                     # We sent exact 'amount' of source_asset
                     # We received at least 'dest_min' of asset, but prefer 'dest_amount' (actual)
-                    op.path_sent_amount = float(op_data.get("amount", 0)) # Sent
-                    
+                    op.path_sent_amount = float(op_data.get("amount", 0))  # Sent
+
                     # Use actual dest_amount if available (Notifier update), else dest_min
                     dest_amt = op_data.get("dest_amount")
                     if dest_amt:
                         op.path_received_amount = float(dest_amt)
                     else:
-                        op.path_received_amount = float(op_data.get("dest_min", 0)) # Received (Approx/Min)
+                        op.path_received_amount = float(
+                            op_data.get("dest_min", 0)
+                        )  # Received (Approx/Min)
                 else:
                     # path_payment_strict_receive
                     # We received exact 'amount' of asset
                     # We sent at most 'source_max' of source_asset, but prefer 'source_amount' (actual)
-                    op.path_received_amount = float(op_data.get("amount", 0)) # Received
-                    
+                    op.path_received_amount = float(
+                        op_data.get("amount", 0)
+                    )  # Received
+
                     # Use actual source_amount if available (Notifier update), else source_max
                     src_amt = op_data.get("source_amount")
                     if src_amt:
                         op.path_sent_amount = float(src_amt)
                     else:
-                        op.path_sent_amount = float(op_data.get("source_max", 0)) # Sent (Approx/Max)
+                        op.path_sent_amount = float(
+                            op_data.get("source_max", 0)
+                        )  # Sent (Approx/Max)
 
             elif op_type == "manage_sell_offer":
                 op.for_account = op_data.get("account")
@@ -573,57 +587,69 @@ class NotificationService:
                 op.offer_amount = float(op_data.get("amount", 0))
                 # Amount to sell
                 op.offer_amount = float(op_data.get("amount", 0))
-                
+
                 # Check offer_id, fallback to created_offer_id if 0
                 o_id = int(op_data.get("offer_id", 0))
                 if o_id == 0:
-                     o_id = int(op_data.get("created_offer_id", 0))
+                    o_id = int(op_data.get("created_offer_id", 0))
                 op.offer_id = o_id
-                
+
                 # Selling Asset
                 if "source_asset" in op_data:
-                    op.offer_selling_asset = op_data.get("source_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("source_asset", {}).get("asset_type") in ("native", 0):
+                    op.offer_selling_asset = op_data.get("source_asset", {}).get(
+                        "asset_code", "XLM"
+                    )
+                    if op_data.get("source_asset", {}).get("asset_type") in (
+                        "native",
+                        0,
+                    ):
                         op.offer_selling_asset = "XLM"
                 else:
                     op.offer_selling_asset = "unknown"
 
                 # Buying Asset
-                op.offer_buying_asset = op_data.get("asset", {}).get("asset_code", "XLM")
+                op.offer_buying_asset = op_data.get("asset", {}).get(
+                    "asset_code", "XLM"
+                )
                 if op_data.get("asset", {}).get("asset_type") in ("native", 0):
                     op.offer_buying_asset = "XLM"
 
                 # Price per unit
                 op.offer_price = float(op_data.get("price", 0))
 
-                # Store offer ID in transaction_hash for reuse?? 
+                # Store offer ID in transaction_hash for reuse??
                 # Model has transaction_hash but we misuse it for offerId in legacy code?
                 # Let's keep existing logic but maybe comment it.
                 # "Store offer ID in transaction_hash for reuse" - seems hacky but maintaining behavior.
                 if op_data.get("offerId"):
-                     # We can't overwrite transaction_hash if it's real hash. 
-                     # But legacy code did: op.transaction_hash = op_data.get("offerId", "")
-                     # Let's verify if 'transaction_hash' is used for anything else.
-                     # It is used in notification_service to dedup? No, dedup uses stellar_op_id.
-                     # It is NOT used in decode_db_effect directly.
-                     # It seems safe to leave original tx hash.
-                     pass 
+                    # We can't overwrite transaction_hash if it's real hash.
+                    # But legacy code did: op.transaction_hash = op_data.get("offerId", "")
+                    # Let's verify if 'transaction_hash' is used for anything else.
+                    # It is used in notification_service to dedup? No, dedup uses stellar_op_id.
+                    # It is NOT used in decode_db_effect directly.
+                    # It seems safe to leave original tx hash.
+                    pass
 
             elif op_type == "manage_buy_offer":
                 op.for_account = op_data.get("account")
                 # Amount of buying asset
                 op.offer_amount = float(op_data.get("amount", 0))
-                
+
                 # Check offer_id, fallback to created_offer_id if 0
                 o_id = int(op_data.get("offer_id", 0))
                 if o_id == 0:
-                     o_id = int(op_data.get("created_offer_id", 0))
+                    o_id = int(op_data.get("created_offer_id", 0))
                 op.offer_id = o_id
-                
+
                 # Buying Asset
                 if "buying_asset" in op_data:
-                    op.offer_buying_asset = op_data.get("buying_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("buying_asset", {}).get("asset_type") in ("native", 0):
+                    op.offer_buying_asset = op_data.get("buying_asset", {}).get(
+                        "asset_code", "XLM"
+                    )
+                    if op_data.get("buying_asset", {}).get("asset_type") in (
+                        "native",
+                        0,
+                    ):
                         op.offer_buying_asset = "XLM"
                 else:
                     op.offer_buying_asset = "unknown"
@@ -633,8 +659,13 @@ class NotificationService:
 
                 # Selling Asset
                 if "selling_asset" in op_data:
-                    op.offer_selling_asset = op_data.get("selling_asset", {}).get("asset_code", "XLM")
-                    if op_data.get("selling_asset", {}).get("asset_type") in ("native", 0):
+                    op.offer_selling_asset = op_data.get("selling_asset", {}).get(
+                        "asset_code", "XLM"
+                    )
+                    if op_data.get("selling_asset", {}).get("asset_type") in (
+                        "native",
+                        0,
+                    ):
                         op.offer_selling_asset = "XLM"
                 else:
                     op.offer_selling_asset = "unknown"
@@ -642,14 +673,14 @@ class NotificationService:
             elif op_type == "manage_data":
                 op.for_account = op_data.get("source_account") or op_data.get("account")
                 op.data_name = op_data.get("name") or "DATA"
-                
+
                 # Decode value from Base64
                 data_value = op_data.get("value")
                 if data_value:
                     try:
                         op.data_value = base64.b64decode(data_value).decode("utf-8")
                     except Exception:
-                         # Fallback if not utf-8 text or decode error
+                        # Fallback if not utf-8 text or decode error
                         op.data_value = str(data_value)
                 else:
                     # Value is None -> Data Removed
@@ -676,14 +707,16 @@ class NotificationService:
                     "set_trustline_flags",
                 }
                 if op_type not in known_cache_only_ops:
-                    logger.warning(f"Unknown operation type: {op_type}, payload: {json.dumps(payload, indent=2)}")
+                    logger.warning(
+                        f"Unknown operation type: {op_type}, payload: {json.dumps(payload, indent=2)}"
+                    )
 
                     # Send to Sentry if initialized
                     if sentry_sdk.Hub.current.client is not None:
                         sentry_sdk.capture_message(
                             f"Unknown operation type: {op_type}",
                             level="warning",
-                            extras={"payload": payload, "op_type": op_type}
+                            extras={"payload": payload, "op_type": op_type},
                         )
 
             return op
@@ -693,7 +726,10 @@ class NotificationService:
             return None
 
     async def _send_notification_to_user(
-        self, wallet: MyMtlWalletBot, operation: NotificationOperation, force_perspective: Optional[str] = None
+        self,
+        wallet: MyMtlWalletBot,
+        operation: NotificationOperation,
+        force_perspective: Optional[str] = None,
     ):
         if wallet.user_id is None:
             return
@@ -724,7 +760,10 @@ class NotificationService:
             for f in user_filters:
                 if (
                     (f.public_key is None or f.public_key == wallet.public_key)
-                    and (f.asset_code is None or f.asset_code == operation.display_asset_code)
+                    and (
+                        f.asset_code is None
+                        or f.asset_code == operation.display_asset_code
+                    )
                     and (f.min_amount or 0.0) > msg_amount
                     and f.operation_type == operation.operation
                 ):
@@ -770,7 +809,9 @@ class NotificationService:
                         public_key=str(wallet.public_key),
                     )
                 except Exception as history_error:
-                    logger.warning(f"Failed to save notification to history: {history_error}")
+                    logger.warning(
+                        f"Failed to save notification to history: {history_error}"
+                    )
 
             # Reset balance cache to ensure user sees updated balance
             # after receiving the transaction notification
@@ -887,8 +928,8 @@ class NotificationService:
             webhook = self.config.webhook_public_url
 
             # 4. Determine actions
-            to_delete: list[str] = []       # subscription IDs to delete
-            to_subscribe: list[str] = []    # account keys to subscribe
+            to_delete: list[str] = []  # subscription IDs to delete
+            to_subscribe: list[str] = []  # account keys to subscribe
 
             for account, subs in subs_by_account.items():
                 if account not in db_keys:
@@ -937,11 +978,15 @@ class NotificationService:
                 subscribed = 0
                 batch_size = 5000
                 for i in range(0, len(to_subscribe), batch_size):
-                    chunk = to_subscribe[i:i + batch_size]
+                    chunk = to_subscribe[i : i + batch_size]
                     try:
-                        subscribed += await self._subscribe_batch_with_session(http_session, chunk)
+                        subscribed += await self._subscribe_batch_with_session(
+                            http_session, chunk
+                        )
                     except Exception as e:
-                        logger.error(f"Bulk subscribe failed for chunk {i // batch_size}: {e}")
+                        logger.error(
+                            f"Bulk subscribe failed for chunk {i // batch_size}: {e}"
+                        )
 
             logger.info(
                 f"Sync completed: {len(to_delete)} deleted ({delete_errors} errors), "
@@ -951,7 +996,9 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Sync failed: {e}")
 
-    async def _subscribe_with_session(self, http_session: aiohttp.ClientSession, public_key: str):
+    async def _subscribe_with_session(
+        self, http_session: aiohttp.ClientSession, public_key: str
+    ):
         """Subscribe a single account using a shared aiohttp session."""
         url = f"{self.config.notifier_url}/api/subscription"
         webhook = self.config.webhook_public_url
@@ -1004,10 +1051,14 @@ class NotificationService:
                 return len(keys)
             else:
                 text = await resp.text()
-                logger.error(f"Bulk subscribe failed ({len(keys)} keys): {resp.status} {text}")
+                logger.error(
+                    f"Bulk subscribe failed ({len(keys)} keys): {resp.status} {text}"
+                )
                 return 0
 
-    async def _unsubscribe_with_session(self, http_session: aiohttp.ClientSession, subscription_id: str):
+    async def _unsubscribe_with_session(
+        self, http_session: aiohttp.ClientSession, subscription_id: str
+    ):
         """Delete a subscription by ID using a shared aiohttp session."""
         url = f"{self.config.notifier_url}/api/subscription/{subscription_id}"
 
@@ -1025,7 +1076,9 @@ class NotificationService:
         async with http_session.delete(url, headers=headers) as resp:
             if resp.status != 200:
                 text = await resp.text()
-                logger.error(f"Failed to unsubscribe {subscription_id}: {resp.status} {text}")
+                logger.error(
+                    f"Failed to unsubscribe {subscription_id}: {resp.status} {text}"
+                )
 
     async def _get_active_subscriptions(self) -> list[dict]:
         """Fetch all active subscriptions with full data (id, account, reaction_url)."""
@@ -1051,14 +1104,20 @@ class NotificationService:
                         if isinstance(data, list):
                             for item in data:
                                 if isinstance(item, dict):
-                                    account = item.get("account") or item.get("resource_id")
+                                    account = item.get("account") or item.get(
+                                        "resource_id"
+                                    )
                                     sub_id = item.get("id")
                                     if account and sub_id:
-                                        results.append({
-                                            "id": str(sub_id),
-                                            "account": account,
-                                            "reaction_url": item.get("reaction_url", ""),
-                                        })
+                                        results.append(
+                                            {
+                                                "id": str(sub_id),
+                                                "account": account,
+                                                "reaction_url": item.get(
+                                                    "reaction_url", ""
+                                                ),
+                                            }
+                                        )
                         return results
                     else:
                         logger.error(

@@ -4,7 +4,13 @@ from aiogram.fsm.storage.base import StorageKey
 
 import fakeredis.aioredis
 
-from routers.sign import router as sign_router, PinState, PinCallbackData
+from routers.sign import (
+    router as sign_router,
+    PinState,
+    PinCallbackData,
+    cq_pin,
+    cmd_password_set2,
+)
 from infrastructure.states import StateSign
 from other import faststream_tools
 from tests.conftest import (
@@ -13,6 +19,7 @@ from tests.conftest import (
     create_message_update,
 )
 
+
 @pytest.fixture(autouse=True)
 def cleanup_router():
     """Ensure router is detached after each test."""
@@ -20,13 +27,14 @@ def cleanup_router():
     if sign_router.parent_router:
         sign_router._parent_router = None
 
+
 @pytest.fixture
 def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
     """
     Common mock setup for Sign router tests.
     """
     from infrastructure.services.stellar_service import StellarService
-    
+
     class SignMockHelper:
         def __init__(self, ctx):
             self.ctx = ctx
@@ -34,30 +42,41 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
 
         def _setup_defaults(self):
             # Real StellarService connected to mock_horizon
-            self.ctx.stellar_service = StellarService(horizon_url=horizon_server_config["url"])
-            
+            self.ctx.stellar_service = StellarService(
+                horizon_url=horizon_server_config["url"]
+            )
+
             # Setup mock_horizon for the source account
             self.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
             mock_horizon.set_account(self.public_key)
-            
+
             # Mock the underlying stellar_tools functions that use DB or complex logic
             # to avoid refactoring the entire persistence layer in this test.
             # However, we must not use AsyncMock on stellar_service itself.
-            
-            self.p_is_free = patch("other.stellar_tools.stellar_is_free_wallet", return_value=False)
-            self.p_check_xdr = patch("other.stellar_tools.stellar_check_xdr", side_effect=lambda x, f: x)
+
+            self.p_is_free = patch(
+                "other.stellar_tools.stellar_is_free_wallet", return_value=False
+            )
+            self.p_check_xdr = patch(
+                "other.stellar_tools.stellar_check_xdr", side_effect=lambda x, f: x
+            )
             self.p_get_acc = patch("other.stellar_tools.stellar_get_user_account")
             self.p_get_kp = patch("other.stellar_tools.stellar_get_user_keypair")
-            self.p_user_sign = patch("other.stellar_tools.stellar_user_sign", return_value="SIGNED_XDR")
-            self.p_send = patch("other.stellar_tools.async_stellar_send", return_value={"hash": "tx_hash"})
-            
+            self.p_user_sign = patch(
+                "other.stellar_tools.stellar_user_sign", return_value="SIGNED_XDR"
+            )
+            self.p_send = patch(
+                "other.stellar_tools.async_stellar_send",
+                return_value={"hash": "tx_hash"},
+            )
+
             self.m_is_free = self.p_is_free.start()
             self.m_check_xdr = self.p_check_xdr.start()
             self.m_get_acc = self.p_get_acc.start()
             self.m_get_kp = self.p_get_kp.start()
             self.m_user_sign = self.p_user_sign.start()
             self.m_send = self.p_send.start()
-            
+
             mock_acc = MagicMock()
             mock_acc.account.account_id = self.public_key
             self.m_get_acc.return_value = mock_acc
@@ -67,11 +86,11 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
             self.wallet.public_key = self.public_key
             self.wallet.use_pin = 1
             self.wallet.is_free = False
-            
+
             wallet_repo = MagicMock()
             wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
             self.ctx.repository_factory.get_wallet_repository.return_value = wallet_repo
-        
+
         def stop(self):
             self.p_is_free.stop()
             self.p_check_xdr.stop()
@@ -86,7 +105,9 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
 
 
 @pytest.mark.asyncio
-async def test_full_flow_sign_and_send_success(mock_telegram, router_app_context, setup_sign_mocks):
+async def test_full_flow_sign_and_send_success(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
     """
     Scenario: User clicks Sign -> enters XDR -> enters PIN 1234 -> clicks Send.
     Full integration check.
@@ -106,39 +127,45 @@ async def test_full_flow_sign_and_send_success(mock_telegram, router_app_context
     mock_telegram.clear()
 
     # Pre-set user_lang to avoid KeyError in get_kb_pin (needed for subsequent steps)
-    await dp.storage.update_data(state_key, {'user_lang': 'en'})
+    await dp.storage.update_data(state_key, {"user_lang": "en"})
 
     # 2. Send XDR text
-    xdr = "AAAAAgAAAAA=" # Valid empty tx XDR for SDK parsing
+    xdr = "AAAAAgAAAAA="  # Valid empty tx XDR for SDK parsing
     await dp.feed_update(bot, create_message_update(user_id, xdr))
     # Should move to PinState.sign
     assert await dp.storage.get_state(state_key) == PinState.sign
     mock_telegram.clear()
 
     # 3. Enter PIN "1234"
-    await dp.storage.update_data(state_key, {'pin': '123'})
-    
+    await dp.storage.update_data(state_key, {"pin": "123"})
+
     # Enter last digit "4" (triggers sign)
-    await dp.feed_update(bot, create_callback_update(user_id, PinCallbackData(action="4").pack()))
-    
+    await dp.feed_update(
+        bot, create_callback_update(user_id, PinCallbackData(action="4").pack())
+    )
+
     # Verify signing was called via patched stellar_tools
     setup_sign_mocks.m_user_sign.assert_called_once()
-    
+
     # Verify message sent with "SendTr" button
-    latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
-    markup = latest_req['data']['reply_markup']
+    latest_req = [
+        r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
+    ][-1]
+    markup = latest_req["data"]["reply_markup"]
     assert "SendTr" in markup or "kb_send_tr" in markup
     mock_telegram.clear()
 
     # 4. Click "SendTr"
     await dp.feed_update(bot, create_callback_update(user_id, "SendTr"))
-    
+
     # Verify transaction submitted via patched stellar_tools
     setup_sign_mocks.m_send.assert_called_once_with("SIGNED_XDR")
-    
+
     # Final confirmation
-    latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
-    assert "send_good" in latest_req['data']['text'] # Localized key
+    latest_req = [
+        r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
+    ][-1]
+    assert "send_good" in latest_req["data"]["text"]  # Localized key
 
 
 @pytest.mark.asyncio
@@ -154,22 +181,30 @@ async def test_pin_deletion_logic(mock_telegram, router_app_context, setup_sign_
 
     # Pre-set state to PIN entry
     await dp.storage.set_state(state_key, PinState.sign)
-    await dp.storage.set_data(state_key, {'pin': '12', 'pin_type': 1, 'user_lang': 'en'})
+    await dp.storage.set_data(
+        state_key, {"pin": "12", "pin_type": 1, "user_lang": "en"}
+    )
 
     # Click 'Del'
-    await dp.feed_update(bot, create_callback_update(user_id, PinCallbackData(action="Del").pack()))
-    
+    await dp.feed_update(
+        bot, create_callback_update(user_id, PinCallbackData(action="Del").pack())
+    )
+
     data = await dp.storage.get_data(state_key)
-    assert data.get('pin') == "1"
+    assert data.get("pin") == "1"
 
     # Click '1' -> pin becomes '11'
-    await dp.feed_update(bot, create_callback_update(user_id, PinCallbackData(action="1").pack()))
+    await dp.feed_update(
+        bot, create_callback_update(user_id, PinCallbackData(action="1").pack())
+    )
     data = await dp.storage.get_data(state_key)
-    assert data.get('pin') == "11"
+    assert data.get("pin") == "11"
 
 
 @pytest.mark.asyncio
-async def test_cmd_yes_send_integration(mock_telegram, router_app_context, setup_sign_mocks):
+async def test_cmd_yes_send_integration(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
     """Test 'Yes_send_xdr' callback: should move to sign_and_send state."""
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
@@ -180,17 +215,24 @@ async def test_cmd_yes_send_integration(mock_telegram, router_app_context, setup
     state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
 
     # Pre-set user_lang
-    await dp.storage.update_data(state_key, {'user_lang': 'en'})
+    await dp.storage.update_data(state_key, {"user_lang": "en"})
 
     await dp.feed_update(bot, create_callback_update(user_id, "Yes_send_xdr"))
 
     assert await dp.storage.get_state(state_key) == PinState.sign_and_send
-    latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
-    assert "enter_pin" in latest_req['data']['text'] or "enter_password" in latest_req['data']['text']
+    latest_req = [
+        r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
+    ][-1]
+    assert (
+        "enter_pin" in latest_req["data"]["text"]
+        or "enter_password" in latest_req["data"]["text"]
+    )
 
 
 @pytest.mark.asyncio
-async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context, setup_sign_mocks):
+async def test_pin_type_10_shows_webapp_button(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
     """
     Test use_pin=10 (read-only) shows WebApp sign button instead of XDR text.
     """
@@ -220,7 +262,7 @@ async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context
         mock_telegram.clear()
 
         # Pre-set user_lang
-        await dp.storage.update_data(state_key, {'user_lang': 'en'})
+        await dp.storage.update_data(state_key, {"user_lang": "en"})
 
         # 2. Send XDR text
         xdr = "AAAAAgAAAAA="
@@ -240,8 +282,12 @@ async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context
         assert decoded_data["unsigned_xdr"] == xdr
 
         # Verify WebApp button is shown in the message
-        latest_req = [r for r in mock_telegram if r['method'] in ('sendMessage', 'editMessageText')][-1]
-        markup = latest_req['data'].get('reply_markup', '')
+        latest_req = [
+            r
+            for r in mock_telegram
+            if r["method"] in ("sendMessage", "editMessageText")
+        ][-1]
+        markup = latest_req["data"].get("reply_markup", "")
         # WebApp keyboard contains web_app URL and cancel_biometric_sign callback
         assert "web_app" in markup or "cancel_biometric_sign" in markup
     finally:
@@ -251,7 +297,9 @@ async def test_pin_type_10_shows_webapp_button(mock_telegram, router_app_context
 
 
 @pytest.mark.asyncio
-async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_sign_mocks):
+async def test_cancel_biometric_sign(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
     """
     Test cancelling biometric signing deletes TX from Redis and removes message.
     """
@@ -265,7 +313,9 @@ async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_si
 
     # Setup fakeredis with the TX already stored
     fake_redis = fakeredis.aioredis.FakeRedis()
-    await fake_redis.hset(f"tx:{tx_id}", mapping={"user_id": str(user_id), "status": "pending"})
+    await fake_redis.hset(
+        f"tx:{tx_id}", mapping={"user_id": str(user_id), "status": "pending"}
+    )
 
     # Set global REDIS_CLIENT for the test
     old_redis_client = faststream_tools.REDIS_CLIENT
@@ -274,8 +324,7 @@ async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_si
     try:
         # Trigger cancel callback
         await dp.feed_update(
-            bot,
-            create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
+            bot, create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
         )
 
         # Verify TX was deleted from Redis
@@ -288,7 +337,9 @@ async def test_cancel_biometric_sign(mock_telegram, router_app_context, setup_si
 
 
 @pytest.mark.asyncio
-async def test_cancel_biometric_sign_expired_tx(mock_telegram, router_app_context, setup_sign_mocks):
+async def test_cancel_biometric_sign_expired_tx(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
     """
     Test cancelling already expired/processed TX shows appropriate message.
     """
@@ -309,8 +360,7 @@ async def test_cancel_biometric_sign_expired_tx(mock_telegram, router_app_contex
 
     try:
         await dp.feed_update(
-            bot,
-            create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
+            bot, create_callback_update(user_id, f"cancel_biometric_sign:{tx_id}")
         )
 
         # TX didn't exist, handler should have handled it gracefully
@@ -319,3 +369,66 @@ async def test_cancel_biometric_sign_expired_tx(mock_telegram, router_app_contex
         # Restore globals
         faststream_tools.REDIS_CLIENT = old_redis_client
         await fake_redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cq_pin_set_pin2_commits_password_change(
+    mock_telegram, router_app_context
+):
+    """PIN confirmation flow must commit wallet protection update."""
+    query = AsyncMock()
+    query.from_user.id = 123
+
+    state = AsyncMock()
+    state.get_data.return_value = {
+        "pin": "1234",
+        "pin2": "1234",
+        "pin_type": 1,
+        "user_lang": "en",
+    }
+    state.get_state.return_value = PinState.set_pin2
+
+    session = AsyncMock()
+    app_context = MagicMock()
+    app_context.stellar_service.change_password = AsyncMock()
+
+    with patch("routers.sign.cmd_show_balance", new=AsyncMock()):
+        await cq_pin(
+            query=query,
+            callback_data=PinCallbackData(action="Enter"),
+            state=state,
+            session=session,
+            app_context=app_context,
+        )
+
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_password_set2_commits_password_change(
+    mock_telegram, router_app_context
+):
+    """Text password confirmation flow must commit wallet protection update."""
+    message = AsyncMock()
+    message.from_user.id = 123
+    message.text = "pass123"
+
+    state = AsyncMock()
+    state.get_data.return_value = {
+        "pin": "pass123",
+        "pin_type": 2,
+    }
+
+    session = AsyncMock()
+    app_context = MagicMock()
+    app_context.stellar_service.change_password = AsyncMock()
+
+    with patch("routers.sign.cmd_show_balance", new=AsyncMock()):
+        await cmd_password_set2(
+            message=message,
+            state=state,
+            session=session,
+            app_context=app_context,
+        )
+
+    session.commit.assert_awaited_once()

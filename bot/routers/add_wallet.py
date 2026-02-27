@@ -436,6 +436,16 @@ async def cq_add_read_only_no_password(
     app_context: AppContext,
 ):
     await state.update_data(pin_type=0)
+    change_pw_use_case = app_context.use_case_factory.create_change_wallet_password(
+        session
+    )
+    await change_pw_use_case.execute(
+        user_id=callback.from_user.id,
+        old_pin=str(callback.from_user.id),
+        new_pin=str(callback.from_user.id),
+        pin_type=0,
+    )
+    await session.commit()
     await cmd_show_balance(
         session, callback.from_user.id, state, app_context=app_context
     )

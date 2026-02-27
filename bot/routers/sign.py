@@ -225,7 +225,9 @@ async def cmd_ask_pin(
         await state.update_data(pin="ro")
         xdr = data.get("xdr")
         if not xdr:
-            logger.warning(f"pin_type=10 but xdr is None for user {chat_id}, skipping publish_pending_tx")
+            logger.warning(
+                f"pin_type=10 but xdr is None for user {chat_id}, skipping publish_pending_tx"
+            )
             return
         memo = data.get("operation", "Transaction")
         fsm_after_send = data.get("fsm_after_send")
@@ -242,7 +244,9 @@ async def cmd_ask_pin(
         )
 
         # Показываем кнопку WebApp
-        text = my_gettext(chat_id, 'biometric_sign_prompt', (memo,), app_context=app_context)
+        text = my_gettext(
+            chat_id, "biometric_sign_prompt", (memo,), app_context=app_context
+        )
 
         await send_message(
             session,
@@ -346,6 +350,7 @@ async def cq_pin(
                 await app_context.stellar_service.change_password(
                     session, user_id, str(user_id), pin, pin_type
                 )
+                await session.commit()
                 await cmd_show_balance(session, user_id, state, app_context=app_context)
             else:
                 await state.update_data(pin2="", pin="")
@@ -901,6 +906,7 @@ async def cmd_password_set2(
         await app_context.stellar_service.change_password(
             session, user_id, str(user_id), pin, pin_type
         )
+        await session.commit()
         await cmd_show_balance(session, user_id, state, app_context=app_context)
         await state.update_data(pin2="", pin="")
         await message.delete()
@@ -1055,7 +1061,8 @@ async def cmd_cancel_import_key(
 
     await callback.answer(
         my_gettext(user_id, "import_cancelled", app_context=app_context)
-        if my_gettext(user_id, "import_cancelled", app_context=app_context) != "import_cancelled"
+        if my_gettext(user_id, "import_cancelled", app_context=app_context)
+        != "import_cancelled"
         else "Импорт отменён",
         show_alert=True,
     )
