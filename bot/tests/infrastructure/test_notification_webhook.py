@@ -170,6 +170,7 @@ async def test_send_message_works_with_bot_parameter(router_bot):
         "send_message should work with bot parameter and minimal app_context"
     )
 
+
 @pytest.mark.asyncio
 async def test_notification_sell_offer_link(
     notification_service, mock_telegram, mock_db_pool
@@ -196,20 +197,21 @@ async def test_notification_sell_offer_link(
     # But here we are calling _send_notification_to_user with an already mapped operation.
     # So we just ensure the operation object HAS the correct ID, assuming _map_payload_to_operation works.
     # To test logic properly, we should actually test _map_payload_to_operation or mocked behavior.
-    
+
     # Let's trust that we are testing _send_notification_to_user's handling of the ID.
     # We will add a simpler unit test for mapping logic if needed.
     operation.from_account = wallet.public_key
     operation.for_account = wallet.public_key
     operation.transaction_hash = "txhash123"
-    operation.display_amount_value = "10.0" # needed for filter check logic
+    operation.display_amount_value = "10.0"  # needed for filter check logic
     operation.memo = None
-    
+
     # Mock db for filters
     async def mock_execute(*args, **kwargs):
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
         return mock_result
+
     mock_db_pool._session.execute = mock_execute
 
     # Execute
@@ -219,11 +221,12 @@ async def test_notification_sell_offer_link(
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
     text = req["data"]["text"]
-    
+
     # Check for link
-    expected_link = 'https://viewer.eurmtl.me/offer/1821833749'
+    expected_link = "https://viewer.eurmtl.me/offer/1821833749"
     assert expected_link in text, f"Message text should contain link: {expected_link}"
     assert "ID: <a href=" in text, "Message should contain HTML link tag"
+
 
 @pytest.mark.asyncio
 async def test_notification_payload_mapping(notification_service):
@@ -240,23 +243,23 @@ async def test_notification_payload_mapping(notification_service):
             "price": "1.0",
             "offer_id": "0",
             "created_offer_id": "99999",
-            "asset": {"asset_type": "native"}
+            "asset": {"asset_type": "native"},
         }
     }
     op_offer = notification_service._map_payload_to_operation(payload_offer)
     assert op_offer.offer_id == 99999
-    
+
     # 2. Test path_payment_strict_send (uses dest_amount)
     payload_path_send = {
         "operation": {
             "id": "124",
             "type": "path_payment_strict_send",
             "to": "GTO",
-            "amount": "10.0",        # Sent
-            "dest_min": "20.0",      # Min Received
-            "dest_amount": "21.5",   # Actual Received
+            "amount": "10.0",  # Sent
+            "dest_min": "20.0",  # Min Received
+            "dest_amount": "21.5",  # Actual Received
             "asset": {"asset_code": "EURMTL", "asset_type": "credit_alphanum4"},
-            "source_asset": {"asset_type": "native"}
+            "source_asset": {"asset_type": "native"},
         }
     }
     op_send = notification_service._map_payload_to_operation(payload_path_send)
@@ -269,13 +272,35 @@ async def test_notification_payload_mapping(notification_service):
             "id": "125",
             "type": "path_payment_strict_receive",
             "to": "GTO",
-            "amount": "50.0",        # Received
-            "source_max": "60.0",    # Max Sent
-            "source_amount": "55.5", # Actual Sent
+            "amount": "50.0",  # Received
+            "source_max": "60.0",  # Max Sent
+            "source_amount": "55.5",  # Actual Sent
             "asset": {"asset_code": "EURMTL", "asset_type": "credit_alphanum4"},
-            "source_asset": {"asset_type": "native"}
+            "source_asset": {"asset_type": "native"},
         }
     }
     op_recv = notification_service._map_payload_to_operation(payload_path_recv)
-    assert op_recv.path_received_amount == 50.0 # Strict receive means we got exactly this
+    assert (
+        op_recv.path_received_amount == 50.0
+    )  # Strict receive means we got exactly this
     assert op_recv.path_sent_amount == 55.5
+
+
+@pytest.mark.asyncio
+async def test_create_account_uses_destination_for_new_account(notification_service):
+    """create_account must point to the newly created destination account."""
+    payload = {
+        "operation": {
+            "id": "126",
+            "type": "create_account",
+            "account": "GACTIVATORACCOUNTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "destination": "GNEWACCOUNTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            "amount": "5.0",
+        }
+    }
+
+    op = notification_service._map_payload_to_operation(payload)
+
+    assert op.for_account == payload["operation"]["destination"]
+    assert op.payment_amount == 5.0
+    assert op.payment_asset == "XLM"
