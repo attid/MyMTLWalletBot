@@ -57,7 +57,7 @@ test-e2e-smoke:
     cd bot && uv run --package mmwb-bot pytest tests/routers/test_common_start.py tests/routers/test_add_wallet.py tests/routers/test_wallet_setting.py tests/routers/test_send.py tests/routers/test_trade.py tests/routers/test_swap.py tests/routers/test_sign.py tests/routers/test_inout.py -m "not external"
 
 test-external:
-    cd bot && uv run --package mmwb-bot pytest -m external
+    cd bot && uv run --package mmwb-bot pytest tests/external -m external
 
 arch-test:
     uv run python .linters/check_import_boundaries.py
