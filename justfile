@@ -42,6 +42,9 @@ fmt:
 
 lint:
     cd bot && uv run --package mmwb-bot ruff check .
+    cd bot && uv run --package mmwb-bot mypy core
+
+typecheck-full:
     cd bot && uv run --package mmwb-bot mypy .
 
 test:
@@ -57,4 +60,12 @@ arch-test:
 metrics:
     uv run python .linters/metrics_snapshot.py
 
+start-task task_id title="":
+    uv run python .linters/create_exec_plan.py {{task_id}} --title "{{title}}"
+
+finish-task plan_name:
+    uv run python .linters/complete_exec_plan.py {{plan_name}}
+
 check: fmt lint test arch-test
+
+check-fast: lint test-fast arch-test

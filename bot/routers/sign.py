@@ -13,7 +13,6 @@ from aiogram.exceptions import TelegramBadRequest
 from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
 from infrastructure.services.app_context import AppContext
-from other.config_reader import config as app_config
 
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager

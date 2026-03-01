@@ -1,8 +1,6 @@
 """Tests for biometric signing flow."""
 
 import pytest
-from unittest.mock import AsyncMock
-from datetime import datetime, timezone
 
 import fakeredis.aioredis
 
@@ -411,7 +409,6 @@ class TestHandleTxSigned:
         This test verifies that the worker correctly accesses
         faststream_tools.APP_CONTEXT (module attribute), not a local copy.
         """
-        from unittest.mock import patch
         from infrastructure.workers.signing_worker import handle_tx_signed
         from other import faststream_tools
 
@@ -445,20 +442,27 @@ class TestHandleTxSigned:
         # Store TX in fake Redis
         tx_id = "123_abc12345"
         tx_key = f"tx:{tx_id}"
-        await fake_redis.hset(tx_key, mapping={
-            FIELD_USER_ID: "123",
-            FIELD_WALLET_ADDRESS: "GXXX...",
-            FIELD_UNSIGNED_XDR: "AAAA...",
-            FIELD_SIGNED_XDR: "BBBB...",
-            FIELD_MEMO: "Test",
-            FIELD_STATUS: STATUS_SIGNED,
-            FIELD_CREATED_AT: "2024-01-01T00:00:00Z",
-        })
+        await fake_redis.hset(
+            tx_key,
+            mapping={
+                FIELD_USER_ID: "123",
+                FIELD_WALLET_ADDRESS: "GXXX...",
+                FIELD_UNSIGNED_XDR: "AAAA...",
+                FIELD_SIGNED_XDR: "BBBB...",
+                FIELD_MEMO: "Test",
+                FIELD_STATUS: STATUS_SIGNED,
+                FIELD_CREATED_AT: "2024-01-01T00:00:00Z",
+            },
+        )
 
         # Create mock APP_CONTEXT
         mock_session = AsyncMock()
         mock_db_pool = MagicMock()
-        mock_db_pool.get_session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+        mock_db_pool.get_session = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()
+            )
+        )
 
         mock_state = AsyncMock()
         mock_state.get_data = AsyncMock(return_value={})
@@ -474,9 +478,14 @@ class TestHandleTxSigned:
         try:
             msg = TxSignedMessage(tx_id=tx_id, user_id=123)
 
-            with patch('infrastructure.workers.signing_worker.aioredis.from_url', return_value=fake_redis):
+            with patch(
+                "infrastructure.workers.signing_worker.aioredis.from_url",
+                return_value=fake_redis,
+            ):
                 # Patch submit_signed_xdr since it's now the entry point
-                with patch('routers.sign.submit_signed_xdr', new_callable=AsyncMock) as mock_submit:
+                with patch(
+                    "routers.sign.submit_signed_xdr", new_callable=AsyncMock
+                ) as mock_submit:
                     mock_submit.return_value = {"successful": True, "hash": "abc123"}
                     await handle_tx_signed(msg)
 

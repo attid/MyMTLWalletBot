@@ -27,7 +27,11 @@ an index. Detailed rules live in `docs/`.
 - `just test-fast`: fast local subset.
 - `just arch-test`: architecture guardrails.
 - `just check`: full local gate (`fmt + lint + test + arch-test`).
+- `just check-fast`: CI-safe gate (`lint + test-fast + arch-test`).
 - `just metrics`: local repository metrics snapshot.
+- `just start-task <id> title="..."`: create an execution plan stub.
+- `just finish-task <plan-file>`: move plan from active to completed.
+- `just typecheck-full`: full mypy sweep (legacy debt visibility).
 
 ## Non-Negotiable Rules
 1. Do not guess data contracts or architecture; read docs first.

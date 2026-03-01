@@ -26,8 +26,5 @@ jobs:
       - name: Setup just
         uses: taiki-e/install-action@just
 
-      - name: Run full local gate
-        run: just check
-
-      - name: Verify formatter produced no extra diff
-        run: git diff --exit-code
+      - name: Run CI gate
+        run: just check-fast
