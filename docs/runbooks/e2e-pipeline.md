@@ -19,10 +19,12 @@ Catch user-flow regressions before merge while keeping PR feedback fast.
 `just test-e2e-smoke` runs critical router flows with mock Telegram and mock
 Horizon to validate end-to-end user interactions without flaky external calls.
 
-## Required Nightly Secrets
+## Nightly Inputs
 
-- `TESTNET_MASTER_PUBLIC_KEY`
-- `TESTNET_MASTER_SECRET_KEY`
-- `HORIZON_TESTNET_URL` (optional override)
+- No mandatory secrets for baseline canary.
+- Optional env overrides:
+  - `HORIZON_TESTNET_URL` (default: `https://horizon-testnet.stellar.org`)
+  - `FRIENDBOT_URL` (default: `https://friendbot.stellar.org`)
 
-Nightly workflow fails fast if mandatory secrets are missing.
+Nightly canary creates a fresh account via Friendbot and verifies it through
+Horizon.
