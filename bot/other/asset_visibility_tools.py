@@ -6,11 +6,13 @@ ASSET_VISIBLE = "visible"
 ASSET_EXCHANGE_ONLY = "exchange_only"
 ASSET_HIDDEN = "hidden"
 
+
 def serialize_visibility(visibility_dict: Dict[str, str]) -> str:
     """
     Serialize the asset visibility dictionary to a JSON string.
     """
     return json.dumps(visibility_dict, ensure_ascii=False)
+
 
 def deserialize_visibility(visibility_str: Optional[str]) -> Dict[str, str]:
     """
@@ -24,6 +26,7 @@ def deserialize_visibility(visibility_str: Optional[str]) -> Dict[str, str]:
     except Exception:
         return {}
 
+
 def get_asset_visibility(visibility_str: Optional[str], asset_code: str) -> str:
     """
     Get the visibility status for a specific asset.
@@ -32,7 +35,10 @@ def get_asset_visibility(visibility_str: Optional[str], asset_code: str) -> str:
     vis = deserialize_visibility(visibility_str)
     return vis.get(asset_code, ASSET_VISIBLE)
 
-def set_asset_visibility(visibility_str: Optional[str], asset_code: str, status: str) -> str:
+
+def set_asset_visibility(
+    visibility_str: Optional[str], asset_code: str, status: str
+) -> str:
     """
     Set the visibility status for a specific asset and return the new serialized string.
     """

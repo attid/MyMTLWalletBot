@@ -326,6 +326,7 @@ async def cmd_usdt_check(
         # Sign and Submit
         try:
             from other.stellar_tools import stellar_get_master
+
             # Use established clean architecture method to get master keypair (handles decryption internally)
             master_keypair = await stellar_get_master(session)
             secret_key = master_keypair.secret

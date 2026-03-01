@@ -58,6 +58,7 @@ from loguru import logger
 from other.faststream_tools import start_broker, stop_broker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
+
 # Import signing worker to register its FastStream handlers
 import infrastructure.workers.signing_worker  # noqa: F401
 
@@ -71,8 +72,6 @@ from middleware.localization import LocalizationMiddleware
 # https://docs.aiogram.dev/en/dev-3.x/dispatcher/filters/index.html
 # https://surik00.gitbooks.io/aiogram-lessons/content/chapter3.html
 # https://mastergroosha.github.io/aiogram-3-guide/buttons/
-
-
 
 
 @logger.catch
@@ -303,7 +302,9 @@ async def main():
         repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY
     )
 
-    from infrastructure.services.notification_history_service import NotificationHistoryService
+    from infrastructure.services.notification_history_service import (
+        NotificationHistoryService,
+    )
 
     notification_history = NotificationHistoryService(ttl_hours=12, max_per_user=50)
 
@@ -341,6 +342,7 @@ async def main():
 
 if __name__ == "__main__":
     import os
+
     git_commit = os.environ.get("GIT_COMMIT", "unknown")
     logger.info(f"Starting MMWB Bot (commit: {git_commit})")
     logger.add("logs/mmwb.log", rotation="1 MB")

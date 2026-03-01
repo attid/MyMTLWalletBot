@@ -5,6 +5,7 @@ from core.domain.entities import User, Wallet, AddressBookEntry, Cheque
 if TYPE_CHECKING:
     from db.models import NotificationFilter, MyMtlWalletBotMessages
 
+
 class IUserRepository(ABC):
     @abstractmethod
     async def get_by_id(self, user_id: int) -> Optional[User]:
@@ -15,7 +16,7 @@ class IUserRepository(ABC):
     async def create(self, user: User) -> User:
         """Create a new user."""
         pass
-    
+
     @abstractmethod
     async def update(self, user: User) -> User:
         """Update an existing user."""
@@ -27,12 +28,14 @@ class IUserRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_account_by_username(self, username: str) -> tuple[Optional[str], Optional[int]]:
+    async def get_account_by_username(
+        self, username: str
+    ) -> tuple[Optional[str], Optional[int]]:
         """Get wallet public key and user_id by Telegram username.
-        
+
         Args:
             username: Telegram username starting with '@'
-            
+
         Returns:
             Tuple of (public_key, user_id) or (None, None) if not found
         """
@@ -54,7 +57,12 @@ class IUserRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_usdt_key(self, user_id: int, create_func: Optional[Callable] = None, user_name: Optional[str] = None) -> tuple[Optional[str], int]:
+    async def get_usdt_key(
+        self,
+        user_id: int,
+        create_func: Optional[Callable] = None,
+        user_name: Optional[str] = None,
+    ) -> tuple[Optional[str], int]:
         """Get or create user's USDT private key and balance."""
         pass
 
@@ -62,14 +70,16 @@ class IUserRepository(ABC):
     async def set_usdt_key(self, user_id: int, address: str) -> None:
         """Set USDT address."""
         pass
-        
+
     @abstractmethod
     async def update_usdt_balance(self, user_id: int, amount: int) -> str:
         """Update USDT balance and return address."""
         pass
 
     @abstractmethod
-    async def get_btc_uuid(self, user_id: int) -> tuple[Optional[str], Optional[object]]: # datetime
+    async def get_btc_uuid(
+        self, user_id: int
+    ) -> tuple[Optional[str], Optional[object]]:  # datetime
         """Get BTC UUID and date."""
         pass
 
@@ -77,7 +87,7 @@ class IUserRepository(ABC):
     async def set_btc_uuid(self, user_id: int, uuid: Optional[str]) -> None:
         """Set BTC UUID."""
         pass
-        
+
     @abstractmethod
     async def get_all_with_usdt_balance(self) -> List[tuple[str, int, int]]:
         """Get all users with +ve USDT balance. Returns [(username, amount, user_id)]."""
@@ -94,7 +104,7 @@ class IWalletRepository(ABC):
     async def get_all_active(self, user_id: int) -> List[Wallet]:
         """Retrieve all active (non-deleted) wallets for a user."""
         pass
-    
+
     @abstractmethod
     async def count_free_wallets(self, user_id: int) -> int:
         """Count the number of active free wallets for a user."""
@@ -109,32 +119,38 @@ class IWalletRepository(ABC):
     async def get_by_id(self, wallet_id: int) -> Optional[Wallet]:
         """Retrieve a wallet by its ID."""
         pass
-        
+
     @abstractmethod
     async def get_default_wallet(self, user_id: int) -> Optional[Wallet]:
         """Retrieve the default wallet for a user."""
         pass
-    
+
     @abstractmethod
     async def create(self, wallet: Wallet) -> Wallet:
         """Create a new wallet."""
         pass
-    
+
     @abstractmethod
     async def update(self, wallet: Wallet) -> Wallet:
         """Update an existing wallet."""
         pass
-    
+
     @abstractmethod
     async def set_default_wallet(self, user_id: int, public_key: str) -> bool:
         """Set a wallet as default for the user."""
         pass
 
     @abstractmethod
-    async def delete(self, user_id: int, public_key: str, erase: bool = False, wallet_id: Optional[int] = None) -> None:
+    async def delete(
+        self,
+        user_id: int,
+        public_key: str,
+        erase: bool = False,
+        wallet_id: Optional[int] = None,
+    ) -> None:
         """Delete or soft-delete a wallet."""
         pass
-    
+
     @abstractmethod
     async def delete_all_by_user(self, user_id: int) -> None:
         """Delete (soft-delete) all wallets for a user."""
@@ -148,12 +164,12 @@ class IWalletRepository(ABC):
     @abstractmethod
     async def reset_balance_cache(self, user_id: int) -> None:
         """Reset the cached balance for the user's default wallet.
-        
-        This invalidates the local balance cache, forcing a refresh 
+
+        This invalidates the local balance cache, forcing a refresh
         from the network on next balance request.
         """
         pass
-        
+
     @abstractmethod
     async def get_all_deleted(self) -> List[Wallet]:
         """Get all wallets marked for deletion."""
@@ -162,22 +178,24 @@ class IWalletRepository(ABC):
 
 class IAddressBookRepository(ABC):
     """Interface for address book operations."""
-    
+
     @abstractmethod
-    async def get_all(self, user_id: int) -> List['AddressBookEntry']:
+    async def get_all(self, user_id: int) -> List["AddressBookEntry"]:
         """Get all address book entries for a user."""
         pass
-    
+
     @abstractmethod
-    async def get_by_id(self, entry_id: int, user_id: int) -> Optional['AddressBookEntry']:
+    async def get_by_id(
+        self, entry_id: int, user_id: int
+    ) -> Optional["AddressBookEntry"]:
         """Get a specific address book entry."""
         pass
-    
+
     @abstractmethod
-    async def create(self, user_id: int, address: str, name: str) -> 'AddressBookEntry':
+    async def create(self, user_id: int, address: str, name: str) -> "AddressBookEntry":
         """Create a new address book entry."""
         pass
-    
+
     @abstractmethod
     async def delete(self, entry_id: int, user_id: int) -> None:
         """Delete an address book entry."""
@@ -186,27 +204,31 @@ class IAddressBookRepository(ABC):
 
 class IChequeRepository(ABC):
     """Interface for cheque operations."""
-    
+
     @abstractmethod
-    async def create(self, uuid: str, amount: str, count: int, user_id: int, comment: str) -> 'Cheque':
+    async def create(
+        self, uuid: str, amount: str, count: int, user_id: int, comment: str
+    ) -> "Cheque":
         """Create a new cheque."""
         pass
-    
+
     @abstractmethod
-    async def get_by_uuid(self, uuid: str, user_id: Optional[int] = None) -> Optional['Cheque']:
+    async def get_by_uuid(
+        self, uuid: str, user_id: Optional[int] = None
+    ) -> Optional["Cheque"]:
         """Get a cheque by UUID."""
         pass
-    
+
     @abstractmethod
     async def get_receive_count(self, uuid: str, user_id: Optional[int] = None) -> int:
         """Get the number of times a cheque has been received."""
         pass
-    
+
     @abstractmethod
-    async def get_available(self, user_id: int) -> List['Cheque']:
+    async def get_available(self, user_id: int) -> List["Cheque"]:
         """Get all available (not fully claimed) cheques for a user."""
         pass
-    
+
     @abstractmethod
     async def add_history(self, cheque_id: int, user_id: int) -> None:
         """Record a cheque claim in history."""
@@ -222,13 +244,19 @@ class INotificationRepository(ABC):
     """Interface for notification filter operations."""
 
     @abstractmethod
-    async def get_by_user_id(self, user_id: int) -> List['NotificationFilter']:
+    async def get_by_user_id(self, user_id: int) -> List["NotificationFilter"]:
         """Get all notification filters for a user."""
         pass
 
     @abstractmethod
-    async def create(self, user_id: int, public_key: Optional[str], asset_code: Optional[str], 
-                    min_amount: float, operation_type: str) -> 'NotificationFilter':
+    async def create(
+        self,
+        user_id: int,
+        public_key: Optional[str],
+        asset_code: Optional[str],
+        min_amount: float,
+        operation_type: str,
+    ) -> "NotificationFilter":
         """Create a new notification filter."""
         pass
 
@@ -236,10 +264,16 @@ class INotificationRepository(ABC):
     async def delete_all_by_user(self, user_id: int) -> None:
         """Delete all notification filters for a user."""
         pass
-    
+
     @abstractmethod
-    async def find_duplicate(self, user_id: int, public_key: Optional[str], asset_code: Optional[str],
-                           min_amount: float, operation_type: str) -> Optional['NotificationFilter']:
+    async def find_duplicate(
+        self,
+        user_id: int,
+        public_key: Optional[str],
+        asset_code: Optional[str],
+        min_amount: float,
+        operation_type: str,
+    ) -> Optional["NotificationFilter"]:
         """Find a duplicate filter."""
         pass
 
@@ -249,27 +283,31 @@ class INotificationRepository(ABC):
         pass
 
 
-
-
-
 class IMessageRepository(ABC):
     """Interface for message queue operations."""
-    
+
     @abstractmethod
-    async def enqueue(self, user_id: int, text: str, use_alarm: int = 0, update_id: Optional[int] = None, button_json: Optional[str] = None) -> None:
+    async def enqueue(
+        self,
+        user_id: int,
+        text: str,
+        use_alarm: int = 0,
+        update_id: Optional[int] = None,
+        button_json: Optional[str] = None,
+    ) -> None:
         """Add a message to the send queue."""
         pass
-    
+
     @abstractmethod
-    async def get_unsent(self, limit: int = 10) -> List['MyMtlWalletBotMessages']:
+    async def get_unsent(self, limit: int = 10) -> List["MyMtlWalletBotMessages"]:
         """Get a batch of unsent messages."""
         pass
-    
+
     @abstractmethod
     async def mark_sent(self, message_id: int) -> None:
         """Mark a message as sent."""
         pass
-        
+
     @abstractmethod
     async def mark_failed(self, message_id: int) -> None:
         """Mark a message as failed (or retry later)."""
@@ -294,12 +332,10 @@ class IRepositoryFactory(ABC):
     @abstractmethod
     def get_cheque_repository(self, session: Any) -> IChequeRepository:
         pass
-    
+
     @abstractmethod
     def get_notification_repository(self, session: Any) -> INotificationRepository:
         pass
-
-
 
     @abstractmethod
     def get_message_repository(self, session: Any) -> IMessageRepository:

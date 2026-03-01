@@ -4,11 +4,12 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List, Tuple
 from core.domain.value_objects import Asset
 
+
 class IStellarService(ABC):
     @abstractmethod
     async def get_account_details(self, public_key: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve account details. 
+        Retrieve account details.
         Returns a dictionary or object containing 'balances', 'sequence', 'signers', 'data', 'details', etc.
         """
         pass
@@ -30,20 +31,20 @@ class IStellarService(ABC):
 
     @abstractmethod
     async def build_payment_transaction(
-        self, 
-        source_account_id: str, 
-        destination_account_id: str, 
-        asset_code: str, 
-        asset_issuer: str | None, 
-        amount: str, 
+        self,
+        source_account_id: str,
+        destination_account_id: str,
+        asset_code: str,
+        asset_issuer: str | None,
+        amount: str,
         memo: str | None = None,
         sequence: int | None = None,
         cancel_offers: bool = False,
-        create_account: bool = False
+        create_account: bool = False,
     ) -> str:
         """Build a payment transaction XDR (unsigned)."""
         pass
-    
+
     @abstractmethod
     async def check_account_exists(self, account_id: str) -> bool:
         """Check if an account exists on the network."""
@@ -59,7 +60,7 @@ class IStellarService(ABC):
         receive_amount: str,
         path: list[Asset] = [],
         strict_receive: bool = False,
-        cancel_offers: bool = False
+        cancel_offers: bool = False,
     ) -> str:
         """Build a path payment transaction (strict send or strict receive)."""
         pass
@@ -72,7 +73,7 @@ class IStellarService(ABC):
         buying: Asset,
         amount: str,
         price: str,
-        offer_id: int = 0
+        offer_id: int = 0,
     ) -> str:
         """Build a manage offer transaction."""
         pass
@@ -83,25 +84,23 @@ class IStellarService(ABC):
         source_account_id: str,
         asset_code: str,
         asset_issuer: str,
-        limit: str | None = None
+        limit: str | None = None,
     ) -> str:
         """Build a change trust transaction."""
         pass
 
     @abstractmethod
     async def build_manage_data_transaction(
-        self,
-        source_account_id: str,
-        data: dict[str, str | None]
+        self, source_account_id: str, data: dict[str, str | None]
     ) -> str:
         """Build a transaction to manage data entries.
-        
+
         Args:
             source_account_id: The source account ID.
             data: Dictionary of key-value pairs. Value=None means delete the data entry.
         """
         pass
-    
+
     @abstractmethod
     async def sign_transaction(self, transaction_envelope: Any, secret: str) -> str:
         """Sign a transaction envelope with a secret key."""
@@ -111,33 +110,47 @@ class IStellarService(ABC):
     async def sign_xdr(self, xdr: str, secret: str) -> str:
         """Sign a transaction XDR with a secret key."""
         pass
-        
+
     @abstractmethod
-    def create_payment_op(self, destination: str, asset_code: str, asset_issuer: str | None, amount: str, source: str | None = None) -> Any:
+    def create_payment_op(
+        self,
+        destination: str,
+        asset_code: str,
+        asset_issuer: str | None,
+        amount: str,
+        source: str | None = None,
+    ) -> Any:
         """Create a payment operation."""
         pass
 
     @abstractmethod
-    def create_create_account_op(self, destination: str, starting_balance: str, source: str | None = None) -> Any:
+    def create_create_account_op(
+        self, destination: str, starting_balance: str, source: str | None = None
+    ) -> Any:
         """Create a create account operation."""
         pass
 
     @abstractmethod
-    def create_change_trust_op(self, asset_code: str, asset_issuer: str, limit: str | None = None, source: str | None = None) -> Any:
+    def create_change_trust_op(
+        self,
+        asset_code: str,
+        asset_issuer: str,
+        limit: str | None = None,
+        source: str | None = None,
+    ) -> Any:
         """Create a change trust operation."""
         pass
 
     @abstractmethod
-    async def build_transaction(self, source_public_key: str, operations: list[Any], memo: str | None = None) -> Any:
+    async def build_transaction(
+        self, source_public_key: str, operations: list[Any], memo: str | None = None
+    ) -> Any:
         """Build a transaction with multiple operations."""
         pass
 
     @abstractmethod
     async def find_strict_send_path(
-        self,
-        source_asset: Asset,
-        source_amount: str,
-        destination_asset: Asset
+        self, source_asset: Asset, source_amount: str, destination_asset: Asset
     ) -> list[Asset]:
         """Find a strict send payment path."""
         pass
@@ -193,7 +206,9 @@ class IStellarService(ABC):
         pass
 
     @abstractmethod
-    async def change_password(self, session: Any, user_id: int, user_id_str: str, pin: str, pin_type: int) -> Any:
+    async def change_password(
+        self, session: Any, user_id: int, user_id_str: str, pin: str, pin_type: int
+    ) -> Any:
         """Change wallet password."""
         pass
 
@@ -208,24 +223,28 @@ class ITonService(ABC):
     def create_wallet(self):
         """Create a new TON wallet (Stateful)."""
         pass
-    
+
     @abstractmethod
     def generate_wallet(self) -> Tuple[Any, List[str]]:
         """Generate a new TON wallet returning (wallet_obj, mnemonic) without storing state."""
         pass
-    
+
     @abstractmethod
     def from_mnemonic(self, mnemonic: str):
         """Import a wallet from a mnemonic."""
         pass
 
     @abstractmethod
-    async def send_ton(self, to_address: str, amount_ton: Any, comment: str = "") -> str:
+    async def send_ton(
+        self, to_address: str, amount_ton: Any, comment: str = ""
+    ) -> str:
         """Send TON."""
         pass
 
     @abstractmethod
-    async def send_usdt(self, to_address: str, amount_usdt: Any, comment: str = "") -> str:
+    async def send_usdt(
+        self, to_address: str, amount_usdt: Any, comment: str = ""
+    ) -> str:
         """Send USDT."""
         pass
 
@@ -233,12 +252,11 @@ class ITonService(ABC):
     def wallet(self):
         """Get the wallet object."""
         return None
-        
+
     @property
     def mnemonic(self) -> Optional[str]:
         """Get the mnemonic phrase."""
         return None
-
 
 
 class IEncryptionService(ABC):
@@ -255,11 +273,11 @@ class IEncryptionService(ABC):
 
 class IWalletSecretService(ABC):
     """Interface for secure wallet secret access.
-    
+
     This service provides access to sensitive wallet data that should not
     be part of the domain entity for security reasons.
     """
-    
+
     @abstractmethod
     async def get_wallet_type(self, user_id: int) -> Optional[str]:
         """
@@ -267,7 +285,7 @@ class IWalletSecretService(ABC):
         Returns 'TON' for TON wallets, or the secret_key identifier for Stellar.
         """
         pass
-    
+
     @abstractmethod
     async def get_ton_mnemonic(self, user_id: int) -> Optional[str]:
         """
@@ -275,7 +293,7 @@ class IWalletSecretService(ABC):
         Returns None if not a TON wallet.
         """
         pass
-    
+
     @abstractmethod
     async def is_ton_wallet(self, user_id: int) -> bool:
         """Check if the user's default wallet is a TON wallet."""

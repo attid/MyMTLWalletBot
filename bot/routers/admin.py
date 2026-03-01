@@ -352,7 +352,7 @@ async def cmd_check_usdt(message: types.Message, session: AsyncSession):
     user_id = None
     with suppress(ValueError):
         user_id = int(target)
-    
+
     query = select(MyMtlWalletBotUsers)
     if user_id is not None:
         query = query.filter(MyMtlWalletBotUsers.user_id == user_id)
@@ -361,7 +361,7 @@ async def cmd_check_usdt(message: types.Message, session: AsyncSession):
         query = query.filter(MyMtlWalletBotUsers.user_name == user_name)
 
     user = (await session.execute(query)).scalar_one_or_none()
-    
+
     if user is None:
         await message.answer("Пользователь не найден")
         return
@@ -372,6 +372,7 @@ async def cmd_check_usdt(message: types.Message, session: AsyncSession):
 
     if user.usdt and len(user.usdt) == 64:
         from other.tron_tools import tron_get_public
+
         try:
             # user.usdt stores private key
             usdt_address = tron_get_public(user.usdt)
@@ -379,7 +380,7 @@ async def cmd_check_usdt(message: types.Message, session: AsyncSession):
             chain_balance = str(chain_balance_val)
         except Exception as e:
             chain_balance = f"Error: {e}"
-    
+
     await message.answer(
         f"👤 User: {user.user_name} (ID: {user.user_id})\n"
         f"🔑 TRC20 Address: `{usdt_address}`\n"
@@ -407,7 +408,7 @@ async def cmd_set_usdt(message: types.Message, session: AsyncSession):
     user_id = None
     with suppress(ValueError):
         user_id = int(target)
-    
+
     query = select(MyMtlWalletBotUsers)
     if user_id is not None:
         query = query.filter(MyMtlWalletBotUsers.user_id == user_id)
@@ -416,7 +417,7 @@ async def cmd_set_usdt(message: types.Message, session: AsyncSession):
         query = query.filter(MyMtlWalletBotUsers.user_name == user_name)
 
     user = (await session.execute(query)).scalar_one_or_none()
-    
+
     if user is None:
         await message.answer("Пользователь не найден")
         return

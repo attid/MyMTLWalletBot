@@ -43,6 +43,7 @@ def setup_mtlap_mocks(router_app_context, mock_horizon):
     Common mock setup for mtlap router tests.
     Provides helper methods to configure specific test scenarios.
     """
+
     class MtlapMockHelper:
         def __init__(self, ctx):
             self.ctx = ctx
@@ -51,7 +52,9 @@ def setup_mtlap_mocks(router_app_context, mock_horizon):
         def _setup_defaults(self):
             # Default wallet mock
             self.wallet = MagicMock()
-            self.wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            self.wallet.public_key = (
+                "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            )
 
             wallet_repo = MagicMock()
             wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
@@ -59,19 +62,21 @@ def setup_mtlap_mocks(router_app_context, mock_horizon):
 
             # Default user mock
             self.user = MagicMock()
-            self.user.lang = 'en'
+            self.user.lang = "en"
 
             user_repo = MagicMock()
             user_repo.get_by_id = AsyncMock(return_value=self.user)
             self.ctx.repository_factory.get_user_repository.return_value = user_repo
-            
+
             # Configure mock_horizon for source account
             mock_horizon.set_account(self.wallet.public_key)
 
         def set_account_data(self, data: dict):
             """Configure account data entries (already decoded)."""
             # Encode values to base64 for mock_horizon
-            encoded_data = {k: base64.b64encode(v.encode()).decode() for k, v in data.items()}
+            encoded_data = {
+                k: base64.b64encode(v.encode()).decode() for k, v in data.items()
+            }
             mock_horizon.set_account(self.wallet.public_key, data=encoded_data)
 
         def set_account_exists(self, exists: bool):
@@ -80,16 +85,19 @@ def setup_mtlap_mocks(router_app_context, mock_horizon):
                 # GINVALID remains 404
                 pass
             else:
-                 # Default is existence anyway
-                 pass
+                # Default is existence anyway
+                pass
 
     return MtlapMockHelper(router_app_context)
 
 
 # --- Tests for MTLAP Tools Menu ---
 
+
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test MTLAPTools callback: should show tools menu.
     Verifies main menu with Assembly, Council, Recommend buttons.
@@ -102,7 +110,9 @@ async def test_cmd_mtlap_tools(mock_telegram, mock_horizon, router_app_context, 
 
     # Trigger MTLAP tools menu
     update = create_callback_update(user_id, "MTLAPTools")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify menu was sent
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -116,8 +126,11 @@ async def test_cmd_mtlap_tools(mock_telegram, mock_horizon, router_app_context, 
 
 # --- Tests for Delegate A (Assembly) ---
 
+
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_delegate_a(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_delegate_a(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test Delegate A callback: should show delegate management menu.
     Displays current delegate status with add/delete options.
@@ -133,7 +146,9 @@ async def test_cmd_mtlap_tools_delegate_a(mock_telegram, mock_horizon, router_ap
 
     # Trigger delegate A menu
     update = create_callback_update(user_id, "MTLAPToolsDelegateA")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify delegate menu was sent
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -142,7 +157,9 @@ async def test_cmd_mtlap_tools_delegate_a(mock_telegram, mock_horizon, router_ap
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test Add Delegate A when user has low XLM: should show alert.
     have_free_xlm returns False, blocking the operation.
@@ -156,7 +173,9 @@ async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(mock_telegram, mock_horizo
     # Try to add delegate with have_free_xlm returning False
     with patch("routers.mtlap.have_free_xlm", AsyncMock(return_value=False)):
         update = create_callback_update(user_id, "MTLAPToolsAddDelegateA")
-        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+        await dp.feed_update(
+            bot=router_app_context.bot, update=update, app_context=router_app_context
+        )
 
     # Verify alert was shown (no sendMessage, only answerCallbackQuery with alert)
     msg_req = get_telegram_request(mock_telegram, "sendMessage")
@@ -169,7 +188,9 @@ async def test_cmd_mtlap_tools_add_delegate_a_low_xlm(mock_telegram, mock_horizo
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_add_delegate_a_ok(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_add_delegate_a_ok(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test Add Delegate A with sufficient XLM: should prompt for delegate address.
     have_free_xlm returns True, allowing the operation.
@@ -180,12 +201,16 @@ async def test_cmd_mtlap_tools_add_delegate_a_ok(mock_telegram, mock_horizon, ro
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(mtlap_router)
 
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
 
     # Add delegate with have_free_xlm returning True
     with patch("routers.mtlap.have_free_xlm", AsyncMock(return_value=True)):
         update = create_callback_update(user_id, "MTLAPToolsAddDelegateA")
-        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+        await dp.feed_update(
+            bot=router_app_context.bot, update=update, app_context=router_app_context
+        )
 
     # Verify address prompt was sent
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -198,7 +223,9 @@ async def test_cmd_mtlap_tools_add_delegate_a_ok(mock_telegram, mock_horizon, ro
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_send_add_delegate_for_a_valid(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_send_add_delegate_for_a_valid(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test sending valid delegate address for A: should generate XDR and confirm.
     mock_horizon provides the account data.
@@ -207,21 +234,25 @@ async def test_cmd_mtlap_send_add_delegate_for_a_valid(mock_telegram, mock_horiz
     delegate_address = "GDELEGATE1234567890123456789012345678901234567890123456"
 
     # Configure mock_horizon with delegate account
-    mock_horizon.set_account(delegate_address, balances=[
-        {"asset_type": "native", "balance": "100.0"}
-    ])
+    mock_horizon.set_account(
+        delegate_address, balances=[{"asset_type": "native", "balance": "100.0"}]
+    )
 
     # Setup router
     dp.message.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(mtlap_router)
 
     # Set state
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     await dp.storage.set_state(key=storage_key, state=MTLAPStateTools.delegate_for_a)
 
     # Send delegate address
     update = create_message_update(user_id, delegate_address)
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify confirmation message
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -234,14 +265,16 @@ async def test_cmd_mtlap_send_add_delegate_for_a_valid(mock_telegram, mock_horiz
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_send_add_delegate_for_a_invalid(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_send_add_delegate_for_a_invalid(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test sending invalid delegate address for A: should show error.
     mock_horizon returns 404 for unknown accounts.
     """
     user_id = 123
     invalid_address = "GINVALID12345678901234567890123456789012345678901234"
-    
+
     # Configure account exists check to return False
     mock_horizon.set_not_found(invalid_address)
 
@@ -250,12 +283,16 @@ async def test_cmd_mtlap_send_add_delegate_for_a_invalid(mock_telegram, mock_hor
     dp.include_router(mtlap_router)
 
     # Set state
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     await dp.storage.set_state(key=storage_key, state=MTLAPStateTools.delegate_for_a)
 
     # Send invalid address
     update = create_message_update(user_id, invalid_address)
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify error message
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -265,8 +302,11 @@ async def test_cmd_mtlap_send_add_delegate_for_a_invalid(mock_telegram, mock_hor
 
 # --- Tests for Delegate C (Council) ---
 
+
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_delegate_c(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_delegate_c(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test Delegate C callback: should show council delegate management menu.
     Displays current C delegate status with add/delete options.
@@ -282,7 +322,9 @@ async def test_cmd_mtlap_tools_delegate_c(mock_telegram, mock_horizon, router_ap
 
     # Trigger delegate C menu
     update = create_callback_update(user_id, "MTLAPToolsDelegateC")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify delegate menu was sent
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -292,8 +334,11 @@ async def test_cmd_mtlap_tools_delegate_c(mock_telegram, mock_horizon, router_ap
 
 # --- Tests for Recommendations ---
 
+
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_recommend(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_recommend(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test Recommend callback: should show recommendation prompt.
     Displays existing recommendations count.
@@ -305,14 +350,18 @@ async def test_cmd_mtlap_tools_recommend(mock_telegram, mock_horizon, router_app
     dp.include_router(mtlap_router)
 
     # Set state with existing recommendations
-    setup_mtlap_mocks.set_account_data({
-        "RecommendToMTLA": "GACC1",
-        "RecommendToMTLA1": "GACC2",
-    })
+    setup_mtlap_mocks.set_account_data(
+        {
+            "RecommendToMTLA": "GACC1",
+            "RecommendToMTLA1": "GACC2",
+        }
+    )
 
     # Trigger recommend menu
     update = create_callback_update(user_id, "MTLAPToolsRecommend")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify recommendation prompt
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -320,13 +369,17 @@ async def test_cmd_mtlap_tools_recommend(mock_telegram, mock_horizon, router_app
     assert "recommend_prompt" in req["data"]["text"]
 
     # Verify state was set
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     state = await dp.storage.get_state(key=storage_key)
     assert state == MTLAPStateTools.recommend_for
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_send_recommend_valid(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_send_recommend_valid(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test sending valid recommendation: should generate XDR and confirm.
     mock_horizon validates the recommended account.
@@ -335,10 +388,10 @@ async def test_cmd_mtlap_send_recommend_valid(mock_telegram, mock_horizon, route
     recommend_address = "GRECOMMEND1234567890123456789012345678901234567890"
 
     # Configure mock_horizon with recommended account
-    mock_horizon.set_account(recommend_address, balances=[
-        {"asset_type": "native", "balance": "50.0"}
-    ])
-    
+    mock_horizon.set_account(
+        recommend_address, balances=[{"asset_type": "native", "balance": "50.0"}]
+    )
+
     # Configure account exists check
     setup_mtlap_mocks.set_account_exists(True)
 
@@ -348,15 +401,19 @@ async def test_cmd_mtlap_send_recommend_valid(mock_telegram, mock_horizon, route
 
     # Set state with existing recommendations
     setup_mtlap_mocks.set_account_data({"RecommendToMTLA": "GOLD1"})
-    
+
     # Set FSM state
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     await dp.storage.set_state(key=storage_key, state=MTLAPStateTools.recommend_for)
 
     # Send recommendation with have_free_xlm returning True
     with patch("routers.mtlap.have_free_xlm", AsyncMock(return_value=True)):
         update = create_message_update(user_id, recommend_address)
-        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+        await dp.feed_update(
+            bot=router_app_context.bot, update=update, app_context=router_app_context
+        )
 
     # Verify confirmation message
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -369,14 +426,16 @@ async def test_cmd_mtlap_send_recommend_valid(mock_telegram, mock_horizon, route
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_send_recommend_invalid(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_send_recommend_invalid(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test sending invalid recommendation: should show error.
     mock_horizon returns 404 for unknown accounts.
     """
     user_id = 123
     invalid_address = "GINVALID12345678901234567890123456789012345678901234"
-    
+
     # Configure account exists check to return False
     mock_horizon.set_not_found(invalid_address)
 
@@ -385,12 +444,16 @@ async def test_cmd_mtlap_send_recommend_invalid(mock_telegram, mock_horizon, rou
     dp.include_router(mtlap_router)
 
     # Set state
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     await dp.storage.set_state(key=storage_key, state=MTLAPStateTools.recommend_for)
 
     # Send invalid address
     update = create_message_update(user_id, invalid_address)
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify error message
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -400,8 +463,11 @@ async def test_cmd_mtlap_send_recommend_invalid(mock_telegram, mock_horizon, rou
 
 # --- Tests for Delegate Deletion ---
 
+
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_del_delegate_a_with_delegate(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_del_delegate_a_with_delegate(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test deleting existing A delegate: should generate XDR for removal.
     """
@@ -416,7 +482,9 @@ async def test_cmd_mtlap_tools_del_delegate_a_with_delegate(mock_telegram, mock_
 
     # Trigger delete
     update = create_callback_update(user_id, "MTLAPToolsDelDelegateA")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify delete confirmation
     req = get_telegram_request(mock_telegram, "sendMessage")
@@ -424,13 +492,17 @@ async def test_cmd_mtlap_tools_del_delegate_a_with_delegate(mock_telegram, mock_
     assert "delegate_delete" in req["data"]["text"]
 
     # Verify XDR was stored
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     data = await dp.storage.get_data(key=storage_key)
     assert "xdr" in data
 
 
 @pytest.mark.asyncio
-async def test_cmd_mtlap_tools_del_delegate_a_no_delegate(mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks):
+async def test_cmd_mtlap_tools_del_delegate_a_no_delegate(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_mtlap_mocks
+):
     """
     Test deleting when no A delegate exists: should show "Nothing to delete".
     """
@@ -441,12 +513,16 @@ async def test_cmd_mtlap_tools_del_delegate_a_no_delegate(mock_telegram, mock_ho
     dp.include_router(mtlap_router)
 
     # Set state without delegate
-    storage_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
     await dp.storage.set_data(key=storage_key, data={})
 
     # Try to delete
     update = create_callback_update(user_id, "MTLAPToolsDelDelegateA")
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify "nothing to delete" answer (no sendMessage)
     msg_req = get_telegram_request(mock_telegram, "sendMessage")

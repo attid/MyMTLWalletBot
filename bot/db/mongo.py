@@ -1,12 +1,11 @@
-
 from motor.motor_asyncio import AsyncIOMotorClient
 from other.config_reader import config
 
 client: AsyncIOMotorClient = AsyncIOMotorClient(config.mongodb_url)
-db = client['mtl_tables']
+db = client["mtl_tables"]
 
-assets_collection = db['assets']
-accounts_collection = db['accounts']
+assets_collection = db["assets"]
+accounts_collection = db["accounts"]
 
 
 # async def mongo_get_asset_issuer(asset_code):
@@ -28,14 +27,13 @@ async def check_account_id_from_grist(public_key: str) -> bool:
     Returns:
         bool: True if the public key has a 'reserv' signer type, False otherwise.
     """
-    result = await accounts_collection.find_one({
-        "signers_type": "reserv",
-        "account_id": public_key
-    })
+    result = await accounts_collection.find_one(
+        {"signers_type": "reserv", "account_id": public_key}
+    )
     return bool(result)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass
     # _ = asyncio.run(mongo_check_multi('GD44EAUQXNUVBJACZMW6GPT2GZ7I26EDQCU5HGKUTVEQTXIDEVGUFIRE'))
     # print(_)

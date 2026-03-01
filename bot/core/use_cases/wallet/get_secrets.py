@@ -3,24 +3,30 @@ from dataclasses import dataclass
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IEncryptionService
 
+
 @dataclass
 class WalletSecrets:
     secret_key: str
     seed_phrase: Optional[str] = None
 
+
 class GetWalletSecrets:
-    def __init__(self, wallet_repository: IWalletRepository, encryption_service: IEncryptionService):
+    def __init__(
+        self,
+        wallet_repository: IWalletRepository,
+        encryption_service: IEncryptionService,
+    ):
         self.wallet_repository = wallet_repository
         self.encryption_service = encryption_service
 
     async def execute(self, user_id: int, pin: str) -> Optional[WalletSecrets]:
         """
         Retrieve decrypted wallet secrets.
-        
+
         Args:
             user_id: The ID of the user.
             pin: The PIN/password to decrypt the secret key.
-            
+
         Returns:
             WalletSecrets object if successful, None if wallet not found or pin invalid.
         """

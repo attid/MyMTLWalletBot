@@ -4,6 +4,7 @@ from infrastructure.utils.common_utils import float2str
 from core.models.notification import NotificationOperation
 from infrastructure.services.app_context import AppContext
 
+
 def decode_db_effect(
     operation: NotificationOperation,
     decode_for: str,
@@ -32,7 +33,7 @@ def decode_db_effect(
     if not loc_service and app_context:
         loc_service = app_context.localization_service
 
-    op_id_clean = operation.id.split('_')[0] if operation.id else ""
+    op_id_clean = operation.id.split("_")[0] if operation.id else ""
     op_link = f'<a href="https://viewer.eurmtl.me/operation/{op_id_clean}">viewer</a>'
     if operation.operation == "trade":
         # Trade: Bought (amount/asset_code), Sold (amount2/asset2_code)
@@ -58,7 +59,12 @@ def decode_db_effect(
         return my_gettext(
             user_id,
             "info_debit",
-            (account_link, float2str(operation.payment_amount), str(operation.payment_asset), op_link),
+            (
+                account_link,
+                float2str(operation.payment_amount),
+                str(operation.payment_asset),
+                op_link,
+            ),
             localization_service=loc_service,
         )
     elif operation.operation == "create_account":
@@ -77,7 +83,12 @@ def decode_db_effect(
         return my_gettext(
             user_id,
             "info_credit",
-            (account_link, float2str(operation.payment_amount), str(operation.payment_asset), op_link),
+            (
+                account_link,
+                float2str(operation.payment_amount),
+                str(operation.payment_asset),
+                op_link,
+            ),
             localization_service=loc_service,
         )
     elif operation.operation in (
@@ -118,47 +129,37 @@ def decode_db_effect(
                 localization_service=loc_service,
             )
         elif operation.data_value == decode_for:
-             # User mentioned in Data
-             simple_decode_for = decode_for[:4] + ".." + decode_for[-4:]
-             decode_for_link = "https://viewer.eurmtl.me/account/" + decode_for
-             decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
-             
-             return my_gettext(
+            # User mentioned in Data
+            simple_decode_for = decode_for[:4] + ".." + decode_for[-4:]
+            decode_for_link = "https://viewer.eurmtl.me/account/" + decode_for
+            decode_for_link = f'<a href="{decode_for_link}">{simple_decode_for}</a>'
+
+            return my_gettext(
                 user_id,
                 "info_data_mention",
-                (
-                    account_link,
-                    decode_for_link,
-                    op_link,
-                    str(operation.data_name)
-                ),
+                (account_link, decode_for_link, op_link, str(operation.data_name)),
                 localization_service=loc_service,
-             )
+            )
         else:
-             # Data Set / Updated
-             data_name = str(operation.data_name)
-             data_value = str(operation.data_value)
-             return my_gettext(
+            # Data Set / Updated
+            data_name = str(operation.data_name)
+            data_value = str(operation.data_value)
+            return my_gettext(
                 user_id,
                 "info_data_set",
-                (
-                    account_link,
-                    op_link,
-                    data_name,
-                    data_value
-                ),
+                (account_link, op_link, data_name, data_value),
                 localization_service=loc_service,
-             )
+            )
     elif operation.operation == "payment":
         # Handle payment operations specifically
         memo_text = ""
         if operation.memo:
             memo_text = f"\nMemo: {operation.memo}"
 
-        is_incoming = (decode_for == operation.for_account)
-        if force_perspective == 'debit':
+        is_incoming = decode_for == operation.for_account
+        if force_perspective == "debit":
             is_incoming = False
-        elif force_perspective == 'credit':
+        elif force_perspective == "credit":
             is_incoming = True
 
         if is_incoming:
@@ -180,7 +181,9 @@ def decode_db_effect(
         else:
             # This is an outgoing payment or other account
             # Use source account for the message "From ... was debit" to be logically correct with "Source"
-            simple_source = operation.from_account[:4] + ".." + operation.from_account[-4:]
+            simple_source = (
+                operation.from_account[:4] + ".." + operation.from_account[-4:]
+            )
             source_link = "https://viewer.eurmtl.me/account/" + operation.from_account
             source_link_html = f'<a href="{source_link}">{simple_source}</a>'
 
@@ -225,13 +228,13 @@ def decode_db_effect(
                 pass
 
         # Use localization for sell offer message
-        # Manage Sell Offer: 
+        # Manage Sell Offer:
         # Selling: asset2_code (Amount: operation.amount)
         # Buying: asset_code (Price: operation.amount2)
-        
+
         selling_asset = str(operation.offer_selling_asset)
         buying_asset = str(operation.offer_buying_asset)
-        
+
         return my_gettext(
             user_id,
             "info_sell_offer",
@@ -257,7 +260,7 @@ def decode_db_effect(
         # Buy Offer:
         # Buying: asset_code (Amount: operation.amount)
         # Selling: asset2_code (Price: operation.amount2)
-        
+
         buying_asset = str(operation.offer_buying_asset)
         amount_buying = float2str(operation.offer_amount)
         selling_asset = str(operation.offer_selling_asset)

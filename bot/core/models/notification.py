@@ -2,24 +2,26 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+
 @dataclass
 class NotificationOperation:
     """
     Represents an operation for notification purposes.
     Replaces the legacy TOperations DB model.
     """
+
     id: str
     operation: str
     dt: datetime
-    
+
     # Accounts
     from_account: Optional[str] = None
     for_account: Optional[str] = None
-    
+
     # Payment
     payment_amount: float = 0.0
     payment_asset: str = "XLM"
-    
+
     # Path Payment
     path_sent_amount: float = 0.0
     path_sent_asset: str = "XLM"
@@ -43,7 +45,7 @@ class NotificationOperation:
     # Manage Data
     data_name: Optional[str] = None
     data_value: Optional[str] = None
-    
+
     transaction_hash: Optional[str] = None
     memo: Optional[str] = None
 
@@ -54,7 +56,10 @@ class NotificationOperation:
             return self.payment_amount
         if self.operation == "create_account":
             return self.payment_amount
-        if self.operation in ("path_payment_strict_send", "path_payment_strict_receive"):
+        if self.operation in (
+            "path_payment_strict_send",
+            "path_payment_strict_receive",
+        ):
             return self.path_received_amount
         if self.operation == "trade":
             return self.trade_bought_amount
@@ -69,7 +74,10 @@ class NotificationOperation:
             return self.payment_asset
         if self.operation == "create_account":
             return self.payment_asset
-        if self.operation in ("path_payment_strict_send", "path_payment_strict_receive"):
+        if self.operation in (
+            "path_payment_strict_send",
+            "path_payment_strict_receive",
+        ):
             return self.path_received_asset
         if self.operation == "trade":
             return self.trade_bought_asset

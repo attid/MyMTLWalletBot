@@ -3,15 +3,29 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
-from keyboards.common_keyboards import get_return_button, get_kb_yesno_send_xdr, get_kb_return
+from keyboards.common_keyboards import (
+    get_return_button,
+    get_kb_yesno_send_xdr,
+    get_kb_return,
+)
 from routers.sign import cmd_check_xdr
-from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_last_message_id
+from infrastructure.utils.telegram_utils import (
+    my_gettext,
+    send_message,
+    clear_last_message_id,
+)
 from infrastructure.utils.stellar_utils import my_float
 from infrastructure.services.app_context import AppContext
 from db.mongo import check_account_id_from_grist
 from other.web_tools import get_web_request
-from other.stellar_tools import stellar_get_data, cmd_gen_data_xdr, stellar_get_user_account, stellar_check_account, \
-    have_free_xlm, stellar_get_multi_sign_xdr
+from other.stellar_tools import (
+    stellar_get_data,
+    cmd_gen_data_xdr,
+    stellar_get_user_account,
+    stellar_check_account,
+    have_free_xlm,
+    stellar_get_multi_sign_xdr,
+)
 
 
 class StateTools(StatesGroup):
@@ -41,23 +55,55 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-@router.callback_query(F.data=="MTLTools")
-async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+@router.callback_query(F.data == "MTLTools")
+async def cmd_tools(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     user_id = callback.from_user.id
-    msg = my_gettext(user_id, 'mtl_tools_msg', app_context=app_context)
+    msg = my_gettext(user_id, "mtl_tools_msg", app_context=app_context)
 
     buttons = [
-        [types.InlineKeyboardButton(text='🪙 ' + my_gettext(user_id, 'kb_tools_donate', app_context=app_context),
-                                    callback_data="MTLToolsDonate")],
-        [types.InlineKeyboardButton(text='📜 ' + my_gettext(user_id, 'kb_tools_delegate', app_context=app_context),
-                                    callback_data="MTLToolsDelegate")],
-        [types.InlineKeyboardButton(text='💸 ' + my_gettext(user_id, 'kb_tools_add_bim', app_context=app_context),
-                                    callback_data="MTLToolsAddBIM")],
-        [types.InlineKeyboardButton(text=my_gettext(user_id, 'kb_tools_update_multi', app_context=app_context),
-                                    callback_data="MTLToolsUpdateMulti")],
-        get_return_button(user_id, app_context=app_context)
+        [
+            types.InlineKeyboardButton(
+                text="🪙 "
+                + my_gettext(user_id, "kb_tools_donate", app_context=app_context),
+                callback_data="MTLToolsDonate",
+            )
+        ],
+        [
+            types.InlineKeyboardButton(
+                text="📜 "
+                + my_gettext(user_id, "kb_tools_delegate", app_context=app_context),
+                callback_data="MTLToolsDelegate",
+            )
+        ],
+        [
+            types.InlineKeyboardButton(
+                text="💸 "
+                + my_gettext(user_id, "kb_tools_add_bim", app_context=app_context),
+                callback_data="MTLToolsAddBIM",
+            )
+        ],
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(
+                    user_id, "kb_tools_update_multi", app_context=app_context
+                ),
+                callback_data="MTLToolsUpdateMulti",
+            )
+        ],
+        get_return_button(user_id, app_context=app_context),
     ]
-    await send_message(session,user_id, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
+    await send_message(
+        session,
+        user_id,
+        msg,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
@@ -65,8 +111,14 @@ async def cmd_tools(callback: types.CallbackQuery, state: FSMContext, session: A
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(F.data=="MTLToolsDelegate")
-async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+
+@router.callback_query(F.data == "MTLToolsDelegate")
+async def cmd_tools_delegate(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -74,21 +126,44 @@ async def cmd_tools_delegate(callback: types.CallbackQuery, state: FSMContext, s
             delegate = data[name]
             break
     buttons = [
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_tools_add_delegate', app_context=app_context),
-                                    callback_data="MTLToolsAddDelegate")],
-        [types.InlineKeyboardButton(text=my_gettext(callback, 'kb_tools_del_delegate', app_context=app_context),
-                                    callback_data="MTLToolsDelDelegate")],
-        get_return_button(callback, app_context=app_context)
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(
+                    callback, "kb_tools_add_delegate", app_context=app_context
+                ),
+                callback_data="MTLToolsAddDelegate",
+            )
+        ],
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(
+                    callback, "kb_tools_del_delegate", app_context=app_context
+                ),
+                callback_data="MTLToolsDelDelegate",
+            )
+        ],
+        get_return_button(callback, app_context=app_context),
     ]
 
-    msg = my_gettext(callback, 'delegate_start', (delegate,), app_context=app_context)
+    msg = my_gettext(callback, "delegate_start", (delegate,), app_context=app_context)
 
-    await send_message(session,callback, msg, reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        msg,
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data=="MTLToolsDelDelegate")
-async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
+@router.callback_query(F.data == "MTLToolsDelDelegate")
+async def cmd_tools_del_delegate(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     data = await stellar_get_data(session, callback.from_user.id)
     delegate = None
     for name in data:
@@ -96,44 +171,90 @@ async def cmd_tools_del_delegate(callback: types.CallbackQuery, state: FSMContex
             delegate = name
             break
     if delegate:
-        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session,callback.from_user.id)).account.account_id,
-                               delegate, None)
+        xdr = await cmd_gen_data_xdr(
+            (
+                await stellar_get_user_account(session, callback.from_user.id)
+            ).account.account_id,
+            delegate,
+            None,
+        )
         await state.update_data(xdr=xdr)
-        await send_message(session,callback, my_gettext(callback, 'delegate_delete', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            callback,
+            my_gettext(
+                callback, "delegate_delete", (delegate,), app_context=app_context
+            ),
+            reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context),
+            app_context=app_context,
+        )
 
         await callback.answer()
     else:
-        await callback.answer('Nothing to delete')
+        await callback.answer("Nothing to delete")
 
 
-@router.callback_query(F.data=="MTLToolsAddDelegate")
-async def cmd_tools_add_delegate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
-        await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
+@router.callback_query(F.data == "MTLToolsAddDelegate")
+async def cmd_tools_add_delegate(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    if not await have_free_xlm(
+        session=session, user_id=callback.from_user.id, app_context=app_context
+    ):
+        await callback.answer(
+            my_gettext(callback, "low_xlm", app_context=app_context), show_alert=True
+        )
         return
 
-    await send_message(session,callback, my_gettext(callback, 'delegate_send_address', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, "delegate_send_address", app_context=app_context),
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await state.set_state(StateTools.delegate_for)
     await callback.answer()
 
 
 @router.message(StateTools.delegate_for)
-async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_send_add_delegate_for(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     if message.text is None or message.from_user is None:
         return
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
         delegate = my_account.account.account.account_id
-        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                               "mtl_delegate", delegate)
+        xdr = await cmd_gen_data_xdr(
+            (
+                await stellar_get_user_account(session, message.from_user.id)
+            ).account.account_id,
+            "mtl_delegate",
+            delegate,
+        )
         await state.update_data(xdr=xdr)
-        await send_message(session,message, my_gettext(message, 'delegate_add', (delegate,), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            message,
+            my_gettext(message, "delegate_add", (delegate,), app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'delegate_send_address', app_context=app_context)
+        msg = (
+            my_gettext(message, "send_error2", app_context=app_context)
+            + "\n"
+            + my_gettext(message, "delegate_send_address", app_context=app_context)
+        )
         await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
@@ -142,14 +263,25 @@ async def cmd_send_add_delegate_for(message: types.Message, state: FSMContext, s
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(F.data=="MTLToolsDonate")
-async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    data = await stellar_get_data(session,callback.from_user.id)
+
+@router.callback_query(F.data == "MTLToolsDonate")
+async def cmd_tools_donate(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    data = await stellar_get_data(session, callback.from_user.id)
     donates = {}
     idx = 0
     for name in data:
         if str(name).startswith("mtl_donate"):
-            donates[f'idx{idx}'] = [name, name[11:str(name).find('=')], name[str(name).find('=') + 1:], data[name]]
+            donates[f"idx{idx}"] = [
+                name,
+                name[11 : str(name).find("=")],
+                name[str(name).find("=") + 1 :],
+                data[name],
+            ]
             idx += 1
 
     buttons = []
@@ -157,113 +289,214 @@ async def cmd_tools_donate(callback: types.CallbackQuery, state: FSMContext, ses
     for donate_idx in donates:
         buttons.append(
             [
-                types.InlineKeyboardButton(text=donates[donate_idx][1],
-                                           callback_data=DonateCallbackData(
-                                               action='Show', idx=donate_idx).pack()
-                                           ),
-                types.InlineKeyboardButton(text=donates[donate_idx][2],
-                                           callback_data=DonateCallbackData(
-                                               action='Show', idx=donate_idx).pack()
-                                           ),
-                types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete', app_context=app_context),
-                                           callback_data=DonateCallbackData(
-                                               action='Delete', idx=donate_idx).pack()
-                                           )
+                types.InlineKeyboardButton(
+                    text=donates[donate_idx][1],
+                    callback_data=DonateCallbackData(
+                        action="Show", idx=donate_idx
+                    ).pack(),
+                ),
+                types.InlineKeyboardButton(
+                    text=donates[donate_idx][2],
+                    callback_data=DonateCallbackData(
+                        action="Show", idx=donate_idx
+                    ).pack(),
+                ),
+                types.InlineKeyboardButton(
+                    text=my_gettext(callback, "kb_delete", app_context=app_context),
+                    callback_data=DonateCallbackData(
+                        action="Delete", idx=donate_idx
+                    ).pack(),
+                ),
             ]
         )
-    buttons.append([types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_donate', app_context=app_context),
-                                               callback_data='AddDonate'
-                                               )])
+    buttons.append(
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(callback, "kb_add_donate", app_context=app_context),
+                callback_data="AddDonate",
+            )
+        ]
+    )
     buttons.append(get_return_button(callback, app_context=app_context))
 
     await state.update_data(donates=donates)
-    await send_message(session,callback, my_gettext(callback, 'donate_show', app_context=app_context),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, "donate_show", app_context=app_context),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data=="AddDonate")
-async def cmd_tools_add_donate(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
-        await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
+@router.callback_query(F.data == "AddDonate")
+async def cmd_tools_add_donate(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    if not await have_free_xlm(
+        session=session, user_id=callback.from_user.id, app_context=app_context
+    ):
+        await callback.answer(
+            my_gettext(callback, "low_xlm", app_context=app_context), show_alert=True
+        )
         return
 
-    await send_message(session,callback, my_gettext(callback, 'donate_send', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, "donate_send", app_context=app_context),
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await state.set_state(StateTools.donate_address)
     await callback.answer()
 
 
 @router.message(StateTools.donate_address)
-async def cmd_send_add_donate_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_send_add_donate_address(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     if message.text is None:
         return
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
         await state.update_data(address=my_account.account.account.account_id)
-        await send_message(session,message, my_gettext(message, 'donate_name', app_context=app_context),
-                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            message,
+            my_gettext(message, "donate_name", app_context=app_context),
+            reply_markup=get_kb_return(message, app_context=app_context),
+            app_context=app_context,
+        )
         await state.set_state(StateTools.donate_name)
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'donate_send', app_context=app_context)
-        await send_message(session,message, msg, app_context=app_context)
+        msg = (
+            my_gettext(message, "send_error2", app_context=app_context)
+            + "\n"
+            + my_gettext(message, "donate_send", app_context=app_context)
+        )
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
 @router.message(StateTools.donate_name)
-async def cmd_send_add_donate_name(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_send_add_donate_name(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     name = message.text
     if name:
-        name = name.replace('=', '_').replace(':', '_')
+        name = name.replace("=", "_").replace(":", "_")
         await state.update_data(name=name)
-        await send_message(session,message, my_gettext(message, 'donate_persent', app_context=app_context),
-                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            message,
+            my_gettext(message, "donate_persent", app_context=app_context),
+            reply_markup=get_kb_return(message, app_context=app_context),
+            app_context=app_context,
+        )
         await state.set_state(StateTools.donate_persent)
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'donate_send', app_context=app_context)
-        await send_message(session,message, msg, app_context=app_context)
+        msg = (
+            my_gettext(message, "send_error2", app_context=app_context)
+            + "\n"
+            + my_gettext(message, "donate_send", app_context=app_context)
+        )
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
 @router.message(StateTools.donate_persent)
-async def cmd_send_add_donate_percent(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_send_add_donate_percent(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     if message.from_user is None:
         return
     if my_float(message.text):
         persent = my_float(message.text)
         data = await state.get_data()
-        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                               f"mtl_donate_{data['name']}={persent}", data['address'])
+        xdr = await cmd_gen_data_xdr(
+            (
+                await stellar_get_user_account(session, message.from_user.id)
+            ).account.account_id,
+            f"mtl_donate_{data['name']}={persent}",
+            data["address"],
+        )
         await state.update_data(xdr=xdr)
-        await send_message(session,message, my_gettext(message, 'donate_end', (data['name'], persent, data['address']), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            message,
+            my_gettext(
+                message,
+                "donate_end",
+                (data["name"], persent, data["address"]),
+                app_context=app_context,
+            ),
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'donate_send', app_context=app_context)
-        await send_message(session,message, msg, app_context=app_context)
+        msg = (
+            my_gettext(message, "send_error2", app_context=app_context)
+            + "\n"
+            + my_gettext(message, "donate_send", app_context=app_context)
+        )
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
 @router.callback_query(DonateCallbackData.filter())
-async def cq_donate_setting(callback: types.CallbackQuery, callback_data: DonateCallbackData,
-                      state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cq_donate_setting(
+    callback: types.CallbackQuery,
+    callback_data: DonateCallbackData,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
     data = await state.get_data()
-    donates = data['donates']
+    donates = data["donates"]
     if idx in donates:
-        if answer == 'Show':
+        if answer == "Show":
             msg = f"name = {donates[idx][1]} \n persent = {donates[idx][2]}\n address = {donates[idx][3]}"
             await callback.answer(msg[:200], show_alert=True)
-        if answer == 'Delete':
-            xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session,user_id)).account.account_id,
-                                   donates[idx][0], None)
+        if answer == "Delete":
+            xdr = await cmd_gen_data_xdr(
+                (await stellar_get_user_account(session, user_id)).account.account_id,
+                donates[idx][0],
+                None,
+            )
             await state.update_data(xdr=xdr)
-            await send_message(session,callback, my_gettext(callback, 'donate_delete', (donates[idx][1],), app_context=app_context),
-                               reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
+            await send_message(
+                session,
+                callback,
+                my_gettext(
+                    callback,
+                    "donate_delete",
+                    (donates[idx][1],),
+                    app_context=app_context,
+                ),
+                reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context),
+                app_context=app_context,
+            )
     await callback.answer()
 
 
@@ -271,14 +504,20 @@ async def cq_donate_setting(callback: types.CallbackQuery, callback_data: Donate
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(F.data=="MTLToolsAddBIM")
-async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    data = await stellar_get_data(session,callback.from_user.id)
+
+@router.callback_query(F.data == "MTLToolsAddBIM")
+async def cmd_tools_bim(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    data = await stellar_get_data(session, callback.from_user.id)
     bod_dict = {}
     idx = 0
     for name in data:
         if str(name).startswith("bod_"):
-            bod_dict[f'idx{idx}'] = [name, name[4:], data[name]]
+            bod_dict[f"idx{idx}"] = [name, name[4:], data[name]]
             idx += 1
 
     buttons = []
@@ -286,124 +525,222 @@ async def cmd_tools_bim(callback: types.CallbackQuery, state: FSMContext, sessio
     for donate_idx in bod_dict:
         buttons.append(
             [
-                types.InlineKeyboardButton(text=bod_dict[donate_idx][1],
-                                           callback_data=BIMCallbackData(
-                                               action='Show', idx=donate_idx).pack()
-                                           ),
-                types.InlineKeyboardButton(text=my_gettext(callback, 'kb_delete', app_context=app_context),
-                                           callback_data=BIMCallbackData(
-                                               action='Delete', idx=donate_idx).pack()
-                                           )
+                types.InlineKeyboardButton(
+                    text=bod_dict[donate_idx][1],
+                    callback_data=BIMCallbackData(action="Show", idx=donate_idx).pack(),
+                ),
+                types.InlineKeyboardButton(
+                    text=my_gettext(callback, "kb_delete", app_context=app_context),
+                    callback_data=BIMCallbackData(
+                        action="Delete", idx=donate_idx
+                    ).pack(),
+                ),
             ]
         )
-    buttons.append([types.InlineKeyboardButton(text=my_gettext(callback, 'kb_add_bim', app_context=app_context),
-                                               callback_data='AddBIM'
-                                               )])
+    buttons.append(
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(callback, "kb_add_bim", app_context=app_context),
+                callback_data="AddBIM",
+            )
+        ]
+    )
     buttons.append(get_return_button(callback, app_context=app_context))
 
     await state.update_data(donates=bod_dict)
-    await send_message(session,callback, my_gettext(callback, 'show_bim', app_context=app_context),
-                       reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, "show_bim", app_context=app_context),
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
-@router.callback_query(F.data=="AddBIM")
-async def cmd_tools_add_bim(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    if not await have_free_xlm(session=session, user_id=callback.from_user.id, app_context=app_context):
-        await callback.answer(my_gettext(callback, 'low_xlm', app_context=app_context), show_alert=True)
+@router.callback_query(F.data == "AddBIM")
+async def cmd_tools_add_bim(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    if not await have_free_xlm(
+        session=session, user_id=callback.from_user.id, app_context=app_context
+    ):
+        await callback.answer(
+            my_gettext(callback, "low_xlm", app_context=app_context), show_alert=True
+        )
         return
 
-    await send_message(session,callback, my_gettext(callback, 'send_bim_address', app_context=app_context), reply_markup=get_kb_return(callback, app_context=app_context), app_context=app_context)
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, "send_bim_address", app_context=app_context),
+        reply_markup=get_kb_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
     await state.set_state(StateTools.bim_address)
     await callback.answer()
 
 
 @router.message(StateTools.bim_address)
-async def cmd_send_add_bim_address(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_send_add_bim_address(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     if message.text is None:
         return
     public_key = message.text
     my_account = await stellar_check_account(public_key)
     if my_account:
         await state.update_data(address=my_account.account.account.account_id)
-        await send_message(session,message, my_gettext(message, 'send_bim_name', app_context=app_context),
-                           reply_markup=get_kb_return(message, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            message,
+            my_gettext(message, "send_bim_name", app_context=app_context),
+            reply_markup=get_kb_return(message, app_context=app_context),
+            app_context=app_context,
+        )
         await state.set_state(StateTools.bim_name)
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'send_bim_address', app_context=app_context)
-        await send_message(session,message, msg, app_context=app_context)
+        msg = (
+            my_gettext(message, "send_error2", app_context=app_context)
+            + "\n"
+            + my_gettext(message, "send_bim_address", app_context=app_context)
+        )
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
 @router.message(StateTools.bim_name)
-async def cmd_send_add_bim_name(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_send_add_bim_name(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     if message.from_user is None:
         return
     if message.text:
         name = message.text
         data = await state.get_data()
-        xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session, message.from_user.id)).account.account_id,
-                               f"bod_{name}", data['address'])
+        xdr = await cmd_gen_data_xdr(
+            (
+                await stellar_get_user_account(session, message.from_user.id)
+            ).account.account_id,
+            f"bod_{name}",
+            data["address"],
+        )
         await state.update_data(xdr=xdr)
-        await send_message(session,message, my_gettext(message, 'add_bim_end', (name, data['address'],), app_context=app_context),
-                           reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context), app_context=app_context)
+        await send_message(
+            session,
+            message,
+            my_gettext(
+                message,
+                "add_bim_end",
+                (
+                    name,
+                    data["address"],
+                ),
+                app_context=app_context,
+            ),
+            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            app_context=app_context,
+        )
         await message.delete()
     else:
-        msg = my_gettext(message, 'send_error2', app_context=app_context) + '\n' + my_gettext(message, 'send_bim_name', app_context=app_context)
-        await send_message(session,message, msg, app_context=app_context)
+        msg = (
+            my_gettext(message, "send_error2", app_context=app_context)
+            + "\n"
+            + my_gettext(message, "send_bim_name", app_context=app_context)
+        )
+        await send_message(session, message, msg, app_context=app_context)
         await message.delete()
 
 
 @router.callback_query(BIMCallbackData.filter())
-async def cq_bim_setting(callback: types.CallbackQuery, callback_data: BIMCallbackData,
-                       state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cq_bim_setting(
+    callback: types.CallbackQuery,
+    callback_data: BIMCallbackData,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     answer = callback_data.action
     idx = callback_data.idx
     user_id = callback.from_user.id
     data = await state.get_data()
-    donates = data['donates']
+    donates = data["donates"]
     if idx in donates:
-        if answer == 'Show':
+        if answer == "Show":
             msg = f"name = {donates[idx][1]} \n address = {donates[idx][2]}"
             await callback.answer(msg[:200], show_alert=True)
-        if answer == 'Delete':
-            xdr = await cmd_gen_data_xdr((await stellar_get_user_account(session,user_id)).account.account_id,
-                                   donates[idx][0], None)
+        if answer == "Delete":
+            xdr = await cmd_gen_data_xdr(
+                (await stellar_get_user_account(session, user_id)).account.account_id,
+                donates[idx][0],
+                None,
+            )
             await state.update_data(xdr=xdr)
-            await send_message(session,callback, my_gettext(callback, 'delete_bim', (donates[idx][1],), app_context=app_context),
-                               reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context), app_context=app_context)
+            await send_message(
+                session,
+                callback,
+                my_gettext(
+                    callback, "delete_bim", (donates[idx][1],), app_context=app_context
+                ),
+                reply_markup=get_kb_yesno_send_xdr(callback, app_context=app_context),
+                app_context=app_context,
+            )
     await callback.answer()
 
+
 ########################################################################################################################
 ########################################################################################################################
 ########################################################################################################################
 
-@router.callback_query(F.data=="MTLToolsUpdateMulti")
-async def cmd_tools_update_multi(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession, app_context: AppContext):
-    account_id = (await stellar_get_user_account(session, callback.from_user.id)).account.account_id
+
+@router.callback_query(F.data == "MTLToolsUpdateMulti")
+async def cmd_tools_update_multi(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    account_id = (
+        await stellar_get_user_account(session, callback.from_user.id)
+    ).account.account_id
     if not await check_account_id_from_grist(account_id):
-        await callback.answer('Ваш адрес не найден в реестре', show_alert=True)
+        await callback.answer("Ваш адрес не найден в реестре", show_alert=True)
         return
     else:
         if callback.message is None:
             return
-        await callback.message.answer('Сейчас будет сформирована транзакция.'
-                                      'Внимательно ознакомьтесь с данные перед отправкой.')
+        await callback.message.answer(
+            "Сейчас будет сформирована транзакция."
+            "Внимательно ознакомьтесь с данные перед отправкой."
+        )
         # get xdr
         xdr = await stellar_get_multi_sign_xdr(account_id)
 
-        status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
+        status, response_json = await get_web_request(
+            "POST", url="https://eurmtl.me/remote/decode", json={"xdr": xdr}
+        )
         if status == 200:
-            msg = response_json['text']
+            msg = response_json["text"]
         else:
             msg = "Ошибка запроса"
 
         msg = msg.replace("<br>", "\n")
-        msg = msg.replace("&nbsp;", "\u00A0")
+        msg = msg.replace("&nbsp;", "\u00a0")
         await callback.message.answer(msg)
         await clear_last_message_id(callback.from_user.id, app_context=app_context)
-        await cmd_check_xdr(session, xdr, callback.from_user.id, state, app_context=app_context)
+        await cmd_check_xdr(
+            session, xdr, callback.from_user.id, state, app_context=app_context
+        )
 
 
 ########################################################################################################################

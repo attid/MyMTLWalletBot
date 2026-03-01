@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from core.use_cases.stellar.process_uri import ProcessStellarUri
 
+
 @pytest.mark.asyncio
 async def test_real_uri_execution_failure():
     # Setup Mocks
@@ -25,6 +26,6 @@ async def test_real_uri_execution_failure():
     # Check result
     if not result.success:
         pytest.fail(f"Execution failed with error: {result.error_message}")
-    
+
     # If success, verify XDR is present
     assert result.xdr is not None

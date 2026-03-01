@@ -1,5 +1,6 @@
 from datetime import datetime
 
+
 class LogQuery:
     def __init__(self, user_id: int, log_operation: str, log_operation_info: str):
         self.user_id = user_id

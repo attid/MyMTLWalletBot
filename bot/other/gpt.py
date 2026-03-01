@@ -7,6 +7,7 @@ from other.config_reader import config
 
 openai_key = config.openai_key.get_secret_value()
 
+
 async def talk_open_ai_async(msg=None, msg_data=None, user_name=None):
     openai.organization = "org-Iq64OmMI81NWnwcPtn72dc7E"
     openai.api_key = openai_key
@@ -20,13 +21,16 @@ async def talk_open_ai_async(msg=None, msg_data=None, user_name=None):
         if user_name:
             messages[0]["name"] = user_name
     try:
-        print('****', messages)
-        chat_completion_resp = await openai.ChatCompletion.acreate(model="gpt-3.5-turbo", messages=messages)
+        print("****", messages)
+        chat_completion_resp = await openai.ChatCompletion.acreate(
+            model="gpt-3.5-turbo", messages=messages
+        )
         return chat_completion_resp.choices[0].message.content
     except openai.error.APIError as e:
         logger.info(e.code)
         logger.info(e.args)
         return None
+
 
 async def gpt_check_message(article):
     promt = """"Вы - виртуальный помощник Wallet, Кошелек, специализирующийся на обработке и анализе текстовых команд. 
@@ -42,9 +46,10 @@ async def gpt_check_message(article):
 
     если какого-то параметра не хватает то уточни его, если всего хватает то пришли только json. Никогда не уточняй валюту. 
     """
-    messages = [{"role": "system",
-                 "content": promt},
-                {"role": "user", "content": article}]
+    messages = [
+        {"role": "system", "content": promt},
+        {"role": "user", "content": article},
+    ]
     msg = None
     while msg is None:
         msg = await talk_open_ai_async(msg_data=messages)
@@ -52,5 +57,10 @@ async def gpt_check_message(article):
             await asyncio.sleep(1)
     return msg
 
-if __name__ == '__main__':
-    print(asyncio.run(gpt_check_message('переведи 10 еврмтл в клуб с мемо спасибо за помощь')))
+
+if __name__ == "__main__":
+    print(
+        asyncio.run(
+            gpt_check_message("переведи 10 еврмтл в клуб с мемо спасибо за помощь")
+        )
+    )

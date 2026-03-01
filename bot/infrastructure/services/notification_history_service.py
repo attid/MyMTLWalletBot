@@ -14,6 +14,7 @@ from core.models.notification import NotificationOperation
 @dataclass
 class NotificationRecord:
     """A record of a sent notification."""
+
     id: str
     operation_type: str
     asset_code: str
@@ -37,7 +38,13 @@ class NotificationHistoryService:
         self._ttl = timedelta(hours=ttl_hours)
         self._max_per_user = max_per_user
 
-    def add(self, user_id: int, operation: NotificationOperation, wallet_id: int, public_key: str) -> None:
+    def add(
+        self,
+        user_id: int,
+        operation: NotificationOperation,
+        wallet_id: int,
+        public_key: str,
+    ) -> None:
         """
         Add an operation to user's notification history.
         Should be called AFTER notification is successfully sent.
@@ -69,7 +76,7 @@ class NotificationHistoryService:
 
         # Trim to max size
         if len(self._history[user_id]) > self._max_per_user:
-            self._history[user_id] = self._history[user_id][:self._max_per_user]
+            self._history[user_id] = self._history[user_id][: self._max_per_user]
 
     def get_recent(self, user_id: int, limit: int = 10) -> List[NotificationRecord]:
         """
@@ -97,8 +104,7 @@ class NotificationHistoryService:
 
         cutoff = datetime.utcnow() - self._ttl
         self._history[user_id] = [
-            r for r in self._history[user_id]
-            if r.created_at > cutoff
+            r for r in self._history[user_id] if r.created_at > cutoff
         ]
 
         # Remove empty lists

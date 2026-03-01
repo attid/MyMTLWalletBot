@@ -46,6 +46,7 @@ broker_task = None
 
 # --- Управление жизненным циклом брокера ---
 
+
 async def start_broker(app_context: AppContext):
     global APP_CONTEXT, REDIS_CLIENT
     APP_CONTEXT = app_context
@@ -63,6 +64,7 @@ async def stop_broker():
 
 
 # --- Логика для биометрического подписания ---
+
 
 async def publish_pending_tx(
     user_id: int,
@@ -92,10 +94,14 @@ async def publish_pending_tx(
     _redis = redis_client or REDIS_CLIENT
 
     if _redis is None:
-        raise RuntimeError("REDIS_CLIENT is not initialized. Call start_broker() first.")
+        raise RuntimeError(
+            "REDIS_CLIENT is not initialized. Call start_broker() first."
+        )
 
     if not unsigned_xdr:
-        raise ValueError(f"unsigned_xdr is required for publish_pending_tx (user_id={user_id})")
+        raise ValueError(
+            f"unsigned_xdr is required for publish_pending_tx (user_id={user_id})"
+        )
 
     # Генерируем уникальный tx_id с достаточной энтропией (80 бит)
     # Используем 20 hex-символов, чтобы callback_data в Telegram (лимит 64 байта)
@@ -161,7 +167,10 @@ async def clear_pending_tx(
 
 # --- Логика для WalletConnect ---
 
-async def do_wc_sign_and_respond(session: AsyncSession, user_id: int, state: FSMContext):
+
+async def do_wc_sign_and_respond(
+    session: AsyncSession, user_id: int, state: FSMContext
+):
     """
     Callback, который выполняется вместо стандартной логики подписи.
     """
@@ -186,10 +195,13 @@ async def do_wc_sign_and_respond(session: AsyncSession, user_id: int, state: FSM
             # Возьмите ее из signer_client_fs.py или напишите аналогичную
             assert xdr is not None, "xdr must not be None for stellar_signAndSubmitXDR"
             from other.stellar_tools import async_stellar_send
+
             submit_result = await async_stellar_send(xdr)
             status = "success" if submit_result.get("successful") else "pending"
             response_msg["result"] = {"status": status}
-            logger.info(f"XDR for request {original_request_id} signed and submitted with status: {status}")
+            logger.info(
+                f"XDR for request {original_request_id} signed and submitted with status: {status}"
+            )
         else:  # По умолчанию или для stellar_signXDR
             response_msg["result"] = {"signedXDR": xdr}
             logger.info(f"XDR for request {original_request_id} signed.")
@@ -198,14 +210,19 @@ async def do_wc_sign_and_respond(session: AsyncSession, user_id: int, state: FSM
         assert internal_request_id is not None, "internal_request_id must not be None"
         pending_req = PENDING_SIGN_REQUESTS.get(internal_request_id)
         if pending_req:
-            pending_req['result'] = response_msg
-            pending_req['event'].set()
+            pending_req["result"] = response_msg
+            pending_req["event"].set()
         logger.info(f"pending_req: {pending_req}")
 
         # 3. Сообщаем пользователю об успехе
         assert APP_CONTEXT is not None, "APP_CONTEXT must be initialized"
-        await send_message(session, user_id, my_gettext(user_id, 'wc_sign_success', app_context=APP_CONTEXT),
-                           reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)
+        await send_message(
+            session,
+            user_id,
+            my_gettext(user_id, "wc_sign_success", app_context=APP_CONTEXT),
+            reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT),
+            app_context=APP_CONTEXT,
+        )
         logger.info(f"pending_req: {pending_req}")
 
     except Exception as e:
@@ -216,18 +233,29 @@ async def do_wc_sign_and_respond(session: AsyncSession, user_id: int, state: FSM
         assert internal_request_id is not None, "internal_request_id must not be None"
         pending_req = PENDING_SIGN_REQUESTS.get(internal_request_id)
         if pending_req:
-            pending_req['result'] = response_msg
-            pending_req['event'].set()
+            pending_req["result"] = response_msg
+            pending_req["event"].set()
         assert APP_CONTEXT is not None, "APP_CONTEXT must be initialized"
-        await send_message(session, user_id, my_gettext(user_id, 'bad_password', app_context=APP_CONTEXT),
-                           reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)  # Общее сообщение об ошибке
+        await send_message(
+            session,
+            user_id,
+            my_gettext(user_id, "bad_password", app_context=APP_CONTEXT),
+            reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT),
+            app_context=APP_CONTEXT,
+        )  # Общее сообщение об ошибке
 
     finally:
         await state.set_state(None)  # Очищаем состояние в любом случае
 
 
-async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str, original_request_id: str,
-                               method: str, dapp_info: dict[str, Any]):
+async def request_wc_signature(
+    user_id: int,
+    xdr: str,
+    internal_request_id: str,
+    original_request_id: str,
+    method: str,
+    dapp_info: dict[str, Any],
+):
     """
     Функция-"мост", инициирующая процесс подписи у пользователя через FSM.
     """
@@ -239,7 +267,9 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
         logger.error("APP_CONTEXT is not initialized")
         return
 
-    assert APP_CONTEXT.dispatcher is not None, "Dispatcher must be initialized in app_context"
+    assert APP_CONTEXT.dispatcher is not None, (
+        "Dispatcher must be initialized in app_context"
+    )
     bot = APP_CONTEXT.bot
     state = APP_CONTEXT.dispatcher.fsm.get_context(bot, user_id, user_id)
     dapp_name = dapp_info.get("name", "Unknown App")
@@ -253,9 +283,9 @@ async def request_wc_signature(user_id: int, xdr: str, internal_request_id: str,
         original_request_id=original_request_id,
         wallet_connect=wallet_connect_func,
         wallet_connect_info=f"{dapp_name} {dapp_url}",
-        source='wallet_connect',
+        source="wallet_connect",
         method=method,
-        tools='wallet_connect'
+        tools="wallet_connect",
     )
 
     db_pool = APP_CONTEXT.db_pool
@@ -269,14 +299,11 @@ async def publish_pairing_request(wc_uri: str, address: str, user_info: dict):
     """
     Публикует запрос на создание сессии WalletConnect.
     """
-    msg = {
-        "wc_uri": wc_uri,
-        "address": address,
-        "user_info": user_info
-    }
+    msg = {"wc_uri": wc_uri, "address": address, "user_info": user_info}
     await broker.publish(msg, list="wc-pairing-request")
     logger.info(
-        f"Опубликовано сообщение для создания сессии для адреса {address} от пользователя {user_info.get('user_id')}")
+        f"Опубликовано сообщение для создания сессии для адреса {address} от пользователя {user_info.get('user_id')}"
+    )
 
 
 async def publish_pairing_event(event: Dict[str, Any]):
@@ -304,19 +331,20 @@ async def handle_sign_request(msg: dict):
     if dapp_info:
         dapp_name = dapp_info.get("name", "Unknown App")
         dapp_url = dapp_info.get("url", "Unknown URL")
-        logger.info(f"Получен запрос на подпись от dApp: '{dapp_name}' ({dapp_url}) для пользователя {user_id}")
+        logger.info(
+            f"Получен запрос на подпись от dApp: '{dapp_name}' ({dapp_url}) для пользователя {user_id}"
+        )
     else:
-        logger.info(f"Получен запрос на подпись для пользователя {user_id} (dApp info not provided)")
+        logger.info(
+            f"Получен запрос на подпись для пользователя {user_id} (dApp info not provided)"
+        )
 
     if not all([user_id, xdr, original_request_id]):
         error_msg = f"Request is missing user_id, xdr, or request_id: {msg}"
         logger.error(error_msg)
         return {"error": error_msg}
 
-    PENDING_SIGN_REQUESTS[internal_request_id] = {
-        "event": event,
-        "result": None
-    }
+    PENDING_SIGN_REQUESTS[internal_request_id] = {"event": event, "result": None}
 
     try:
         # Передаем ID дальше
@@ -325,8 +353,14 @@ async def handle_sign_request(msg: dict):
         assert original_request_id is not None, "original_request_id must not be None"
         assert method is not None, "method must not be None"
         assert dapp_info is not None, "dapp_info must not be None"
-        await request_wc_signature(user_id=user_id, xdr=xdr, internal_request_id=internal_request_id,
-                                   original_request_id=original_request_id, method=method, dapp_info=dapp_info)
+        await request_wc_signature(
+            user_id=user_id,
+            xdr=xdr,
+            internal_request_id=internal_request_id,
+            original_request_id=original_request_id,
+            method=method,
+            dapp_info=dapp_info,
+        )
 
         await asyncio.wait_for(event.wait(), timeout=300)  # 5 минут на подпись
         logger.info(f"event waited: {event}")
@@ -337,7 +371,10 @@ async def handle_sign_request(msg: dict):
     except asyncio.TimeoutError:
         logger.error(f"Request {internal_request_id} timed out.")
         # Возвращаем ID и в случае ошибки таймаута
-        return {"error": "User did not respond in time", "request_id": original_request_id}
+        return {
+            "error": "User did not respond in time",
+            "request_id": original_request_id,
+        }
     finally:
         PENDING_SIGN_REQUESTS.pop(internal_request_id, None)
 
@@ -380,7 +417,13 @@ async def handle_pairing_events(msg: dict):
 
         db_pool = APP_CONTEXT.db_pool
         async with db_pool.get_session() as session:
-            await send_message(session, user_id, message, reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT), app_context=APP_CONTEXT)
+            await send_message(
+                session,
+                user_id,
+                message,
+                reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT),
+                app_context=APP_CONTEXT,
+            )
 
     except Exception as e:
         logger.exception(f"Ошибка в обработчике событий пейринга: {e}")

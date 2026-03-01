@@ -1,5 +1,6 @@
 import asyncio
 
+
 class CountingLock:
     def __init__(self):
         self._lock = asyncio.Lock()
