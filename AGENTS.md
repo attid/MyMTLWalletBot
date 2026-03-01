@@ -25,6 +25,8 @@ an index. Detailed rules live in `docs/`.
 - `just lint`: static checks.
 - `just test`: full test suite.
 - `just test-fast`: fast local subset.
+- `just test-e2e-smoke`: deterministic user-flow smoke tests.
+- `just test-external`: docker/external integration tests.
 - `just arch-test`: architecture guardrails.
 - `just check`: full local gate (`fmt + lint + test + arch-test`).
 - `just check-fast`: CI-safe gate (`lint + test-fast + arch-test`).
