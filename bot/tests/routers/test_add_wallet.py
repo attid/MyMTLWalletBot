@@ -6,6 +6,7 @@ from routers.add_wallet import (
     router as add_wallet_router,
     StateAddWallet,
 )
+from routers.sign import PinState
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -306,3 +307,60 @@ async def test_add_wallet_no_password_persists_pin_type_zero(
         pin_type=0,
     )
     assert setup_add_wallet_mocks.change_password_uc.execute.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_add_wallet_password_sets_password_state(
+    mock_telegram, router_app_context, setup_add_wallet_mocks
+):
+    """Selecting Password should move flow to password setup state."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    user_id = 123
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(user_id, "Password")
+    )
+
+    assert await dp.storage.get_state(state_key) == PinState.ask_password_set
+    data = await dp.storage.get_data(state_key)
+    assert data.get("pin_type") == 2
+
+    req = get_latest_msg(mock_telegram)
+    if req is None:
+        raise AssertionError("Expected send message for password prompt")
+    assert "send_password" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_add_wallet_pin_sets_pin_state(
+    mock_telegram, router_app_context, setup_add_wallet_mocks
+):
+    """Selecting PIN should move flow to PIN setup state."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    user_id = 123
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    router_app_context.stellar_service.get_user_account = AsyncMock(
+        return_value=MagicMock(
+            account=MagicMock(
+                account_id="GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            )
+        )
+    )
+    await dp.storage.set_data(state_key, {"user_lang": "en"})
+
+    await dp.feed_update(router_app_context.bot, create_callback_update(user_id, "PIN"))
+
+    assert await dp.storage.get_state(state_key) == PinState.set_pin
+    data = await dp.storage.get_data(state_key)
+    assert data.get("pin_type") == 1
