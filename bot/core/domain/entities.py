@@ -30,6 +30,7 @@ class Wallet:
     assets_visibility: Optional[str] = "{}"
     secret_key: Optional[str] = None
     seed_key: Optional[str] = None
+    wallet_crypto_v2: Optional[str] = None
     balances: Optional[list] = None  # List[Balance]
     balances_event_id: str = "0"
     last_event_id: str = "0"

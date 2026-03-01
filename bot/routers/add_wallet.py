@@ -110,11 +110,19 @@ async def cmd_sending_private(
         encrypted_secret = app_context.encryption_service.encrypt(
             secret_key, str(message.from_user.id)
         )
+        wallet_crypto_v2 = app_context.encryption_service.encrypt_wallet_container(
+            secret_key=secret_key,
+            seed_key=None,
+            mode="user",
+            wallet_kind="stellar_user",
+            pin=str(message.from_user.id),
+        )
 
         await add_wallet.execute(
             user_id=message.from_user.id,
             public_key=public_key,
             secret_key=encrypted_secret,
+            wallet_crypto_v2=wallet_crypto_v2,
             is_free=False,
             is_default=True,
         )
@@ -202,12 +210,19 @@ async def cq_add_new_key(
                 kp.secret, str(callback.from_user.id)
             )
             encrypted_seed = app_context.encryption_service.encrypt(mnemonic, kp.secret)
+            wallet_crypto_v2 = app_context.encryption_service.encrypt_wallet_container(
+                secret_key=kp.secret,
+                seed_key=mnemonic,
+                mode="free",
+                wallet_kind="stellar_free",
+            )
 
             await add_wallet.execute(
                 user_id=callback.from_user.id,
                 public_key=kp.public_key,
                 secret_key=encrypted_secret,
                 seed_key=encrypted_seed,
+                wallet_crypto_v2=wallet_crypto_v2,
                 is_free=True,
                 is_default=True,
             )
@@ -501,6 +516,12 @@ async def cq_add_ton(
             public_key=public_key,
             secret_key="TON",
             seed_key=seed_str,
+            wallet_crypto_v2=app_context.encryption_service.encrypt_wallet_container(
+                secret_key="TON",
+                seed_key=seed_str,
+                mode="free",
+                wallet_kind="ton_free",
+            ),
             is_free=True,
             is_default=True,
         )

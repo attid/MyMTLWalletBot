@@ -25,6 +25,7 @@ class RegisterUser:
         public_key: str,
         secret_key: Optional[str] = None,
         seed_key: Optional[str] = None,
+        wallet_crypto_v2: Optional[str] = None,
     ) -> Tuple[User, Wallet]:
         """
         Registers a new user and their initial wallet.
@@ -41,7 +42,11 @@ class RegisterUser:
                 # Should not happen ideally if registered fully, but handle repair?
                 # Create wallet if missing
                 default_wallet = await self._create_wallet(
-                    user_id, public_key, secret_key, seed_key
+                    user_id,
+                    public_key,
+                    secret_key,
+                    seed_key,
+                    wallet_crypto_v2,
                 )
             return existing_user, default_wallet
 
@@ -51,7 +56,11 @@ class RegisterUser:
 
         # 3. Create Default Wallet
         saved_wallet = await self._create_wallet(
-            user_id, public_key, secret_key, seed_key
+            user_id,
+            public_key,
+            secret_key,
+            seed_key,
+            wallet_crypto_v2,
         )
 
         return saved_user, saved_wallet
@@ -62,6 +71,7 @@ class RegisterUser:
         public_key: str,
         secret_key: Optional[str],
         seed_key: Optional[str],
+        wallet_crypto_v2: Optional[str],
     ) -> Wallet:
         new_wallet = Wallet(
             id=0,  # Auto-increment
@@ -71,5 +81,6 @@ class RegisterUser:
             is_free=True,  # Default to free/checking wallet logic
             secret_key=secret_key,
             seed_key=seed_key,
+            wallet_crypto_v2=wallet_crypto_v2,
         )
         return await self.wallet_repository.create(new_wallet)

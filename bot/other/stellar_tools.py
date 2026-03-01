@@ -33,6 +33,7 @@ from infrastructure.persistence.sqlalchemy_wallet_repository import (
 )
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from infrastructure.services.stellar_service import StellarService
+from infrastructure.services.encryption_service import EncryptionService
 from other.mytypes import MyOffers, MyAccount, Balance, MyOffer
 from other.web_tools import get_web_request
 from other.counting_lock import CountingLock
@@ -103,6 +104,40 @@ def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
 
     # Возвращаем объект TransactionBuilder для дальнейших модификаций
     return transaction_builder
+
+
+def _decrypt_wallet_secret(wallet, *, user_password: str) -> Optional[str]:
+    encryption_service = EncryptionService()
+
+    if isinstance(wallet.wallet_crypto_v2, str) and wallet.wallet_crypto_v2:
+        secret = encryption_service.decrypt_wallet_secret(
+            wallet.wallet_crypto_v2,
+            pin=user_password,
+        )
+        if secret:
+            return secret
+
+    if wallet.secret_key:
+        return decrypt(wallet.secret_key, user_password)
+
+    return None
+
+
+def _decrypt_wallet_seed(wallet, *, user_password: str, secret: str) -> Optional[str]:
+    encryption_service = EncryptionService()
+
+    if isinstance(wallet.wallet_crypto_v2, str) and wallet.wallet_crypto_v2:
+        seed = encryption_service.decrypt_wallet_seed(
+            wallet.wallet_crypto_v2,
+            pin=user_password,
+        )
+        if seed:
+            return seed
+
+    if wallet.seed_key:
+        return decrypt(wallet.seed_key, secret)
+
+    return None
 
 
 async def stellar_add_trust(
@@ -365,8 +400,9 @@ async def stellar_get_user_keypair(
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(user_id)  # Using async repo
     assert wallet is not None, "wallet must not be None"
-    result = wallet.secret_key  # type: ignore[union-attr]
-    return Keypair.from_secret(decrypt(result, user_password))
+    secret = _decrypt_wallet_secret(wallet, user_password=user_password)
+    assert secret is not None, "failed to decrypt wallet secret"
+    return Keypair.from_secret(secret)
 
 
 async def stellar_get_user_seed_phrase(
@@ -382,14 +418,17 @@ async def stellar_get_user_seed_phrase(
     """
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(user_id)
-    if not wallet or not wallet.seed_key:
+    if not wallet:
         return None
 
     try:
         # Получаем keypair с помощью пароля пользователя
         keypair = await stellar_get_user_keypair(session, user_id, user_password)
-        # Расшифровываем сид-фразу с помощью приватного ключа
-        decrypted_seed = decrypt(wallet.seed_key, keypair.secret)
+        decrypted_seed = _decrypt_wallet_seed(
+            wallet,
+            user_password=user_password,
+            secret=keypair.secret,
+        )
         return decrypted_seed
     except Exception:
         return None
@@ -511,12 +550,16 @@ async def stellar_delete_all_deleted(session: AsyncSession):
                 # Legacy: if wallet.free_wallet == 1:
                 # Entity: wallet.is_free
                 if wallet.is_free:
+                    secret = _decrypt_wallet_secret(
+                        wallet,
+                        user_password=str(wallet.user_id),
+                    )
+                    if not secret:
+                        continue
                     with suppress(NotFoundError):
                         await stellar_delete_account(
                             master_keypair,
-                            Keypair.from_secret(
-                                decrypt(wallet.secret_key, str(wallet.user_id))
-                            ),
+                            Keypair.from_secret(secret),
                             master_source_address=master_address,
                         )
 
@@ -755,8 +798,26 @@ async def stellar_change_password(
     repo = SqlAlchemyWalletRepository(session)
     wallet = await repo.get_default_wallet(user_id)
     assert wallet is not None, "wallet must not be None"
-    account = Keypair.from_secret(decrypt(wallet.secret_key, old_password))
+    secret = _decrypt_wallet_secret(wallet, user_password=old_password)
+    assert secret is not None, "failed to decrypt wallet secret"
+    account = Keypair.from_secret(secret)
+
+    # Legacy dual-write path for rollback compatibility.
     wallet.secret_key = encrypt(account.secret, new_password)
+
+    seed_plain = _decrypt_wallet_seed(
+        wallet,
+        user_password=old_password,
+        secret=account.secret,
+    )
+    wallet.wallet_crypto_v2 = EncryptionService().encrypt_wallet_container(
+        secret_key=account.secret,
+        seed_key=seed_plain,
+        mode="free" if password_type == 0 else "user",
+        wallet_kind="stellar_free" if wallet.is_free else "stellar_user",
+        pin=None if password_type == 0 else new_password,
+    )
+
     wallet.use_pin = password_type
     await repo.update(wallet)
     return account.public_key
