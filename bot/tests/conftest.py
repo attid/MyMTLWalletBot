@@ -1501,7 +1501,16 @@ async def mock_horizon(horizon_server_config):
 
     print(f"[MockHorizon] Started on {horizon_server_config['url']}")
 
+    from other.config_reader import config
+
+    old_horizon_url = config.horizon_url
+    old_horizon_url_rw = config.horizon_url_rw
+    config.horizon_url = horizon_server_config["url"]
+    config.horizon_url_rw = horizon_server_config["url"]
+
     yield state
 
+    config.horizon_url = old_horizon_url
+    config.horizon_url_rw = old_horizon_url_rw
     await runner.cleanup()
     print("[MockHorizon] Stopped")
