@@ -38,6 +38,15 @@ Operational rollout without feature flags:
 - `adr/` (new ADR)
 - `docs/runbooks/` (migration/rollback runbook)
 
+## Edit Permission
+
+- [x] Allowed paths confirmed by user.
+- [x] No edits outside listed paths.
+
+Permission evidence:
+
+> "Ок, давай сделаем тогда план в файлике дотошный..." and explicit follow-ups to proceed with implementation.
+
 ## Change Plan
 
 1. [x] Add new DB field and model mapping (no legacy removal).

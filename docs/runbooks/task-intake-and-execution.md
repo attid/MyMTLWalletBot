@@ -14,9 +14,11 @@ Ensure every non-trivial task starts in AI-first workflow mode.
    just start-task <task-id> title="<short title>"
    ```
 
-4. Fill checkboxes in the created plan under `docs/exec-plans/active/`.
-5. Implement with minimal diff.
-6. Run validation commands:
+4. Record allowed paths and permission evidence in the plan (`Files/Directories To
+   Change` and `Edit Permission` sections).
+5. Mark permission checkboxes as done before first edit.
+6. Implement with minimal diff.
+7. Run validation commands:
 
    ```bash
    just arch-test
@@ -24,7 +26,7 @@ Ensure every non-trivial task starts in AI-first workflow mode.
    just test-fast
    ```
 
-7. Move completed plan:
+8. Move completed plan:
 
    ```bash
    just finish-task <plan-file>

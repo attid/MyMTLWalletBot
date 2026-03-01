@@ -4,6 +4,20 @@
 
 Why this task exists and links to issue/ADR.
 
+## Files/Directories To Change
+
+- `<path-or-dir-1>`
+- `<path-or-dir-2>`
+
+## Edit Permission
+
+- [ ] Allowed paths confirmed by user.
+- [ ] No edits outside listed paths.
+
+Permission evidence (copy user wording or exact confirmation):
+
+> <user confirmation>
+
 ## Change Plan
 
 1. [ ] Step one with concrete file targets.
