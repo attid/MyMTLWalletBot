@@ -44,6 +44,9 @@ an index. Detailed rules live in `docs/`.
 4. Read `bot/tests/README.md` before adding/changing tests.
 5. Router tests must use `mock_telegram`.
 6. Do not weaken tests, linters, or CI checks to make a change pass.
+7. Do not add or modify `justfile` commands without explicit user approval.
+8. Do not introduce `python ...` or `uv run python ...` command patterns in
+   recipes/docs/workflows without explicit user approval.
 
 ## Task Intake Protocol
 1. First state which files/directories need changes.

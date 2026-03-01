@@ -74,7 +74,10 @@ bench-kdf:
     uv run --with argon2-cffi python bot/scripts/argon2_benchmark.py
 
 migrate-wallet-crypto-v2 args="--dry-run":
-    cd bot && uv run --package mmwb-bot python scripts/migrate_wallet_crypto_v2.py {{args}}
+    if [ -f bot/scripts/migrate_wallet_crypto_v2.py ]; then cd bot && uv run --package mmwb-bot scripts/migrate_wallet_crypto_v2.py {{args}}; elif [ -f scripts/migrate_wallet_crypto_v2.py ] && [ -f ../pyproject.toml ]; then cd .. && cd bot && uv run --package mmwb-bot scripts/migrate_wallet_crypto_v2.py {{args}}; else uv run --no-project scripts/migrate_wallet_crypto_v2.py {{args}}; fi
+
+manage-master-key args="--help":
+    if [ -f bot/scripts/manage_keys.py ]; then cd bot && uv run --package mmwb-bot scripts/manage_keys.py {{args}}; elif [ -f scripts/manage_keys.py ] && [ -f ../pyproject.toml ]; then cd .. && cd bot && uv run --package mmwb-bot scripts/manage_keys.py {{args}}; else uv run --no-project scripts/manage_keys.py {{args}}; fi
 
 start-task task_id title="":
     uv run python .linters/create_exec_plan.py {{task_id}} --title "{{title}}"
