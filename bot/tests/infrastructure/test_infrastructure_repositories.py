@@ -2,11 +2,18 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from db.models import Base
-from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from infrastructure.persistence.sqlalchemy_user_repository import (
+    SqlAlchemyUserRepository,
+)
+from infrastructure.persistence.sqlalchemy_wallet_repository import (
+    SqlAlchemyWalletRepository,
+)
 from core.domain.entities import User, Wallet
-from infrastructure.persistence.sqlalchemy_cheque_repository import SqlAlchemyChequeRepository
+from infrastructure.persistence.sqlalchemy_cheque_repository import (
+    SqlAlchemyChequeRepository,
+)
 from db.models import MyMtlWalletBotCheque, MyMtlWalletBotChequeHistory, ChequeStatus
+
 
 # Use in-memory SQLite for integration tests
 @pytest.fixture(scope="module")
@@ -19,19 +26,19 @@ async def db_engine():
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
+
 @pytest.fixture
 async def db_session(db_engine):
-    async_session = sessionmaker(
-        db_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
         await session.rollback()
 
+
 @pytest.mark.asyncio
 async def test_user_repository(db_session):
     repo = SqlAlchemyUserRepository(db_session)
-    
+
     # Test Create
     user = User(id=123, username="test_user", language="en")
     created_user = await repo.create(user)
@@ -48,9 +55,10 @@ async def test_user_repository(db_session):
     fetched_user.username = "updated_user"
     updated_user = await repo.update(fetched_user)
     assert updated_user.username == "updated_user"
-    
+
     fetched_again = await repo.get_by_id(123)
     assert fetched_again.username == "updated_user"
+
 
 @pytest.mark.asyncio
 async def test_wallet_repository(db_session):
@@ -62,8 +70,10 @@ async def test_wallet_repository(db_session):
     await user_repo.create(user)
 
     # Test Create Wallet
-    wallet = Wallet(id=0, user_id=456, public_key="GABC123", is_default=True, is_free=True)
-    
+    wallet = Wallet(
+        id=0, user_id=456, public_key="GABC123", is_default=True, is_free=True
+    )
+
     # Verify create works
     created_wallet = await wallet_repo.create(wallet)
     assert created_wallet.id is not None
@@ -84,6 +94,7 @@ async def test_wallet_repository(db_session):
     default_wallet = await wallet_repo.get_default_wallet(456)
     assert default_wallet is not None
     assert default_wallet.public_key == "GABC123"
+
 
 @pytest.mark.asyncio
 async def test_wallet_repository_use_pin_read_only(db_session):
@@ -186,7 +197,7 @@ async def test_wallet_repository_deleted_not_default(db_session):
         is_free=False,
         use_pin=10,
     )
-    created = await wallet_repo.create(wallet)
+    await wallet_repo.create(wallet)
     await wallet_repo.set_default_wallet(1004, "GDELETE123")
     await db_session.commit()
 
@@ -216,14 +227,18 @@ async def test_cheque_repository(db_session):
         cheque_count=5,
         user_id=user_id,
         cheque_status=ChequeStatus.CHEQUE.value,
-        cheque_comment="Test 1"
+        cheque_comment="Test 1",
     )
     db_session.add(cheque1)
-    await db_session.flush() # get ID
-    
+    await db_session.flush()  # get ID
+
     # Add 2 history entries (claims) for cheque1
-    db_session.add(MyMtlWalletBotChequeHistory(user_id=999, cheque_id=cheque1.cheque_id))
-    db_session.add(MyMtlWalletBotChequeHistory(user_id=888, cheque_id=cheque1.cheque_id))
+    db_session.add(
+        MyMtlWalletBotChequeHistory(user_id=999, cheque_id=cheque1.cheque_id)
+    )
+    db_session.add(
+        MyMtlWalletBotChequeHistory(user_id=888, cheque_id=cheque1.cheque_id)
+    )
 
     # 2. Create a cheque that is fully claimed (should NOT be available)
     cheque2 = MyMtlWalletBotCheque(
@@ -232,14 +247,18 @@ async def test_cheque_repository(db_session):
         cheque_count=2,
         user_id=user_id,
         cheque_status=ChequeStatus.CHEQUE.value,
-        cheque_comment="Test 2"
+        cheque_comment="Test 2",
     )
     db_session.add(cheque2)
     await db_session.flush()
 
     # Add 2 history entries for cheque2 (fully claimed)
-    db_session.add(MyMtlWalletBotChequeHistory(user_id=777, cheque_id=cheque2.cheque_id))
-    db_session.add(MyMtlWalletBotChequeHistory(user_id=666, cheque_id=cheque2.cheque_id))
+    db_session.add(
+        MyMtlWalletBotChequeHistory(user_id=777, cheque_id=cheque2.cheque_id)
+    )
+    db_session.add(
+        MyMtlWalletBotChequeHistory(user_id=666, cheque_id=cheque2.cheque_id)
+    )
 
     # 3. Create a cancelled cheque (should NOT be available)
     cheque3 = MyMtlWalletBotCheque(
@@ -248,7 +267,7 @@ async def test_cheque_repository(db_session):
         cheque_count=5,
         user_id=user_id,
         cheque_status=ChequeStatus.CANCELED.value,
-        cheque_comment="Test 3"
+        cheque_comment="Test 3",
     )
     db_session.add(cheque3)
 
@@ -259,7 +278,7 @@ async def test_cheque_repository(db_session):
         cheque_count=5,
         user_id=67890,
         cheque_status=ChequeStatus.CHEQUE.value,
-        cheque_comment="Test 4"
+        cheque_comment="Test 4",
     )
     db_session.add(cheque4)
 

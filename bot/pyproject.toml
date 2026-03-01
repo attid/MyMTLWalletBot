@@ -89,3 +89,10 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff]
+
+[tool.ruff.lint]
+
+[tool.ruff.lint.per-file-ignores]
+"start.py" = ["E402"]

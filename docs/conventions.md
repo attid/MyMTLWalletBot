@@ -36,3 +36,9 @@ call `await session.commit()` in the same `async with` block.
 - Keep diffs minimal and mechanical.
 - Add/adjust docs whenever behavior or contracts change.
 - For non-trivial tasks, create an execution plan in `docs/exec-plans/active/`.
+
+## Static Analysis Scope
+
+- `just lint` is the required gate for day-to-day work (`ruff` + `mypy core`).
+- `just typecheck-full` is a debt visibility sweep over full `bot/`.
+- `just check-fast` is the CI-safe validation gate.

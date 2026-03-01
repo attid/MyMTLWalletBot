@@ -13,7 +13,11 @@ just test      # full test suite
 just test-fast # fast subset for local loop
 just arch-test # architectural guardrails
 just check     # fmt + lint + test + arch-test
+just check-fast # lint + test-fast + arch-test
 just metrics   # local code health snapshot
+just start-task signing-flow title="Improve signing flow"
+just finish-task 2026-03-01-signing-flow.md
+just typecheck-full # full mypy sweep (may show legacy debt)
 ```
 
 ### Direct Commands
