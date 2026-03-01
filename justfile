@@ -63,6 +63,9 @@ arch-test:
     uv run python .linters/check_import_boundaries.py
     uv run python .linters/check_docs_contract.py
 
+secret-scan:
+    docker run --rm -v "$PWD:/repo" -w /repo zricethezav/gitleaks:v8.24.2 detect --source=. --no-git --redact --config=.gitleaks.toml
+
 metrics:
     uv run python .linters/metrics_snapshot.py
 

@@ -28,6 +28,7 @@ an index. Detailed rules live in `docs/`.
 - `just test-e2e-smoke`: deterministic user-flow smoke tests.
 - `just test-external`: docker/external integration tests.
 - `just arch-test`: architecture guardrails.
+- `just secret-scan`: repository secret leak scan (gitleaks).
 - `just check`: full local gate (`fmt + lint + test + arch-test`).
 - `just check-fast`: CI-safe gate (`lint + test-fast + arch-test`).
 - `just metrics`: local repository metrics snapshot.

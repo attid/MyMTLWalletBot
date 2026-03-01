@@ -14,6 +14,7 @@ just test-fast # fast subset for local loop
 just test-e2e-smoke # deterministic user-flow smoke tests
 just test-external # external/docker integration tests
 just arch-test # architectural guardrails
+just secret-scan # gitleaks secret scan
 just check     # fmt + lint + test + arch-test
 just check-fast # lint + test-fast + arch-test
 just metrics   # local code health snapshot

@@ -29,6 +29,18 @@ env:
   WALLET_COST: "1"
 
 jobs:
+  secrets-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run gitleaks
+        uses: docker://zricethezav/gitleaks:v8.24.2
+        with:
+          args: detect --source=. --no-git --redact --config=.gitleaks.toml
+
   check:
     runs-on: ubuntu-latest
 
