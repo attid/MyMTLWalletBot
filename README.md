@@ -4,34 +4,34 @@ MyMTLWalletBot
 
 ## Development & Quality Control
 
-Для поддержания качества кода в проекте используются `ruff` и `mypy`. 
-**Рекомендуется запускать их перед каждым коммитом.**
-
-### 1. Проверка стиля и линтинг (Ruff)
-Ruff проверяет стиль кода, находит неиспользуемые импорты и потенциальные ошибки.
+Use `just` commands from repository root as the standard interface.
 
 ```bash
-# Проверка
-uv run ruff check .
-
-# Автоматическое исправление ошибок
-uv run ruff check --fix .
-
-# Форматирование кода
-uv run ruff format .
+just fmt       # format code
+just lint      # ruff + mypy
+just test      # full test suite
+just test-fast # fast subset for local loop
+just arch-test # architectural guardrails
+just check     # fmt + lint + test + arch-test
+just metrics   # local code health snapshot
 ```
 
-### 2. Статическая типизация (Mypy)
-Mypy проверяет корректность типов данных, предотвращая ошибки `TypeError` и `AttributeError`.
+### Direct Commands
+
+For manual execution without `just`:
 
 ```bash
-uv run mypy .
+cd bot
+
+# Ruff
+uv run --package mmwb-bot ruff check .
+uv run --package mmwb-bot ruff format .
+
+# Mypy
+uv run --package mmwb-bot mypy .
+
+# Pytest
+uv run --package mmwb-bot pytest tests/
 ```
 
-## Testing
-
-Run tests using `uv`:
-
-```bash
-uv run pytest tests/
-```
+See `AI_FIRST.md` and `AGENTS.md` for the AI-first contract and task protocol.

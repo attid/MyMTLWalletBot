@@ -37,5 +37,24 @@ push-gitdocker tag="latest":
     docker tag {{IMAGE_NAME}}-webapp:{{tag}} ghcr.io/montelibero/{{IMAGE_NAME}}-webapp:{{tag}}
     docker push ghcr.io/montelibero/{{IMAGE_NAME}}-webapp:{{tag}}
 
+fmt:
+    cd bot && uv run --package mmwb-bot ruff format .
+
+lint:
+    cd bot && uv run --package mmwb-bot ruff check .
+    cd bot && uv run --package mmwb-bot mypy .
+
 test:
     cd bot && uv run --package mmwb-bot pytest tests/
+
+test-fast:
+    cd bot && uv run --package mmwb-bot pytest tests/core tests/infrastructure tests/other -m "not integration"
+
+arch-test:
+    uv run python .linters/check_import_boundaries.py
+    uv run python .linters/check_docs_contract.py
+
+metrics:
+    uv run python .linters/metrics_snapshot.py
+
+check: fmt lint test arch-test

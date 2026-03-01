@@ -1,54 +1,46 @@
-# Repository Guidelines
+# Agent Index
 
-## Project Structure & Module Organization
-`start.py` wires the Aiogram dispatcher, middleware, routers, APScheduler jobs, Redis/FastStream broker, and background workers (`cheque_worker`, `usdt_worker`, `events_worker`, etc.), so new components must be registered there. Functional flows live in `routers/` (wallet ops, swap, send, TON, admin, URI), while shared HTTP/ledger logic sits in `other/` and `services/`. Database access is in `db/` (pool, models, requests) and `infrastructure/persistence/` (SQLAlchemy repositories). Domain/clean-architecture layers are in `core/` (entities, value objects, interfaces, use cases) and `infrastructure/` (services, factories, scheduler, monitoring, workers, utils). Cross-cutting middleware stays in `middleware/`, keyboards in `keyboards/`, and localization JSON in `langs/`. Assets/logs stay in `data/` and `logs/`, deployment scripts live in `deploy/`, and architecture notes live in `docs/clean_architecture/`.
+This repository follows an AI-first workflow. Keep this file short and use it as
+an index. Detailed rules live in `docs/`.
 
-## Build, Test, and Development Commands
-- `python3.12 -m venv .venv && source .venv/bin/activate`: expected Python 3.12 virtual environment.  
-- `pip install -r requirements.txt`: install Aiogram, SQLAlchemy, FastStream, Stellar/TRON SDKs, etc.  
-- `bash start.sh`: idempotent entry point that prepares the venv and launches the bot.  
-- `python start.py`: quick reload when the environment is already active.  
-- `uv run pytest tests/`: preferred test runner (see `tests/README.md`).  
-- `bash clean.sh`: strip `__pycache__` and `*.log` clutter before committing or packaging.  
-Run commands from the repo root so relative imports and path-based config resolve cleanly.
+## Where to Read First
+- `AI_FIRST.md`: high-level contract and agent behavior.
+- `docs/architecture.md`: real module boundaries for this monorepo.
+- `docs/conventions.md`: coding and naming conventions.
+- `docs/golden-principles.md`: non-negotiable engineering principles.
+- `docs/quality-grades.md`: current quality baseline and debt map.
+- `docs/glossary.md`: project language and key domain terms.
+- `docs/runbooks/`: triage and operational checklists.
+- `docs/exec-plans/`: active/completed execution plans.
+- `adr/`: architecture decision records.
 
-## Coding Style & Naming Conventions
-Adhere to PEP8 (4 spaces, ≤100 chars) and keep business logic async-friendly—avoid blocking calls inside handlers. Modules, functions, and JSON keys use `snake_case`; classes remain `PascalCase`; router instances are exported as `router`. Log via `loguru.logger`, reuse existing middleware for DB/throttling, and place human-facing copy inside `langs/*.json` (HTML markup only).
+## Monorepo Layout
+- `bot/`: Telegram bot code (`core/`, `infrastructure/`, `routers/`, `tests/`).
+- `webapp/`: FastAPI-based signing app.
+- `shared/`: shared schemas/constants.
+- `.linters/`: local structural checks used by CI.
 
-## Database Transaction Management
-**CRITICAL:** `db_pool.get_session()` does **NOT** auto-commit on context exit (`db/db_pool.py:83` is commented out). All database modifications **MUST** have explicit `await session.commit()` after UPDATE/INSERT/DELETE operations.
+## Standard Commands
+- `just fmt`: format code.
+- `just lint`: static checks.
+- `just test`: full test suite.
+- `just test-fast`: fast local subset.
+- `just arch-test`: architecture guardrails.
+- `just check`: full local gate (`fmt + lint + test + arch-test`).
+- `just metrics`: local repository metrics snapshot.
 
-**Rules:**
-1. **Always add `await session.commit()`** after repository methods that modify data (update_*, create_*, delete_*, set_*)
-2. **Place commit in the same `async with session` block** as the modification
-3. **Repository methods use `flush()` not `commit()`** - commit is caller's responsibility
-4. **Use cases return without commit** - handlers/routers must commit
-5. **Test data persistence** - verify changes survive session closure (see `tests/infrastructure/test_usdt_balance_commit.py` example)
-
-**Example:**
-```python
-# ❌ WRONG - changes NOT saved
-async with db_pool.get_session() as session:
-    repo = factory.get_user_repository(session)
-    await repo.update_lang(user_id, "en")
-    # Missing commit!
-
-# ✅ CORRECT - changes saved
-async with db_pool.get_session() as session:
-    repo = factory.get_user_repository(session)
-    await repo.update_lang(user_id, "en")
-    await session.commit()  # Required!
-```
-
-## Testing Guidelines
-A formal `tests/` suite is still emerging; add new coverage with `pytest`/`pytest-asyncio`, mocking external ledgers and Redis. **You MUST read `tests/README.md` before modifying or creating tests to ensure compliance with naming rules.** Prefer scenario tests that drive routers via `dp.feed_update()` plus unit tests for helpers in `other/`. **Any router tests without `mock_server` are considered invalid.** Exercise scheduler jobs and middleware in isolation, and log manual Telegram checks in the PR when automated coverage is not feasible.
-
-## Commit & Pull Request Guidelines
-Follow the current convention: emoji + tag + scope (`🐛 fix(routers/send.py): memo fallback`) with subjects ≤72 chars and descriptive bodies. Each PR should state the problem, highlight risky areas, list test evidence, and link the relevant ticket. Attach screenshots or transcript snippets for UI-visible changes and note any config, migration, or deploy steps.
-
-## Security & Configuration Tips
-Secrets load via `other/config_reader.py`; `.env` stays untracked, and different tokens are exposed through `config.test_mode`. Validate user input before calling blockchain clients, rely on throttling/logging middleware, and keep private keys encrypted at rest. Update `deploy/mmwb_bot.*.sh` when service names or systemd units change, and scrub logs via `clean.sh` before sharing traces.
+## Non-Negotiable Rules
+1. Do not guess data contracts or architecture; read docs first.
+2. Keep diffs minimal and verifiable.
+3. For DB writes in bot code, always call `await session.commit()` in the same
+   `async with` session block.
+4. Read `bot/tests/README.md` before adding/changing tests.
+5. Router tests must use `mock_telegram`.
+6. Do not weaken tests, linters, or CI checks to make a change pass.
 
 ## Task Intake Protocol
-- For each new task, first analyze the requirements and explicitly state which files or directories need to change.
-- Do not edit any files until there is direct permission that names the specific file(s) or directory that may be modified—no exceptions.
+1. First state which files/directories need changes.
+2. Do not edit until explicit permission names allowed paths.
+
+## Post-Push Step
+- After every successful `git push`, run `just push-gitdocker`.
