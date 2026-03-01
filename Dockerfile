@@ -59,6 +59,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy only runtime application code
 COPY bot ./bot
+COPY shared ./shared
 
 # Create directories for volumes
 RUN mkdir -p logs data db
