@@ -7,6 +7,27 @@ on:
       - main
       - master
 
+env:
+  BOT_TOKEN: "123456:TEST_TOKEN"
+  TEST_BOT_TOKEN: "123456:TEST_TOKEN"
+  BASE_FEE: "100"
+  DB_URL: "sqlite+aiosqlite:///tmp/mmwb-test.db"
+  REDIS_URL: "redis://localhost:6379/0"
+  TRON_API_KEY: "test"
+  TRON_MASTER_ADDRESS: "test"
+  TRON_MASTER_KEY: "test"
+  THOTHPAY_API: "test"
+  OPENAI_KEY: "test"
+  EURMTL_KEY: "test"
+  SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0"
+  HORIZON_URL: "https://horizon-testnet.stellar.org"
+  HORIZON_URL_RW: "https://horizon-testnet.stellar.org"
+  MONGODB_URL: "mongodb://localhost:27017/mmwb_test"
+  GRIST_TOKEN: "test"
+  TONCONSOLE_TOKEN: "test"
+  TON_TOKEN: "test"
+  WALLET_COST: "1"
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -25,6 +46,9 @@ jobs:
 
       - name: Setup just
         uses: taiki-e/install-action@just
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libzbar0
 
       - name: Run CI gate
         run: just check-fast
@@ -47,6 +71,9 @@ jobs:
 
       - name: Setup just
         uses: taiki-e/install-action@just
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libzbar0
 
       - name: Run E2E smoke gate
         run: just test-e2e-smoke
