@@ -130,6 +130,7 @@ domain ← application ← infrastructure
 | `just check`     | `fmt` + `lint` + `test` — полная проверка перед PR |
 | `just check-fast`| CI-safe проверка: `lint` + `test-fast` + `arch-test` |
 | `just arch-test` | Структурные тесты архитектурных границ             |
+| `just secret-scan` | Скан на утечку секретов (gitleaks)                |
 | `just metrics`   | Локальные метрики наблюдаемости                    |
 | `just start-task`| Создать шаблон execution plan в `docs/exec-plans/active/` |
 | `just finish-task`| Перенести план в `docs/exec-plans/completed/`     |
@@ -137,6 +138,7 @@ domain ← application ← infrastructure
 ### Обязательные CI-проверки
 
 * CI выполняет минимум `just check-fast` для каждого PR.
+* Секрет-скан (`just secret-scan`) обязателен в CI.
 * Автоформатирование проверяется отдельно (или пакетно, при форматирующем PR).
 * Статические анализаторы и проверка типов.
 * Структурные тесты (направление зависимостей, запрет циклов).
@@ -297,6 +299,7 @@ just start-task <task-id> title="..."
 
 # 4. После изменений — полная проверка
 just check-fast
+just secret-scan
 
 # 4.1 Если задача завершена — закрой план
 just finish-task <yyyy-mm-dd-task-id>.md

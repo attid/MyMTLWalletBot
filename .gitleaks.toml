@@ -1,0 +1,21 @@
+title = "mmwb gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore local/generated files that are not part of tracked source"
+paths = [
+  '''^\.env$''',
+  '''^\.env\..*''',
+  '''^\.mypy_cache/''',
+  '''^bot/\.mypy_cache/''',
+  '''^\.pytest_cache/''',
+  '''^\.venv/''',
+  '''^gitleaks-report\.json$''',
+  '''^logs/''',
+  '''^data/''',
+  '''^db/''',
+  '''^bot/tests/core/test_payment_use_cases\.py$''',
+  '''^bot/tests/routers/test_add_wallet\.py$''',
+]
