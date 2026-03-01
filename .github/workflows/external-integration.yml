@@ -25,6 +25,7 @@ env:
   TONCONSOLE_TOKEN: "test"
   TON_TOKEN: "test"
   WALLET_COST: "1"
+  NOTIFIER_WEBHOOK_TIMEOUT: "60"
 
 jobs:
   external-tests:
