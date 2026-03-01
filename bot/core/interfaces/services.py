@@ -270,6 +270,44 @@ class IEncryptionService(ABC):
         """Decrypt data using a key. Returns None if decryption fails."""
         pass
 
+    @abstractmethod
+    def encrypt_wallet_container(
+        self,
+        *,
+        secret_key: str,
+        seed_key: Optional[str],
+        mode: str,
+        wallet_kind: str,
+        pin: Optional[str] = None,
+    ) -> str:
+        """Encrypt wallet secrets into v2 container payload."""
+        pass
+
+    @abstractmethod
+    def decrypt_wallet_secret(
+        self,
+        wallet_crypto_v2: str,
+        *,
+        pin: Optional[str] = None,
+    ) -> Optional[str]:
+        """Decrypt secret key from v2 container payload."""
+        pass
+
+    @abstractmethod
+    def decrypt_wallet_seed(
+        self,
+        wallet_crypto_v2: str,
+        *,
+        pin: Optional[str] = None,
+    ) -> Optional[str]:
+        """Decrypt seed from v2 container payload."""
+        pass
+
+    @abstractmethod
+    def parse_wallet_container(self, wallet_crypto_v2: str) -> Optional[dict]:
+        """Parse and validate v2 wallet crypto payload."""
+        pass
+
 
 class IWalletSecretService(ABC):
     """Interface for secure wallet secret access.

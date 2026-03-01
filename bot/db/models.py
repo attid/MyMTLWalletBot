@@ -16,6 +16,7 @@ class MyMtlWalletBot(Base):
     public_key = Column(String(60))
     secret_key = Column(String(160))
     seed_key = Column(String(400))
+    wallet_crypto_v2 = Column(Text)
     credit = Column(Integer)
     last_use_day = Column(DateTime)
     use_pin = Column(SmallInteger, default=0)

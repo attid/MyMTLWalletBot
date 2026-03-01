@@ -27,16 +27,44 @@ class ChangeWalletPassword:
             True if successful, False if old password invalid or wallet not found.
         """
         wallet = await self.wallet_repository.get_default_wallet(user_id)
-        if not wallet or not wallet.secret_key:
+        if not wallet:
             return False
 
-        # Verify old password and decrypt secret
-        secret = self.encryption_service.decrypt(wallet.secret_key, old_pin)
+        secret = None
+        seed = None
+
+        if wallet.wallet_crypto_v2:
+            secret = self.encryption_service.decrypt_wallet_secret(
+                wallet.wallet_crypto_v2,
+                pin=old_pin,
+            )
+            seed = self.encryption_service.decrypt_wallet_seed(
+                wallet.wallet_crypto_v2,
+                pin=old_pin,
+            )
+
+        if secret is None and wallet.secret_key:
+            # Legacy fallback
+            secret = self.encryption_service.decrypt(wallet.secret_key, old_pin)
+            if wallet.seed_key and secret:
+                seed = self.encryption_service.decrypt(wallet.seed_key, secret)
+
         if secret is None:
             return False
 
-        # Encrypt with new password
+        # Legacy dual-write
         new_encrypted_secret = self.encryption_service.encrypt(secret, new_pin)
+
+        # v2 write (single container field)
+        wallet_kind = "stellar_free" if wallet.is_free else "stellar_user"
+        mode = "free" if pin_type == 0 else "user"
+        wallet.wallet_crypto_v2 = self.encryption_service.encrypt_wallet_container(
+            secret_key=secret,
+            seed_key=seed,
+            mode=mode,
+            wallet_kind=wallet_kind,
+            pin=new_pin if mode == "user" else None,
+        )
 
         # Update wallet
         wallet.secret_key = new_encrypted_secret

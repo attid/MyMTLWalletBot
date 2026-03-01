@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Master Key Encryption Password (defaults to "0" for backward compatibility)
     master_password: SecretStr = SecretStr("0")
 
+    # Wallet crypto v2 KEK (required in production)
+    wallet_kek: SecretStr = SecretStr("dev-wallet-kek-change-me")
+    wallet_kek_old: Optional[SecretStr] = None
+
     toncenter_token: Optional[str] = None
     debank: Optional[SecretStr] = None
     start_path: str = start_path

@@ -40,7 +40,7 @@ Operational rollout without feature flags:
 
 ## Change Plan
 
-1. [ ] Add new DB field and model mapping (no legacy removal).
+1. [x] Add new DB field and model mapping (no legacy removal).
    - Add `wallet_crypto_v2` (`Text`/CLOB) to wallet table model in
      `bot/db/models.py`.
    - Add corresponding field to domain entity in `bot/core/domain/entities.py`.
@@ -60,7 +60,7 @@ Operational rollout without feature flags:
      - optional `seed` block: `{nonce, ct}`.
    - Keep `seed` separate from `secret` to avoid decrypting seed in normal flows.
 
-3. [ ] Implement encryption/decryption primitives in `EncryptionService`.
+3. [x] Implement encryption/decryption primitives in `EncryptionService`.
    - Extend legacy flow with v2 methods for free and user modes.
    - Use Argon2id for user-mode key derivation.
    - Use AEAD cipher (AES-GCM or ChaCha20-Poly1305).
@@ -69,8 +69,14 @@ Operational rollout without feature flags:
      - `WALLET_KEK` (required),
      - `WALLET_KEK_OLD` (optional, for rotation window).
    - Writes always use `kid=current`; reads may fallback to `old`.
+   - Initial Argon2id production baseline (measured on target server):
+     - `memory_cost=65536` (64 MiB),
+     - `time_cost=3`,
+     - `parallelism=1`,
+     - `hash_len=32`.
+   - Keep KDF params in container payload for future per-record upgrades.
 
-4. [ ] Update read paths to prefer v2 with legacy fallback.
+4. [x] Update read paths to prefer v2 with legacy fallback.
    - If `wallet_crypto_v2` exists and is valid, use it.
    - Otherwise fallback to legacy `secret_key/seed_key`.
    - Cover:
@@ -78,14 +84,14 @@ Operational rollout without feature flags:
      - `bot/other/stellar_tools.py`,
      - any direct secret usage discovered during implementation.
 
-5. [ ] Update write paths for Version A dual-write compatibility.
+5. [x] Update write paths for Version A dual-write compatibility.
    - On create/update/password change:
      - always write `wallet_crypto_v2`,
      - and keep legacy `secret_key/seed_key` updated.
    - This guarantees rollback to old image remains functional.
    - Cover free, non-free, and TON create/update flows.
 
-6. [ ] TON compatibility adaptation (must not break).
+6. [x] TON compatibility adaptation (must not break).
    - Current TON detection relies on `secret_key == "TON"` and mnemonic in
      `seed_key`.
    - For Version A:

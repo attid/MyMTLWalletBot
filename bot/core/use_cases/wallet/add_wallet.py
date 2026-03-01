@@ -15,6 +15,7 @@ class AddWallet:
         is_free: bool = False,
         is_default: bool = True,
         seed_key: Optional[str] = None,
+        wallet_crypto_v2: Optional[str] = None,
         is_read_only: bool = False,
     ) -> Wallet:
         """
@@ -61,6 +62,7 @@ class AddWallet:
             is_free=is_free,
             secret_key=secret_key,
             seed_key=seed_key,
+            wallet_crypto_v2=wallet_crypto_v2,
             use_pin=use_pin,
             # Legacy: if secret_key, default pin might be set?
             # db_add_wallet defaults: default_wallet=0, free_wallet=i_free_wallet, last_event_id=max...

@@ -67,6 +67,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             assets_visibility=wallet.assets_visibility,
             secret_key=wallet.secret_key,
             seed_key=wallet.seed_key,
+            wallet_crypto_v2=wallet.wallet_crypto_v2,
             balances=None,  # New wallets have no cache
             balances_event_id="0",
             last_event_id="0",
@@ -100,6 +101,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             # Update sensitive fields
             db_wallet.secret_key = wallet.secret_key
             db_wallet.seed_key = wallet.seed_key
+            db_wallet.wallet_crypto_v2 = wallet.wallet_crypto_v2
             db_wallet.use_pin = wallet.use_pin
             db_wallet.free_wallet = 1 if wallet.is_free else 0
 
@@ -249,6 +251,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             assets_visibility=db_wallet.assets_visibility,
             secret_key=db_wallet.secret_key,
             seed_key=db_wallet.seed_key,
+            wallet_crypto_v2=db_wallet.wallet_crypto_v2,
             balances=balances,
             balances_event_id=str(db_wallet.balances_event_id or "0"),
             last_event_id=str(db_wallet.last_event_id or "0"),

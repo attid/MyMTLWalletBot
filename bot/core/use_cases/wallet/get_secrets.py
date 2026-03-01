@@ -31,17 +31,34 @@ class GetWalletSecrets:
             WalletSecrets object if successful, None if wallet not found or pin invalid.
         """
         wallet = await self.wallet_repository.get_default_wallet(user_id)
-        if not wallet or not wallet.secret_key:
+        if not wallet:
             return None
 
-        # Decrypt secret key using pin
-        secret = self.encryption_service.decrypt(wallet.secret_key, pin)
+        secret: Optional[str] = None
+
+        if wallet.wallet_crypto_v2:
+            secret = self.encryption_service.decrypt_wallet_secret(
+                wallet.wallet_crypto_v2,
+                pin=pin,
+            )
+
+        if secret is None and wallet.secret_key:
+            # Legacy fallback during transition window.
+            secret = self.encryption_service.decrypt(wallet.secret_key, pin)
+
         if secret is None:
             return None
 
         seed_phrase = None
-        if wallet.seed_key:
-            # Seed key is encrypted using the PRIVATE KEY (secret)
+
+        if wallet.wallet_crypto_v2:
+            seed_phrase = self.encryption_service.decrypt_wallet_seed(
+                wallet.wallet_crypto_v2,
+                pin=pin,
+            )
+
+        if seed_phrase is None and wallet.seed_key:
+            # Legacy seed encryption used private key as passphrase.
             seed_phrase = self.encryption_service.decrypt(wallet.seed_key, secret)
 
         return WalletSecrets(secret_key=secret, seed_phrase=seed_phrase)

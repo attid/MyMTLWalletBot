@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from core.interfaces.services import IWalletSecretService
 from db.models import MyMtlWalletBot
+from infrastructure.services.encryption_service import EncryptionService
 
 
 class SqlAlchemyWalletSecretService(IWalletSecretService):
@@ -36,6 +37,12 @@ class SqlAlchemyWalletSecretService(IWalletSecretService):
         """
         wallet = await self._get_default_wallet(user_id)
         if wallet:
+            if wallet.wallet_crypto_v2:
+                payload = EncryptionService().parse_wallet_container(
+                    wallet.wallet_crypto_v2
+                )
+                if payload and payload.get("wallet_kind") == "ton_free":
+                    return "TON"
             return wallet.secret_key
         return None
 
@@ -45,8 +52,18 @@ class SqlAlchemyWalletSecretService(IWalletSecretService):
         Returns None if not a TON wallet.
         """
         wallet = await self._get_default_wallet(user_id)
-        if wallet and wallet.secret_key == "TON":
-            return wallet.seed_key
+        if wallet:
+            if wallet.wallet_crypto_v2:
+                payload = EncryptionService().parse_wallet_container(
+                    wallet.wallet_crypto_v2
+                )
+                if payload and payload.get("wallet_kind") == "ton_free":
+                    return EncryptionService().decrypt_wallet_seed(
+                        wallet.wallet_crypto_v2
+                    )
+
+            if wallet.secret_key == "TON":
+                return wallet.seed_key
         return None
 
     async def is_ton_wallet(self, user_id: int) -> bool:

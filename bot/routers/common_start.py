@@ -112,6 +112,12 @@ async def cmd_start(
         encrypted_mnemonic = app_context.encryption_service.encrypt(
             mnemonic, secret_key
         )
+        wallet_crypto_v2 = app_context.encryption_service.encrypt_wallet_container(
+            secret_key=secret_key,
+            seed_key=mnemonic,
+            mode="free",
+            wallet_kind="stellar_free",
+        )
 
         await register_use_case.execute(
             user_id=message.from_user.id,
@@ -120,6 +126,7 @@ async def cmd_start(
             public_key=public_key,
             secret_key=encrypted_secret,
             seed_key=encrypted_mnemonic,
+            wallet_crypto_v2=wallet_crypto_v2,
         )
         await session.commit()
 
