@@ -28,3 +28,25 @@ jobs:
 
       - name: Run CI gate
         run: just check-fast
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    needs: check
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Setup just
+        uses: taiki-e/install-action@just
+
+      - name: Run E2E smoke gate
+        run: just test-e2e-smoke

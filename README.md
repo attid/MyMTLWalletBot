@@ -11,6 +11,8 @@ just fmt       # format code
 just lint      # ruff + mypy
 just test      # full test suite
 just test-fast # fast subset for local loop
+just test-e2e-smoke # deterministic user-flow smoke tests
+just test-external # external/docker integration tests
 just arch-test # architectural guardrails
 just check     # fmt + lint + test + arch-test
 just check-fast # lint + test-fast + arch-test

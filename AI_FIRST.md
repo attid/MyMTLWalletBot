@@ -123,6 +123,8 @@ domain ← application ← infrastructure
 | ---------------- | -------------------------------------------------- |
 | `just test`      | Полный набор тестов                                |
 | `just test-fast` | Быстрые unit-тесты (< 30 сек)                      |
+| `just test-e2e-smoke` | Детерминированные smoke E2E user flows        |
+| `just test-external` | Внешние/docker интеграционные тесты            |
 | `just lint`      | Все линтеры и статический анализ                   |
 | `just fmt`       | Автоформатирование                                 |
 | `just check`     | `fmt` + `lint` + `test` — полная проверка перед PR |

@@ -1,0 +1,35 @@
+name: E2E Nightly Canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * *"
+
+jobs:
+  testnet-canary:
+    runs-on: ubuntu-latest
+
+    env:
+      TESTNET_MASTER_PUBLIC_KEY: ${{ secrets.TESTNET_MASTER_PUBLIC_KEY }}
+      TESTNET_MASTER_SECRET_KEY: ${{ secrets.TESTNET_MASTER_SECRET_KEY }}
+      HORIZON_TESTNET_URL: ${{ secrets.HORIZON_TESTNET_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Validate required secrets
+        run: |
+          test -n "$TESTNET_MASTER_PUBLIC_KEY" || (echo "Missing secret: TESTNET_MASTER_PUBLIC_KEY" && exit 1)
+          test -n "$TESTNET_MASTER_SECRET_KEY" || (echo "Missing secret: TESTNET_MASTER_SECRET_KEY" && exit 1)
+
+      - name: Run testnet canary
+        run: cd bot && uv run --package mmwb-bot pytest tests/external/test_testnet_canary.py -m external -v
