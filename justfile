@@ -69,6 +69,9 @@ secret-scan:
 metrics:
     uv run python .linters/metrics_snapshot.py
 
+bench-kdf:
+    uv run --with argon2-cffi python bot/scripts/argon2_benchmark.py
+
 start-task task_id title="":
     uv run python .linters/create_exec_plan.py {{task_id}} --title "{{title}}"
 
