@@ -33,6 +33,8 @@ COPY webapp ./webapp
 # --- Final Stage ---
 FROM python:3.12-slim-bookworm
 
+ARG JUST_VERSION=1.40.0
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
@@ -53,9 +55,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+# Install just CLI for in-container operational runbooks
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) just_arch="x86_64-unknown-linux-musl" ;; \
+        arm64) just_arch="aarch64-unknown-linux-musl" ;; \
+        *) echo "Unsupported architecture: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/just.tar.gz "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${just_arch}.tar.gz"; \
+    tar -xzf /tmp/just.tar.gz -C /tmp just; \
+    install -m 0755 /tmp/just /usr/local/bin/just; \
+    rm -f /tmp/just /tmp/just.tar.gz
+
 # Copy installed python packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy only runtime application code
 COPY bot ./bot
