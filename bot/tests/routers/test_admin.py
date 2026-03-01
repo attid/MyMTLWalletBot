@@ -120,6 +120,48 @@ async def test_cmd_stats(mock_telegram, router_app_context, setup_admin_mocks):
 
 
 @pytest.mark.asyncio
+async def test_cmd_crypto_migration_status(
+    mock_telegram, router_app_context, setup_admin_mocks
+):
+    """Test /crypto_migration_status: should show migration counters."""
+    dp = router_app_context.dispatcher
+    dp.include_router(admin_router)
+
+    def _result_with_scalar(value):
+        result = MagicMock()
+        result.scalar.return_value = value
+        return result
+
+    setup_admin_mocks.mock_session.execute = AsyncMock(
+        side_effect=[
+            _result_with_scalar(100),  # total
+            _result_with_scalar(80),  # migrated
+            _result_with_scalar(15),  # pending requires user pin/password
+        ]
+    )
+
+    update = create_message_update(
+        user_id=123,
+        text="/crypto_migration_status",
+        username="itolstov",
+    )
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=update,
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    text = req["data"]["text"]
+    assert "Crypto v2 migration status" in text
+    assert "Total wallets: 100" in text
+    assert "Migrated: 80 (80.0%)" in text
+    assert "Pending: 20" in text
+    assert "Pending (requires user PIN/password): 15" in text
+    assert "Pending (other): 5" in text
+
+
+@pytest.mark.asyncio
 async def test_cmd_exit_restart_flow(
     mock_telegram, router_app_context, setup_admin_mocks
 ):
