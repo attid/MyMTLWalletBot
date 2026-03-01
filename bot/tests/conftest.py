@@ -862,7 +862,9 @@ def mock_global_data_autouse():
         "other.lang_tools.my_gettext",
         side_effect=lambda chat_id, key, param=None, **kwargs: f"text {key}",
     )
-    p2 = patch("infrastructure.utils.common_utils.get_user_id", return_value=123)
+    from infrastructure.utils import common_utils
+
+    p2 = patch.object(common_utils, "get_user_id", return_value=123)
 
     p3.start()
     p2.start()
@@ -1187,22 +1189,35 @@ async def mock_horizon(horizon_server_config):
         state.requests.append(
             {"endpoint": "ledgers", "method": "GET", "params": params}
         )
+        ledger_record = {
+            "id": "123456789",
+            "sequence": 12345,
+            "hash": "hash123",
+            "paging_token": "12345",
+            "closed_at": "2024-01-01T00:00:00Z",
+        }
+
+        if "text/event-stream" in request.headers.get("Accept", ""):
+            import json
+
+            response = web.StreamResponse(
+                status=200,
+                reason="OK",
+                headers={
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                },
+            )
+            await response.prepare(request)
+            await response.write(b'event: open\ndata: "hello"\n\n')
+            await response.write(
+                f"data: {json.dumps(ledger_record)}\n\n".encode("utf-8")
+            )
+            return response
+
         # Return a simple ledger list to satisfy basic polling
-        return web.json_response(
-            {
-                "_embedded": {
-                    "records": [
-                        {
-                            "id": "123456789",
-                            "sequence": 12345,
-                            "hash": "hash123",
-                            "paging_token": "12345",
-                            "closed_at": "2024-01-01T00:00:00Z",
-                        }
-                    ]
-                }
-            }
-        )
+        return web.json_response({"_embedded": {"records": [ledger_record]}})
 
     @routes.get("/ledgers/{sequence}")
     async def get_ledger_by_seq(request):
@@ -1216,6 +1231,26 @@ async def mock_horizon(horizon_server_config):
                 "paging_token": seq,
             }
         )
+
+    @routes.get("/ledgers/{sequence}/transactions")
+    async def get_ledger_transactions(request):
+        """Mock transactions-by-ledger endpoint used by notifier polling."""
+        seq = request.match_info["sequence"]
+        params = dict(request.query)
+        state.requests.append(
+            {
+                "endpoint": "ledger-transactions",
+                "method": "GET",
+                "sequence": seq,
+                "params": params,
+            }
+        )
+
+        cursor = params.get("cursor", "0")
+        limit = int(params.get("limit", 10))
+        filtered = [tx for tx in state.transactions if tx["paging_token"] > cursor]
+        records = filtered[:limit]
+        return web.json_response({"_embedded": {"records": records}})
 
     @routes.get("/operations")
     async def get_operations(request):

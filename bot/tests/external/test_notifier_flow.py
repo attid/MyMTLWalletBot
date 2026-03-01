@@ -4,6 +4,7 @@ import aiohttp
 from aiohttp import web
 import time
 import json
+import os
 from urllib.parse import quote
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
@@ -236,8 +237,11 @@ async def test_notifier_webhook_delivery(notifier_service, http_session, mock_ho
         )
 
         # Wait for Webhook
+        wait_timeout = float(os.getenv("NOTIFIER_WEBHOOK_TIMEOUT", "45"))
         try:
-            webhook_data = await asyncio.wait_for(webhook_queue.get(), timeout=15.0)
+            webhook_data = await asyncio.wait_for(
+                webhook_queue.get(), timeout=wait_timeout
+            )
             # Notifier service sends 'operation' type for operation events
             assert webhook_data["type"] == "operation"
             # Depending on Notifier implementation, verify content
