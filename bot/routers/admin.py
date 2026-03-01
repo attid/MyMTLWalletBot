@@ -434,6 +434,51 @@ async def cmd_set_usdt(message: types.Message, session: AsyncSession):
     )
 
 
+@router.message(Command(commands=["crypto_migration_status"]))
+async def cmd_crypto_migration_status(message: types.Message, session: AsyncSession):
+    base_filter = MyMtlWalletBot.need_delete == 0
+
+    total_wallets = (
+        await session.execute(
+            select(func.count()).select_from(MyMtlWalletBot).filter(base_filter)
+        )
+    ).scalar() or 0
+
+    migrated_wallets = (
+        await session.execute(
+            select(func.count())
+            .select_from(MyMtlWalletBot)
+            .filter(base_filter, MyMtlWalletBot.wallet_crypto_v2.is_not(None))
+        )
+    ).scalar() or 0
+
+    pending_wallets = max(total_wallets - migrated_wallets, 0)
+
+    pending_requires_user_pin = (
+        await session.execute(
+            select(func.count())
+            .select_from(MyMtlWalletBot)
+            .filter(
+                base_filter,
+                MyMtlWalletBot.wallet_crypto_v2.is_(None),
+                MyMtlWalletBot.use_pin.in_([1, 2]),
+            )
+        )
+    ).scalar() or 0
+
+    pending_other = max(pending_wallets - pending_requires_user_pin, 0)
+    progress_pct = (migrated_wallets / total_wallets * 100) if total_wallets else 0.0
+
+    await message.answer(
+        "🔐 Crypto v2 migration status\n"
+        f"Total wallets: {total_wallets}\n"
+        f"Migrated: {migrated_wallets} ({progress_pct:.1f}%)\n"
+        f"Pending: {pending_wallets}\n"
+        f"- Pending (requires user PIN/password): {pending_requires_user_pin}\n"
+        f"- Pending (other): {pending_other}"
+    )
+
+
 @router.message(Command(commands=["help"]))
 async def cmd_help(message: types.Message):
     await message.answer(
@@ -448,6 +493,7 @@ async def cmd_help(message: types.Message):
         "/usdt1 — автовывод первого в очереди\n"
         "/check_usdt @user — сверка баланса БД и блокчейна\n"
         "/set_usdt @user amount — установка баланса БД\n"
+        "/crypto_migration_status — прогресс миграции wallet_crypto_v2\n"
         "/balance — проверить баланс"
     )
 
