@@ -8,10 +8,8 @@ Base = declarative_base()
 metadata = Base.metadata
 
 
-
-
 class MyMtlWalletBot(Base):
-    __tablename__ = 'MYMTLWALLETBOT'
+    __tablename__ = "MYMTLWALLETBOT"
 
     id = Column(Integer, primary_key=True)
     user_id = Column(BigInteger, nullable=False)
@@ -24,10 +22,11 @@ class MyMtlWalletBot(Base):
     free_wallet = Column(SmallInteger, default=1)
     default_wallet = Column(SmallInteger, default=0)
     need_delete = Column(SmallInteger, default=0)
-    last_event_id = Column(String(32), default='0')
+    last_event_id = Column(String(32), default="0")
     balances = Column(Text)  # Now using Text for the balances field
-    balances_event_id = Column(String(32), default='0')
+    balances_event_id = Column(String(32), default="0")
     assets_visibility = Column(Text, default="{}")
+
 
 # @event.listens_for(Session, 'before_flush')
 # def receive_before_flush(session, flush_context, instances):
@@ -43,17 +42,17 @@ class MyMtlWalletBot(Base):
 
 
 class MyMtlWalletBotLog(Base):
-    __tablename__ = 'MYMTLWALLETBOT_LOG'
+    __tablename__ = "MYMTLWALLETBOT_LOG"
 
-    log_id = Column('LOG_ID', Integer, primary_key=True)
-    user_id = Column('USER_ID', BigInteger)
-    log_dt = Column('LOG_DT', DateTime)
-    log_operation = Column('LOG_OPERATION', String(32))
-    log_operation_info = Column('LOG_OPERATION_INFO', String(32))
+    log_id = Column("LOG_ID", Integer, primary_key=True)
+    user_id = Column("USER_ID", BigInteger)
+    log_dt = Column("LOG_DT", DateTime)
+    log_operation = Column("LOG_OPERATION", String(32))
+    log_operation_info = Column("LOG_OPERATION_INFO", String(32))
 
 
 class MyMtlWalletBotBook(Base):
-    __tablename__ = 'MYMTLWALLETBOT_BOOK'
+    __tablename__ = "MYMTLWALLETBOT_BOOK"
 
     id = Column(Integer, primary_key=True)
     address = Column(String(64))
@@ -68,36 +67,38 @@ class ChequeStatus(enum.Enum):
 
 
 class MyMtlWalletBotCheque(Base):
-    __tablename__ = 'MYMTLWALLETBOT_CHEQUE'
+    __tablename__ = "MYMTLWALLETBOT_CHEQUE"
 
     cheque_id = Column(Integer, primary_key=True)
     cheque_uuid = Column(String(32))
     cheque_amount = Column(String(32))
     cheque_count = Column(Integer)
     user_id = Column(BigInteger)
-    #cheque_status = Column(Enum(ChequeStatus), default=ChequeStatus.CHEQUE.value)
+    # cheque_status = Column(Enum(ChequeStatus), default=ChequeStatus.CHEQUE.value)
     cheque_status = Column(Integer, default=ChequeStatus.CHEQUE.value)
     cheque_comment = Column(String(255))
     cheque_asset = Column(String(255))
 
 
 class MyMtlWalletBotChequeHistory(Base):
-    __tablename__ = 'MYMTLWALLETBOT_CHEQUE_HISTORY'
+    __tablename__ = "MYMTLWALLETBOT_CHEQUE_HISTORY"
 
     cheque_history_id = Column(Integer, primary_key=True)
     user_id = Column(BigInteger)
     dt_block = Column(DateTime)
     dt_receive = Column(DateTime)
-    cheque_id = Column(Integer, ForeignKey('MYMTLWALLETBOT_CHEQUE.cheque_id'))
+    cheque_id = Column(Integer, ForeignKey("MYMTLWALLETBOT_CHEQUE.cheque_id"))
 
 
 class MyMtlWalletBotMessages(Base):
-    __tablename__ = 'MYMTLWALLETBOT_MESSAGES'
+    __tablename__ = "MYMTLWALLETBOT_MESSAGES"
 
     message_id = Column(Integer, primary_key=True)
     user_message = Column(String(5000), nullable=False)
     keyboard = Column(Integer, default=0, nullable=False)
-    user_id = Column(BigInteger, ForeignKey('MYMTLWALLETBOT_USERS.user_id'), nullable=False)
+    user_id = Column(
+        BigInteger, ForeignKey("MYMTLWALLETBOT_USERS.user_id"), nullable=False
+    )
     was_send = Column(Integer, default=0, nullable=False)
 
 
@@ -110,10 +111,12 @@ class TransactionState(enum.Enum):
 
 
 class MyMtlWalletBotTransactions(Base):
-    __tablename__ = 'MYMTLWALLETBOT_TRANSACTIONS'
+    __tablename__ = "MYMTLWALLETBOT_TRANSACTIONS"
 
     user_transaction_id = Column(Integer, primary_key=True)
-    user_id = Column(BigInteger, ForeignKey('MYMTLWALLETBOT_USERS.user_id'), nullable=False)
+    user_id = Column(
+        BigInteger, ForeignKey("MYMTLWALLETBOT_USERS.user_id"), nullable=False
+    )
     user_transaction = Column(Text)
     transaction_state = Column(Enum(TransactionState), default=TransactionState.CREATED)
     transaction_date = Column(DateTime, default=func.current_timestamp())
@@ -121,14 +124,14 @@ class MyMtlWalletBotTransactions(Base):
 
 
 class MyMtlWalletBotUsers(Base):
-    __tablename__ = 'MYMTLWALLETBOT_USERS'
+    __tablename__ = "MYMTLWALLETBOT_USERS"
 
     user_id = Column(BigInteger, primary_key=True)
     user_name = Column(String(60))
-    lang = Column(String(2), default='en')
+    lang = Column(String(2), default="en")
     message_id = Column(BigInteger, default=0)
     donate_sum = Column(Float, default=0, nullable=False)
-    default_address = Column(String(60), default='', nullable=False)
+    default_address = Column(String(60), default="", nullable=False)
     usdt = Column(String(64))
     usdt_amount = Column(Integer, default=0)
     btc = Column(String(64))
@@ -137,7 +140,7 @@ class MyMtlWalletBotUsers(Base):
 
 
 class TMessage(Base):
-    __tablename__ = 'T_MESSAGE'
+    __tablename__ = "T_MESSAGE"
     id = Column(Integer, primary_key=True)
     user_id = Column(BigInteger)
     text = Column(String(4000))
@@ -149,10 +152,12 @@ class TMessage(Base):
 
 
 class NotificationFilter(Base):
-    __tablename__ = 'NOTIFICATION_FILTERS'
+    __tablename__ = "NOTIFICATION_FILTERS"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey('MYMTLWALLETBOT_USERS.user_id'), nullable=False)
+    user_id = Column(
+        BigInteger, ForeignKey("MYMTLWALLETBOT_USERS.user_id"), nullable=False
+    )
     public_key = Column(String(60), nullable=True)
     asset_code = Column(String(64), nullable=True)
     min_amount = Column(Float, default=0, nullable=False)
@@ -161,10 +166,10 @@ class NotificationFilter(Base):
 
 def update_db():
     Base.metadata.create_all()
-    #metadata.create_all(engine)
+    # metadata.create_all(engine)
 
 
 if __name__ == "__main__":
     pass
-    #from quik_pool import engine
-    #print(CreateTable(MyMtlWalletBotCheque.__table__).compile(engine))
+    # from quik_pool import engine
+    # print(CreateTable(MyMtlWalletBotCheque.__table__).compile(engine))

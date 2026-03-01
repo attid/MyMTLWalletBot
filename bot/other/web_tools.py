@@ -29,9 +29,9 @@ class HTTPSessionManager:
         async with self._lock:  # Блокируем доступ к сессии
             current_time = time.monotonic()
             if (
-                    self.session is None
-                    or self.session.closed
-                    or current_time - self.session_start_time > self.max_session_duration
+                self.session is None
+                or self.session.closed
+                or current_time - self.session_start_time > self.max_session_duration
             ):
                 if self.session and not self.session.closed:
                     await self.session.close()
@@ -47,13 +47,13 @@ class HTTPSessionManager:
                 logger.info("Сессия закрыта.")
 
     async def get_web_request(
-            self,
-            method: str,
-            url: str,
-            json: Optional[Dict[str, Any]] = None,
-            headers: Optional[Dict[str, str]] = None,
-            data: Optional[Union[Dict[str, Any], str]] = None,
-            return_type: Optional[str] = None,
+        self,
+        method: str,
+        url: str,
+        json: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        data: Optional[Union[Dict[str, Any], str]] = None,
+        return_type: Optional[str] = None,
     ) -> WebResponse:
         """
         Выполняет HTTP-запрос с использованием текущей сессии.
@@ -71,7 +71,7 @@ class HTTPSessionManager:
 
         try:
             async with session.request(
-                    method.upper(), url, json=json, headers=headers, data=data
+                method.upper(), url, json=json, headers=headers, data=data
             ) as response:
                 content_type = response.headers.get("Content-Type", "")
                 elapsed_time = time.monotonic() - start_time
@@ -93,9 +93,9 @@ class HTTPSessionManager:
 
 
 async def get_debank_balance(
-        account_id: str,
-        chain: str = 'bsc',
-        session_manager: Optional[HTTPSessionManager] = None
+    account_id: str,
+    chain: str = "bsc",
+    session_manager: Optional[HTTPSessionManager] = None,
 ) -> float:
     """
     Получает баланс аккаунта в USD через DeBank API.
@@ -120,19 +120,21 @@ async def get_debank_balance(
         raise ValueError("DeBankAPI key not configured")
 
     headers = {
-        'accept': 'application/json',
-        'AccessKey': config.debank.get_secret_value()
+        "accept": "application/json",
+        "AccessKey": config.debank.get_secret_value(),
     }
 
     try:
-        response = await session_manager.get_web_request('GET', url, headers=headers, return_type='json')
+        response = await session_manager.get_web_request(
+            "GET", url, headers=headers, return_type="json"
+        )
         if response.status == 200:
             if isinstance(response.data, dict):
-                return float(response.data.get('usd_value', 0.0))
+                return float(response.data.get("usd_value", 0.0))
             else:
                 raise Exception("Unexpected response format from DeBankAPI")
         else:
-            raise Exception(f'Ошибка запроса: Статус {response.status}')
+            raise Exception(f"Ошибка запроса: Статус {response.status}")
     except Exception as e:
         logger.error(f"Ошибка при получении баланса: {e}")
         raise
@@ -176,28 +178,33 @@ async def main():
 #         return 'An error occurred during the request.'
 
 
-
-async def get_web_request(method, url, json=None, headers=None, data=None, return_type=None):
+async def get_web_request(
+    method, url, json=None, headers=None, data=None, return_type=None
+):
     async with aiohttp.ClientSession() as web_session:
-        if method.upper() == 'POST':
-            request_coroutine = web_session.post(url, json=json, headers=headers, data=data)
-        elif method.upper() == 'GET':
+        if method.upper() == "POST":
+            request_coroutine = web_session.post(
+                url, json=json, headers=headers, data=data
+            )
+        elif method.upper() == "GET":
             request_coroutine = web_session.get(url, headers=headers, params=data)
         else:
             raise ValueError("Неизвестный метод запроса")
 
         async with request_coroutine as response:
-            content_type = response.headers.get('Content-Type', '')
-            if 'application/json' in content_type or return_type == 'json':
+            content_type = response.headers.get("Content-Type", "")
+            if "application/json" in content_type or return_type == "json":
                 return response.status, await response.json()
             else:
                 return response.status, await response.text()
 
 
 async def get_web_decoded_xdr(xdr):
-    status, response_json = await get_web_request('POST', url="https://eurmtl.me/remote/decode", json={"xdr": xdr})
+    status, response_json = await get_web_request(
+        "POST", url="https://eurmtl.me/remote/decode", json={"xdr": xdr}
+    )
     if status == 200:
-        msg = response_json['text']
+        msg = response_json["text"]
     else:
         msg = "Ошибка запроса"
     return msg

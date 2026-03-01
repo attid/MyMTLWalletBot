@@ -756,7 +756,7 @@ async def cmd_add_asset_add(
 
     balances = await balance_use_case.execute(user_id=user_id)
 
-    if is_free and len([b for b in balances if b.asset_code != 'XLM']) > 5:
+    if is_free and len([b for b in balances if b.asset_code != "XLM"]) > 5:
         await send_message(
             session,
             user_id,
@@ -864,7 +864,7 @@ async def cmd_add_asset_expert(
 
     balances = await balance_use_case.execute(user_id=user_id)
 
-    if is_free and len([b for b in balances if b.asset_code != 'XLM']) > 5:
+    if is_free and len([b for b in balances if b.asset_code != "XLM"]) > 5:
         await send_message(
             session,
             user_id,

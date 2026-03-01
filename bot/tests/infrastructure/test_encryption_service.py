@@ -1,9 +1,11 @@
 import pytest
 from infrastructure.services.encryption_service import EncryptionService
 
+
 @pytest.fixture
 def service():
     return EncryptionService()
+
 
 def test_encryption_decryption_roundtrip(service):
     data = "my secret data"
@@ -15,6 +17,7 @@ def test_encryption_decryption_roundtrip(service):
     decrypted = service.decrypt(encrypted, key)
     assert decrypted == data
 
+
 def test_decryption_with_wrong_key(service):
     data = "my secret data"
     key = "correct-key"
@@ -25,6 +28,7 @@ def test_decryption_with_wrong_key(service):
 
     assert decrypted is None
 
+
 def test_decryption_of_invalid_data(service):
     invalid_data = "not encrypted data"
     key = "any-key"
@@ -32,6 +36,7 @@ def test_decryption_of_invalid_data(service):
     decrypted = service.decrypt(invalid_data, key)
 
     assert decrypted is None
+
 
 def test_encryption_different_keys_produce_different_results(service):
     data = "my secret data"
@@ -42,6 +47,7 @@ def test_encryption_different_keys_produce_different_results(service):
     encrypted2 = service.encrypt(data, key2)
 
     assert encrypted1 != encrypted2
+
 
 def test_encryption_empty_string(service):
     data = ""

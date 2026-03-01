@@ -8,8 +8,11 @@ from routers.send import cmd_send_choose_token
 from routers.sign import cmd_check_xdr
 from infrastructure.utils.telegram_utils import clear_last_message_id, clear_state
 from infrastructure.utils.stellar_utils import (
-    find_stellar_addresses, find_stellar_federation_address,
-    extract_url, is_base64, is_valid_stellar_address
+    find_stellar_addresses,
+    find_stellar_federation_address,
+    extract_url,
+    is_base64,
+    is_valid_stellar_address,
 )
 
 
@@ -20,7 +23,12 @@ router.message.filter(F.chat.type == "private")
 
 
 @router.message()
-async def cmd_last_route(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_last_route(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     if message.chat.type != "private":
         return
 
@@ -30,7 +38,11 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Asy
     entities = message.entities or []
 
     # Check for 'eurmtl.me/sign_tools' in text or entities
-    has_sign_tools_link = 'eurmtl.me/sign_tools' in text or any(entity.url and 'eurmtl.me/sign_tools' in entity.url for entity in entities if entity.type == 'url')
+    has_sign_tools_link = "eurmtl.me/sign_tools" in text or any(
+        entity.url and "eurmtl.me/sign_tools" in entity.url
+        for entity in entities
+        if entity.type == "url"
+    )
     if has_sign_tools_link or (len(text) > 60 and is_base64(text)):
         if message.from_user is None:
             return
@@ -40,8 +52,13 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Asy
         if xdr_to_check_opt is None:
             return
         xdr_to_check = xdr_to_check_opt
-        await cmd_check_xdr(session=session, check_xdr=xdr_to_check,
-                            user_id=message.from_user.id, state=state, app_context=app_context)
+        await cmd_check_xdr(
+            session=session,
+            check_xdr=xdr_to_check,
+            user_id=message.from_user.id,
+            state=state,
+            app_context=app_context,
+        )
         return
     message_is_key = len(text) > 55 and is_valid_stellar_address(text)
 
@@ -66,7 +83,9 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Asy
             username = message.forward_from.username
             if username:
                 user_repo = app_context.repository_factory.get_user_repository(session)
-                public_key, user_id = await user_repo.get_account_by_username('@' + username)
+                public_key, user_id = await user_repo.get_account_by_username(
+                    "@" + username
+                )
 
         if public_key:
             my_account = await app_context.stellar_service.check_account(public_key)
@@ -76,7 +95,9 @@ async def cmd_last_route(message: types.Message, state: FSMContext, session: Asy
                     await state.update_data(memo=my_account.memo, federal_memo=True)
 
                 await state.set_state(None)
-                await cmd_send_choose_token(message, state, session, app_context=app_context)
+                await cmd_send_choose_token(
+                    message, state, session, app_context=app_context
+                )
                 return
 
     # if message.from_user.username == "itolstov":

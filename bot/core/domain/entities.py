@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 
+
 class ChequeStatus(Enum):
     CHEQUE = 0
     CANCELED = 1
@@ -16,6 +17,7 @@ class User:
     default_address: Optional[str] = None
     can_5000: int = 0  # 0=limit enabled, 1=limit disabled
 
+
 @dataclass
 class Wallet:
     id: int
@@ -28,9 +30,10 @@ class Wallet:
     assets_visibility: Optional[str] = "{}"
     secret_key: Optional[str] = None
     seed_key: Optional[str] = None
-    balances: Optional[list] = None # List[Balance]
+    balances: Optional[list] = None  # List[Balance]
     balances_event_id: str = "0"
     last_event_id: str = "0"
+
 
 @dataclass
 class AddressBookEntry:
@@ -38,6 +41,7 @@ class AddressBookEntry:
     user_id: int
     address: str
     name: str
+
 
 @dataclass
 class Cheque:
@@ -48,7 +52,10 @@ class Cheque:
     count: int
     comment: Optional[str]
     status: int
-    asset: Optional[str] = "EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    asset: Optional[str] = (
+        "EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    )
+
 
 @dataclass
 class ChequeHistory:

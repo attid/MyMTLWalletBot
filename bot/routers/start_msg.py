@@ -292,7 +292,7 @@ USDT: {float2str(usdt_balance, True)}
     balances = await use_case.execute(user_id)
 
     # Restore legacy logic for MTLAP state
-    mtlap_value = any(b.asset_code == 'MTLAP' for b in balances)
+    mtlap_value = any(b.asset_code == "MTLAP" for b in balances)
     await state.update_data(mtlap=mtlap_value)
 
     vis_str = getattr(wallet, "assets_visibility", None)
@@ -301,7 +301,7 @@ USDT: {float2str(usdt_balance, True)}
         b
         for b in balances
         if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE
-        and not (wallet.is_free and b.asset_code == 'XLM')
+        and not (wallet.is_free and b.asset_code == "XLM")
     ]
 
     if (await state.get_data()).get("show_more", False) is False:

@@ -41,7 +41,7 @@ def cleanup_router():
 class ChequeTestMiddleware:
     def __init__(self, app_context):
         self.app_context = app_context
-    
+
     async def __call__(self, handler, event, data):
         session = MagicMock()
         session.execute = AsyncMock()
@@ -53,7 +53,7 @@ class ChequeTestMiddleware:
         result.scalar.return_value = None
         result.all.return_value = []
         session.execute.return_value = result
-        
+
         data["session"] = session
         data["app_context"] = self.app_context
         data["l10n"] = MagicMock()  # Required by cheque router
@@ -66,14 +66,16 @@ async def test_cmd_create_cheque_flow(mock_telegram, router_app_context, dp):
     Test cheque creation flow: /create_cheque -> sum -> execute
     """
     user_id = 123
-    
+
     dp.message.middleware(ChequeTestMiddleware(router_app_context))
     dp.callback_query.middleware(ChequeTestMiddleware(router_app_context))
     dp.include_router(cheque_router)
 
     # 1. Start /create_cheque
     update1 = create_message_update(user_id, "/create_cheque", update_id=1)
-    await dp.feed_update(bot=router_app_context.bot, update=update1, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update1, app_context=router_app_context
+    )
 
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
@@ -81,14 +83,20 @@ async def test_cmd_create_cheque_flow(mock_telegram, router_app_context, dp):
 
     # 2. Enter sum
     mock_create_cheque = MagicMock(spec=CreateCheque)
-    mock_create_cheque.execute = AsyncMock(return_value=PaymentResult(success=True, xdr="XDR"))
-    router_app_context.use_case_factory.create_create_cheque.return_value = mock_create_cheque
+    mock_create_cheque.execute = AsyncMock(
+        return_value=PaymentResult(success=True, xdr="XDR")
+    )
+    router_app_context.use_case_factory.create_create_cheque.return_value = (
+        mock_create_cheque
+    )
 
     update2 = create_message_update(user_id, "50", update_id=2, message_id=2)
-    await dp.feed_update(bot=router_app_context.bot, update=update2, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update2, app_context=router_app_context
+    )
 
     # Verify cheque preview was shown (message might be deleted, so check >= 1)
-    messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
+    messages = [r for r in mock_telegram if r["method"] == "sendMessage"]
     assert len(messages) >= 1, "Should send at least initial message"
 
 
@@ -97,7 +105,7 @@ async def test_cb_cheque_info(mock_telegram, router_app_context, dp):
     """Test cheque info callback"""
     user_id = 123
     cheque_uuid = "uuid-info"
-    
+
     dp.callback_query.middleware(ChequeTestMiddleware(router_app_context))
     dp.include_router(cheque_router)
 
@@ -106,7 +114,7 @@ async def test_cb_cheque_info(mock_telegram, router_app_context, dp):
     mock_cheque.status = ChequeStatus.CHEQUE.value
     mock_cheque.count = 10
     mock_cheque.comment = "test comment"
-    
+
     mock_repo = MagicMock(spec=IChequeRepository)
     mock_repo.get_by_uuid = AsyncMock(return_value=mock_cheque)
     mock_repo.get_receive_count = AsyncMock(return_value=3)
@@ -114,7 +122,9 @@ async def test_cb_cheque_info(mock_telegram, router_app_context, dp):
 
     cb_data = ChequeCallbackData(uuid=cheque_uuid, cmd="info").pack()
     update = create_callback_update(user_id, cb_data, update_id=1)
-    await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
 
     # Verify callback answer
     req = get_telegram_request(mock_telegram, "answerCallbackQuery")
@@ -128,14 +138,14 @@ async def test_cmd_invoice_yes(mock_telegram, mock_horizon, router_app_context, 
     """Test InvoiceYes callback"""
     user_id = 123
     cheque_uuid = "uuid-invoice"
-    
+
     dp.message.middleware(ChequeTestMiddleware(router_app_context))
     dp.callback_query.middleware(ChequeTestMiddleware(router_app_context))
     dp.include_router(cheque_router)
 
     # Setup Cheque (Invoice)
     valid_issuer = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
-    
+
     mock_cheque = MagicMock(spec=Cheque)
     mock_cheque.status = ChequeStatus.INVOICE.value
     mock_cheque.count = 5
@@ -156,45 +166,55 @@ async def test_cmd_invoice_yes(mock_telegram, mock_horizon, router_app_context, 
         asset_issuer="G...",
         balance="100.0",
         limit=None,
-        asset_type="credit_alphanum12"
+        asset_type="credit_alphanum12",
     )
     mock_balance_uc.execute = AsyncMock(return_value=[mock_balance])
-    router_app_context.use_case_factory.create_get_wallet_balance.return_value = mock_balance_uc
+    router_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        mock_balance_uc
+    )
 
     # Setup Wallet Repo
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
     mock_wallet_repo = MagicMock(spec=IWalletRepository)
     mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
-    router_app_context.repository_factory.get_wallet_repository.return_value = mock_wallet_repo
-    
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        mock_wallet_repo
+    )
+
     # Configure mock_horizon for GUSER
     mock_horizon.set_account(mock_wallet.public_key)
 
     # Run /start invoice_... to set state
-    update1 = create_message_update(user_id, f"/start invoice_{cheque_uuid}", update_id=1)
-    await dp.feed_update(bot=router_app_context.bot, update=update1, app_context=router_app_context)
+    update1 = create_message_update(
+        user_id, f"/start invoice_{cheque_uuid}", update_id=1
+    )
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update1, app_context=router_app_context
+    )
 
     # Click InvoiceYes
     update2 = create_callback_update(user_id, "InvoiceYes", update_id=2, message_id=2)
-    await dp.feed_update(bot=router_app_context.bot, update=update2, app_context=router_app_context)
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update2, app_context=router_app_context
+    )
 
     # Verify at least Loading message was sent
-    messages = [r for r in mock_telegram if r['method'] == 'sendMessage']
+    messages = [r for r in mock_telegram if r["method"] == "sendMessage"]
     assert len(messages) >= 1, "Should send at least Loading message"
-    
+
     # Verify trustline was built (main functionality)
     # build_change_trust_transaction calls load_account which hits Horizon
     reqs = mock_horizon.get_requests("accounts")
     assert len(reqs) >= 1
-    assert any(r['account_id'] == mock_wallet.public_key for r in reqs)
+    assert any(r["account_id"] == mock_wallet.public_key for r in reqs)
 
 
 @pytest.mark.asyncio
 async def test_inline_query_cheques(mock_telegram, router_app_context, dp):
     """Test inline query for cheques"""
     user_id = 999
-    
+
     dp.inline_query.middleware(ChequeTestMiddleware(router_app_context))
     dp.include_router(cheque_router)
 
@@ -206,7 +226,7 @@ async def test_inline_query_cheques(mock_telegram, router_app_context, dp):
     mock_cheque.count = 1
     mock_cheque.comment = "InlineC"
     mock_cheque.asset = "EURMTL:G..."
-    
+
     mock_repo = MagicMock(spec=IChequeRepository)
     mock_repo.get_available = AsyncMock(return_value=[mock_cheque])
     router_app_context.repository_factory.get_cheque_repository.return_value = mock_repo
@@ -214,19 +234,24 @@ async def test_inline_query_cheques(mock_telegram, router_app_context, dp):
     # Mock bot.me for link generation
     mock_me = MagicMock()
     mock_me.username = "testbot"
-    
-    with patch.object(router_app_context.bot, 'me', AsyncMock(return_value=mock_me)):
+
+    with patch.object(router_app_context.bot, "me", AsyncMock(return_value=mock_me)):
         from aiogram import types
+
         update = types.Update(
             update_id=1,
             inline_query=types.InlineQuery(
                 id="iq1",
-                from_user=types.User(id=user_id, is_bot=False, first_name="U", username="u"),
+                from_user=types.User(
+                    id=user_id, is_bot=False, first_name="U", username="u"
+                ),
                 query="",
-                offset=""
-            )
+                offset="",
+            ),
         )
-        await dp.feed_update(bot=router_app_context.bot, update=update, app_context=router_app_context)
+        await dp.feed_update(
+            bot=router_app_context.bot, update=update, app_context=router_app_context
+        )
 
     # Verify inline query answer
     req = get_telegram_request(mock_telegram, "answerInlineQuery")

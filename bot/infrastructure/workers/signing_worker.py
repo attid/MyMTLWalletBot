@@ -86,7 +86,9 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
             if tools or callback_url or wallet_connect:
                 # sign_tools flow: сохраняем подписанный XDR в FSM и показываем кнопки
                 await state.update_data(xdr=signed_xdr)
-                logger.info(f"TX {tx_id}: sign_tools flow, showing Send/SendTools buttons")
+                logger.info(
+                    f"TX {tx_id}: sign_tools flow, showing Send/SendTools buttons"
+                )
 
                 from infrastructure.utils.telegram_utils import cmd_show_sign
                 from other.lang_tools import my_gettext
@@ -118,7 +120,9 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                     )
 
                     successful = result.get("successful", False)
-                    logger.info(f"TX {tx_id}: submitted to Stellar, successful={successful}")
+                    logger.info(
+                        f"TX {tx_id}: submitted to Stellar, successful={successful}"
+                    )
 
                     # Вызываем fsm_after_send callback если транзакция успешна
                     if successful and fsm_after_send_pickled:
@@ -127,12 +131,17 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                             logger.info(f"TX {tx_id}: calling fsm_after_send callback")
 
                             await fsm_after_send(session, user_id, state)
-                            logger.info(f"TX {tx_id}: fsm_after_send callback completed")
+                            logger.info(
+                                f"TX {tx_id}: fsm_after_send callback completed"
+                            )
                         except Exception as e:
-                            logger.exception(f"TX {tx_id}: error in fsm_after_send: {e}")
+                            logger.exception(
+                                f"TX {tx_id}: error in fsm_after_send: {e}"
+                            )
 
                     # Clear state to prevent interference with subsequent commands
                     from infrastructure.utils.telegram_utils import clear_state
+
                     await clear_state(state)
 
             # Удаляем TX из Redis

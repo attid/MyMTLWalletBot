@@ -7,6 +7,7 @@ from loguru import logger
 from aiogram import Bot
 from other.loguru_tools import safe_catch_async
 
+
 class TaskKilled(Exception):
     pass
 
@@ -14,16 +15,21 @@ class TaskKilled(Exception):
 def kill_task(task):
     task.cancel()
 
+
 _bot: Optional[Bot] = None
 _admin_id: Optional[int] = None
+
 
 def setup_async_utils(bot: Bot, admin_id: int):
     global _bot, _admin_id
     _bot = bot
     _admin_id = admin_id
 
+
 @safe_catch_async
-async def task_with_timeout(func: Callable, timeout: int, kill_on_timeout: bool, *args, **kwargs):
+async def task_with_timeout(
+    func: Callable, timeout: int, kill_on_timeout: bool, *args, **kwargs
+):
     task = asyncio.create_task(func(*args, **kwargs))
 
     # start_time = datetime.now()
@@ -37,7 +43,7 @@ async def task_with_timeout(func: Callable, timeout: int, kill_on_timeout: bool,
                 try:
                     await _bot.send_message(
                         chat_id=_admin_id,
-                        text=f"Task {func.__name__} has been running for {minutes_passed} minute(s)."
+                        text=f"Task {func.__name__} has been running for {minutes_passed} minute(s).",
                     )
                 except Exception:
                     pass
@@ -71,7 +77,9 @@ def with_timeout(timeout: int, kill_on_timeout: bool = False):
                 elapsed_time = time() - start_time
                 minutes = int(elapsed_time / 60)
                 if elapsed_time > timeout and minutes > minutes_logged:
-                    logger.warning(f"Function {func.__name__} running for {minutes} minutes")
+                    logger.warning(
+                        f"Function {func.__name__} running for {minutes} minutes"
+                    )
 
                     if kill_on_timeout:
                         task.cancel()
@@ -90,12 +98,15 @@ def with_timeout(timeout: int, kill_on_timeout: bool = False):
                 return result
             finally:
                 if not task.done():
-                    logger.warning(f"Task {func.__name__} still running after processing")
+                    logger.warning(
+                        f"Task {func.__name__} still running after processing"
+                    )
                 else:
                     total_minutes = int((time() - start_time) / 60)
                     if total_minutes > 0:
                         logger.info(
-                            f"Function {func.__name__} finished, total runtime: {total_minutes} minutes")
+                            f"Function {func.__name__} finished, total runtime: {total_minutes} minutes"
+                        )
 
         return wrapper
 

@@ -108,7 +108,9 @@ class TestNotificationHistoryService:
             operation.operation = f"payment_{i}"
             operation.display_asset_code = "EURMTL"
             operation.display_amount_value = str(i * 10)
-            service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
+            service.add(
+                user_id=123, operation=operation, wallet_id=1, public_key="GKEY"
+            )
 
         assert len(service._history[123]) == 3
         # Newest should be first
@@ -124,7 +126,9 @@ class TestNotificationHistoryService:
             operation.operation = f"payment_{i}"
             operation.display_asset_code = "EURMTL"
             operation.display_amount_value = "10"
-            service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
+            service.add(
+                user_id=123, operation=operation, wallet_id=1, public_key="GKEY"
+            )
 
         assert len(service._history[123]) == 5
         # Should keep the 5 most recent
@@ -140,7 +144,9 @@ class TestNotificationHistoryService:
             operation.operation = f"payment_{i}"
             operation.display_asset_code = "EURMTL"
             operation.display_amount_value = "10"
-            service.add(user_id=123, operation=operation, wallet_id=1, public_key="GKEY")
+            service.add(
+                user_id=123, operation=operation, wallet_id=1, public_key="GKEY"
+            )
 
         recent = service.get_recent(123, limit=3)
         assert len(recent) == 3
@@ -278,7 +284,9 @@ class TestNotificationHistoryService:
             operation.operation = f"payment_{user_id}"
             operation.display_asset_code = "EURMTL"
             operation.display_amount_value = "10"
-            service.add(user_id=user_id, operation=operation, wallet_id=1, public_key="GKEY")
+            service.add(
+                user_id=user_id, operation=operation, wallet_id=1, public_key="GKEY"
+            )
 
         assert len(service._history) == 3
         assert service.get_recent(123, limit=10)[0].operation_type == "payment_123"

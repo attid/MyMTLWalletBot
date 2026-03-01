@@ -11,8 +11,12 @@ from tonutils.wallet import WalletV5R1  # можно заменить на Walle
 from tonutils.wallet.messages import TransferJettonMessage
 from tonutils.jetton import JettonMasterStablecoin
 
-USDT_MASTER = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"  # официальный мастер USDT
-USDT_TEST_MASTER = "kQD0GKBM8ZbryVk2aESmzfU6b9b_8era_IkvBSELujFZPsyy"  # USDTTT (testnet)
+USDT_MASTER = (
+    "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs"  # официальный мастер USDT
+)
+USDT_TEST_MASTER = (
+    "kQD0GKBM8ZbryVk2aESmzfU6b9b_8era_IkvBSELujFZPsyy"  # USDTTT (testnet)
+)
 USDT_DECIMALS = 6
 
 NANOS = Decimal(10) ** 9
@@ -28,8 +32,12 @@ class TonService(ITonService):
     Works via Toncenter V3 (no own node).
     """
 
-    def __init__(self, api_key: Optional[str] = None, is_testnet: bool = False, rps: int = 1):
-        self.client = ToncenterV3Client(api_key=api_key, is_testnet=is_testnet, rps=rps, max_retries=3)
+    def __init__(
+        self, api_key: Optional[str] = None, is_testnet: bool = False, rps: int = 1
+    ):
+        self.client = ToncenterV3Client(
+            api_key=api_key, is_testnet=is_testnet, rps=rps, max_retries=3
+        )
         self._wallet: Optional[WalletV5R1] = None
         self._mnemonic: Optional[str] = None
         self.usdt_master = USDT_TEST_MASTER if is_testnet else USDT_MASTER
@@ -70,7 +78,6 @@ class TonService(ITonService):
         wallet, pub, prv, mnemonic = WalletV5R1.create(self.client)
         return wallet, mnemonic
 
-
     def from_mnemonic(self, mnemonic: str):
         """
         Imports a wallet from a mnemonic.
@@ -80,7 +87,7 @@ class TonService(ITonService):
         return self
 
     async def _is_deployed(self) -> bool:
-        """ Check if the wallet is deployed on the blockchain. """
+        """Check if the wallet is deployed on the blockchain."""
         assert self.wallet is not None, "Wallet must be initialized"
         acc = await self.client.get_raw_account(self.wallet.address.to_str())
         return bool(getattr(acc, "code", None))
@@ -100,7 +107,7 @@ class TonService(ITonService):
         Returns the USDT balance (Decimal) with 6 decimals.
         """
         assert self.wallet is not None, "Wallet must be initialized"
-        #if not await self._is_deployed():
+        # if not await self._is_deployed():
         #    return Decimal(0)
 
         owner_addr = self.wallet.address.to_str()
@@ -112,9 +119,7 @@ class TonService(ITonService):
             # standard get-method of a jetton wallet
             # get_wallet_data() -> (balance, owner, jetton, jetton_wallet_code)
             raw = await self.client.run_get_method(
-                address=jw_addr.to_str(),
-                method_name="get_wallet_data",
-                stack=[]
+                address=jw_addr.to_str(), method_name="get_wallet_data", stack=[]
             )
             if len(raw) == 1:
                 return Decimal(0)
@@ -140,11 +145,19 @@ class TonService(ITonService):
         try:
             stack = result["result"]["stack"]
             first = stack[0]
-            if isinstance(first, list) and len(first) >= 2 and isinstance(first[1], str):
+            if (
+                isinstance(first, list)
+                and len(first) >= 2
+                and isinstance(first[1], str)
+            ):
                 return int(first[1], 16)
             if isinstance(first, dict) and "value" in first:
                 val = first["value"]
-                return int(val, 16) if isinstance(val, str) and val.startswith("0x") else int(val)
+                return (
+                    int(val, 16)
+                    if isinstance(val, str) and val.startswith("0x")
+                    else int(val)
+                )
         except Exception:
             pass
         raise RuntimeError(f"Failed to parse run_get_method stack: {result!r}")
@@ -165,14 +178,18 @@ class TonService(ITonService):
 
         raise TimeoutError("Wallet was not deployed in time")
 
-    async def send_ton(self, to_address: str, amount_ton: Decimal, comment: str = "") -> str:
+    async def send_ton(
+        self, to_address: str, amount_ton: Decimal, comment: str = ""
+    ) -> str:
         """
         Sends TON. amount_ton — Decimal in TON.
         Returns tx_hash (string).
         """
         await self.ensure_deployed()
 
-        assert self.wallet is not None, "Wallet must be initialized after ensure_deployed"
+        assert self.wallet is not None, (
+            "Wallet must be initialized after ensure_deployed"
+        )
         tx_hash = await self.wallet.transfer(
             destination=to_address,
             amount=float(amount_ton),  # the library accepts float for convenience
@@ -180,14 +197,18 @@ class TonService(ITonService):
         )
         return tx_hash
 
-    async def send_usdt(self, to_address: str, amount_usdt: Decimal, comment: str = "") -> str:
+    async def send_usdt(
+        self, to_address: str, amount_usdt: Decimal, comment: str = ""
+    ) -> str:
         """
         Sends USDT as a jetton.
         amount_usdt — Decimal in human-readable form (e.g., Decimal('12.34')).
         Returns tx_hash (string).
         """
         await self.ensure_deployed()
-        assert self.wallet is not None, "Wallet must be initialized after ensure_deployed"
+        assert self.wallet is not None, (
+            "Wallet must be initialized after ensure_deployed"
+        )
         tx_hash = await self.wallet.transfer_message(
             message=TransferJettonMessage(
                 destination=to_address,
@@ -207,6 +228,7 @@ class TonService(ITonService):
         body_b64url = qs.get("bin", [None])[0]  # может отсутствовать
 
         from pytoniq_core import Cell  # ignore
+
         body = None
         if body_b64url:
             boc = base64.urlsafe_b64decode(body_b64url + "=" * (-len(body_b64url) % 4))
@@ -216,7 +238,7 @@ class TonService(ITonService):
         tx = await self.wallet.transfer(
             destination=to_addr,
             amount=amount_nano / 1e9,  # в TON
-            body=body  # можно и строку-комментарий, и Cell
+            body=body,  # можно и строку-комментарий, и Cell
         )
         return tx
 

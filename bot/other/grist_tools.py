@@ -11,7 +11,7 @@ from other.web_tools import HTTPSessionManager
 class GristTableConfig:
     access_id: str
     table_name: str
-    base_url: str = 'https://montelibero.getgrist.com/api/docs'
+    base_url: str = "https://montelibero.getgrist.com/api/docs"
 
 
 # Enum для таблиц
@@ -47,8 +47,12 @@ class GristAPI:
             self.session_manager = session_manager
         self.token = config.grist_token
 
-    async def fetch_data(self, table: GristTableConfig, sort: Optional[str] = None,
-                         filter_dict: Optional[Dict[str, List[Any]]] = None) -> List[Dict[str, Any]]:
+    async def fetch_data(
+        self,
+        table: GristTableConfig,
+        sort: Optional[str] = None,
+        filter_dict: Optional[Dict[str, List[Any]]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Загружает данные из указанной таблицы Grist.
 
@@ -61,8 +65,8 @@ class GristAPI:
         from urllib.parse import quote
 
         headers = {
-            'accept': 'application/json',
-            'Authorization': f'Bearer {self.token}'
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
         params = []
@@ -77,36 +81,46 @@ class GristAPI:
 
         if params:
             url = f"{url}?{'&'.join(params)}"
-        response = await self.session_manager.get_web_request(method='GET', url=url, headers=headers)
+        response = await self.session_manager.get_web_request(
+            method="GET", url=url, headers=headers
+        )
 
         match response.status:
             case 200:
                 if isinstance(response.data, dict) and "records" in response.data:
-                    return [{'id': record['id'], **record['fields']} for record in response.data["records"]]
+                    return [
+                        {"id": record["id"], **record["fields"]}
+                        for record in response.data["records"]
+                    ]
                 else:
-                    raise Exception('Unexpected response format')
+                    raise Exception("Unexpected response format")
             case _:
-                raise Exception(f'Ошибка запроса: Статус {response.status}')
+                raise Exception(f"Ошибка запроса: Статус {response.status}")
 
-    async def put_data(self, table: GristTableConfig, json_data: Dict[str, Any]) -> bool:
+    async def put_data(
+        self, table: GristTableConfig, json_data: Dict[str, Any]
+    ) -> bool:
         """
         Обновляет данные в указанной таблице Grist.
         """
         headers = {
-            'accept': 'application/json',
-            'Authorization': f'Bearer {self.token}'
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
-        response = await self.session_manager.get_web_request(method='PUT', url=url, headers=headers,
-                                                              json=json_data)
+        response = await self.session_manager.get_web_request(
+            method="PUT", url=url, headers=headers, json=json_data
+        )
 
         match response.status:
             case 200:
                 return True
             case _:
-                raise Exception(f'Ошибка запроса: Статус {response.status}')
+                raise Exception(f"Ошибка запроса: Статус {response.status}")
 
-    async def patch_data(self, table: GristTableConfig, json_data: Dict[str, Any]) -> bool:
+    async def patch_data(
+        self, table: GristTableConfig, json_data: Dict[str, Any]
+    ) -> bool:
         """
         Частично обновляет данные в указанной таблице Grist.
 
@@ -115,20 +129,23 @@ class GristAPI:
             json_data: Данные для обновления в формате {"records": [{"fields": {...}}]}
         """
         headers = {
-            'accept': 'application/json',
-            'Authorization': f'Bearer {self.token}'
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
-        response = await self.session_manager.get_web_request(method='PATCH', url=url, headers=headers,
-                                                              json=json_data)
+        response = await self.session_manager.get_web_request(
+            method="PATCH", url=url, headers=headers, json=json_data
+        )
 
         match response.status:
             case 200:
                 return True
             case _:
-                raise Exception(f'Ошибка запроса: Статус {response.status}')
+                raise Exception(f"Ошибка запроса: Статус {response.status}")
 
-    async def post_data(self, table: GristTableConfig, json_data: Dict[str, Any]) -> bool:
+    async def post_data(
+        self, table: GristTableConfig, json_data: Dict[str, Any]
+    ) -> bool:
         """
         Добавляет новые записи в указанную таблицу Grist.
 
@@ -137,21 +154,26 @@ class GristAPI:
             json_data: Данные для добавления в формате {"records": [{"fields": {...}}]}
         """
         headers = {
-            'accept': 'application/json',
-            'Authorization': f'Bearer {self.token}'
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
-        response = await self.session_manager.get_web_request(method='POST', url=url, headers=headers,
-                                                              json=json_data)
+        response = await self.session_manager.get_web_request(
+            method="POST", url=url, headers=headers, json=json_data
+        )
 
         match response.status:
             case 200:
                 return True
             case _:
-                raise Exception(f'Ошибка запроса: Статус {response.status}')
+                raise Exception(f"Ошибка запроса: Статус {response.status}")
 
-    async def load_table_data(self, table: GristTableConfig, sort: Optional[str] = None,
-                              filter_dict: Optional[Dict[str, List[Any]]] = None) -> Optional[List[Dict[str, Any]]]:
+    async def load_table_data(
+        self,
+        table: GristTableConfig,
+        sort: Optional[str] = None,
+        filter_dict: Optional[Dict[str, List[Any]]] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         Загружает данные из таблицы с обработкой ошибок.
 
@@ -166,7 +188,9 @@ class GristAPI:
             logger.info(f"Данные из таблицы {table.table_name} успешно загружены")
             return records
         except Exception as e:
-            logger.warning(f"Ошибка при загрузке данных из таблицы {table.table_name}: {e}")
+            logger.warning(
+                f"Ошибка при загрузке данных из таблицы {table.table_name}: {e}"
+            )
             return None
 
 
@@ -185,8 +209,7 @@ async def load_asset_from_grist(code: str) -> Optional[GristAsset]:
     filter_dict = {"code": [code]}
 
     asset_records = await grist_manager.load_table_data(
-        MTLGrist.EURMTL_assets,
-        filter_dict=filter_dict
+        MTLGrist.EURMTL_assets, filter_dict=filter_dict
     )
     if asset_records:
         user_record = asset_records[0]
@@ -210,12 +233,11 @@ async def check_account_id_from_grist(account_id: str) -> bool:
     """
     filter_dict = {
         "signers_type": ["reserv"],  # Filter values should be in a list
-        "account_id": [account_id]   # Filter values should be in a list
+        "account_id": [account_id],  # Filter values should be in a list
     }
 
     records = await grist_manager.load_table_data(
-        MTLGrist.EURMTL_accounts,
-        filter_dict=filter_dict
+        MTLGrist.EURMTL_accounts, filter_dict=filter_dict
     )
 
     # Handle the case when records is None (error occurred during loading)
@@ -225,23 +247,25 @@ async def check_account_id_from_grist(account_id: str) -> bool:
 
 
 async def main():
-    a = await check_account_id_from_grist('GB2JZIVHQNBENPORJDJDHJNJRKC4WDDQ6R3Z3NU24OKFRJ5DLJKFKORB')
+    a = await check_account_id_from_grist(
+        "GB2JZIVHQNBENPORJDJDHJNJRKC4WDDQ6R3Z3NU24OKFRJ5DLJKFKORB"
+    )
     print(a)
     await grist_session_manager.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
 
 
 async def load_fest_info():
     headers = {
-        'accept': 'application/json',
-        'Authorization': f'Bearer {config.grist_token}'
+        "accept": "application/json",
+        "Authorization": f"Bearer {config.grist_token}",
     }
-    url = 'https://montelibero.getgrist.com/api/docs/tSAWaCAoh8CsDXGb8pbCx9/tables/Fest/records'
-    response = await grist_session_manager.get_web_request('GET', url, headers=headers)
-    
+    url = "https://montelibero.getgrist.com/api/docs/tSAWaCAoh8CsDXGb8pbCx9/tables/Fest/records"
+    response = await grist_session_manager.get_web_request("GET", url, headers=headers)
+
     if response.status == 200 and response.data and "records" in response.data:
         # {'id': 7, 'fields': {'address_id': 'GAZEFASTL4P7A6ERCSHKWDCKBQVGA4R3V5336ILQF4MSALSAH3VMGHIW', 'username': '@MortenDie', 'name': 'Opossum art'}}
         result = {}
@@ -250,5 +274,4 @@ async def load_fest_info():
                 result[record["fields"]["name"]] = record["fields"]["address_id"]
         return result
     else:
-        raise Exception(f'Ошибка запроса: Статус {response.status}')
-
+        raise Exception(f"Ошибка запроса: Статус {response.status}")

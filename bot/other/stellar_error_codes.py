@@ -34,6 +34,7 @@ OPERATION_ERROR_CODES = {
     "op_src_not_authorized": "Source account not authorized",
 }
 
+
 def get_stellar_error_message(result_codes: dict) -> str:
     """
     Returns a human-readable error message for result_codes from Horizon.

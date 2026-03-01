@@ -9,9 +9,11 @@ This module provides:
 
 from stellar_sdk import Asset
 from core.constants import (
-    PUBLIC_ISSUER, PUBLIC_MMWB, 
-    USDC_ISSUER, USDM_ISSUER,
-    BASE_FEE
+    PUBLIC_ISSUER,
+    PUBLIC_MMWB,
+    USDC_ISSUER,
+    USDM_ISSUER,
+    BASE_FEE,
 )
 
 # Stellar SDK Asset instances (for use with stellar_sdk operations)
@@ -33,11 +35,11 @@ def my_float(s):
     """Convert string to float, handling 'unlimited' case, None, and comma as decimal separator."""
     if s is None:
         return 0.0
-    if s == 'unlimited':
-        return float('inf')
+    if s == "unlimited":
+        return float("inf")
     # Support both comma and dot as decimal separator
     if isinstance(s, str):
-        s = s.replace(',', '.')
+        s = s.replace(",", ".")
     return float(s)
 
 
@@ -48,6 +50,7 @@ def my_round(x: float, base=2):
 def is_base64(s):
     """Check if string is valid base64."""
     import base64
+
     try:
         return base64.b64encode(base64.b64decode(s)).decode() == s
     except Exception:
@@ -59,7 +62,7 @@ def cut_text_to_28_bytes(text: str) -> str:
     Cut text to fit within Stellar's 28-byte memo limit.
     Handles UTF-8 encoding properly.
     """
-    encoded = text.encode('utf-8')
+    encoded = text.encode("utf-8")
     if len(encoded) <= 28:
         return text
     # Truncate to 28 bytes, handling UTF-8 properly
@@ -67,7 +70,7 @@ def cut_text_to_28_bytes(text: str) -> str:
     # Try to decode, removing incomplete UTF-8 sequences
     for i in range(4):
         try:
-            return truncated.decode('utf-8')
+            return truncated.decode("utf-8")
         except UnicodeDecodeError:
             truncated = truncated[:-1]
     return ""
@@ -76,6 +79,7 @@ def cut_text_to_28_bytes(text: str) -> str:
 def is_valid_stellar_address(address: str) -> bool:
     """Validate Stellar address format."""
     from stellar_sdk import StrKey
+
     try:
         if StrKey.is_valid_ed25519_public_key(address):
             return True
@@ -87,23 +91,26 @@ def is_valid_stellar_address(address: str) -> bool:
 def find_stellar_addresses(text: str):
     """Find all Stellar addresses in text using regex."""
     import re
+
     # Stellar addresses are 56 characters starting with G
-    pattern = r'G[A-Z2-7]{55}'
+    pattern = r"G[A-Z2-7]{55}"
     return re.findall(pattern, text)
 
 
 def find_stellar_federation_address(text: str):
     """Find Stellar federation addresses (email-like format)."""
     import re
-    pattern = r'[a-zA-Z0-9_.+-]+\*[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+
+    pattern = r"[a-zA-Z0-9_.+-]+\*[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"
     matches = re.findall(pattern, text)
     return matches[0] if matches else None
 
 
-def extract_url(msg: str, surl: str = 'eurmtl.me'):
+def extract_url(msg: str, surl: str = "eurmtl.me"):
     """Extract URL from message text."""
     import re
-    pattern = rf'https?://(?:www\.)?{re.escape(surl)}[^\s]*'
+
+    pattern = rf"https?://(?:www\.)?{re.escape(surl)}[^\s]*"
     match = re.search(pattern, msg)
     if match:
         return match.group(0)
@@ -113,18 +120,20 @@ def extract_url(msg: str, surl: str = 'eurmtl.me'):
 def xdr_to_uri(xdr: str) -> str:
     """Convert XDR to web+stellar:tx URI format."""
     from urllib.parse import urlencode, quote
-    params = {'xdr': xdr}
-    return 'web+stellar:tx?' + urlencode(params, quote_via=quote)
+
+    params = {"xdr": xdr}
+    return "web+stellar:tx?" + urlencode(params, quote_via=quote)
 
 
 def decode_data_value(data_value: str):
     """Decode Stellar data entry value."""
     import base64
+
     try:
         decoded = base64.b64decode(data_value)
         try:
             # Try to decode as UTF-8 text
-            return decoded.decode('utf-8')
+            return decoded.decode("utf-8")
         except UnicodeDecodeError:
             # Return as hex if not valid UTF-8
             return decoded.hex()
@@ -168,11 +177,11 @@ async def parse_pay_stellar_uri(uri_data: str):
         memo = memo_list[0]
 
     return {
-        'destination': destination,
-        'amount': amount,
-        'asset_code': asset_code,
-        'asset_issuer': asset_issuer,
-        'memo': memo
+        "destination": destination,
+        "amount": amount,
+        "asset_code": asset_code,
+        "asset_issuer": asset_issuer,
+        "memo": memo,
     }
 
 
@@ -180,48 +189,70 @@ def stellar_get_market_link(sale_asset: Asset, buy_asset: Asset) -> str:
     """Generate viewer.eurmtl.me orderbook link for an asset pair."""
     from aiogram.utils.text_decorations import html_decoration
 
-    sale_asset_str = sale_asset.code if sale_asset.is_native() else f'{sale_asset.code}-{sale_asset.issuer}'
-    buy_asset_str = buy_asset.code if buy_asset.is_native() else f'{buy_asset.code}-{buy_asset.issuer}'
-    market_link = f'https://viewer.eurmtl.me/asset/{sale_asset_str}/orderbook?counter={buy_asset_str}'
-    market_link = html_decoration.link(value='viewer', link=market_link)
+    sale_asset_str = (
+        sale_asset.code
+        if sale_asset.is_native()
+        else f"{sale_asset.code}-{sale_asset.issuer}"
+    )
+    buy_asset_str = (
+        buy_asset.code
+        if buy_asset.is_native()
+        else f"{buy_asset.code}-{buy_asset.issuer}"
+    )
+    market_link = f"https://viewer.eurmtl.me/asset/{sale_asset_str}/orderbook?counter={buy_asset_str}"
+    market_link = html_decoration.link(value="viewer", link=market_link)
     return market_link
 
 
 def get_good_asset_list():
     """Return list of recommended assets for the bot."""
     from other.mytypes import Balance
-    
+
     return [
+        Balance.from_dict({"asset_code": "AUMTL", "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict({"asset_code": "EURMTL", "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict({"asset_code": "BTCMTL", "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict({"asset_code": "SATSMTL", "asset_issuer": PUBLIC_ISSUER}),
         Balance.from_dict(
-            {"asset_code": 'AUMTL', "asset_issuer": PUBLIC_ISSUER}),
+            {
+                "asset_code": "LABR",
+                "asset_issuer": "GA7I6SGUHQ26ARNCD376WXV5WSE7VJRX6OEFNFCEGRLFGZWQIV73LABR",
+            }
+        ),
+        Balance.from_dict({"asset_code": "MTL", "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict({"asset_code": "MTLRECT", "asset_issuer": PUBLIC_ISSUER}),
+        Balance.from_dict({"asset_code": "MTLand", "asset_issuer": PUBLIC_ISSUER}),
         Balance.from_dict(
-            {"asset_code": 'EURMTL', "asset_issuer": PUBLIC_ISSUER}),
+            {
+                "asset_code": "MTLCITY",
+                "asset_issuer": "GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3",
+            }
+        ),
         Balance.from_dict(
-            {"asset_code": 'BTCMTL', "asset_issuer": PUBLIC_ISSUER}),
+            {
+                "asset_code": "MTLDVL",
+                "asset_issuer": "GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA",
+            }
+        ),
         Balance.from_dict(
-            {"asset_code": 'SATSMTL', "asset_issuer": PUBLIC_ISSUER}),
+            {
+                "asset_code": "FCM",
+                "asset_issuer": "GDIE253MSIYMFUS3VHRGEQPIBG7VAIPSMATWLTBF73UPOLBUH5RV2FCM",
+            }
+        ),
+        Balance.from_dict({"asset_code": "USDC", "asset_issuer": USDC_ISSUER}),
+        Balance.from_dict({"asset_code": "MMWB", "asset_issuer": PUBLIC_MMWB}),
+        Balance.from_dict({"asset_code": "USDM", "asset_issuer": USDM_ISSUER}),
         Balance.from_dict(
-            {"asset_code": 'LABR', "asset_issuer": 'GA7I6SGUHQ26ARNCD376WXV5WSE7VJRX6OEFNFCEGRLFGZWQIV73LABR'}),
+            {
+                "asset_code": "MTLFEST",
+                "asset_issuer": "GCGWAPG6PKBMHEEAHRLTWHFCAGZTQZDOXDMWBUBCXHLQBSBNWFRYFEST",
+            }
+        ),
         Balance.from_dict(
-            {"asset_code": 'MTL', "asset_issuer": PUBLIC_ISSUER}),
-        Balance.from_dict(
-            {"asset_code": 'MTLRECT', "asset_issuer": PUBLIC_ISSUER}),
-        Balance.from_dict(
-            {"asset_code": 'MTLand', "asset_issuer": PUBLIC_ISSUER}),
-        Balance.from_dict(
-            {"asset_code": 'MTLCITY', "asset_issuer": 'GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLDVL', "asset_issuer": 'GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA'}),
-        Balance.from_dict(
-            {"asset_code": 'FCM', "asset_issuer": 'GDIE253MSIYMFUS3VHRGEQPIBG7VAIPSMATWLTBF73UPOLBUH5RV2FCM'}),
-        Balance.from_dict(
-            {"asset_code": 'USDC', "asset_issuer": USDC_ISSUER}),
-        Balance.from_dict(
-            {"asset_code": 'MMWB', "asset_issuer": PUBLIC_MMWB}),
-        Balance.from_dict(
-            {"asset_code": 'USDM', "asset_issuer": USDM_ISSUER}),
-        Balance.from_dict(
-            {"asset_code": 'MTLFEST', "asset_issuer": 'GCGWAPG6PKBMHEEAHRLTWHFCAGZTQZDOXDMWBUBCXHLQBSBNWFRYFEST'}),
-        Balance.from_dict(
-            {"asset_code": 'MTLAP', "asset_issuer": 'GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA'}),
+            {
+                "asset_code": "MTLAP",
+                "asset_issuer": "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA",
+            }
+        ),
     ]

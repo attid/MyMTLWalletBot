@@ -4,6 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, TelegramObject
 from loguru import logger
 from db.models import MyMtlWalletBotLog
+
 # from other.global_data import global_data, LogQuery
 # LogQuery should be moved, but for now assuming it's still there or imported from new location if moved.
 # The plan said "Move LogQuery to infrastructure/models.py". I haven't done that yet.
@@ -12,26 +13,32 @@ from infrastructure.utils.async_utils import safe_catch_async
 from infrastructure.services.app_context import AppContext
 from infrastructure.log_models import LogQuery
 
+
 class LogButtonClickCallbackMiddleware(BaseMiddleware):
     async def __call__(
-            self,
-            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-            event: TelegramObject,
-            data: Dict[str, Any]
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any],
     ) -> Any:
         if isinstance(event, CallbackQuery):
             app_context = cast(AppContext, data.get("app_context"))
             if app_context:
-                app_context.log_queue.put_nowait(LogQuery(
-                    user_id=event.from_user.id,
-                    log_operation='callback',
-                    log_operation_info=event.data.split(':')[0] if event.data else ""
-                ))
-            
+                app_context.log_queue.put_nowait(
+                    LogQuery(
+                        user_id=event.from_user.id,
+                        log_operation="callback",
+                        log_operation_info=event.data.split(":")[0]
+                        if event.data
+                        else "",
+                    )
+                )
+
         return await handler(event, data)
 
 
 #
+
 
 @safe_catch_async
 async def log_worker(app_context: AppContext):
@@ -42,12 +49,14 @@ async def log_worker(app_context: AppContext):
                 user_id=log_item.user_id,
                 log_dt=log_item.log_dt,
                 log_operation=log_item.log_operation[:32],
-                log_operation_info=log_item.log_operation_info[:32]
+                log_operation_info=log_item.log_operation_info[:32],
             )
             async with app_context.db_pool.get_session() as session:
                 session.add(new_log)
                 await session.commit()
         except Exception as e:
-            logger.warning(f'{log_item.user_id}-{log_item.log_operation} failed {type(e)}')
+            logger.warning(
+                f"{log_item.user_id}-{log_item.log_operation} failed {type(e)}"
+            )
         app_context.log_queue.task_done()
         await asyncio.sleep(1)

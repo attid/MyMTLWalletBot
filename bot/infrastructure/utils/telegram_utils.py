@@ -194,6 +194,7 @@ async def clear_state(state: FSMContext):
     user_id = data.get("user_id")
     if user_id:
         from other import faststream_tools
+
         await faststream_tools.clear_pending_tx(user_id)
 
     await state.set_data(
@@ -210,7 +211,7 @@ async def clear_state(state: FSMContext):
 
 
 def long_line() -> str:
-    return "".ljust(30, "⠀") # was 53
+    return "".ljust(30, "⠀")  # was 53
 
 
 async def set_last_message_id(chat_id: int, msg_id: int, app_context: AppContext):

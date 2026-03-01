@@ -190,7 +190,11 @@ async def cq_setting(
                     b
                     for b in balances
                     if get_asset_visibility(vis_str, b.asset_code) == ASSET_VISIBLE
-                    and not (default_wallet and default_wallet.is_free and b.asset_code == 'XLM')
+                    and not (
+                        default_wallet
+                        and default_wallet.is_free
+                        and b.asset_code == "XLM"
+                    )
                 ]
 
                 balance_str = ""

@@ -18,20 +18,20 @@ def get_user_id(user_id: Union[types.CallbackQuery, types.Message, int]) -> int:
 
 def float2str(f, short: bool = False) -> str:
     if isinstance(f, str):
-        if f == 'unlimited':
+        if f == "unlimited":
             return f
         f = float(f)
-    if f == float('inf'):
-        return 'unlimited'
+    if f == float("inf"):
+        return "unlimited"
     if short and f > 0.01:
         s = "%.2f" % f
     else:
         s = "%.8f" % f
         s = s[:-1]
-    while len(s) > 1 and s[-1] in ('0', '.'):
+    while len(s) > 1 and s[-1] in ("0", "."):
         last_char = s[-1]
         s = s[0:-1]
-        if last_char == '.':
+        if last_char == ".":
             break
     return s
 
@@ -51,7 +51,7 @@ def decode_qr_code_pyzbar(image_path):
     image = Image.open(image_path)
     decoded_objects = decode(image)
     if decoded_objects:
-        return decoded_objects[0].data.decode('utf-8')
+        return decoded_objects[0].data.decode("utf-8")
     else:
         return None
 

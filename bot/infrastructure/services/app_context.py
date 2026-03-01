@@ -8,14 +8,18 @@ from infrastructure.factories.use_case_factory import IUseCaseFactory
 from db.db_pool import DatabasePool
 
 if TYPE_CHECKING:
-    from infrastructure.services.notification_history_service import NotificationHistoryService
+    from infrastructure.services.notification_history_service import (
+        NotificationHistoryService,
+    )
     from infrastructure.services.notification_service import NotificationService
+
 
 class AppContext:
     """
     Application-wide context container.
     Replaces GlobalData singleton for Dependency Injection.
     """
+
     def __init__(
         self,
         bot: Bot,
@@ -27,11 +31,11 @@ class AppContext:
         stellar_service: IStellarService,
         encryption_service: IEncryptionService,
         use_case_factory: IUseCaseFactory,
-        ton_service: Optional['ITonService'] = None,
+        ton_service: Optional["ITonService"] = None,
         localization_service: Optional[LocalizationService] = None,
         dispatcher: Optional[Dispatcher] = None,
-        notification_service: Optional['NotificationService'] = None,
-        notification_history: Optional['NotificationHistoryService'] = None,
+        notification_service: Optional["NotificationService"] = None,
+        notification_history: Optional["NotificationHistoryService"] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -47,4 +51,3 @@ class AppContext:
         self.dispatcher = dispatcher
         self.notification_service = notification_service
         self.notification_history = notification_history
-

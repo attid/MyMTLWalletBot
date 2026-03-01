@@ -4,7 +4,12 @@ from aiogram.fsm.context import FSMContext
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from infrastructure.utils.telegram_utils import my_gettext, send_message, clear_state, clear_last_message_id
+from infrastructure.utils.telegram_utils import (
+    my_gettext,
+    send_message,
+    clear_state,
+    clear_last_message_id,
+)
 from routers.sign import cmd_check_xdr
 from keyboards.common_keyboards import get_kb_return
 from other.web_tools import http_session_manager
@@ -16,34 +21,56 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
-async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, state: FSMContext, app_context: AppContext):
+async def process_remote_uri(
+    session: AsyncSession,
+    chat_id: int,
+    uri_id: str,
+    state: FSMContext,
+    app_context: AppContext,
+):
     """Get URI from server and prepare for signing"""
     # Get URI from server
     try:
         response = await http_session_manager.get_web_request(
-            'GET',
-            url=f"https://eurmtl.me/remote/sep07/get/{uri_id}"
+            "GET", url=f"https://eurmtl.me/remote/sep07/get/{uri_id}"
         )
 
         if response.status != 200 or not isinstance(response.data, dict):
-            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
+            await send_message(
+                session,
+                chat_id,
+                my_gettext(chat_id, "remote_uri_error", app_context=app_context),
+                app_context=app_context,
+            )
             return
 
         # Process the URI
-        uri_data = response.data.get('uri')
+        uri_data = response.data.get("uri")
         if not uri_data:
-            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
+            await send_message(
+                session,
+                chat_id,
+                my_gettext(chat_id, "remote_uri_error", app_context=app_context),
+                app_context=app_context,
+            )
             return
-        
+
         # Use DI via app_context
-        process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(session)
-        
+        process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(
+            session
+        )
+
         # Process the URI
         result = await process_uri_uc.execute(uri_data, chat_id)
 
         if not result.success:
             logger.error(f"process_remote_uri failed: {result.error_message}")
-            await send_message(session, chat_id, my_gettext(chat_id, 'remote_uri_error', app_context=app_context), app_context=app_context)
+            await send_message(
+                session,
+                chat_id,
+                my_gettext(chat_id, "remote_uri_error", app_context=app_context),
+                app_context=app_context,
+            )
             return
 
         # Save data for state
@@ -52,7 +79,7 @@ async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, s
             uri_id=uri_id,
             last_message_id=0,
             callback_url=result.callback_url,
-            return_url=result.return_url
+            return_url=result.return_url,
         )
 
         # Process XDR if present
@@ -62,51 +89,73 @@ async def process_remote_uri(session: AsyncSession, chat_id: int, uri_id: str, s
                 check_xdr=result.xdr,
                 user_id=chat_id,
                 state=state,
-                app_context=app_context
+                app_context=app_context,
             )
     except Exception as e:
         logger.error(f"process_remote_uri exception: {e}")
         await send_message(
             session,
             chat_id,
-            my_gettext(chat_id, 'remote_uri_error', app_context=app_context),
-            app_context=app_context
+            my_gettext(chat_id, "remote_uri_error", app_context=app_context),
+            app_context=app_context,
         )
 
 
 @router.message(Command(commands=["start"]), F.text.contains("uri_"))
-async def cmd_start_remote(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def cmd_start_remote(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     """Handle Telegram bot start with remote URI"""
     if message.from_user is None or message.text is None:
         return
     await clear_state(state)
     uri_id = message.text.split()[1][4:]  # Extract ID from "uri_..."
-    await process_remote_uri(session, message.from_user.id, uri_id, state, app_context=app_context)
+    await process_remote_uri(
+        session, message.from_user.id, uri_id, state, app_context=app_context
+    )
 
 
 @router.message(F.text.startswith("web+stellar:tx"))
-async def process_stellar_uri(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def process_stellar_uri(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     """Handle direct Stellar URI with optional encoded params"""
     if message.from_user is None or message.text is None:
         return
     uri = message.text
-    if '?' in uri:
+    if "?" in uri:
         from urllib.parse import unquote
-        base, params = uri.split('?', 1)
+
+        base, params = uri.split("?", 1)
         uri = f"{base}?{unquote(params)}"
     await clear_state(state)
     qr_data = message.text
 
     try:
         # Use DI via app_context
-        process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(session)
-        
+        process_uri_uc = app_context.use_case_factory.create_process_stellar_uri(
+            session
+        )
+
         # Process the transaction URI
         result = await process_uri_uc.execute(qr_data, message.from_user.id)
 
         if not result.success:
             logger.error(f"process_stellar_uri failed: {result.error_message}")
-            await send_message(session, message.from_user.id, my_gettext(message.from_user.id, 'remote_uri_error', app_context=app_context), app_context=app_context)
+            await send_message(
+                session,
+                message.from_user.id,
+                my_gettext(
+                    message.from_user.id, "remote_uri_error", app_context=app_context
+                ),
+                app_context=app_context,
+            )
             return
 
         # Save data for state
@@ -114,7 +163,7 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
             xdr=result.xdr,
             last_message_id=0,
             callback_url=result.callback_url,
-            return_url=result.return_url
+            return_url=result.return_url,
         )
 
         # Process XDR if present
@@ -124,19 +173,27 @@ async def process_stellar_uri(message: types.Message, state: FSMContext, session
                 check_xdr=result.xdr,
                 user_id=message.from_user.id,
                 state=state,
-                app_context=app_context
+                app_context=app_context,
             )
     except Exception as e:
         logger.error(f"process_stellar_uri exception: {e}")
         await send_message(
             session,
             message.from_user.id,
-            my_gettext(message.from_user.id, 'remote_uri_error', app_context=app_context),
-            app_context=app_context
+            my_gettext(
+                message.from_user.id, "remote_uri_error", app_context=app_context
+            ),
+            app_context=app_context,
         )
 
 
-async def handle_wc_uri(wc_uri: str, user_id: int, session: AsyncSession, state: FSMContext, app_context: AppContext):
+async def handle_wc_uri(
+    wc_uri: str,
+    user_id: int,
+    session: AsyncSession,
+    state: FSMContext,
+    app_context: AppContext,
+):
     """Helper function to process WalletConnect URI"""
     await clear_state(state)
     await clear_last_message_id(user_id, app_context=app_context)
@@ -147,35 +204,47 @@ async def handle_wc_uri(wc_uri: str, user_id: int, session: AsyncSession, state:
     if wallet:
         address = wallet.public_key
         try:
-            user_info = {
-                "user_id": user_id,
-                "address": address
-            }
+            user_info = {"user_id": user_id, "address": address}
             await publish_pairing_request(wc_uri, address, user_info)
             await send_message(
                 session,
                 user_id,
-                my_gettext(user_id, 'wc_pairing_initiated', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
+                my_gettext(user_id, "wc_pairing_initiated", app_context=app_context),
+                reply_markup=get_kb_return(user_id, app_context=app_context),
+                app_context=app_context,
             )
         except Exception as e:
-            logger.error(f"Failed to publish WC pairing request for user {user_id}: {e}")
+            logger.error(
+                f"Failed to publish WC pairing request for user {user_id}: {e}"
+            )
             await send_message(
                 session,
                 user_id,
-                my_gettext(user_id, 'wc_pairing_error', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
+                my_gettext(user_id, "wc_pairing_error", app_context=app_context),
+                reply_markup=get_kb_return(user_id, app_context=app_context),
+                app_context=app_context,
             )
     else:
         await send_message(
             session,
             user_id,
-            my_gettext(user_id, 'default_wallet_not_found', app_context=app_context), reply_markup=get_kb_return(user_id, app_context=app_context), app_context=app_context
+            my_gettext(user_id, "default_wallet_not_found", app_context=app_context),
+            reply_markup=get_kb_return(user_id, app_context=app_context),
+            app_context=app_context,
         )
 
 
 @router.message(F.text.startswith("wc:"))
-async def process_wc_uri(message: types.Message, state: FSMContext, session: AsyncSession, app_context: AppContext):
+async def process_wc_uri(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
     """Handle WalletConnect URI from text message"""
     if message.from_user is None or message.text is None:
         return
-    await handle_wc_uri(message.text, message.from_user.id, session, state, app_context=app_context)
+    await handle_wc_uri(
+        message.text, message.from_user.id, session, state, app_context=app_context
+    )
     await message.delete()

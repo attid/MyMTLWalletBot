@@ -3,6 +3,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from infrastructure.services.app_context import AppContext
 
+
 class AppContextMiddleware(BaseMiddleware):
     def __init__(self, app_context: AppContext):
         super().__init__()
@@ -12,7 +13,7 @@ class AppContextMiddleware(BaseMiddleware):
         self,
         handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
         event: TelegramObject,
-        data: Dict[str, Any]
+        data: Dict[str, Any],
     ) -> Any:
         data["app_context"] = self.app_context
         return await handler(event, data)

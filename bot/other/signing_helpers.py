@@ -91,8 +91,9 @@ async def request_local_signature(
     )
 
     from other.lang_tools import my_gettext
-    text = my_gettext(user_id, 'biometric_sign_prompt', app_context=app_context)
-    if text == 'biometric_sign_prompt':
+
+    text = my_gettext(user_id, "biometric_sign_prompt", app_context=app_context)
+    if text == "biometric_sign_prompt":
         text = f"Подтвердите транзакцию:\n\n{memo}"
 
     await message.answer(

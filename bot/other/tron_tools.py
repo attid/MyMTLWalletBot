@@ -12,16 +12,15 @@ from other.config_reader import config
 from other.web_tools import get_web_request
 from dataclasses import dataclass
 
-TRX_TO_SUN = 10 ** 6  # Константа для конвертации TRX в SUN
+TRX_TO_SUN = 10**6  # Константа для конвертации TRX в SUN
 
 # api_key from https://www.trongrid.io
 api_key = config.tron_api_key.get_secret_value()
 tron_master_address = config.tron_master_address
 tron_master_key = config.tron_master_key.get_secret_value()
-usdt_contract = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
-usdt_hex_contract = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c'
-transfer_contract = 'TEZ8rh3z7Hxbx6HjS3KzEQQ8wNxHT4sLLJ'
-
+usdt_contract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+usdt_hex_contract = "41a614f803b6fd780986a42c78ec9c7f77e6ded13c"
+transfer_contract = "TEZ8rh3z7Hxbx6HjS3KzEQQ8wNxHT4sLLJ"
 
 
 @dataclass
@@ -32,8 +31,8 @@ class EnergyObject:
     energy_used: int
     need_delegate_energy: int = 65_000
     energy_delegated: int = 0
-    free_net_used: int = 0 # Использованный лимит сети
-    free_net_limit: int = 0 # Лимит сети
+    free_net_used: int = 0  # Использованный лимит сети
+    free_net_limit: int = 0  # Лимит сети
 
     @property
     def energy_amount(self) -> float:
@@ -43,7 +42,9 @@ class EnergyObject:
     def energy_per_trx(self) -> float:
         return self.total_energy_limit / self.total_energy_weight
 
-    def calculate_energy_amount_in_trx(self, energy_amount: Optional[int] = None) -> int:
+    def calculate_energy_amount_in_trx(
+        self, energy_amount: Optional[int] = None
+    ) -> int:
         """Вычисляет количество TRX для указанного или текущего energy_amount."""
         if energy_amount is None:
             energy_amount = int(self.energy_amount)
@@ -52,6 +53,7 @@ class EnergyObject:
     @property
     def free_amount(self) -> float:
         return self.free_net_limit - self.free_net_used
+
 
 def create_trc_private_key():
     private_key = PrivateKey.random()
@@ -64,13 +66,16 @@ def create_trc_private_key():
 def show_balance(public_key):
     from tronpy import Tron
     from tronpy.providers import HTTPProvider
-    client = Tron(HTTPProvider(api_key=api_key))  # Use mainnet(trongrid) with a single api_key
+
+    client = Tron(
+        HTTPProvider(api_key=api_key)
+    )  # Use mainnet(trongrid) with a single api_key
 
     s = client.get_account_balance(public_key)
-    print('TRX=', s)
+    print("TRX=", s)
 
     cntr = client.get_contract(usdt_contract)
-    print('USDT=', cntr.functions.balanceOf(public_key) / 1000000)
+    print("USDT=", cntr.functions.balanceOf(public_key) / 1000000)
 
 
 def send_usdt(public_key_to, amount, private_key_from):
@@ -81,7 +86,7 @@ def send_usdt(public_key_to, amount, private_key_from):
     public_key_from = private_key.public_key.to_base58check_address()
 
     txn = (
-        contract.functions.transfer(public_key_to, amount * 10 ** 6)
+        contract.functions.transfer(public_key_to, amount * 10**6)
         .with_owner(public_key_from)
         .fee_limit(20_000_000)
         # .memo("test memo")
@@ -99,10 +104,12 @@ def send_trx(public_key_to, amount, private_key_from, private_key_to=None):
     public_key_from = private_key.public_key.to_base58check_address()
 
     if private_key_to is not None:
-        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+        public_key_to = PrivateKey(
+            bytes.fromhex(private_key_to)
+        ).public_key.to_base58check_address()
 
     txn = (
-        client.trx.transfer(public_key_from, public_key_to, amount * 10 ** 6)
+        client.trx.transfer(public_key_from, public_key_to, amount * 10**6)
         # .memo("test memo")
         .build()
         .sign(private_key)
@@ -137,9 +144,15 @@ def get_transactions(address, limit=10):
             confirmations = current_block - block_number
 
             print(f"Transaction ID: {txn['txID']}")
-            print(f"From: {txn['raw_data']['contract'][0]['parameter']['value']['owner_address']}")
-            print(f"To: {txn['raw_data']['contract'][0]['parameter']['value']['to_address']}")
-            print(f"Amount: {txn['raw_data']['contract'][0]['parameter']['value']['amount'] / 1000000} TRX")
+            print(
+                f"From: {txn['raw_data']['contract'][0]['parameter']['value']['owner_address']}"
+            )
+            print(
+                f"To: {txn['raw_data']['contract'][0]['parameter']['value']['to_address']}"
+            )
+            print(
+                f"Amount: {txn['raw_data']['contract'][0]['parameter']['value']['amount'] / 1000000} TRX"
+            )
             print(f"Confirmations: {confirmations}")
             print("-----")
     else:
@@ -148,10 +161,7 @@ def get_transactions(address, limit=10):
 
 def get_last_usdt_transaction(address):
     url = f"https://api.trongrid.io/v1/accounts/{address}/transactions/trc20?only_confirmed=true&limit=10&contract_address={usdt_contract}"
-    headers = {
-        "accept": "application/json",
-        "TRON-PRO-API-KEY": api_key
-    }
+    headers = {"accept": "application/json", "TRON-PRO-API-KEY": api_key}
 
     response = requests.get(url, headers=headers)
 
@@ -176,17 +186,17 @@ def get_last_usdt_transaction(address):
             client = Tron(HTTPProvider(api_key=api_key))
             current_block = client.get_latest_block_number()
             transaction = client.get_transaction_info(last_usdt_txn["transaction_id"])
-            block_number = transaction['blockNumber']
+            block_number = transaction["blockNumber"]
             # transaction = client.get_transaction(last_usdt_txn["transaction_id"])
             # print(transaction)
 
             # Вычисление количества подтверждений
             confirmations = current_block - block_number
 
-            amount = int(last_usdt_txn['value'])
+            amount = int(last_usdt_txn["value"])
 
             print(f"Last USDT Transaction ID: {last_usdt_txn['transaction_id']}")
-            print(f"Amount: {amount / 10 ** 6} USDT")
+            print(f"Amount: {amount / 10**6} USDT")
             print(f"Confirmations: {confirmations}")
         else:
             print("No USDT transactions found.")
@@ -198,13 +208,20 @@ def tron_hex_decode(hex_address):
     # hex_address = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c'
     decoded = bytes.fromhex(hex_address)
     encoded = base58.b58encode_check(decoded)
-    print(encoded.decode('utf-8'))
-    return encoded.decode('utf-8')
+    print(encoded.decode("utf-8"))
+    return encoded.decode("utf-8")
 
 
-async def send_trx_async(public_key_to: Optional[str] = None, amount: float = 0, private_key_from: str = tron_master_key, private_key_to: Optional[str] = None):
+async def send_trx_async(
+    public_key_to: Optional[str] = None,
+    amount: float = 0,
+    private_key_from: str = tron_master_key,
+    private_key_to: Optional[str] = None,
+):
     if private_key_to:
-        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+        public_key_to = PrivateKey(
+            bytes.fromhex(private_key_to)
+        ).public_key.to_base58check_address()
 
     if not public_key_to:
         raise ValueError("public_key_to must be provided")
@@ -214,7 +231,7 @@ async def send_trx_async(public_key_to: Optional[str] = None, amount: float = 0,
         public_key_from = private_key.public_key.to_base58check_address()
 
         txb = (
-            client.trx.transfer(public_key_from, public_key_to, int(amount * 10 ** 6))
+            client.trx.transfer(public_key_from, public_key_to, int(amount * 10**6))
             # .memo("test memo")
             .fee_limit(20_000_000)
         )
@@ -223,10 +240,17 @@ async def send_trx_async(public_key_to: Optional[str] = None, amount: float = 0,
         await txn_ret.wait()
 
 
-async def send_usdt_async(public_key_to: Optional[str] = None, amount: float = 0, private_key_from: str = tron_master_key, private_key_to: Optional[str] = None,
-                          sun_fee: int = 0):
+async def send_usdt_async(
+    public_key_to: Optional[str] = None,
+    amount: float = 0,
+    private_key_from: str = tron_master_key,
+    private_key_to: Optional[str] = None,
+    sun_fee: int = 0,
+):
     if private_key_to:
-        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+        public_key_to = PrivateKey(
+            bytes.fromhex(private_key_to)
+        ).public_key.to_base58check_address()
 
     if not public_key_to:
         raise ValueError("public_key_to must be provided")
@@ -241,7 +265,7 @@ async def send_usdt_async(public_key_to: Optional[str] = None, amount: float = 0
         private_key = PrivateKey(bytes.fromhex(private_key_from))
         public_key_from = private_key.public_key.to_base58check_address()
 
-        txb = await contract.functions.transfer(public_key_to, int(amount * 10 ** 6))
+        txb = await contract.functions.transfer(public_key_to, int(amount * 10**6))
         # print(txb, type(txb))
         # print(public_key_from, type(public_key_from))
         txb = txb.with_owner(public_key_from).fee_limit(sun_fee)
@@ -253,8 +277,12 @@ async def send_usdt_async(public_key_to: Optional[str] = None, amount: float = 0
 
         result = await txn_ret.wait()
 
-        if result and 'receipt' in result and 'result' in result['receipt'] and result['receipt'][
-            'result'] == 'SUCCESS':
+        if (
+            result
+            and "receipt" in result
+            and "result" in result["receipt"]
+            and result["receipt"]["result"] == "SUCCESS"
+        ):
             logger.info("Транзакция успешно выполнена")
             return True, transaction_hash
         else:
@@ -262,16 +290,20 @@ async def send_usdt_async(public_key_to: Optional[str] = None, amount: float = 0
             return False, transaction_hash
 
 
-async def get_usdt_balance(public_key: Optional[str] = None, private_key: Optional[str] = None):
+async def get_usdt_balance(
+    public_key: Optional[str] = None, private_key: Optional[str] = None
+):
     if private_key:
-        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+        public_key = PrivateKey(
+            bytes.fromhex(private_key)
+        ).public_key.to_base58check_address()
 
     if not public_key:
         raise ValueError("Either public_key or private_key must be provided")
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         contract = await client.get_contract(usdt_contract)
-        balance = (await contract.functions.balanceOf(public_key)) / 10 ** 6
+        balance = (await contract.functions.balanceOf(public_key)) / 10**6
 
     return balance
 
@@ -283,9 +315,13 @@ def check_valid_trx(public_key):
         return False
 
 
-async def get_trx_balance(public_key: Optional[str] = None, private_key: Optional[str] = None):
+async def get_trx_balance(
+    public_key: Optional[str] = None, private_key: Optional[str] = None
+):
     if private_key:
-        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+        public_key = PrivateKey(
+            bytes.fromhex(private_key)
+        ).public_key.to_base58check_address()
 
     if not public_key:
         raise ValueError("Either public_key or private_key must be provided")
@@ -297,20 +333,25 @@ async def get_trx_balance(public_key: Optional[str] = None, private_key: Optiona
     return balance
 
 
-async def get_last_usdt_transaction_sum(public_key: Optional[str] = None, private_key: Optional[str] = None):
+async def get_last_usdt_transaction_sum(
+    public_key: Optional[str] = None, private_key: Optional[str] = None
+):
     if private_key:
-        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+        public_key = PrivateKey(
+            bytes.fromhex(private_key)
+        ).public_key.to_base58check_address()
 
     if not public_key:
         raise ValueError("Either public_key or private_key must be provided")
 
-    url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
-          f"only_confirmed=true&limit=10&contract_address={usdt_contract}"
-    headers = {
-        "accept": "application/json",
-        "TRON-PRO-API-KEY": api_key
-    }
-    status, response_json = await get_web_request('GET', url=url, headers=headers, return_type='json')
+    url = (
+        f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?"
+        f"only_confirmed=true&limit=10&contract_address={usdt_contract}"
+    )
+    headers = {"accept": "application/json", "TRON-PRO-API-KEY": api_key}
+    status, response_json = await get_web_request(
+        "GET", url=url, headers=headers, return_type="json"
+    )
     transactions = response_json["data"]
 
     last_usdt_txn = None
@@ -324,14 +365,16 @@ async def get_last_usdt_transaction_sum(public_key: Optional[str] = None, privat
                 break
 
     if last_usdt_txn:
-        amount = int(last_usdt_txn['value'])
-        return amount / 10 ** 6
+        amount = int(last_usdt_txn["value"])
+        return amount / 10**6
     else:
         return
 
 
 def tron_get_public(private_key):
-    public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+    public_key = PrivateKey(
+        bytes.fromhex(private_key)
+    ).public_key.to_base58check_address()
     return public_key
 
 
@@ -340,12 +383,14 @@ def tron_help():
     # 1 get public key
     # GBVDLK25AILUULY6B5OYB2WCZUIESWU4KY63OKDVEYRV76NNFLT32XEH
     # 2  get usdt
-    user_tron_private_key = '*'
+    user_tron_private_key = "*"
     print(tron_get_public(user_tron_private_key))
-    user_tron_public_key = 'TUTBziqeXsh3LAH7QUYoaAYruzhUqLWu2n'
+    user_tron_public_key = "TUTBziqeXsh3LAH7QUYoaAYruzhUqLWu2n"
     #
     # check last_usdt_transaction_sum
-    usdt_balance = asyncio.run(get_last_usdt_transaction_sum(public_key=user_tron_public_key))
+    usdt_balance = asyncio.run(
+        get_last_usdt_transaction_sum(public_key=user_tron_public_key)
+    )
     print(usdt_balance)
     # 40
     # check address
@@ -354,9 +399,15 @@ def tron_help():
     # print(asyncio.run(send_trx_async(amount=50, private_key_to=user_tron_private_key)))
 
     # if last_usdt_transaction_sum
-    print(asyncio.run(send_usdt_async(amount=usdt_balance,
-                                      private_key_to=tron_master_key,
-                                      private_key_from=user_tron_private_key)))
+    print(
+        asyncio.run(
+            send_usdt_async(
+                amount=usdt_balance,
+                private_key_to=tron_master_key,
+                private_key_from=user_tron_private_key,
+            )
+        )
+    )
 
     pass
     # print(check_valid_trx('TEuGUhPV9a52MiV5zExwbVESojiKi1Pumn'))
@@ -375,16 +426,15 @@ async def estimate_usdt_transfer_fee0(public_key_from, amount):
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         contract = await client.get_contract(usdt_contract)
 
-        txb = await contract.functions.transfer(
-            public_key_from,
-            int(amount * 10 ** 6)
-        )
+        txb = await contract.functions.transfer(public_key_from, int(amount * 10**6))
 
         txb_with_owner = txb.with_owner(public_key_from).fee_limit(100_000_000)
 
         estimated_fee = await client.trigger_constant_contract(txb_with_owner)
         energy_used = estimated_fee["energy_used"]
-        total_fee_in_trx = energy_used / client.energy_price  # Конвертация использованной энергии в TRX
+        total_fee_in_trx = (
+            energy_used / client.energy_price
+        )  # Конвертация использованной энергии в TRX
 
         return total_fee_in_trx
 
@@ -392,13 +442,15 @@ async def estimate_usdt_transfer_fee0(public_key_from, amount):
 async def get_usdt_transfer_fee(from_address_base58, to_address_base58, amount):
     # Преобразование адресов отправителя и получателя из Base58 в hex
     from_address_hex = to_hex_address(from_address_base58)
-    to_address_hex = to_hex_address(to_address_base58)[2:]  # Прямое преобразование в hex без '0x' и '41'
+    to_address_hex = to_hex_address(to_address_base58)[
+        2:
+    ]  # Прямое преобразование в hex без '0x' и '41'
 
     # Преобразование суммы в наименьшие единицы и кодирование в hex с ведущими нулями до 32 байтов
-    amount_hex = format(amount * 10 ** 6, '064x')
+    amount_hex = format(amount * 10**6, "064x")
 
     # Соединение адреса и суммы в одну строку параметров
-    parameter = '0' * 24 + to_address_hex + amount_hex
+    parameter = "0" * 24 + to_address_hex + amount_hex
 
     url = "https://api.trongrid.io/wallet/triggerconstantcontract"
 
@@ -407,24 +459,25 @@ async def get_usdt_transfer_fee(from_address_base58, to_address_base58, amount):
         "contract_address": to_hex_address(usdt_contract),
         "function_selector": "transfer(address,uint256)",
         "parameter": parameter,
-        "visible": False
+        "visible": False,
     }
     headers = {
         "accept": "application/json",
         "content-type": "application/json",
-        "TRON-PRO-API-KEY": api_key
+        "TRON-PRO-API-KEY": api_key,
     }
 
     # response = requests.post(url, json=payload, headers=headers)
-    status, response_json = await get_web_request("POST", url, headers=headers, json=payload,
-                                                  return_type='json')
+    status, response_json = await get_web_request(
+        "POST", url, headers=headers, json=payload, return_type="json"
+    )
 
     if status != 200:
         raise ValueError(f"Ошибка при запросе к API Tron: {status}")
 
     # Вывод ответа API
     # print(response.json())
-    energy_used = response_json['energy_used']
+    energy_used = response_json["energy_used"]
     cost_per_energy_unit = await get_energy_fee()  # Стоимость за единицу энергии в SUN
     total_cost_in_sun = energy_used * cost_per_energy_unit  # Общая стоимость в SUN
     total_cost_in_trx = total_cost_in_sun / 1_000_000  # Конвертация в TRX
@@ -440,7 +493,9 @@ def get_energy_fee_():
     energy_fee = None
     if response.status_code == 200:
         for param in response.json().get("chainParameter", []):
-            if param.get("key") == "getEnergyFee":  # Это ключ может отличаться или отсутствовать
+            if (
+                param.get("key") == "getEnergyFee"
+            ):  # Это ключ может отличаться или отсутствовать
                 energy_fee = int(param.get("value"))
                 # print(f"Стоимость энергии: {energy_fee}")
                 break
@@ -458,10 +513,12 @@ async def get_energy_fee() -> int:
     headers = {
         "accept": "application/json",
         "content-type": "application/json",
-        "TRON-PRO-API-KEY": api_key
+        "TRON-PRO-API-KEY": api_key,
     }
 
-    status, response_data = await get_web_request("GET", url, headers=headers, return_type='json')
+    status, response_data = await get_web_request(
+        "GET", url, headers=headers, return_type="json"
+    )
 
     if status != 200:
         raise ValueError(f"Ошибка при запросе к API TronGrid: {status}")
@@ -479,13 +536,14 @@ async def get_energy_fee() -> int:
 
 
 def test4():
-    from tronpy import Tron  
+    from tronpy import Tron
+
     client = Tron(HTTPProvider(api_key=api_key))
     contract = client.get_contract(usdt_contract)
 
     # Построение транзакции без непосредственной отправки
     txn = (
-        contract.functions.transfer('TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', 10 * 10 ** 6)
+        contract.functions.transfer("TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ", 10 * 10**6)
         .with_owner(tron_master_address)
         .fee_limit(20_000_000)
         .build()
@@ -494,25 +552,40 @@ def test4():
     # Просмотр закодированных данных транзакции
     print("Transaction data:", txn.to_json())
 
-    { 'txID': '10ec1aedd7fbbaf98a51f003054d43c6331124ef3f5b324b3036d449d986b577', 'raw_data': {'contract': [{
-        'parameter': {
-            'value': {
-                'owner_address': '415e62c22aa70ba7530c8272ee34e4cbb23174fb0b',
-                'contract_address': '41a614f803b6fd780986a42c78ec9c7f77e6ded13c',
-                'data': 'a9059cbb00000000000000000000000098a9eeaafd78a1c6cbb7e7901ce7b5c1310d59f80000000000000000000000000000000000000000000000000000000000989680',
-                'call_token_value': 0,
-                'call_value': 0,
-                'token_id': 0},
-            'type_url': 'type.googleapis.com/protocol.TriggerSmartContract'},
-        'type': 'TriggerSmartContract'}],
-        'timestamp': 1708729524697,
-        'expiration': 1708729584697,
-        'ref_block_bytes': 'd583',
-        'ref_block_hash': 'a207774cf197fd07',
-        'fee_limit': 20000000},
-         'signature': [],
-         'permission': {'keys': [{'address': '415e62c22aa70ba7530c8272ee34e4cbb23174fb0b', 'weight': 1}],
-                        'threshold': 1, 'permission_name': 'owner'}}
+    {
+        "txID": "10ec1aedd7fbbaf98a51f003054d43c6331124ef3f5b324b3036d449d986b577",
+        "raw_data": {
+            "contract": [
+                {
+                    "parameter": {
+                        "value": {
+                            "owner_address": "415e62c22aa70ba7530c8272ee34e4cbb23174fb0b",
+                            "contract_address": "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+                            "data": "a9059cbb00000000000000000000000098a9eeaafd78a1c6cbb7e7901ce7b5c1310d59f80000000000000000000000000000000000000000000000000000000000989680",
+                            "call_token_value": 0,
+                            "call_value": 0,
+                            "token_id": 0,
+                        },
+                        "type_url": "type.googleapis.com/protocol.TriggerSmartContract",
+                    },
+                    "type": "TriggerSmartContract",
+                }
+            ],
+            "timestamp": 1708729524697,
+            "expiration": 1708729584697,
+            "ref_block_bytes": "d583",
+            "ref_block_hash": "a207774cf197fd07",
+            "fee_limit": 20000000,
+        },
+        "signature": [],
+        "permission": {
+            "keys": [
+                {"address": "415e62c22aa70ba7530c8272ee34e4cbb23174fb0b", "weight": 1}
+            ],
+            "threshold": 1,
+            "permission_name": "owner",
+        },
+    }
 
 
 async def get_allowance(check_address):
@@ -528,13 +601,15 @@ async def get_allowance(check_address):
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         token_contract = await client.get_contract(usdt_contract)
 
-        allowance = await token_contract.functions.allowance(check_address, transfer_contract)
+        allowance = await token_contract.functions.allowance(
+            check_address, transfer_contract
+        )
         return allowance
 
 
 async def set_allowance(amount=None, private_key=None):
     if amount:
-        amount = amount * 10 ** 6
+        amount = amount * 10**6
     else:
         amount = 115792089237316195423570985008687907853269984665640564039457
 
@@ -554,7 +629,9 @@ async def set_allowance(amount=None, private_key=None):
         await txn_ret.wait()
 
 
-async def check_unconfirmed_usdt_transactions(public_key: str | None = None, private_key: str | None = None) -> bool:
+async def check_unconfirmed_usdt_transactions(
+    public_key: str | None = None, private_key: str | None = None
+) -> bool:
     """
     Проверяет наличие неподтвержденных транзакций USDT.
 
@@ -567,22 +644,27 @@ async def check_unconfirmed_usdt_transactions(public_key: str | None = None, pri
     """
 
     if private_key:
-        public_key = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+        public_key = PrivateKey(
+            bytes.fromhex(private_key)
+        ).public_key.to_base58check_address()
 
-    confirmed_url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
-                    f"only_confirmed=true&limit=100&contract_address={usdt_contract}"
-    unconfirmed_url = f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?" \
-                      f"only_confirmed=false&limit=100&contract_address={usdt_contract}"
+    confirmed_url = (
+        f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?"
+        f"only_confirmed=true&limit=100&contract_address={usdt_contract}"
+    )
+    unconfirmed_url = (
+        f"https://api.trongrid.io/v1/accounts/{public_key}/transactions/trc20?"
+        f"only_confirmed=false&limit=100&contract_address={usdt_contract}"
+    )
 
-    headers = {
-        "accept": "application/json",
-        "TRON-PRO-API-KEY": api_key
-    }
+    headers = {"accept": "application/json", "TRON-PRO-API-KEY": api_key}
 
-    confirmed_status, confirmed_response_json = await get_web_request('GET', url=confirmed_url,
-                                                                      headers=headers, return_type='json')
-    unconfirmed_status, unconfirmed_response_json = await get_web_request('GET', url=unconfirmed_url,
-                                                                          headers=headers, return_type='json')
+    confirmed_status, confirmed_response_json = await get_web_request(
+        "GET", url=confirmed_url, headers=headers, return_type="json"
+    )
+    unconfirmed_status, unconfirmed_response_json = await get_web_request(
+        "GET", url=unconfirmed_url, headers=headers, return_type="json"
+    )
 
     if confirmed_status != 200 or unconfirmed_status != 200:
         raise ValueError("Ошибка при запросе к API TronGrid")
@@ -601,7 +683,7 @@ async def check_unconfirmed_usdt_transactions(public_key: str | None = None, pri
         if "token_info" in txn and txn["token_info"]["address"] == usdt_contract:
             unconfirmed_tx_ids.add(txn["transaction_id"])
 
-    print(confirmed_tx_ids, '\n', unconfirmed_tx_ids)
+    print(confirmed_tx_ids, "\n", unconfirmed_tx_ids)
     return confirmed_tx_ids != unconfirmed_tx_ids
 
 
@@ -615,7 +697,9 @@ async def get_tron_price_from_coingecko() -> float:
     url = "https://api.coingecko.com/api/v3/simple/price?ids=tron&vs_currencies=usd"
     headers = {"accept": "application/json"}
 
-    status, response_data = await get_web_request("GET", url, headers=headers, return_type='json')
+    status, response_data = await get_web_request(
+        "GET", url, headers=headers, return_type="json"
+    )
 
     if status != 200:
         raise ValueError(f"Ошибка при запросе к API CoinGecko: {status}")
@@ -629,7 +713,7 @@ async def delegate_energy(
     public_key_to: Optional[str] = None,
     private_key_to: Optional[str] = None,
     private_key_from: str = tron_master_key,
-    undo: bool = False
+    undo: bool = False,
 ):
     """
     Делегирует или отменяет делегирование энергии.
@@ -643,30 +727,40 @@ async def delegate_energy(
     """
     # Преобразуем приватный ключ получателя в публичный адрес, если он указан
     if private_key_to:
-        public_key_to = PrivateKey(bytes.fromhex(private_key_to)).public_key.to_base58check_address()
+        public_key_to = PrivateKey(
+            bytes.fromhex(private_key_to)
+        ).public_key.to_base58check_address()
     elif not public_key_to:
         raise ValueError("Either public_key_to or private_key_to must be provided")
 
     # Преобразуем приватный ключ отправителя в публичный адрес
-    from_address = PrivateKey(bytes.fromhex(private_key_from)).public_key.to_base58check_address()
+    from_address = PrivateKey(
+        bytes.fromhex(private_key_from)
+    ).public_key.to_base58check_address()
 
     # Проверяем, достаточно ли энергии для делегирования (если не отменяем)
     if energy_object.need_delegate_energy > energy_object.energy_amount and not undo:
         raise ValueError("Недостаточно энергии для делегирования")
 
     # Вычисляем количество энергии в TRX
-    energy_amount_in_trx = energy_object.calculate_energy_amount_in_trx(energy_object.need_delegate_energy)
+    energy_amount_in_trx = energy_object.calculate_energy_amount_in_trx(
+        energy_object.need_delegate_energy
+    )
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         try:
             if undo:
                 # Отменяем делегирование
-                energy_undo = energy_object.energy_delegated if energy_object.energy_delegated > 0 else energy_amount_in_trx
+                energy_undo = (
+                    energy_object.energy_delegated
+                    if energy_object.energy_delegated > 0
+                    else energy_amount_in_trx
+                )
                 delegate_tx = await client.trx.undelegate_resource(
                     owner=from_address,
                     receiver=public_key_to,
                     balance=energy_undo * TRX_TO_SUN,
-                    resource="ENERGY"
+                    resource="ENERGY",
                 ).build()
             else:
                 # Делегируем энергию
@@ -674,9 +768,11 @@ async def delegate_energy(
                     owner=from_address,
                     receiver=public_key_to,
                     balance=energy_amount_in_trx * TRX_TO_SUN,
-                    resource="ENERGY"
+                    resource="ENERGY",
                 ).build()
-                energy_object.energy_delegated = energy_amount_in_trx  # Сохраняем количество делегированной энергии
+                energy_object.energy_delegated = (
+                    energy_amount_in_trx  # Сохраняем количество делегированной энергии
+                )
 
             # Подписываем и отправляем транзакцию
             delegate_tx = delegate_tx.sign(PrivateKey(bytes.fromhex(private_key_from)))
@@ -685,7 +781,9 @@ async def delegate_energy(
 
             # Логируем успешное выполнение
             action = "undelegated" if undo else "delegated"
-            logger.info(f"Successfully {action} {energy_amount_in_trx} TRX worth of energy to {public_key_to}")
+            logger.info(
+                f"Successfully {action} {energy_amount_in_trx} TRX worth of energy to {public_key_to}"
+            )
 
             return delegate_result
 
@@ -697,18 +795,22 @@ async def delegate_energy(
 
 async def get_account_energy(address=None, private_key=tron_master_key) -> EnergyObject:
     if address is None:
-        address = PrivateKey(bytes.fromhex(private_key)).public_key.to_base58check_address()
+        address = PrivateKey(
+            bytes.fromhex(private_key)
+        ).public_key.to_base58check_address()
 
     async with AsyncTron(AsyncHTTPProvider(api_key=api_key)) as client:
         account_resources = await client.get_account_resource(address)
         # print(account_resources)  # 'TotalEnergyLimit': 180_000_000_000, 'TotalEnergyWeight': 15_972_160_745}
         # Энергия за 1 TRX = 180000000000 / 15972160745  ≈ 11.2696 энергии
-        return EnergyObject(total_energy_limit=account_resources.get('TotalEnergyLimit', 0),
-                            total_energy_weight=account_resources.get('TotalEnergyWeight', 0),
-                            energy_limit=account_resources.get('EnergyLimit', 0),
-                            energy_used=account_resources.get('EnergyUsed', 0),
-                            free_net_used=account_resources.get('freeNetUsed',0),
-                            free_net_limit=account_resources.get('freeNetLimit',0))
+        return EnergyObject(
+            total_energy_limit=account_resources.get("TotalEnergyLimit", 0),
+            total_energy_weight=account_resources.get("TotalEnergyWeight", 0),
+            energy_limit=account_resources.get("EnergyLimit", 0),
+            energy_used=account_resources.get("EnergyUsed", 0),
+            free_net_used=account_resources.get("freeNetUsed", 0),
+            free_net_limit=account_resources.get("freeNetLimit", 0),
+        )
         # account_resources.get('EnergyLimit', 0) - account_resources.get('EnergyUsed', 0)
 
 
@@ -716,8 +818,8 @@ async def run_test():
     # a = await delegate_energy(public_key_to='TPtRHKXMJqHJ35cqdBBkA18ei9kcjVJsmZ', energy_amount=100, undo=False)
     #    a = await get_usdt_transfer_fee(tron_master_address, 'TMVo5zCGUXUW7R62guXwNtXSstEAFm2zDY', 10)
     #   print(a)
-    #a = await get_account_energy()
-    #print(a, a.energy_amount, a.energy_per_trx, a.calculate_energy_amount_in_trx(), a.calculate_energy_amount_in_trx(65000))
+    # a = await get_account_energy()
+    # print(a, a.energy_amount, a.energy_per_trx, a.calculate_energy_amount_in_trx(), a.calculate_energy_amount_in_trx(65000))
     # print(await get_energy_in_trx_froze())
     # print(await get_usdt_balance('TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az'))
     # print(await delegate_energy(public_key_to='TFnuYLeMnftG4ajzRxL1o3mXJcFdFUg2Az', energy_amount=65_000, undo=False))
