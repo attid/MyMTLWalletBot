@@ -76,9 +76,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy only runtime application code
 COPY bot ./bot
 COPY shared ./shared
+COPY justfile ./justfile
 
 # Create directories for volumes
-RUN mkdir -p logs data db
+RUN mkdir -p logs data db && ln -sf /app/justfile /app/bot/justfile
 
 # Set working directory to bot
 WORKDIR /app/bot
