@@ -72,6 +72,9 @@ metrics:
 bench-kdf:
     uv run --with argon2-cffi python bot/scripts/argon2_benchmark.py
 
+migrate-wallet-crypto-v2 args="--dry-run":
+    cd bot && uv run --package mmwb-bot python scripts/migrate_wallet_crypto_v2.py {{args}}
+
 start-task task_id title="":
     uv run python .linters/create_exec_plan.py {{task_id}} --title "{{title}}"
 

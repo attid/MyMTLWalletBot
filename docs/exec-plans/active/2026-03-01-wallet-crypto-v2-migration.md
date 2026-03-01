@@ -102,7 +102,7 @@ Operational rollout without feature flags:
      - legacy fallback.
    - Verify `routers/ton.py` user flows are unchanged.
 
-7. [ ] Add migration script (safe and idempotent).
+7. [x] Add migration script (safe and idempotent).
    - Create script in `bot/scripts/` to backfill `wallet_crypto_v2`.
    - Script behavior:
      - scan wallets with empty v2,
