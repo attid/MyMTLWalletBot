@@ -216,6 +216,46 @@ async def test_wallet_repository_deleted_not_default(db_session):
 
 
 @pytest.mark.asyncio
+async def test_wallet_repository_reset_balance_cache_clears_cached_balances(db_session):
+    """Reset should invalidate cache data, not only event id marker."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1005, username="cache_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1005,
+        public_key="GCACHETEST123",
+        is_default=True,
+        is_free=False,
+    )
+    await wallet_repo.create(wallet)
+    await db_session.commit()
+
+    default_wallet = await wallet_repo.get_default_wallet(1005)
+    assert default_wallet is not None
+    default_wallet.balances = [{"asset_code": "EURMTL", "balance": "100.0"}]
+    default_wallet.balances_event_id = "0"
+    default_wallet.last_event_id = "0"
+    await wallet_repo.update(default_wallet)
+    await db_session.commit()
+
+    cached_wallet = await wallet_repo.get_default_wallet(1005)
+    assert cached_wallet is not None
+    assert cached_wallet.balances is not None
+    assert cached_wallet.balances_event_id == cached_wallet.last_event_id
+
+    await wallet_repo.reset_balance_cache(1005)
+    await db_session.commit()
+
+    refreshed_wallet = await wallet_repo.get_default_wallet(1005)
+    assert refreshed_wallet is not None
+    assert refreshed_wallet.balances is None
+
+
+@pytest.mark.asyncio
 async def test_cheque_repository(db_session):
     repo = SqlAlchemyChequeRepository(db_session)
     user_id = 12345

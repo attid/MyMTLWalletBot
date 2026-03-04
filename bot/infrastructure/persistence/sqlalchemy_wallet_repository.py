@@ -120,6 +120,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         result = await self.session.execute(stmt)
         wallet = result.scalar_one_or_none()
         if wallet:
+            wallet.balances = None
             wallet.balances_event_id = "0"
             await self.session.flush()
 
