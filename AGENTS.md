@@ -51,6 +51,17 @@ an index. Detailed rules live in `docs/`.
 ## Task Intake Protocol
 1. First state which files/directories need changes.
 2. Do not edit until explicit permission names allowed paths.
+3. Before first repo edit in any non-trivial task, create an execution plan:
+   `just start-task <task-id> title="..."`.
+4. Before first repo edit, ensure the active plan has:
+   `Files/Directories To Change` and checked `Edit Permission` section.
+5. If no active plan exists, stop work and ask for allowed paths.
+
+## Pre-Commit Guardrail
+- Enable local hook path once per clone:
+  `git config core.hooksPath .githooks`
+- This repo ships `.githooks/pre-commit` that blocks commits touching
+  `bot/`, `webapp/`, or `shared/` when no execution plan file is staged.
 
 ## Post-Push Step
 - After every successful `git push`, run `just push-gitdocker`.

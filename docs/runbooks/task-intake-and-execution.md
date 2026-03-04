@@ -14,6 +14,8 @@ Ensure every non-trivial task starts in AI-first workflow mode.
    just start-task <task-id> title="<short title>"
    ```
 
+   Stop immediately if there is no active plan file in `docs/exec-plans/active/`.
+
 4. Record allowed paths and permission evidence in the plan (`Files/Directories To
    Change` and `Edit Permission` sections).
 5. Mark permission checkboxes as done before first edit.
@@ -36,3 +38,11 @@ Ensure every non-trivial task starts in AI-first workflow mode.
 
 - Use `just typecheck-full` for full mypy debt visibility when needed.
 - If checks fail repeatedly, use `docs/runbooks/ci-failure-triage.md`.
+- Optional guardrail for local development:
+
+  ```bash
+  git config core.hooksPath .githooks
+  ```
+
+  With this enabled, `.githooks/pre-commit` blocks commits that modify
+  `bot/`, `webapp/`, or `shared/` without a staged execution plan file.
