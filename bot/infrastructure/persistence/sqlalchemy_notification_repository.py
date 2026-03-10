@@ -57,6 +57,11 @@ class SqlAlchemyNotificationRepository(INotificationRepository):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_id(self, filter_id: int) -> Optional[NotificationFilter]:
+        stmt = select(NotificationFilter).where(NotificationFilter.id == filter_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def delete_by_id(self, filter_id: int, user_id: int) -> bool:
         """Delete a filter by ID with owner verification."""
         stmt = delete(NotificationFilter).where(

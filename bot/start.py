@@ -66,6 +66,7 @@ from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
 from middleware.app_context import AppContextMiddleware
 from middleware.localization import LocalizationMiddleware
+from middleware.sentry_error_handler import sentry_error_handler
 
 
 # https://docs.aiogram.dev/en/latest/quick_start.html
@@ -123,6 +124,8 @@ async def bot_add_routers(
 
     # always the last
     dp.include_router(common_end.router)
+
+    dp.errors.register(sentry_error_handler)
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown_dispatcher)
