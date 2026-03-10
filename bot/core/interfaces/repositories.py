@@ -278,6 +278,11 @@ class INotificationRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_by_id(self, filter_id: int) -> Optional["NotificationFilter"]:
+        """Get a notification filter by its ID."""
+        pass
+
+    @abstractmethod
     async def delete_by_id(self, filter_id: int, user_id: int) -> bool:
         """Delete a filter by ID with owner verification. Returns True if deleted."""
         pass

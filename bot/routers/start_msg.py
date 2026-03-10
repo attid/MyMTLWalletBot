@@ -197,7 +197,6 @@ async def cmd_show_balance(
     else:
         try:
             data = await state.get_data()
-            await state.set_state(state=None)
             await clear_state(state)
             msg = await get_start_text(session, state, user_id, app_context=app_context)
 

@@ -208,6 +208,7 @@ async def clear_state(state: FSMContext):
             "use_ton": data.get("use_ton", None),
         }
     )
+    await state.set_state(None)
 
 
 def long_line() -> str:
