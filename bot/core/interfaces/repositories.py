@@ -166,7 +166,7 @@ class IWalletRepository(ABC):
         """Reset the cached balance for the user's default wallet.
 
         This invalidates the local balance cache, forcing a refresh
-        from the network on next balance request.
+        from the network on next balance request, including cache timestamp.
         """
         pass
 

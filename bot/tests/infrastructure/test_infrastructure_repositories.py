@@ -1,3 +1,4 @@
+from datetime import datetime, UTC
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -239,6 +240,7 @@ async def test_wallet_repository_reset_balance_cache_clears_cached_balances(db_s
     default_wallet.balances = [{"asset_code": "EURMTL", "balance": "100.0"}]
     default_wallet.balances_event_id = "0"
     default_wallet.last_event_id = "0"
+    default_wallet.balances_updated_at = datetime.now(UTC)
     await wallet_repo.update(default_wallet)
     await db_session.commit()
 
@@ -253,6 +255,7 @@ async def test_wallet_repository_reset_balance_cache_clears_cached_balances(db_s
     refreshed_wallet = await wallet_repo.get_default_wallet(1005)
     assert refreshed_wallet is not None
     assert refreshed_wallet.balances is None
+    assert refreshed_wallet.balances_updated_at is None
 
 
 @pytest.mark.asyncio
