@@ -56,12 +56,18 @@ an index. Detailed rules live in `docs/`.
 4. Before first repo edit, ensure the active plan has:
    `Files/Directories To Change` and checked `Edit Permission` section.
 5. If no active plan exists, stop work and ask for allowed paths.
+6. Intermediate commits may keep a plan in `docs/exec-plans/active/`, but once
+   every item in `## Change Plan` is checked `[x]`, move that plan to
+   `docs/exec-plans/completed/` with `just finish-task <plan-file>` before the
+   next commit.
 
 ## Pre-Commit Guardrail
 - Enable local hook path once per clone:
   `git config core.hooksPath .githooks`
 - This repo ships `.githooks/pre-commit` that blocks commits touching
   `bot/`, `webapp/`, or `shared/` when no execution plan file is staged.
+- The hook also blocks commits that stage a fully completed plan in
+  `docs/exec-plans/active/`; completed plans must move to `completed/`.
 
 ## Post-Push Step
 - After every successful `git push`, run `just push-gitdocker`.

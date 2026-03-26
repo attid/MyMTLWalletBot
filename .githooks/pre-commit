@@ -10,11 +10,13 @@ if ! printf '%s\n' "$staged_files" | rg -q '^(bot|webapp|shared)/'; then
   exit 0
 fi
 
+has_staged_plan=0
 if printf '%s\n' "$staged_files" | rg -q '^docs/exec-plans/(active|completed)/.+\.md$'; then
-  exit 0
+  has_staged_plan=1
 fi
 
-cat >&2 <<'MSG'
+if [ "$has_staged_plan" -eq 0 ]; then
+  cat >&2 <<'MSG'
 ERROR: Missing execution plan update in staged changes.
 
 You are committing code under bot/webapp/shared, but no plan file is staged in:
@@ -27,4 +29,47 @@ Fix:
   4) retry commit
 MSG
 
-exit 1
+  exit 1
+fi
+
+completed_active_plans="$(
+  printf '%s\n' "$staged_files" | rg '^docs/exec-plans/active/.+\.md$' | while read -r plan_file; do
+    [ -n "$plan_file" ] || continue
+    plan_content="$(git show ":$plan_file" 2>/dev/null || true)"
+    [ -n "$plan_content" ] || continue
+
+    if printf '%s\n' "$plan_content" | awk '
+      BEGIN { in_change_plan=0; checked=0; unchecked=0 }
+      /^## Change Plan$/ { in_change_plan=1; next }
+      /^## / && in_change_plan { exit }
+      in_change_plan && /^[0-9]+\. \[x\]/ { checked=1 }
+      in_change_plan && /^[0-9]+\. \[ \]/ { unchecked=1 }
+      END {
+        if (in_change_plan && checked == 1 && unchecked == 0) {
+          exit 0
+        }
+        exit 1
+      }
+    '; then
+      printf '%s\n' "$plan_file"
+    fi
+  done
+)"
+
+if [ -n "$completed_active_plans" ]; then
+  cat >&2 <<MSG
+ERROR: Completed execution plans are still staged under docs/exec-plans/active/.
+
+Move these plans to completed before committing:
+$completed_active_plans
+
+Fix:
+  just finish-task <plan-file>
+  git add docs/exec-plans/active docs/exec-plans/completed
+  retry commit
+MSG
+
+  exit 1
+fi
+
+exit 0
