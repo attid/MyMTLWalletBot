@@ -70,6 +70,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             wallet_crypto_v2=wallet.wallet_crypto_v2,
             balances=None,  # New wallets have no cache
             balances_event_id="0",
+            balances_updated_at=None,
             last_event_id="0",
         )
         self.session.add(db_wallet)
@@ -89,6 +90,10 @@ class SqlAlchemyWalletRepository(IWalletRepository):
                 import jsonpickle  # type: ignore
 
                 db_wallet.balances = jsonpickle.encode(wallet.balances)
+                db_wallet.balances_updated_at = wallet.balances_updated_at
+            else:
+                db_wallet.balances = None
+                db_wallet.balances_updated_at = None
 
             db_wallet.balances_event_id = str(wallet.balances_event_id)
             # last_event_id should probably be managed by DB or specific logic, but we map it back
@@ -122,6 +127,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         if wallet:
             wallet.balances = None
             wallet.balances_event_id = "0"
+            wallet.balances_updated_at = None
             await self.session.flush()
 
     async def get_all_deleted(self) -> List[Wallet]:
@@ -256,4 +262,5 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             balances=balances,
             balances_event_id=str(db_wallet.balances_event_id or "0"),
             last_event_id=str(db_wallet.last_event_id or "0"),
+            balances_updated_at=db_wallet.balances_updated_at,
         )

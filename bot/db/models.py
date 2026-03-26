@@ -26,6 +26,7 @@ class MyMtlWalletBot(Base):
     last_event_id = Column(String(32), default="0")
     balances = Column(Text)  # Now using Text for the balances field
     balances_event_id = Column(String(32), default="0")
+    balances_updated_at = Column(DateTime(timezone=True), nullable=True)
     assets_visibility = Column(Text, default="{}")
 
 

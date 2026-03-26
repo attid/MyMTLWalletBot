@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, UTC
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from core.use_cases.wallet.get_balance import GetWalletBalance
@@ -200,3 +201,49 @@ async def test_free_wallet_includes_xlm():
 
     xlm = next(b for b in balances if b.asset_code == "XLM")
     assert float(xlm.balance) == 10.0
+
+
+@pytest.mark.asyncio
+async def test_get_balance_refreshes_when_cache_is_older_than_one_hour():
+    mock_repo = MagicMock()
+    mock_stellar = MagicMock()
+
+    wallet = Wallet(
+        id=1,
+        user_id=123,
+        public_key="GSTALE",
+        is_default=True,
+        is_free=False,
+        balances=[MagicMock(asset_code="EURMTL", balance="5")],
+        balances_event_id="10",
+        last_event_id="10",
+        balances_updated_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    mock_repo.get_default_wallet = AsyncMock(return_value=wallet)
+    mock_repo.update = AsyncMock()
+
+    mock_stellar.get_account_details = AsyncMock(
+        return_value={
+            "balances": [
+                {
+                    "asset_type": "native",
+                    "balance": "100",
+                    "buying_liabilities": "0",
+                    "selling_liabilities": "0",
+                }
+            ],
+            "num_sponsoring": 0,
+            "signers": [],
+            "data": {},
+        }
+    )
+    mock_stellar.get_selling_offers = AsyncMock(return_value=[])
+    mock_stellar.get_assets_by_issuer = AsyncMock(return_value=[])
+
+    use_case = GetWalletBalance(mock_repo, mock_stellar)
+
+    balances = await use_case.execute(user_id=123)
+
+    assert [balance.asset_code for balance in balances] == ["XLM"]
+    mock_stellar.get_account_details.assert_awaited_once()
+    mock_repo.update.assert_awaited_once()

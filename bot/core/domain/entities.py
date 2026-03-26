@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 from enum import Enum
 
@@ -34,6 +35,7 @@ class Wallet:
     balances: Optional[list] = None  # List[Balance]
     balances_event_id: str = "0"
     last_event_id: str = "0"
+    balances_updated_at: Optional[datetime] = None
 
 
 @dataclass

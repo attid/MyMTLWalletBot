@@ -1,8 +1,12 @@
 import asyncio
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import List, Optional, cast
 from core.interfaces.repositories import IWalletRepository
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Balance
+
+
+CACHE_TTL = timedelta(hours=1)
 
 
 class GetWalletBalance:
@@ -11,6 +15,17 @@ class GetWalletBalance:
     ):
         self.wallet_repository = wallet_repository
         self.stellar_service = stellar_service
+
+    def _is_cache_fresh(self, wallet) -> bool:
+        if (
+            not wallet.balances
+            or wallet.balances_event_id != wallet.last_event_id
+            or wallet.balances_updated_at is None
+        ):
+            return False
+
+        cache_age = datetime.now(UTC) - wallet.balances_updated_at.astimezone(UTC)
+        return cache_age <= CACHE_TTL
 
     async def execute(
         self, user_id: int, public_key: Optional[str] = None
@@ -31,7 +46,7 @@ class GetWalletBalance:
             target_key = wallet.public_key
 
             # Check Cache (only for default wallet)
-            if wallet.balances and wallet.balances_event_id == wallet.last_event_id:
+            if self._is_cache_fresh(wallet):
                 # Assuming balances are list of Balance objects (handled by Repo/jsonpickle)
                 # Need to filter output based on is_free??
                 # Legacy: if free_wallet, filter XLM? NO, separate logic in stellar_get_balance_str handles display.
@@ -57,7 +72,7 @@ class GetWalletBalance:
                 # But I am removing DB access so nobody else reads cache directly except through Repo.
 
                 # I will trust the cache for now.
-                return wallet.balances
+                return cast(List[Balance], wallet.balances)
 
         # 2. Get account details, offers and issued assets from Stellar concurrently
         results = await asyncio.gather(
@@ -130,6 +145,7 @@ class GetWalletBalance:
             # Legacy: checks last_event_id.
             # We assume last_event_id is up to date on wallet entity from fetching.
             wallet.balances_event_id = wallet.last_event_id
+            wallet.balances_updated_at = datetime.now(UTC)
             await self.wallet_repository.update(wallet)
 
         return domain_balances
