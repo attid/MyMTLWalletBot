@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     sentry_dsn: str
     horizon_url: str
     horizon_url_rw: str
-    mongodb_url: str
+    mongodb_url: Optional[str] = None
     grist_token: str
     tonconsole_token: str
     ton_token: str

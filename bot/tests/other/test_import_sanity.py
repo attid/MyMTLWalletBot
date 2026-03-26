@@ -2,6 +2,7 @@ import os
 import pytest
 import importlib
 import sys
+from other.config_reader import Settings
 
 # Add project root to path
 PROJECT_ROOT = os.path.dirname(
@@ -49,3 +50,58 @@ def test_import_sanity(module_name):
         # might be ignored or handled, but ideally top level code shouldn't do side effects.
         # For now, we fail on them too to encourage clean modules.
         pytest.fail(f"Runtime error during import of {module_name}: {e}")
+
+
+def _build_settings_without_mongodb_url() -> dict[str, object]:
+    return {
+        "bot_token": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+        "test_bot_token": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+        "base_fee": 100,
+        "db_url": "sqlite+aiosqlite:///test.db",
+        "redis_url": "redis://localhost:6379/0",
+        "tron_api_key": "test-tron-api-key",
+        "tron_master_address": "TTestMasterAddress",
+        "tron_master_key": "test-tron-master-key",
+        "thothpay_api": "test-thothpay-api",
+        "openai_key": "test-openai-key",
+        "eurmtl_key": "test-eurmtl-key",
+        "sentry_dsn": "https://example.com/sentry",
+        "horizon_url": "https://horizon.stellar.org",
+        "horizon_url_rw": "https://horizon.stellar.org",
+        "grist_token": "test-grist-token",
+        "tonconsole_token": "test-tonconsole-token",
+        "ton_token": "test-ton-token",
+        "wallet_cost": 1.0,
+    }
+
+
+def test_settings_allows_missing_mongodb_url(monkeypatch):
+    monkeypatch.delenv("MONGODB_URL", raising=False)
+    settings = Settings(_env_file=None, **_build_settings_without_mongodb_url())
+
+    assert settings.mongodb_url is None
+
+
+@pytest.mark.asyncio
+async def test_db_mongo_import_is_safe_without_mongodb_url(monkeypatch):
+    import other.config_reader as config_reader
+
+    monkeypatch.delenv("MONGODB_URL", raising=False)
+    original_module = sys.modules.pop("db.mongo", None)
+    original_config = config_reader.config
+    config_reader.config = Settings(
+        _env_file=None, **_build_settings_without_mongodb_url()
+    )
+
+    try:
+        mongo_module = importlib.import_module("db.mongo")
+
+        assert mongo_module.client is None
+        assert mongo_module.db is None
+        assert mongo_module.accounts_collection is None
+        assert await mongo_module.check_account_id_from_grist("GTESTACCOUNT") is False
+    finally:
+        config_reader.config = original_config
+        sys.modules.pop("db.mongo", None)
+        if original_module is not None:
+            sys.modules["db.mongo"] = original_module
