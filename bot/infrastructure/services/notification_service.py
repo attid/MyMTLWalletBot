@@ -71,10 +71,41 @@ class NotificationService:
 
         # Notifier public key (fetched from /api/status)
         self._notifier_public_key: Optional[str] = None
+        self.last_notification_at: datetime = datetime.utcnow()
+        self._notification_watchdog_task: Optional[asyncio.Task] = None
+        self._notification_silence_threshold = 60 * 60
+        self._notification_watchdog_interval = 5 * 60
 
         # Log initialization
         if not self.bot:
             logger.warning("NotificationService initialized with bot=None")
+
+    def _mark_notification_activity(self, now: Optional[datetime] = None) -> None:
+        self.last_notification_at = now or datetime.utcnow()
+
+    async def _alert_admins_about_notification_silence(self, now: datetime) -> None:
+        admins = getattr(self.config, "admins", []) or []
+        if not admins or not self.bot:
+            return
+
+        text = "No webhook notifications received for the last hour"
+        for admin_id in admins:
+            await self.bot.send_message(chat_id=admin_id, text=text)
+
+        self._mark_notification_activity(now)
+
+    async def _check_notification_watchdog(
+        self, now: Optional[datetime] = None
+    ) -> None:
+        current_time = now or datetime.utcnow()
+        silence_seconds = (current_time - self.last_notification_at).total_seconds()
+        if silence_seconds >= self._notification_silence_threshold:
+            await self._alert_admins_about_notification_silence(current_time)
+
+    async def _run_notification_watchdog(self) -> None:
+        while True:
+            await asyncio.sleep(self._notification_watchdog_interval)
+            await self._check_notification_watchdog()
 
     def _encode_url_params(self, pairs: list) -> str:
         """
@@ -271,6 +302,7 @@ class NotificationService:
 
         # Initialize nonce
         await self._fetch_initial_nonce()
+        self._mark_notification_activity()
 
         app = web.Application()
         app.router.add_post("/webhook", self.handle_webhook)
@@ -285,7 +317,15 @@ class NotificationService:
         logger.info(f"Starting Webhook Listener on port {port}")
         await self.site.start()
 
+        if not self._notification_watchdog_task or self._notification_watchdog_task.done():
+            self._notification_watchdog_task = asyncio.create_task(
+                self._run_notification_watchdog()
+            )
+
     async def stop(self):
+        if self._notification_watchdog_task:
+            self._notification_watchdog_task.cancel()
+            self._notification_watchdog_task = None
         if self.site:
             await self.site.stop()
         if self.runner:
@@ -310,6 +350,7 @@ class NotificationService:
                 return web.Response(text="Invalid JSON", status=400)
 
             # 4. Обрабатываем
+            self._mark_notification_activity()
             await self.process_notification(payload)
             return web.Response(text="OK")
 

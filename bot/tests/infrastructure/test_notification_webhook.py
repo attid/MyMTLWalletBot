@@ -10,6 +10,7 @@ with bot/dispatcher but WITHOUT app_context, which caused the bug:
 """
 
 import os
+from datetime import datetime, timedelta
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from aiogram import Dispatcher
@@ -31,6 +32,7 @@ def mock_config():
     config.notifier_auth_token = "test-token"
     config.service_secret = None
     config.notifier_public_key = None
+    config.admins = [1001, 1002]
     return config
 
 
@@ -304,3 +306,38 @@ async def test_create_account_uses_destination_for_new_account(notification_serv
     assert op.for_account == payload["operation"]["destination"]
     assert op.payment_amount == 5.0
     assert op.payment_asset == "XLM"
+
+
+@pytest.mark.asyncio
+async def test_watchdog_alerts_all_admins_after_one_hour_of_silence(
+    notification_service, mock_telegram
+):
+    now = datetime.utcnow()
+    notification_service.last_notification_at = now - timedelta(hours=1, minutes=1)
+
+    await notification_service._check_notification_watchdog(now=now)
+
+    sent_messages = [req for req in mock_telegram if req["method"] == "sendMessage"]
+    sent_chat_ids = {int(req["data"]["chat_id"]) for req in sent_messages}
+
+    assert sent_chat_ids == {1001, 1002}
+    assert notification_service.last_notification_at == now
+
+
+@pytest.mark.asyncio
+async def test_watchdog_alert_resets_timer_and_does_not_repeat_before_next_hour(
+    notification_service, mock_telegram
+):
+    now = datetime.utcnow()
+    notification_service.last_notification_at = now - timedelta(hours=1, minutes=1)
+
+    await notification_service._check_notification_watchdog(now=now)
+    await notification_service._check_notification_watchdog(
+        now=now + timedelta(minutes=59)
+    )
+
+    sent_messages = [req for req in mock_telegram if req["method"] == "sendMessage"]
+    sent_chat_ids = [int(req["data"]["chat_id"]) for req in sent_messages]
+
+    assert sent_chat_ids.count(1001) == 1
+    assert sent_chat_ids.count(1002) == 1
