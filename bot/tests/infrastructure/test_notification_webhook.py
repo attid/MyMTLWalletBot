@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from aiogram import Dispatcher
+from aiogram.exceptions import TelegramForbiddenError
+from aiogram.methods import SendMessage
 import pytest_asyncio
 
 from infrastructure.services.notification_service import NotificationService
@@ -46,6 +48,7 @@ def mock_db_pool():
     # Mock session
     session = AsyncMock()
     session.execute = AsyncMock()
+    session.add = MagicMock()
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
 
@@ -133,6 +136,46 @@ async def test_notification_service_sends_message_without_app_context(
     # Verify message was sent (content doesn't matter - just that it was sent without crashing)
     sent_text = req["data"]["text"]
     assert len(sent_text) > 0, "Message text should not be empty"
+
+
+@pytest.mark.asyncio
+async def test_forbidden_notification_marks_wallet_deleted(
+    notification_service, mock_db_pool
+):
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.user_id = 12345
+    wallet.public_key = "GTEST" + "A" * 51
+    wallet.id = 1
+    wallet.need_delete = 0
+
+    operation = MagicMock(spec=NotificationOperation)
+    operation.id = "test-op-forbidden"
+    operation.operation = "payment"
+    operation.payment_amount = "100.0"
+    operation.payment_asset = "XLM"
+    operation.from_account = "GFROM" + "A" * 51
+    operation.for_account = "GTO" + "B" * 51
+    operation.display_amount_value = "100.0"
+    operation.display_asset_code = "XLM"
+    operation.memo = None
+
+    async def mock_execute(*args, **kwargs):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        return mock_result
+
+    mock_db_pool._session.execute = mock_execute
+    notification_service.bot.send_message = AsyncMock(
+        side_effect=TelegramForbiddenError(
+            method=SendMessage(chat_id=12345, text="forbidden"),
+            message="Forbidden: bot was blocked by the user",
+        )
+    )
+
+    await notification_service._send_notification_to_user(wallet, operation)
+
+    assert wallet.need_delete == 1
+    mock_db_pool._session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
