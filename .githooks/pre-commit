@@ -33,7 +33,11 @@ MSG
 fi
 
 completed_active_plans="$(
-  printf '%s\n' "$staged_files" | rg '^docs/exec-plans/active/.+\.md$' | while read -r plan_file; do
+  printf '%s\n' "$staged_files" | rg '^docs/exec-plans/active/.+\.md$' || true
+)" 
+
+completed_active_plans="$(
+  printf '%s\n' "$completed_active_plans" | while read -r plan_file; do
     [ -n "$plan_file" ] || continue
     plan_content="$(git show ":$plan_file" 2>/dev/null || true)"
     [ -n "$plan_content" ] || continue

@@ -19,6 +19,7 @@ import sentry_sdk
 from db.db_pool import DatabasePool
 from db.models import MyMtlWalletBot, NotificationFilter
 from core.models.notification import NotificationOperation
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.notification_utils import decode_db_effect
@@ -871,6 +872,14 @@ class NotificationService:
                     f"Failed to reset balance cache for user {user_id}: {cache_error}"
                 )
 
+        except TelegramForbiddenError as e:
+            logger.warning(
+                f"Telegram blocked bot for user {user_id}, marking wallet as deleted: {e}"
+            )
+            wallet.need_delete = 1
+            async with self.db_pool.get_session() as session:
+                session.add(wallet)
+                await session.commit()
         except Exception as e:
             logger.exception(f"Failed to send notification to {user_id}: {e}")
 
