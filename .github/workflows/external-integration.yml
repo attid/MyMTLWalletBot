@@ -27,7 +27,6 @@ env:
   WALLET_COST: "1"
   NOTIFIER_WEBHOOK_TIMEOUT: "60"
 
-env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   external-tests:
