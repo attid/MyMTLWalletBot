@@ -27,8 +27,6 @@ env:
   TONCONSOLE_TOKEN: "test"
   TON_TOKEN: "test"
   WALLET_COST: "1"
-
-env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   secrets-scan:
