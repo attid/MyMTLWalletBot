@@ -254,6 +254,7 @@ async def main():
     session_kwargs: dict = {}
     if config.telegram_api_url:
         session_kwargs["api"] = TelegramAPIServer.from_base(config.telegram_api_url)
+        logger.info(f"Using custom Telegram Bot API server: {config.telegram_api_url}")
     session: AiohttpSession = AiohttpSession(**session_kwargs)
     session.middleware(RetryRequestMiddleware())
     if config.test_mode:
