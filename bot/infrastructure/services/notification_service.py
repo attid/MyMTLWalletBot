@@ -9,7 +9,7 @@ import asyncio
 import aiohttp
 from aiohttp import web
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import select, update
 from typing import Optional, Any
 from datetime import datetime
 from urllib.parse import quote
@@ -876,9 +876,16 @@ class NotificationService:
             logger.warning(
                 f"Telegram blocked bot for user {user_id}, marking wallet as deleted: {e}"
             )
-            wallet.need_delete = 1
+            # UPDATE by id instead of session.add(wallet): the wallet ORM
+            # instance is still attached to the session that fetched it
+            # in process_notification, so re-attaching to a new session
+            # would raise InvalidRequestError.
             async with self.db_pool.get_session() as session:
-                session.add(wallet)
+                await session.execute(
+                    update(MyMtlWalletBot)
+                    .where(MyMtlWalletBot.id == wallet.id)
+                    .values(need_delete=1)
+                )
                 await session.commit()
         except Exception as e:
             logger.exception(f"Failed to send notification to {user_id}: {e}")

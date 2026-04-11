@@ -174,7 +174,11 @@ async def test_forbidden_notification_marks_wallet_deleted(
 
     await notification_service._send_notification_to_user(wallet, operation)
 
-    assert wallet.need_delete == 1
+    # The forbidden handler must NOT call session.add(wallet) — wallet is
+    # still attached to the session that fetched it, so add() raises
+    # InvalidRequestError in production. Instead the handler issues an
+    # UPDATE ... SET need_delete=1 via session.execute + commit.
+    mock_db_pool._session.add.assert_not_called()
     mock_db_pool._session.commit.assert_awaited_once()
 
 
