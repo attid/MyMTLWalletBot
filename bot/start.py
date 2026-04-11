@@ -10,6 +10,7 @@ warnings.filterwarnings(
 import uvloop  # noqa: E402
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 
 from middleware.retry import RetryRequestMiddleware
 from routers.inout import usdt_worker
@@ -250,7 +251,10 @@ async def main():
     from db.db_pool import db_pool
 
     default_bot_properties = DefaultBotProperties(parse_mode="HTML")
-    session: AiohttpSession = AiohttpSession()
+    session_kwargs: dict = {}
+    if config.telegram_api_url:
+        session_kwargs["api"] = TelegramAPIServer.from_base(config.telegram_api_url)
+    session: AiohttpSession = AiohttpSession(**session_kwargs)
     session.middleware(RetryRequestMiddleware())
     if config.test_mode:
         bot = Bot(
