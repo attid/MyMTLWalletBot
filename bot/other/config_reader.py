@@ -18,6 +18,7 @@ horizont_urls = [
 class Settings(BaseSettings):
     bot_token: SecretStr
     test_bot_token: SecretStr
+    telegram_api_url: Optional[str] = None
     base_fee: int
     db_url: str
     redis_url: str
