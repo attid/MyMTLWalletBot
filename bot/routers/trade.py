@@ -346,6 +346,7 @@ async def cmd_trade_create(
         )
         return
     sell_asset = matching_sell[0]
+    sell_code = sell_asset.asset_code
 
     # Check balance
     available = my_float(sell_asset.balance)
@@ -377,6 +378,7 @@ async def cmd_trade_create(
         )
         return
     buy_asset = matching_buy[0]
+    buy_code = buy_asset.asset_code
 
     # Check 5000 limit
     user_repo = app_context.repository_factory.get_user_repository(session)

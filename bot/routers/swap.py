@@ -234,6 +234,7 @@ async def cmd_swap_text(
             return
 
         found_from = matching_from[0]
+        from_code = found_from.asset_code
 
         # Check Ambiguity and Find Destination
         matching_to = [b for b in balances if b.asset_code.upper() == to_code]
@@ -256,6 +257,7 @@ async def cmd_swap_text(
             return
 
         found_to = matching_to[0]
+        to_code = found_to.asset_code
 
         # Prepare for swap
         send_asset_code = found_from.asset_code
