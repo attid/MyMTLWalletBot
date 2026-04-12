@@ -59,7 +59,7 @@ class StateInOut(StatesGroup):
     sending_btc_address = State()
     sending_btc_sum_in = State()
     sending_btc_sum_out = State()
-    sending_starts_sum_in = State()
+    sending_stars_sum_in = State()
 
 
 min_usdt_sum = 10
@@ -82,7 +82,7 @@ async def cmd_inout(
     buttons = [
         [types.InlineKeyboardButton(text="USDT TRC20", callback_data="USDT_TRC20")],
         [types.InlineKeyboardButton(text="BTC lightning", callback_data="BTC")],
-        [types.InlineKeyboardButton(text="STARTS", callback_data="STARTS")],
+        [types.InlineKeyboardButton(text="STARS", callback_data="STARS")],
         get_return_button(callback, app_context=app_context),
     ]
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1032,17 +1032,17 @@ async def cmd_btc_out(
 ############################################################################
 
 
-@router.callback_query(F.data == "STARTS")
-async def cmd_starts_in(
+@router.callback_query(F.data == "STARS")
+async def cmd_stars_in(
     callback: types.CallbackQuery,
     state: FSMContext,
     session: AsyncSession,
     app_context: AppContext,
 ):
     await callback.answer()
-    await state.set_state(StateInOut.sending_starts_sum_in)
+    await state.set_state(StateInOut.sending_stars_sum_in)
     # await state.update_data(msg=msg)
-    await state.set_state(StateInOut.sending_starts_sum_in)
+    await state.set_state(StateInOut.sending_stars_sum_in)
     # await state.update_data(msg=msg)
     assert app_context.use_case_factory is not None, (
         "use_case_factory must be initialized"
@@ -1061,8 +1061,8 @@ async def cmd_starts_in(
     )
 
 
-@router.message(StateInOut.sending_starts_sum_in)
-async def cmd_send_starts_sum(
+@router.message(StateInOut.sending_stars_sum_in)
+async def cmd_send_stars_sum(
     message: types.Message,
     state: FSMContext,
     session: AsyncSession,
