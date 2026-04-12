@@ -331,7 +331,7 @@ async def cmd_trade_create(
     balances = await use_case.execute(user_id=message.from_user.id)
 
     # Find selling asset
-    matching_sell = [b for b in balances if b.asset_code == sell_code]
+    matching_sell = [b for b in balances if b.asset_code.upper() == sell_code]
     if len(matching_sell) == 0:
         await send_message(
             session, message, f"У вас нет актива {sell_code}", app_context=app_context
@@ -359,7 +359,7 @@ async def cmd_trade_create(
         return
 
     # Find buying asset (trustline check)
-    matching_buy = [b for b in balances if b.asset_code == buy_code]
+    matching_buy = [b for b in balances if b.asset_code.upper() == buy_code]
     if len(matching_buy) == 0:
         await send_message(
             session,

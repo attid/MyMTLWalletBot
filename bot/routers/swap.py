@@ -215,7 +215,7 @@ async def cmd_swap_text(
         balances = await use_case.execute(user_id=message.from_user.id)
 
         # Check Ambiguity and Find Source
-        matching_from = [b for b in balances if b.asset_code == from_code]
+        matching_from = [b for b in balances if b.asset_code.upper() == from_code]
         if len(matching_from) == 0:
             await send_message(
                 session,
@@ -236,7 +236,7 @@ async def cmd_swap_text(
         found_from = matching_from[0]
 
         # Check Ambiguity and Find Destination
-        matching_to = [b for b in balances if b.asset_code == to_code]
+        matching_to = [b for b in balances if b.asset_code.upper() == to_code]
         if len(matching_to) == 0:
             # Try common trustlines? For now restrict to existing trustlines as per user request context implied "check existing"
             await send_message(
