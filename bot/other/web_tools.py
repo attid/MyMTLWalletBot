@@ -1,10 +1,19 @@
 import aiohttp
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, Union
 
 from loguru import logger
+
+_SCVAL_TAG_RE = re.compile(r"</?sc[a-z][\w]*\b[^>]*>", re.IGNORECASE)
+
+
+def _escape_scval_tags(text: str) -> str:
+    return _SCVAL_TAG_RE.sub(
+        lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"), text
+    )
 
 from other.config_reader import config
 
@@ -204,7 +213,7 @@ async def get_web_decoded_xdr(xdr):
         "POST", url="https://eurmtl.me/remote/decode", json={"xdr": xdr}
     )
     if status == 200:
-        msg = response_json["text"]
+        msg = _escape_scval_tags(response_json["text"])
     else:
         msg = "Ошибка запроса"
     return msg
