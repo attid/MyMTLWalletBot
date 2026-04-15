@@ -1,25 +1,25 @@
 {% extends "base.html" %}
 
-{% block title %}Добавить ключ{% endblock %}
+{% block page_title_key %}import.page_title{% endblock %}
+{% block title %}Add key{% endblock %}
 
 {% block content %}
 <div class="card" id="import-card">
-    <h2>Добавить ключ</h2>
+    <h2 data-i18n="import.card_title">Add key</h2>
 
     <div class="tx-address">
-        <span class="label">Кошелек:</span>
+        <span class="label" data-i18n="common.wallet_label">Wallet:</span>
         <span class="value" id="wallet-address"></span>
     </div>
 
     <div class="divider"></div>
 
-    <p class="hint">
-        Введите секретный ключ (начинается с S).
-        Ключ будет зашифрован и сохранен только на этом устройстве.
+    <p class="hint" data-i18n="import.intro">
+        Enter a secret key (starts with S). The key will be encrypted and stored only on this device.
     </p>
 
     <div class="form-group">
-        <label for="secret-key">Секретный ключ</label>
+        <label for="secret-key" data-i18n="import.secret_label">Secret key</label>
         <input
             type="password"
             id="secret-key"
@@ -35,74 +35,76 @@
 
     <!-- Mode selection -->
     <div class="form-group" id="mode-section">
-        <label>Способ защиты ключа:</label>
+        <label data-i18n="import.mode_label">Key protection method:</label>
         <div class="mode-options">
             <label class="mode-option" id="mode-biometric-option">
                 <input type="radio" name="storage-mode" value="biometric" id="mode-biometric">
-                <span class="mode-label">Биометрия</span>
-                <span class="mode-desc">Face ID / Touch ID / Отпечаток</span>
+                <span class="mode-label" data-i18n="import.mode_biometric">Biometrics</span>
+                <span class="mode-desc" data-i18n="import.mode_biometric_desc">Face ID / Touch ID / Fingerprint</span>
             </label>
             <label class="mode-option">
                 <input type="radio" name="storage-mode" value="password" id="mode-password">
-                <span class="mode-label">Пароль</span>
-                <span class="mode-desc">Защита паролем</span>
+                <span class="mode-label" data-i18n="import.mode_password">Password</span>
+                <span class="mode-desc" data-i18n="import.mode_password_desc">Password protection</span>
             </label>
         </div>
     </div>
 
     <!-- Password fields (shown when password mode selected) -->
     <div class="form-group hidden" id="password-section">
-        <label for="password">Пароль</label>
+        <label for="password" data-i18n="import.password_label">Password</label>
         <input
             type="password"
             id="password"
             class="input"
-            placeholder="Введите пароль"
+            data-i18n-placeholder="import.password_placeholder"
+            placeholder="Enter password"
             autocomplete="new-password"
             oninput="checkKeyboardLayout()"
         >
-        <label for="password-confirm" style="margin-top: 12px">Подтверждение пароля</label>
+        <label for="password-confirm" data-i18n="import.password_confirm_label" style="margin-top: 12px">Confirm password</label>
         <input
             type="password"
             id="password-confirm"
             class="input"
-            placeholder="Повторите пароль"
+            data-i18n-placeholder="import.password_confirm_placeholder"
+            placeholder="Repeat password"
             autocomplete="new-password"
             oninput="checkKeyboardLayout()"
         >
-        <div id="layout-warning" class="layout-warning hidden">
-            ⚠️ Включена русская раскладка
+        <div id="layout-warning" class="layout-warning hidden" data-i18n="common.layout_warning">
+            ⚠️ Russian keyboard layout detected
         </div>
     </div>
 
     <div class="form-group">
         <label>
             <input type="checkbox" id="confirm-checkbox">
-            Я понимаю, что ключ будет сохранен в браузере этого устройства
+            <span data-i18n="import.consent">I understand the key will be stored in this device's browser</span>
         </label>
     </div>
 
-    <button class="btn btn-primary" id="btn-save" onclick="saveKey()" disabled>
-        Сохранить ключ
+    <button class="btn btn-primary" id="btn-save" data-i18n="import.btn_save" onclick="saveKey()" disabled>
+        Save key
     </button>
 
-    <button class="btn btn-secondary" onclick="cancel()">
-        Отмена
+    <button class="btn btn-secondary" data-i18n="common.cancel" onclick="cancel()">
+        Cancel
     </button>
 </div>
 
 <div class="card hidden" id="success-card">
     <div class="icon success-icon">&#10003;</div>
-    <h2>Ключ сохранен</h2>
-    <p>Адрес: <span id="saved-address" class="value"></span></p>
-    <p>Теперь вы можете подписывать транзакции</p>
+    <h2 data-i18n="import.success_title">Key saved</h2>
+    <p><span data-i18n="import.address_label">Address:</span> <span id="saved-address" class="value"></span></p>
+    <p data-i18n="import.success_hint">You can now sign transactions</p>
 </div>
 
 <div class="card hidden" id="error-card">
     <div class="icon error-icon">!</div>
-    <h2>Ошибка</h2>
+    <h2 data-i18n="common.error_title">Error</h2>
     <p id="error-message"></p>
-    <button class="btn btn-secondary" onclick="location.reload()">Попробовать снова</button>
+    <button class="btn btn-secondary" data-i18n="common.retry" onclick="location.reload()">Try again</button>
 </div>
 {% endblock %}
 
@@ -124,7 +126,7 @@ let biometricAvailable = false;
 
 async function init() {
     if (!WALLET_ADDRESS) {
-        showError("Адрес кошелька не указан");
+        showError(t("import.wallet_address_missing"));
         return;
     }
 
@@ -197,7 +199,7 @@ async function saveKey() {
 
     // Validate secret key format
     if (!secretKey.startsWith("S") || secretKey.length !== 56) {
-        showToast("Неверный формат ключа", "error");
+        showToast(t("import.invalid_key_format"), "error");
         return;
     }
 
@@ -212,13 +214,13 @@ async function saveKey() {
             console.warn(`Key address ${publicKey} differs from expected ${WALLET_ADDRESS}`);
         }
     } catch (e) {
-        showToast("Неверный секретный ключ", "error");
+        showToast(t("import.invalid_secret_key"), "error");
         return;
     }
 
     // Validate mode selection
     if (!mode) {
-        showToast("Выберите способ защиты ключа", "error");
+        showToast(t("import.select_protection"), "error");
         return;
     }
 
@@ -228,27 +230,27 @@ async function saveKey() {
         const passwordConfirm = document.getElementById("password-confirm").value;
 
         if (!password || password.length < 4) {
-            showToast("Пароль должен быть минимум 4 символа", "error");
+            showToast(t("import.password_too_short"), "error");
             return;
         }
 
         if (password !== passwordConfirm) {
-            showToast("Пароли не совпадают", "error");
+            showToast(t("import.password_mismatch"), "error");
             return;
         }
     }
 
     btn.disabled = true;
-    btn.textContent = "Сохранение...";
+    btn.textContent = t("import.btn_saving");
 
     try {
         if (mode === "biometric") {
             // Request biometric access first
             const granted = await BiometricStorage.requestAccess(
-                "Для безопасного хранения ключа"
+                t("import.biometric_reason")
             );
             if (!granted) {
-                throw new Error("Доступ к биометрии не предоставлен");
+                throw new Error(t("import.biometric_access_denied"));
             }
 
             // Save key using biometric storage
@@ -272,22 +274,24 @@ async function saveKey() {
         // Return to sign page or close
         setTimeout(() => {
             if (RETURN_TX) {
-                window.location.href = `/sign?tx=${RETURN_TX}`;
+                const lang = window.__LANG || "en";
+                window.location.href = `/sign?tx=${RETURN_TX}&lang=${lang}`;
             } else {
                 tg.close();
             }
         }, 1500);
 
     } catch (error) {
-        showToast("Ошибка сохранения: " + error.message, "error");
+        showToast(t("import.save_error", { msg: error.message }), "error");
         btn.disabled = false;
-        btn.textContent = "Сохранить ключ";
+        btn.textContent = t("import.btn_save");
     }
 }
 
 function cancel() {
     if (RETURN_TX) {
-        window.location.href = `/sign?tx=${RETURN_TX}`;
+        const lang = window.__LANG || "en";
+        window.location.href = `/sign?tx=${RETURN_TX}&lang=${lang}`;
     } else {
         tg.close();
     }

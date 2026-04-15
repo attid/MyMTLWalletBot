@@ -360,6 +360,8 @@ class TestWebAppKeyboard:
         assert sign_btn.text == "✍️ Подписать"
         assert sign_btn.web_app is not None
         assert f"tx={tx_id}" in sign_btn.web_app.url
+        # Without app_context we cannot resolve user lang → default 'en'.
+        assert "lang=en" in sign_btn.web_app.url
 
         # Second row - Show XDR button
         assert len(keyboard.inline_keyboard[1]) == 1
@@ -371,6 +373,33 @@ class TestWebAppKeyboard:
         assert len(keyboard.inline_keyboard[2]) == 1
         return_btn = keyboard.inline_keyboard[2][0]
         assert return_btn.callback_data == "Return"
+
+    def test_webapp_sign_keyboard_uses_user_lang(self):
+        """Should append ?lang=<user.lang> from localization_service to the URL."""
+        from unittest.mock import MagicMock
+        from keyboards.webapp import webapp_sign_keyboard
+
+        tx_id = "123_abc12345"
+        app_context = MagicMock()
+        app_context.localization_service.get_user_language.return_value = "ru"
+
+        keyboard = webapp_sign_keyboard(tx_id, user_id=42, app_context=app_context)
+        sign_btn = keyboard.inline_keyboard[0][0]
+
+        assert "lang=ru" in sign_btn.web_app.url
+        app_context.localization_service.get_user_language.assert_called_once_with(42)
+
+    def test_webapp_sign_keyboard_falls_back_to_en_for_unknown_lang(self):
+        """Unknown lang value from localization_service should fall back to 'en'."""
+        from unittest.mock import MagicMock
+        from keyboards.webapp import webapp_sign_keyboard
+
+        app_context = MagicMock()
+        app_context.localization_service.get_user_language.return_value = "fr"
+
+        keyboard = webapp_sign_keyboard("123_abc12345", user_id=42, app_context=app_context)
+
+        assert "lang=en" in keyboard.inline_keyboard[0][0].web_app.url
 
     def test_webapp_import_key_keyboard_structure(self):
         """Should create keyboard with import button and return button."""
@@ -387,11 +416,25 @@ class TestWebAppKeyboard:
         assert import_btn.text == "🔑 Настроить подписание"
         assert import_btn.web_app is not None
         assert f"address={wallet_address}" in import_btn.web_app.url
+        assert "lang=en" in import_btn.web_app.url
 
         # Second row - Return button (uses get_return_button)
         assert len(keyboard.inline_keyboard[1]) == 1
         return_btn = keyboard.inline_keyboard[1][0]
         assert return_btn.callback_data == "Return"
+
+    def test_webapp_import_key_keyboard_uses_user_lang(self):
+        """Should append ?lang=<user.lang> to the import URL."""
+        from unittest.mock import MagicMock
+        from keyboards.webapp import webapp_import_key_keyboard
+
+        app_context = MagicMock()
+        app_context.localization_service.get_user_language.return_value = "ru"
+
+        keyboard = webapp_import_key_keyboard("GXXX...", user_id=7, app_context=app_context)
+
+        assert "lang=ru" in keyboard.inline_keyboard[0][0].web_app.url
+        app_context.localization_service.get_user_language.assert_called_once_with(7)
 
 
 class TestHandleTxSigned:
