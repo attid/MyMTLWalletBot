@@ -1,21 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Управление ключами{% endblock %}
+{% block page_title_key %}settings.page_title{% endblock %}
+{% block title %}Manage keys{% endblock %}
 
 {% block content %}
 <div class="card" id="settings-card">
-    <h2>Сохраненные ключи</h2>
+    <h2 data-i18n="settings.card_title">Saved keys</h2>
 
     <div id="keys-list" class="key-list"></div>
 
     <div id="no-keys-message" class="hidden">
-        <p class="hint">Нет сохраненных ключей</p>
+        <p class="hint" data-i18n="settings.no_keys">No saved keys</p>
     </div>
 
     <div class="divider"></div>
 
-    <button class="btn btn-secondary" onclick="goBack()">
-        Назад
+    <button class="btn btn-secondary" data-i18n="common.back" onclick="goBack()">
+        Back
     </button>
 </div>
 {% endblock %}
@@ -43,6 +44,9 @@ async function loadKeys() {
     const addresses = await CryptoStorage.listAddresses();
     let validKeysCount = 0;
 
+    const walletsLabel = t("settings.wallets_label");
+    const deleteTitle = t("settings.delete_title");
+
     for (const addr of addresses) {
         const keyInfo = await CryptoStorage.getKeyInfo(addr);
 
@@ -53,7 +57,9 @@ async function loadKeys() {
 
         validKeysCount++;
         const wallets = CryptoStorage.getWalletsForSigner(addr);
-        const modeLabel = keyInfo.mode === "biometric" ? "Биометрия" : "Пароль";
+        const modeLabel = keyInfo.mode === "biometric"
+            ? t("settings.mode_biometric")
+            : t("settings.mode_password");
         const modeIcon = keyInfo.mode === "biometric" ? "&#128274;" : "&#128273;";
 
         const item = document.createElement("div");
@@ -61,7 +67,7 @@ async function loadKeys() {
         item.innerHTML = `
             <div class="key-header">
                 <span class="key-address" title="${addr}">${formatAddress(addr)}</span>
-                <button class="btn-delete" onclick="deleteKey('${addr}')" title="Удалить">&#10005;</button>
+                <button class="btn-delete" onclick="deleteKey('${addr}')" title="${deleteTitle}">&#10005;</button>
             </div>
             <div class="key-mode">
                 <span class="mode-icon">${modeIcon}</span>
@@ -69,7 +75,7 @@ async function loadKeys() {
             </div>
             ${wallets.length > 0 ? `
                 <div class="linked-wallets">
-                    <span class="label">Кошельки:</span>
+                    <span class="label">${walletsLabel}</span>
                     ${wallets.map(w => `<span class="wallet-tag" title="${w}">${formatAddress(w)}</span>`).join('')}
                 </div>
             ` : ''}
@@ -85,7 +91,8 @@ async function loadKeys() {
 }
 
 async function deleteKey(address) {
-    if (!confirm(`Удалить ключ ${formatAddress(address)}?`)) {
+    const confirmMsg = t("settings.delete_confirm", { address: formatAddress(address) });
+    if (!confirm(confirmMsg)) {
         return;
     }
 
@@ -96,10 +103,10 @@ async function deleteKey(address) {
         // Delete the key itself
         await CryptoStorage.deleteKey(address);
 
-        showToast("Ключ удален");
+        showToast(t("settings.key_deleted"));
         await loadKeys();
     } catch (error) {
-        showToast("Ошибка: " + error.message, "error");
+        showToast(t("settings.error_prefix", { msg: error.message }), "error");
     }
 }
 

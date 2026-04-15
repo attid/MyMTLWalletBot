@@ -1,27 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Подписание транзакции{% endblock %}
+{% block page_title_key %}sign.page_title{% endblock %}
+{% block title %}Sign transaction{% endblock %}
 
 {% block content %}
 <div class="card" id="loading-card">
     <div class="spinner"></div>
-    <p>Загрузка транзакции...</p>
+    <p data-i18n="sign.loading">Loading transaction...</p>
 </div>
 
 <div class="card hidden" id="error-card">
     <div class="icon error-icon">!</div>
-    <h2>Ошибка</h2>
+    <h2 data-i18n="common.error_title">Error</h2>
     <p id="error-message"></p>
-    <button class="btn btn-secondary" onclick="Telegram.WebApp.close()">Закрыть</button>
+    <button class="btn btn-secondary" data-i18n="common.close" onclick="Telegram.WebApp.close()">Close</button>
 </div>
 
 <div class="card hidden" id="tx-card">
-    <h2>Подтвердите транзакцию</h2>
+    <h2 data-i18n="sign.card_title">Confirm transaction</h2>
 
     <div class="tx-info">
         <div class="tx-memo" id="tx-memo"></div>
         <div class="tx-address">
-            <span class="label">Кошелек:</span>
+            <span class="label" data-i18n="common.wallet_label">Wallet:</span>
             <span class="value" id="tx-address"></span>
         </div>
     </div>
@@ -32,42 +33,42 @@
 
     <!-- Вариант 1: Есть сохраненный ключ -->
     <div id="sign-section" class="hidden">
-        <p class="hint">Ключ сохранен в этом устройстве</p>
-        <button class="btn btn-primary" id="btn-sign" onclick="signTransaction()">
-            Подписать
+        <p class="hint" data-i18n="sign.key_saved_hint">Key is saved on this device</p>
+        <button class="btn btn-primary" id="btn-sign" data-i18n="sign.btn_sign" onclick="signTransaction()">
+            Sign
         </button>
-        <p class="hint enter-hint">Можно нажать Enter</p>
+        <p class="hint enter-hint" data-i18n="sign.enter_hint">Press Enter to sign</p>
     </div>
 
     <!-- Вариант 2: Выбор ключа из сохраненных -->
     <div id="key-selector-section" class="hidden">
-        <p class="hint">Выберите ключ для подписания или добавьте новый</p>
+        <p class="hint" data-i18n="sign.select_key_hint">Select a key to sign with or add a new one</p>
         <div id="saved-keys-list" class="key-list"></div>
-        <button class="btn btn-primary" onclick="goToImport()">
-            Добавить новый ключ
+        <button class="btn btn-primary" data-i18n="sign.btn_add_new_key" onclick="goToImport()">
+            Add new key
         </button>
-        <button class="btn btn-secondary" onclick="showXdr()">
-            Показать XDR
+        <button class="btn btn-secondary" data-i18n="sign.btn_show_xdr" onclick="showXdr()">
+            Show XDR
         </button>
     </div>
 
     <!-- Вариант 3: Нет сохраненных ключей -->
     <div id="no-key-section" class="hidden">
-        <p class="hint">Ключ не найден на этом устройстве</p>
-        <button class="btn btn-primary" id="btn-import" onclick="goToImport()">
-            Добавить ключ
+        <p class="hint" data-i18n="sign.no_key_hint">No key found on this device</p>
+        <button class="btn btn-primary" id="btn-import" data-i18n="sign.btn_add_key" onclick="goToImport()">
+            Add key
         </button>
-        <button class="btn btn-secondary" id="btn-show-xdr" onclick="showXdr()">
-            Показать XDR
+        <button class="btn btn-secondary" id="btn-show-xdr" data-i18n="sign.btn_show_xdr" onclick="showXdr()">
+            Show XDR
         </button>
     </div>
 
     <!-- XDR для копирования -->
     <div id="xdr-section" class="hidden">
-        <p class="hint">Скопируйте XDR и подпишите вручную:</p>
+        <p class="hint" data-i18n="sign.xdr_copy_hint">Copy the XDR and sign manually:</p>
         <textarea class="xdr-text" id="xdr-text" readonly></textarea>
-        <button class="btn btn-secondary" onclick="copyXdr()">
-            Копировать XDR
+        <button class="btn btn-secondary" data-i18n="sign.btn_copy_xdr" onclick="copyXdr()">
+            Copy XDR
         </button>
     </div>
 </div>
@@ -75,35 +76,36 @@
 <!-- Password prompt modal -->
 <div id="password-prompt" class="password-prompt hidden">
     <div class="password-prompt-content">
-        <h3>Введите пароль</h3>
-        <p class="hint">Для доступа к ключу</p>
+        <h3 data-i18n="sign.password_title">Enter password</h3>
+        <p class="hint" data-i18n="sign.password_hint">To unlock the key</p>
         <div class="form-group">
             <input
                 type="password"
                 id="password-input"
                 class="input"
-                placeholder="Пароль"
+                data-i18n-placeholder="sign.password_placeholder"
+                placeholder="Password"
                 autocomplete="current-password"
                 onkeydown="if(event.key==='Enter') submitPassword()"
                 oninput="checkKeyboardLayout(this.value)"
             >
-            <div id="layout-warning" class="layout-warning hidden">
-                ⚠️ Включена русская раскладка
+            <div id="layout-warning" class="layout-warning hidden" data-i18n="common.layout_warning">
+                ⚠️ Russian keyboard layout detected
             </div>
         </div>
-        <button class="btn btn-primary" id="btn-submit-password" onclick="submitPassword()">
-            Подтвердить
+        <button class="btn btn-primary" id="btn-submit-password" data-i18n="common.confirm" onclick="submitPassword()">
+            Confirm
         </button>
-        <button class="btn btn-secondary" onclick="cancelPassword()">
-            Отмена
+        <button class="btn btn-secondary" data-i18n="common.cancel" onclick="cancelPassword()">
+            Cancel
         </button>
     </div>
 </div>
 
 <div class="card hidden" id="success-card">
     <div class="icon success-icon">&#10003;</div>
-    <h2>Транзакция подписана</h2>
-    <p>Транзакция отправлена на обработку</p>
+    <h2 data-i18n="sign.success_title">Transaction signed</h2>
+    <p data-i18n="sign.success_body">Transaction submitted for processing</p>
 </div>
 {% endblock %}
 
@@ -144,7 +146,7 @@ document.addEventListener("keydown", (event) => {
 
 async function init() {
     if (!TX_ID) {
-        showError("ID транзакции не указан");
+        showError(t("sign.tx_id_missing"));
         return;
     }
 
@@ -154,13 +156,16 @@ async function init() {
         });
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || "Транзакция не найдена");
+            throw new Error(error.detail || t("sign.tx_not_found"));
         }
 
         txData = await response.json();
 
         if (txData.status !== "pending") {
-            showError(`Транзакция уже ${txData.status === 'signed' ? 'подписана' : 'обработана'}`);
+            const msg = txData.status === "signed"
+                ? t("sign.tx_already_signed")
+                : t("sign.tx_already_processed");
+            showError(msg);
             return;
         }
 
@@ -221,9 +226,10 @@ function showKeySelector(keys) {
     for (const addr of keys) {
         const item = document.createElement("div");
         item.className = "key-item";
+        const selectLabel = t("sign.btn_select");
         item.innerHTML = `
             <span class="key-address">${formatAddress(addr)}</span>
-            <button class="btn-select" onclick="selectKey('${addr}')">Выбрать</button>
+            <button class="btn-select" onclick="selectKey('${addr}')">${selectLabel}</button>
         `;
         listEl.appendChild(item);
     }
@@ -240,7 +246,7 @@ async function selectKey(signerAddress) {
 async function signTransaction() {
     const btn = document.getElementById("btn-sign");
     btn.disabled = true;
-    btn.textContent = "Подписание...";
+    btn.textContent = t("sign.btn_sign_in_progress");
 
     try {
         // Get secret key from storage using signer address
@@ -248,7 +254,7 @@ async function signTransaction() {
         const keyInfo = await CryptoStorage.getKeyInfo(signerAddress);
 
         if (!keyInfo) {
-            throw new Error("Ключ не найден");
+            throw new Error(t("sign.key_not_found"));
         }
 
         let secretKey;
@@ -256,18 +262,18 @@ async function signTransaction() {
         if (keyInfo.mode === "biometric") {
             // Use biometric authentication
             try {
-                secretKey = await CryptoStorage.getKeyBiometric(signerAddress, "Подписание транзакции");
+                secretKey = await CryptoStorage.getKeyBiometric(signerAddress, t("sign.biometric_reason"));
                 if (!secretKey) {
                     btn.disabled = false;
-                    btn.textContent = "Подписать";
-                    showToast("Биометрия отменена", "error");
+                    btn.textContent = t("sign.btn_sign");
+                    showToast(t("sign.biometric_cancelled"), "error");
                     return;
                 }
                 await doSign(secretKey, signerAddress);
             } catch (bioError) {
                 btn.disabled = false;
-                btn.textContent = "Подписать";
-                showToast(bioError.message || "Ошибка биометрии", "error");
+                btn.textContent = t("sign.btn_sign");
+                showToast(bioError.message || t("sign.biometric_error"), "error");
                 return;
             }
         } else if (keyInfo.mode === "password") {
@@ -275,13 +281,13 @@ async function signTransaction() {
             showPasswordPrompt();
             return;
         } else {
-            throw new Error("Неизвестный тип защиты ключа");
+            throw new Error(t("sign.unknown_protection"));
         }
 
     } catch (error) {
         showToast(error.message, "error");
         btn.disabled = false;
-        btn.textContent = "Подписать";
+        btn.textContent = t("sign.btn_sign");
     }
 }
 
@@ -295,7 +301,7 @@ function cancelPassword() {
     hideElement("password-prompt");
     const btn = document.getElementById("btn-sign");
     btn.disabled = false;
-    btn.textContent = "Подписать";
+    btn.textContent = t("sign.btn_sign");
 }
 
 async function submitPassword() {
@@ -303,21 +309,21 @@ async function submitPassword() {
     const submitBtn = document.getElementById("btn-submit-password");
 
     if (!password) {
-        showToast("Введите пароль", "error");
+        showToast(t("sign.password_empty"), "error");
         return;
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = "Проверка...";
+    submitBtn.textContent = t("sign.password_checking");
 
     try {
         const signerAddress = selectedSignerAddress || txData.wallet_address;
         const secretKey = await CryptoStorage.getKeyPassword(signerAddress, password);
 
         if (!secretKey) {
-            showToast("Неверный пароль", "error");
+            showToast(t("sign.password_wrong"), "error");
             submitBtn.disabled = false;
-            submitBtn.textContent = "Подтвердить";
+            submitBtn.textContent = t("common.confirm");
             return;
         }
 
@@ -327,7 +333,7 @@ async function submitPassword() {
     } catch (error) {
         showToast(error.message, "error");
         submitBtn.disabled = false;
-        submitBtn.textContent = "Подтвердить";
+        submitBtn.textContent = t("common.confirm");
     }
 }
 
@@ -356,7 +362,7 @@ async function doSign(secretKey, signerAddress) {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || "Ошибка отправки");
+            throw new Error(error.detail || t("sign.send_error"));
         }
 
         // Save wallet → signer mapping for future transactions
@@ -374,12 +380,13 @@ async function doSign(secretKey, signerAddress) {
     } catch (error) {
         showToast(error.message, "error");
         btn.disabled = false;
-        btn.textContent = "Подписать";
+        btn.textContent = t("sign.btn_sign");
     }
 }
 
 function goToImport() {
-    window.location.href = `/import?address=${txData.wallet_address}&return_tx=${TX_ID}`;
+    const lang = window.__LANG || "en";
+    window.location.href = `/import?address=${txData.wallet_address}&return_tx=${TX_ID}&lang=${lang}`;
 }
 
 function showXdr() {
@@ -392,7 +399,7 @@ function copyXdr() {
     const xdrText = document.getElementById("xdr-text");
     xdrText.select();
     document.execCommand("copy");
-    showToast("XDR скопирован");
+    showToast(t("sign.xdr_copied"));
 }
 
 // Check for Cyrillic characters in password input
