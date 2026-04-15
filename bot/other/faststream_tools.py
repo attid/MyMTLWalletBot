@@ -30,8 +30,10 @@ from shared.constants import (
     FIELD_CREATED_AT,
     FIELD_FSM_AFTER_SEND,
     FIELD_SUCCESS_MSG,
+    FIELD_SUB_INVOCATION_SUMMARY,
     STATUS_PENDING,
 )
+from other.soroban_render import render_soroban_sub_invocations
 
 APP_CONTEXT: Optional[AppContext] = None
 REDIS_CLIENT: Optional[aioredis.Redis] = None
@@ -124,6 +126,14 @@ async def publish_pending_tx(
         mapping[FIELD_FSM_AFTER_SEND] = fsm_after_send
     if success_msg:
         mapping[FIELD_SUCCESS_MSG] = success_msg
+
+    try:
+        preview_lines = await render_soroban_sub_invocations(unsigned_xdr)
+    except Exception as exc:
+        logger.debug(f"render_soroban_sub_invocations failed for {tx_id}: {exc}")
+        preview_lines = []
+    if preview_lines:
+        mapping[FIELD_SUB_INVOCATION_SUMMARY] = "\n".join(preview_lines)
 
     await _redis.hset(tx_key, mapping=mapping)
     await _redis.expire(tx_key, REDIS_TX_TTL)

@@ -95,7 +95,7 @@ Permission evidence (copy user wording or exact confirmation):
 1. [x] Получить от пользователя 4 образца XDR (allow не-XLM transfer; deny
        без sub_invocations; deny корневой XLM_SOROBAN_CONTRACT; deny вложенный
        XLM_SOROBAN_CONTRACT) — сохранить в `bot/tests/fixtures/soroban/`.
-2. [ ] В `bot/other/stellar_tools.py::stellar_check_xdr` для
+2. [x] В `bot/other/stellar_tools.py::stellar_check_xdr` для
        `InvokeHostFunction` под `for_free_account`:
        - транзакция должна содержать **ровно одну** операцию
          `InvokeHostFunction` (ограничение Soroban);
@@ -110,8 +110,8 @@ Permission evidence (copy user wording or exact confirmation):
          `transfer` (whitelist по `function_name`); `transfer_from`,
          `approve`, `mint`, `burn` и любые другие — отказ;
        - любое другое — отказ.
-3. [ ] Импортировать `XLM_SOROBAN_CONTRACT` из `core.constants`.
-4. [ ] Юнит-тесты на фикстурах:
+3. [x] Импортировать `XLM_SOROBAN_CONTRACT` из `core.constants`.
+4. [x] Юнит-тесты на фикстурах:
        - (a) non-XLM transfer с sub_invocations → allow;
        - (b) Soroban без sub_invocations → deny;
        - (c) корневой XLM_SOROBAN_CONTRACT → deny;
@@ -120,34 +120,34 @@ Permission evidence (copy user wording or exact confirmation):
        - (f) существующие не-Soroban кейсы не сломаны.
 
 Часть B (локальный превью):
-5. [ ] Создать `bot/other/soroban_render.py`: портировать из
+5. [x] Создать `bot/other/soroban_render.py`: портировать из
        `eurmtl.me/services/xdr_parser.py` функции `_decode_sc_symbol`,
        `_decode_contract_address_to_string`, `_decode_sc_string_value`,
        `_render_call_argument`, `_render_auth_sub_invocation_summaries`,
        `_render_sub_invocation_summaries`, `_render_sub_invocation_summary`,
        `_format_sub_invocation_amount`, `decode_scval` (минимально нужное
        подмножество). Без зависимости на quart/grist.
-6. [ ] Портировать `read_token_contract_display_name` из
+6. [x] Портировать `read_token_contract_display_name` из
        `eurmtl.me/other/stellar_soroban.py`: использовать
        `SorobanServer` py-stellar-base, локальный async TTL-кеш
        (`async_cache_with_ttl` или существующий helper в `mmwb_bot`).
-7. [ ] Публичная функция
+7. [x] Публичная функция
        `render_soroban_sub_invocations(xdr: str) -> list[str]`:
        принимает XDR, возвращает plain-text строки превью (без HTML-ссылок —
        для бота), либо пустой список, если транзакция не содержит
        `InvokeHostFunction` с `sub_invocations`.
-8. [ ] В `bot/routers/sign.py::cmd_check_xdr` после успешной валидации XDR
+8. [x] В `bot/routers/sign.py::cmd_check_xdr` после успешной валидации XDR
        и **до** `cmd_ask_pin` вычислить `render_soroban_sub_invocations(xdr)`;
        если список непустой — показать его пользователю через `cmd_show_sign`
        (или отдельный send_message), затем запросить PIN.
-9. [ ] `webapp/app.py`: расширить `TxData` полем
+9. [x] `webapp/app.py`: расширить `TxData` полем
        `sub_invocation_summary: list[str]`, заполнять из
        `render_soroban_sub_invocations(unsigned_xdr)`.
-10. [ ] `webapp/templates/sign.html`: отрисовать `sub_invocation_summary` как
+10. [x] `webapp/templates/sign.html`: отрисовать `sub_invocation_summary` как
         блок над кнопками подписи (список строк).
 11. [x] Тесты: `bot/tests/other/test_soroban_render.py` на фикстурах из п.1;
         тест роутера подписи на авто-показ превью; тест webapp endpoint.
-12. [ ] `just check-fast` зелёный.
+12. [x] `just check-fast` зелёный.
 
 ## Resolved
 

@@ -7,6 +7,8 @@ from typing import Optional, Dict, Any, Union
 
 from loguru import logger
 
+from other.config_reader import config
+
 _SCVAL_TAG_RE = re.compile(r"</?sc[a-z][\w]*\b[^>]*>", re.IGNORECASE)
 
 
@@ -14,8 +16,6 @@ def _escape_scval_tags(text: str) -> str:
     return _SCVAL_TAG_RE.sub(
         lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"), text
     )
-
-from other.config_reader import config
 
 
 # Датакласс для ответа
