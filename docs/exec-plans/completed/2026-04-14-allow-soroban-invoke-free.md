@@ -184,3 +184,13 @@ Permission evidence (copy user wording or exact confirmation):
   подпись проходит.
 - Ручная проверка 4: webapp `/sign/<tx_id>` с Soroban XDR → `Transfer ...`
   отображается над кнопками подписи.
+
+## Follow-up fix (2026-04-15)
+
+First iteration sent the preview as a standalone chat message right before
+`cmd_ask_pin`. In practice it was auto-deleted by the next sign step faster
+than the user could read it. Fix: stash the preview string in FSM state
+(`soroban_preview`) and prepend it to the `cmd_ask_pin` message across all
+four branches (PIN, password, no-password "да/нет" for free wallets, and
+WebApp biometric prompt), so the preview lives on the same message that
+carries the sign keyboard. No new behaviour — only display placement.
