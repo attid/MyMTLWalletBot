@@ -1,7 +1,19 @@
+from pathlib import Path
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from stellar_sdk import Keypair
-from other.stellar_tools import stellar_delete_account, stellar_delete_all_deleted
+from other.stellar_tools import (
+    stellar_check_xdr,
+    stellar_delete_account,
+    stellar_delete_all_deleted,
+)
+
+SOROBAN_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "soroban"
+
+
+def _read_fixture(name: str) -> str:
+    return (SOROBAN_FIXTURES / name).read_text().strip()
 
 # Mock Keypairs
 G_SIGNER = "G_SIGNER_KEY"
@@ -168,3 +180,49 @@ async def test_stellar_delete_all_deleted_passes_correct_address():
         # Kwargs: master_source_address=...
         assert call_args[0][0] == master_kp
         assert call_args[1]["master_source_address"] == G_MASTER
+
+
+class TestStellarCheckXdrFreeAccountSoroban:
+    """Free-wallet whitelist for InvokeHostFunction operations."""
+
+    @pytest.mark.asyncio
+    async def test_allow_single_transfer(self):
+        xdr = _read_fixture("tx1_allow_single_transfer.xdr")
+        result = await stellar_check_xdr(xdr, for_free_account=True)
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_allow_multi_transfer(self):
+        xdr = _read_fixture("tx6_allow_multi_transfer.xdr")
+        result = await stellar_check_xdr(xdr, for_free_account=True)
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_deny_xlm_soroban_contract_in_sub(self):
+        xdr = _read_fixture("tx2_deny_xlm_soroban.xdr")
+        result = await stellar_check_xdr(xdr, for_free_account=True)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_deny_no_sub_invocations(self):
+        xdr = _read_fixture("tx4_deny_no_subs.xdr")
+        result = await stellar_check_xdr(xdr, for_free_account=True)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_deny_non_transfer_function_in_sub(self):
+        xdr = _read_fixture("tx7_deny_non_transfer_burn.xdr")
+        result = await stellar_check_xdr(xdr, for_free_account=True)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_paid_account_allows_all(self):
+        # Same fixtures that get denied under free_account should pass for paid
+        for name in (
+            "tx2_deny_xlm_soroban.xdr",
+            "tx4_deny_no_subs.xdr",
+            "tx7_deny_non_transfer_burn.xdr",
+        ):
+            xdr = _read_fixture(name)
+            result = await stellar_check_xdr(xdr, for_free_account=False)
+            assert result is not None, f"paid account should accept {name}"

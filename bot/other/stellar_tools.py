@@ -237,6 +237,9 @@ async def get_eurmtl_xdr(url):
 
 
 async def stellar_check_xdr(xdr: str, for_free_account=False):
+    from core.constants import XLM_SOROBAN_CONTRACT
+    from other.soroban_render import is_invoke_host_safe_for_free
+
     result = None
     allowed_operations = [
         "ManageData",
@@ -259,6 +262,13 @@ async def stellar_check_xdr(xdr: str, for_free_account=False):
 
             for operation in envelope.transaction.operations:
                 type_name = type(operation).__name__
+                if type_name == "InvokeHostFunction":
+                    if not is_invoke_host_safe_for_free(
+                        operation, XLM_SOROBAN_CONTRACT
+                    ):
+                        all_operations_allowed = False
+                        break
+                    continue
                 if type_name not in allowed_operations:
                     all_operations_allowed = False
                     break

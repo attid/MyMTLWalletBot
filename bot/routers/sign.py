@@ -24,6 +24,7 @@ from infrastructure.utils.telegram_utils import (
     long_line,
 )
 from other.web_tools import get_web_decoded_xdr
+from other.soroban_render import render_soroban_sub_invocations
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
@@ -637,6 +638,14 @@ async def cmd_check_xdr(
             await state.update_data(xdr=xdr)
             if check_xdr.find("eurmtl.me/sign_tools") > -1:
                 await state.update_data(tools=check_xdr, operation="sign_tools")
+            preview_lines = await render_soroban_sub_invocations(xdr)
+            if preview_lines:
+                await send_message(
+                    session,
+                    user_id,
+                    "\n".join(preview_lines),
+                    app_context=app_context,
+                )
             await state.set_state(PinState.sign)
             await cmd_ask_pin(session, user_id, state, app_context=app_context)
         else:
