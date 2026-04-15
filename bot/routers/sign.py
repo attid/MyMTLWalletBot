@@ -155,6 +155,8 @@ async def cmd_ask_pin(
     user_account = user_account_obj.account.account_id
     simple_account = user_account[:4] + ".." + user_account[-4:]
     wallet_connect_info = data.get("wallet_connect_info")
+    soroban_preview = data.get("soroban_preview") or ""
+    preview_prefix = soroban_preview + "\n\n" if soroban_preview else ""
     if msg is None:
         msg = data.get("msg")
         if msg is None:
@@ -182,7 +184,7 @@ async def cmd_ask_pin(
         await send_message(
             session,
             chat_id,
-            msg,
+            preview_prefix + msg,
             reply_markup=get_kb_pin(data, app_context=app_context),
             app_context=app_context,
         )
@@ -199,7 +201,7 @@ async def cmd_ask_pin(
         await send_message(
             session,
             chat_id,
-            msg,
+            preview_prefix + msg,
             reply_markup=get_kb_return(chat_id, app_context=app_context),
             app_context=app_context,
         )
@@ -216,7 +218,7 @@ async def cmd_ask_pin(
         await send_message(
             session,
             chat_id,
-            msg,
+            preview_prefix + msg,
             reply_markup=get_kb_nopassword(chat_id, app_context=app_context),
             app_context=app_context,
         )
@@ -251,7 +253,7 @@ async def cmd_ask_pin(
         await send_message(
             session,
             chat_id,
-            text,
+            preview_prefix + text,
             reply_markup=webapp_sign_keyboard(tx_id, chat_id, app_context),
             app_context=app_context,
         )
@@ -639,13 +641,9 @@ async def cmd_check_xdr(
             if check_xdr.find("eurmtl.me/sign_tools") > -1:
                 await state.update_data(tools=check_xdr, operation="sign_tools")
             preview_lines = await render_soroban_sub_invocations(xdr)
-            if preview_lines:
-                await send_message(
-                    session,
-                    user_id,
-                    "\n".join(preview_lines),
-                    app_context=app_context,
-                )
+            await state.update_data(
+                soroban_preview="\n".join(preview_lines) if preview_lines else ""
+            )
             await state.set_state(PinState.sign)
             await cmd_ask_pin(session, user_id, state, app_context=app_context)
         else:
