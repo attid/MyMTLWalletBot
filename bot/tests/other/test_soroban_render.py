@@ -96,8 +96,8 @@ async def test_render_tx1_transfer_summary():
     assert len(lines) == 1
     assert lines[0].startswith("Transfer ")
     assert "EURMTL" in lines[0]
-    assert " from G" in lines[0]
-    assert " to C" in lines[0] or " to CAFX.." in lines[0]
+    assert " from GDLT..AYXI" in lines[0]
+    assert " to CAFX..SISM" in lines[0]
 
 
 @pytest.mark.asyncio

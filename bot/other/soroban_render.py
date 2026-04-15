@@ -88,6 +88,12 @@ def _shorten_contract(contract_id: str) -> str:
     return contract_id[:4] + ".." + contract_id[-4:]
 
 
+def _shorten_address(address: str) -> str:
+    if len(address) < 10:
+        return address
+    return address[:4] + ".." + address[-4:]
+
+
 def _format_amount(raw_amount: int, decimals: int = 7) -> str:
     scaled = raw_amount / (10**decimals)
     formatted = f"{scaled:.{decimals}f}".rstrip("0").rstrip(".")
@@ -354,8 +360,7 @@ async def _render_single_transfer(contract_fn) -> Optional[str]:
     amount_display = _format_amount(amount_raw)
     return (
         f"Transfer {amount_display} {token_name} "
-        f"from {_shorten_contract(source) if source.startswith('C') else source} "
-        f"to {_shorten_contract(destination) if destination.startswith('C') else destination}"
+        f"from {_shorten_address(source)} to {_shorten_address(destination)}"
     )
 
 
