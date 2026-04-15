@@ -111,6 +111,29 @@ body {
     margin: 16px 0;
 }
 
+/* Soroban sub-invocation preview */
+.sub-invocation-summary {
+    margin: 12px 0 8px;
+    padding: 10px 12px;
+    background: var(--tg-theme-bg-color, #fff);
+    border-left: 3px solid var(--tg-theme-link-color, #2481cc);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+}
+
+.sub-invocation-line {
+    padding: 2px 0;
+}
+
+.enter-hint {
+    margin-top: 8px;
+    margin-bottom: 0;
+    font-size: 12px;
+    opacity: 0.7;
+}
+
 /* Buttons */
 .btn {
     display: block;

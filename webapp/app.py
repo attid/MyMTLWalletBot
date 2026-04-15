@@ -22,6 +22,7 @@ from shared.constants import (
     FIELD_MEMO,
     FIELD_STATUS,
     FIELD_SIGNED_XDR,
+    FIELD_SUB_INVOCATION_SUMMARY,
     STATUS_PENDING,
     STATUS_SIGNED,
     QUEUE_TX_SIGNED,
@@ -129,6 +130,7 @@ class TxData(BaseModel):
     unsigned_xdr: str
     memo: str
     status: str
+    sub_invocation_summary: list[str] = []
 
 
 class SignRequest(BaseModel):
@@ -167,6 +169,9 @@ async def get_transaction(
         # BOT_TOKEN set but no initData provided
         raise HTTPException(status_code=401, detail="Telegram auth required")
 
+    summary_raw = tx_data.get(FIELD_SUB_INVOCATION_SUMMARY, "")
+    summary_lines = [line for line in summary_raw.split("\n") if line] if summary_raw else []
+
     return TxData(
         tx_id=tx_id,
         user_id=tx_user_id,
@@ -174,6 +179,7 @@ async def get_transaction(
         unsigned_xdr=tx_data.get(FIELD_UNSIGNED_XDR, ""),
         memo=tx_data.get(FIELD_MEMO, ""),
         status=tx_data.get(FIELD_STATUS, "unknown"),
+        sub_invocation_summary=summary_lines,
     )
 
 

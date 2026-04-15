@@ -18,6 +18,7 @@ FIELD_CREATED_AT = "created_at"
 FIELD_ERROR = "error"
 FIELD_FSM_AFTER_SEND = "fsm_after_send"
 FIELD_SUCCESS_MSG = "success_msg"
+FIELD_SUB_INVOCATION_SUMMARY = "sub_invocation_summary"
 
 # TX statuses
 STATUS_PENDING = "pending"

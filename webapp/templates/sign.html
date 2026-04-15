@@ -26,6 +26,8 @@
         </div>
     </div>
 
+    <div id="sub-invocation-summary" class="sub-invocation-summary hidden"></div>
+
     <div class="divider"></div>
 
     <!-- Вариант 1: Есть сохраненный ключ -->
@@ -34,6 +36,7 @@
         <button class="btn btn-primary" id="btn-sign" onclick="signTransaction()">
             Подписать
         </button>
+        <p class="hint enter-hint">Можно нажать Enter</p>
     </div>
 
     <!-- Вариант 2: Выбор ключа из сохраненных -->
@@ -124,6 +127,21 @@ const AUTH_HEADERS = {
 document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
 document.body.style.color = tg.themeParams.text_color || '#000';
 
+// Global Enter shortcut: trigger primary sign button when visible.
+// The password prompt has its own Enter handler on the input, so skip when open.
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const passwordPrompt = document.getElementById("password-prompt");
+    if (passwordPrompt && !passwordPrompt.classList.contains("hidden")) return;
+    const signSection = document.getElementById("sign-section");
+    if (!signSection || signSection.classList.contains("hidden")) return;
+    const btn = document.getElementById("btn-sign");
+    if (btn && !btn.disabled) {
+        event.preventDefault();
+        btn.click();
+    }
+});
+
 async function init() {
     if (!TX_ID) {
         showError("ID транзакции не указан");
@@ -150,6 +168,19 @@ async function init() {
         document.getElementById("tx-memo").textContent = txData.memo;
         document.getElementById("tx-address").textContent = formatAddress(txData.wallet_address);
         document.getElementById("xdr-text").value = txData.unsigned_xdr;
+
+        const summaryLines = txData.sub_invocation_summary || [];
+        if (summaryLines.length > 0) {
+            const summaryEl = document.getElementById("sub-invocation-summary");
+            summaryEl.innerHTML = "";
+            for (const line of summaryLines) {
+                const p = document.createElement("div");
+                p.className = "sub-invocation-line";
+                p.textContent = line;
+                summaryEl.appendChild(p);
+            }
+            summaryEl.classList.remove("hidden");
+        }
 
         hideElement("loading-card");
         showElement("tx-card");
