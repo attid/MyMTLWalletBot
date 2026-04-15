@@ -194,3 +194,22 @@ than the user could read it. Fix: stash the preview string in FSM state
 four branches (PIN, password, no-password "да/нет" for free wallets, and
 WebApp biometric prompt), so the preview lives on the same message that
 carries the sign keyboard. No new behaviour — only display placement.
+
+Also shorten G-addresses in the rendered line the same way contract
+addresses are shortened, so the preview stays compact:
+`Transfer 0.0000022 EURMTL from GDLT..AYXI to CAFX..SISM`.
+
+Second pass: make all `cmd_ask_pin` branches read naturally when a
+Soroban preview is available. When `soroban_preview` is set, build a
+shared `sign_header` via the existing `biometric_sign_prompt` template
+("Подтвердите транзакцию:\n\n{}") and use it as the top of the message
+for every branch:
+
+- pin_type 1 (PIN): header → enter_password → stars → long_line, drops
+  the `confirm_send_mini_xdr` boilerplate.
+- pin_type 2 (password): header → send_password, drops boilerplate.
+- pin_type 0 (free да/нет): header replaces the verbose
+  `confirm_send_mini` blurb entirely.
+- pin_type 10 (WebApp): same header, no change vs. first pass.
+
+Without a preview, every branch keeps its original text.

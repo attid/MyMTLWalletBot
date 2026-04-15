@@ -156,7 +156,20 @@ async def cmd_ask_pin(
     simple_account = user_account[:4] + ".." + user_account[-4:]
     wallet_connect_info = data.get("wallet_connect_info")
     soroban_preview = data.get("soroban_preview") or ""
-    preview_prefix = soroban_preview + "\n\n" if soroban_preview else ""
+    # When a Soroban transfer preview is available, use the
+    # "Подтвердите транзакцию:\n\n{}" template as the header across all
+    # branches so the preview reads as the transaction summary, and skip the
+    # generic boilerplate hints (the preview already explains what's signed).
+    sign_header = (
+        my_gettext(
+            chat_id,
+            "biometric_sign_prompt",
+            (soroban_preview,),
+            app_context=app_context,
+        )
+        if soroban_preview
+        else ""
+    )
     if msg is None:
         msg = data.get("msg")
         if msg is None:
@@ -176,49 +189,86 @@ async def cmd_ask_pin(
         await state.update_data(pin_type=pin_type)
 
     if pin_type == 1:  # pin
-        msg = msg + "\n" + "".ljust(len(pin), "*") + "\n\n" + long_line()
-        if current_state == PinState.sign:
-            msg += my_gettext(chat_id, "confirm_send_mini_xdr", app_context=app_context)
+        if sign_header:
+            body = (
+                sign_header
+                + "\n\n"
+                + my_gettext(
+                    chat_id,
+                    "enter_password",
+                    (simple_account,),
+                    app_context=app_context,
+                )
+            )
+        else:
+            body = msg
+        body = body + "\n" + "".ljust(len(pin), "*") + "\n\n" + long_line()
+        if not sign_header and current_state == PinState.sign:
+            body += my_gettext(
+                chat_id, "confirm_send_mini_xdr", app_context=app_context
+            )
         if wallet_connect_info:
-            msg += wallet_connect_info
+            body += wallet_connect_info
         await send_message(
             session,
             chat_id,
-            preview_prefix + msg,
+            body,
             reply_markup=get_kb_pin(data, app_context=app_context),
             app_context=app_context,
         )
 
     if pin_type == 2:  # password
-        msg = my_gettext(
-            chat_id, "send_password", (simple_account,), app_context=app_context
-        )
-        if current_state == PinState.sign:
-            msg += my_gettext(chat_id, "confirm_send_mini_xdr", app_context=app_context)
+        if sign_header:
+            body = (
+                sign_header
+                + "\n\n"
+                + my_gettext(
+                    chat_id,
+                    "send_password",
+                    (simple_account,),
+                    app_context=app_context,
+                )
+            )
+        else:
+            body = my_gettext(
+                chat_id, "send_password", (simple_account,), app_context=app_context
+            )
+            if current_state == PinState.sign:
+                body += my_gettext(
+                    chat_id, "confirm_send_mini_xdr", app_context=app_context
+                )
         if wallet_connect_info:
-            msg += wallet_connect_info
+            body += wallet_connect_info
         await state.set_state(PinState.ask_password)
         await send_message(
             session,
             chat_id,
-            preview_prefix + msg,
+            body,
             reply_markup=get_kb_return(chat_id, app_context=app_context),
             app_context=app_context,
         )
 
     if pin_type == 0:  # no password
         await state.update_data(pin=str(chat_id))
-        msg = my_gettext(
-            chat_id, "confirm_send_mini", (simple_account,), app_context=app_context
-        )
-        if current_state == PinState.sign:
-            msg += my_gettext(chat_id, "confirm_send_mini_xdr", app_context=app_context)
+        if sign_header:
+            body = sign_header
+        else:
+            body = my_gettext(
+                chat_id,
+                "confirm_send_mini",
+                (simple_account,),
+                app_context=app_context,
+            )
+            if current_state == PinState.sign:
+                body += my_gettext(
+                    chat_id, "confirm_send_mini_xdr", app_context=app_context
+                )
         if wallet_connect_info:
-            msg += wallet_connect_info
+            body += wallet_connect_info
         await send_message(
             session,
             chat_id,
-            preview_prefix + msg,
+            body,
             reply_markup=get_kb_nopassword(chat_id, app_context=app_context),
             app_context=app_context,
         )
@@ -245,15 +295,24 @@ async def cmd_ask_pin(
             success_msg=success_msg,
         )
 
-        # Показываем кнопку WebApp
-        text = my_gettext(
-            chat_id, "biometric_sign_prompt", (memo,), app_context=app_context
+        # Показываем кнопку WebApp. Если есть Soroban-превью — используем уже
+        # собранный sign_header (он равен biometric_sign_prompt(preview)),
+        # иначе берём обычный шаблон c memo.
+        text = (
+            sign_header
+            if sign_header
+            else my_gettext(
+                chat_id,
+                "biometric_sign_prompt",
+                (memo,),
+                app_context=app_context,
+            )
         )
 
         await send_message(
             session,
             chat_id,
-            preview_prefix + text,
+            text,
             reply_markup=webapp_sign_keyboard(tx_id, chat_id, app_context),
             app_context=app_context,
         )
