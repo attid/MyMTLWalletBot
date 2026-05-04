@@ -144,7 +144,6 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
 
                     await clear_state(state)
 
-            # Удаляем TX из Redis
             await redis_client.delete(tx_key)
             logger.info(f"TX {tx_id}: deleted from Redis")
 

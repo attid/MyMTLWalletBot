@@ -382,6 +382,9 @@ class TestWebAppKeyboard:
         tx_id = "123_abc12345"
         app_context = MagicMock()
         app_context.localization_service.get_user_language.return_value = "ru"
+        app_context.localization_service.get_text.side_effect = (
+            lambda user_id, key, params=(): key
+        )
 
         keyboard = webapp_sign_keyboard(tx_id, user_id=42, app_context=app_context)
         sign_btn = keyboard.inline_keyboard[0][0]
@@ -396,8 +399,13 @@ class TestWebAppKeyboard:
 
         app_context = MagicMock()
         app_context.localization_service.get_user_language.return_value = "fr"
+        app_context.localization_service.get_text.side_effect = (
+            lambda user_id, key, params=(): key
+        )
 
-        keyboard = webapp_sign_keyboard("123_abc12345", user_id=42, app_context=app_context)
+        keyboard = webapp_sign_keyboard(
+            "123_abc12345", user_id=42, app_context=app_context
+        )
 
         assert "lang=en" in keyboard.inline_keyboard[0][0].web_app.url
 
@@ -430,8 +438,13 @@ class TestWebAppKeyboard:
 
         app_context = MagicMock()
         app_context.localization_service.get_user_language.return_value = "ru"
+        app_context.localization_service.get_text.side_effect = (
+            lambda user_id, key, params=(): key
+        )
 
-        keyboard = webapp_import_key_keyboard("GXXX...", user_id=7, app_context=app_context)
+        keyboard = webapp_import_key_keyboard(
+            "GXXX...", user_id=7, app_context=app_context
+        )
 
         assert "lang=ru" in keyboard.inline_keyboard[0][0].web_app.url
         app_context.localization_service.get_user_language.assert_called_once_with(7)
@@ -538,3 +551,54 @@ class TestHandleTxSigned:
         finally:
             faststream_tools.APP_CONTEXT = original_context
             await fake_redis.aclose()
+
+
+class TestSubmitSignedXdr:
+    @pytest.mark.asyncio
+    async def test_submit_signed_xdr_includes_horizon_detail_in_chat(
+        self, mock_app_context
+    ):
+        """Should include decoded Horizon error details in the bot chat."""
+        from unittest.mock import AsyncMock, patch
+        from routers.sign import submit_signed_xdr
+        from stellar_sdk.exceptions import BadRequestError
+
+        class FakeResponse:
+            text = "bad request"
+            status_code = 400
+
+            @staticmethod
+            def json():
+                return {
+                    "title": "Transaction Failed",
+                    "detail": "The transaction failed when submitted to the network.",
+                    "extras": {
+                        "result_codes": {
+                            "transaction": "tx_failed",
+                            "operations": ["op_underfunded"],
+                        }
+                    },
+                }
+
+        session = AsyncMock()
+        user_id = 123
+
+        with patch(
+            "other.stellar_tools.async_stellar_send",
+            side_effect=BadRequestError(FakeResponse()),
+        ):
+            with patch(
+                "routers.sign.send_message", new_callable=AsyncMock
+            ) as mock_send:
+                result = await submit_signed_xdr(
+                    session,
+                    user_id,
+                    "AAAA...",
+                    app_context=mock_app_context,
+                )
+
+        assert result["successful"] is False
+        assert result["error"] is not None
+        sent_text = mock_send.await_args.args[2]
+        assert "send_error" in sent_text
+        assert "Insufficient funds for the operation" in sent_text

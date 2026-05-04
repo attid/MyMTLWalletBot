@@ -34,6 +34,22 @@ from other.faststream_tools import publish_pending_tx
 from keyboards.webapp import webapp_sign_keyboard
 
 
+def format_horizon_send_error(ex: BaseHorizonError) -> str:
+    """Build a user-facing send error from Horizon exception details."""
+    parts = [f"{ex.title}, error {ex.status}"]
+    result_codes = ex.extras.get("result_codes") if ex.extras else None
+    if result_codes:
+        try:
+            from other.stellar_error_codes import get_stellar_error_message
+
+            parts.append(get_stellar_error_message(result_codes))
+        except Exception:
+            parts.append(str(result_codes))
+    elif ex.detail:
+        parts.append(str(ex.detail))
+    return "\n".join(part for part in parts if part)
+
+
 async def submit_signed_xdr(
     session: AsyncSession,
     user_id: int,
@@ -80,9 +96,11 @@ async def submit_signed_xdr(
         )
 
     except BadRequestError as ex:
-        extras = ex.extras.get("result_codes", "no extras") if ex.extras else ex.detail
-        result["error"] = f"{ex.title}: {extras}"
-        msg = my_gettext(user_id, "send_error", app_context=app_context)
+        result["error"] = format_horizon_send_error(ex)
+        msg = (
+            f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n"
+            f"{result['error']}"
+        )
         await send_message(
             session,
             user_id,
