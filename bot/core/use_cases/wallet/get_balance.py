@@ -28,7 +28,10 @@ class GetWalletBalance:
         return cache_age <= CACHE_TTL
 
     async def execute(
-        self, user_id: int, public_key: Optional[str] = None
+        self,
+        user_id: int,
+        public_key: Optional[str] = None,
+        force_refresh: bool = False,
     ) -> List[Balance]:
         """
         Retrieves the balance for the user's default wallet or specified public key,
@@ -46,7 +49,7 @@ class GetWalletBalance:
             target_key = wallet.public_key
 
             # Check Cache (only for default wallet)
-            if self._is_cache_fresh(wallet):
+            if not force_refresh and self._is_cache_fresh(wallet):
                 # Assuming balances are list of Balance objects (handled by Repo/jsonpickle)
                 # Need to filter output based on is_free??
                 # Legacy: if free_wallet, filter XLM? NO, separate logic in stellar_get_balance_str handles display.
@@ -146,6 +149,6 @@ class GetWalletBalance:
             # We assume last_event_id is up to date on wallet entity from fetching.
             wallet.balances_event_id = wallet.last_event_id
             wallet.balances_updated_at = datetime.now(UTC)
-            await self.wallet_repository.update(wallet)
+            await self.wallet_repository.update_balance_cache(wallet)
 
         return domain_balances

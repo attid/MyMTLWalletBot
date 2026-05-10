@@ -136,6 +136,14 @@ class IWalletRepository(ABC):
         pass
 
     @abstractmethod
+    async def update_balance_cache(self, wallet: Wallet) -> bool:
+        """Update only cached balance fields for a wallet.
+
+        Returns False when a transient DB conflict made the cache write skip.
+        """
+        pass
+
+    @abstractmethod
     async def set_default_wallet(self, user_id: int, public_key: str) -> bool:
         """Set a wallet as default for the user."""
         pass
@@ -168,6 +176,11 @@ class IWalletRepository(ABC):
         This invalidates the local balance cache, forcing a refresh
         from the network on next balance request, including cache timestamp.
         """
+        pass
+
+    @abstractmethod
+    async def reset_balance_cache_by_wallet_id(self, wallet_id: int) -> bool:
+        """Reset cached balance fields for one wallet by primary key."""
         pass
 
     @abstractmethod

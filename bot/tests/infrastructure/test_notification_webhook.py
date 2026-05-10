@@ -10,6 +10,8 @@ with bot/dispatcher but WITHOUT app_context, which caused the bug:
 """
 
 import os
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import pytest
 from unittest.mock import MagicMock, AsyncMock
@@ -22,6 +24,20 @@ from infrastructure.services.notification_service import NotificationService
 from core.models.notification import NotificationOperation
 from db.models import MyMtlWalletBot
 from tests.conftest import get_telegram_request
+
+
+class TrackingDbPool:
+    def __init__(self, session):
+        self._session = session
+        self.active_sessions = 0
+
+    @asynccontextmanager
+    async def get_session(self):
+        self.active_sessions += 1
+        try:
+            yield self._session
+        finally:
+            self.active_sessions -= 1
 
 
 @pytest.fixture
@@ -333,6 +349,78 @@ async def test_notification_payload_mapping(notification_service):
         op_recv.path_received_amount == 50.0
     )  # Strict receive means we got exactly this
     assert op_recv.path_sent_amount == 55.5
+
+
+@pytest.mark.asyncio
+async def test_process_notification_closes_lookup_session_before_sending(
+    notification_service,
+):
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.user_id = 12345
+    wallet.public_key = "GTO" + "B" * 53
+    wallet.id = 1
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [wallet]
+    session = AsyncMock()
+    session.execute.return_value = result
+    tracking_pool = TrackingDbPool(session)
+    notification_service.db_pool = tracking_pool
+
+    async def send_after_lookup_session_closed(*args, **kwargs):
+        assert tracking_pool.active_sessions == 0
+
+    notification_service._send_notification_to_user = send_after_lookup_session_closed
+
+    await notification_service.process_notification(
+        {
+            "id": "payload-close-session",
+            "operation": {
+                "id": "op-close-session",
+                "type": "payment",
+                "source_account": "GFROM" + "A" * 51,
+                "to": wallet.public_key,
+                "amount": "1.0",
+                "asset": {"asset_type": "native"},
+            },
+            "transaction": {"hash": "tx-close-session"},
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_webhook_limits_concurrent_notification_processing(
+    notification_service,
+):
+    limit = 2
+    notification_service._webhook_processing_semaphore = asyncio.Semaphore(limit)
+    active = 0
+    max_active = 0
+    release = asyncio.Event()
+
+    async def slow_process_notification(payload):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await release.wait()
+        active -= 1
+
+    class RequestStub:
+        async def read(self):
+            return b'{"operation": {"id": "op", "type": "payment"}}'
+
+    notification_service._verify_webhook_signature = MagicMock(return_value=True)
+    notification_service.process_notification = slow_process_notification
+
+    tasks = [
+        asyncio.create_task(notification_service.handle_webhook(RequestStub()))
+        for _ in range(5)
+    ]
+    await asyncio.sleep(0.05)
+    release.set()
+    await asyncio.gather(*tasks)
+
+    assert max_active <= limit
 
 
 @pytest.mark.asyncio
