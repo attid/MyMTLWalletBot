@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
 
 from routers.mtltools import (
     router as mtltools_router,
@@ -11,6 +12,31 @@ from tests.conftest import (
     create_callback_update,
     create_message_update,
 )
+
+
+UNFUNDED_STELLAR_ACCOUNT = "GB65JH4INA2UR55VOIWGRWN2BJTQHEUAKDGQPTUDEWTL5APG52VGGB6Q"
+
+
+class WalletSessionMiddleware(BaseMiddleware):
+    def __init__(self, app_context, db_wallet):
+        self.app_context = app_context
+        self.db_wallet = db_wallet
+
+    async def __call__(self, handler, event, data):
+        session = MagicMock()
+        session.execute = AsyncMock()
+        session.commit = AsyncMock()
+        session.rollback = AsyncMock()
+
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = self.db_wallet
+        session.execute.return_value = result
+
+        data["session"] = session
+        data["app_context"] = self.app_context
+        if hasattr(self.app_context, "localization_service"):
+            data["l10n"] = self.app_context.localization_service
+        return await handler(event, data)
 
 
 @pytest.fixture(autouse=True)
@@ -88,6 +114,48 @@ async def test_cmd_tools_delegate_view(
     req = get_latest_msg(mock_telegram)
     assert "delegate_start" in req["data"]["text"]
     assert "MTLToolsAddDelegate" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("callback_data", ["MTLToolsDelegate", "MTLToolsDonate"])
+async def test_mtltools_data_views_handle_missing_stellar_account(
+    callback_data,
+    mock_telegram,
+    router_app_context,
+    setup_mtltools_mocks,
+    mock_horizon,
+    horizon_server_config,
+):
+    """Missing on-chain account should be a user-facing state, not an error flow."""
+    db_wallet = MagicMock()
+    db_wallet.id = 1
+    db_wallet.user_id = 123
+    db_wallet.public_key = UNFUNDED_STELLAR_ACCOUNT
+    db_wallet.default_wallet = 1
+    db_wallet.free_wallet = 1
+    db_wallet.use_pin = 0
+    db_wallet.assets_visibility = None
+    db_wallet.secret_key = None
+    db_wallet.seed_key = None
+    db_wallet.wallet_crypto_v2 = None
+    db_wallet.balances = None
+    db_wallet.balances_event_id = "0"
+    db_wallet.last_event_id = "0"
+    db_wallet.balances_updated_at = None
+
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(WalletSessionMiddleware(router_app_context, db_wallet))
+    dp.include_router(mtltools_router)
+
+    mock_horizon.set_not_found(UNFUNDED_STELLAR_ACCOUNT)
+
+    with patch("other.stellar_tools.config.horizon_url", horizon_server_config["url"]):
+        await dp.feed_update(
+            router_app_context.bot, create_callback_update(123, callback_data)
+        )
+
+    req = get_latest_msg(mock_telegram)
+    assert "send_error2" in req["data"]["text"]
 
 
 @pytest.mark.asyncio

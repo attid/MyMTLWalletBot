@@ -3,6 +3,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
+from stellar_sdk.exceptions import NotFoundError
 from keyboards.common_keyboards import (
     get_return_button,
     get_kb_yesno_send_xdr,
@@ -26,6 +27,7 @@ from other.stellar_tools import (
     have_free_xlm,
     stellar_get_multi_sign_xdr,
 )
+from loguru import logger
 
 
 class StateTools(StatesGroup):
@@ -53,6 +55,29 @@ class BIMCallbackData(CallbackData, prefix="BIMCallbackData"):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+async def _answer_missing_stellar_account(
+    callback: types.CallbackQuery,
+    session: AsyncSession,
+    app_context: AppContext,
+) -> None:
+    user_id = callback.from_user.id
+    logger.info(
+        "Stellar account is missing or not activated for user_id={} callback_data={}",
+        user_id,
+        callback.data,
+    )
+    await send_message(
+        session,
+        callback,
+        my_gettext(callback, "send_error2", app_context=app_context),
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[get_return_button(callback, app_context=app_context)]
+        ),
+        app_context=app_context,
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "MTLTools")
@@ -119,7 +144,12 @@ async def cmd_tools_delegate(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    data = await stellar_get_data(session, callback.from_user.id)
+    try:
+        data = await stellar_get_data(session, callback.from_user.id)
+    except NotFoundError:
+        await _answer_missing_stellar_account(callback, session, app_context)
+        return
+
     delegate = None
     for name in data:
         if name == "mtl_delegate":
@@ -164,7 +194,12 @@ async def cmd_tools_del_delegate(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    data = await stellar_get_data(session, callback.from_user.id)
+    try:
+        data = await stellar_get_data(session, callback.from_user.id)
+    except NotFoundError:
+        await _answer_missing_stellar_account(callback, session, app_context)
+        return
+
     delegate = None
     for name in data:
         if name in ("mtl_delegate", "delegate"):
@@ -271,7 +306,12 @@ async def cmd_tools_donate(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    data = await stellar_get_data(session, callback.from_user.id)
+    try:
+        data = await stellar_get_data(session, callback.from_user.id)
+    except NotFoundError:
+        await _answer_missing_stellar_account(callback, session, app_context)
+        return
+
     donates = {}
     idx = 0
     for name in data:
@@ -512,7 +552,12 @@ async def cmd_tools_bim(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    data = await stellar_get_data(session, callback.from_user.id)
+    try:
+        data = await stellar_get_data(session, callback.from_user.id)
+    except NotFoundError:
+        await _answer_missing_stellar_account(callback, session, app_context)
+        return
+
     bod_dict = {}
     idx = 0
     for name in data:
@@ -710,9 +755,14 @@ async def cmd_tools_update_multi(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    account_id = (
-        await stellar_get_user_account(session, callback.from_user.id)
-    ).account.account_id
+    try:
+        account_id = (
+            await stellar_get_user_account(session, callback.from_user.id)
+        ).account.account_id
+    except NotFoundError:
+        await _answer_missing_stellar_account(callback, session, app_context)
+        return
+
     if not await check_account_id_from_grist(account_id):
         await callback.answer("Ваш адрес не найден в реестре", show_alert=True)
         return

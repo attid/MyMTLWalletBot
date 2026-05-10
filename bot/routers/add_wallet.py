@@ -25,6 +25,63 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 
+async def _submit_create_account_with_retries(
+    *,
+    service,
+    user_id: int,
+    source_account_id: str,
+    destination_account_id: str,
+    master_secret: str,
+    attempts: int = 3,
+) -> None:
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            logger.info(
+                "wallet_stellar_account_create_attempt user_id={} public_key={} source_account={} attempt={}/{}",
+                user_id,
+                destination_account_id,
+                source_account_id,
+                attempt,
+                attempts,
+            )
+            xdr = await service.build_payment_transaction(
+                source_account_id=source_account_id,
+                destination_account_id=destination_account_id,
+                asset_code="XLM",
+                asset_issuer=None,
+                amount="5",
+                create_account=True,
+            )
+            signed_xdr = await service.sign_transaction(xdr, master_secret)
+            response = await service.submit_transaction(signed_xdr)
+            if response.get("successful", True) is False:
+                raise RuntimeError(f"Horizon rejected create_account: {response}")
+            logger.info(
+                "wallet_stellar_account_created user_id={} public_key={} source_account={} attempt={}",
+                user_id,
+                destination_account_id,
+                source_account_id,
+                attempt,
+            )
+            return
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "wallet_stellar_account_create_attempt_failed user_id={} public_key={} source_account={} attempt={}/{} error_type={} error={}",
+                user_id,
+                destination_account_id,
+                source_account_id,
+                attempt,
+                attempts,
+                type(e).__name__,
+                e,
+            )
+
+    assert last_error is not None
+    raise last_error
+
+
 @router.callback_query(F.data == "AddNew")
 async def cmd_add_new(
     callback: types.CallbackQuery, session: AsyncSession, app_context: AppContext
@@ -181,7 +238,10 @@ async def cq_add_new_key(
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     add_wallet = app_context.use_case_factory.create_add_wallet(session)
 
+    create_step = "init"
+    public_key = None
     try:
+        create_step = "count_free_wallets"
         count = await wallet_repo.count_free_wallets(callback.from_user.id)
         if count > 2:
             await callback.answer(
@@ -193,6 +253,7 @@ async def cq_add_new_key(
             return
 
         msg = my_gettext(callback, "try_send", app_context=app_context)
+        create_step = "lock_waiting_count"
         waiting_count = new_wallet_lock.waiting_count()
         if waiting_count > 0:
             await cmd_info_message(
@@ -203,9 +264,17 @@ async def cq_add_new_key(
             )
 
         async with new_wallet_lock:
+            create_step = "generate_keypair"
             mnemonic = app_context.stellar_service.generate_mnemonic()
             kp = app_context.stellar_service.get_keypair_from_mnemonic(mnemonic)
+            public_key = kp.public_key
+            logger.info(
+                "wallet_create_start user_id={} public_key={} wallet_kind=stellar_free",
+                callback.from_user.id,
+                public_key,
+            )
 
+            create_step = "encrypt_wallet"
             encrypted_secret = app_context.encryption_service.encrypt(
                 kp.secret, str(callback.from_user.id)
             )
@@ -217,6 +286,7 @@ async def cq_add_new_key(
                 wallet_kind="stellar_free",
             )
 
+            create_step = "db_create_wallet"
             await add_wallet.execute(
                 user_id=callback.from_user.id,
                 public_key=kp.public_key,
@@ -226,17 +296,31 @@ async def cq_add_new_key(
                 is_free=True,
                 is_default=True,
             )
+            create_step = "db_commit"
             await session.commit()
+            logger.info(
+                "wallet_db_committed user_id={} public_key={} wallet_kind=stellar_free",
+                callback.from_user.id,
+                kp.public_key,
+            )
 
+            create_step = "send_try_message"
             await cmd_info_message(
                 session, callback.message.chat.id, msg, app_context=app_context
             )
 
             # Subscribe to notifications
             if app_context.notification_service:
+                create_step = "notification_subscribe"
                 await app_context.notification_service.subscribe(kp.public_key)
+                logger.info(
+                    "wallet_notification_subscribed user_id={} public_key={}",
+                    callback.from_user.id,
+                    kp.public_key,
+                )
 
             service = app_context.stellar_service
+            create_step = "load_master_wallet"
             master_wallet = await wallet_repo.get_default_wallet(0)
             if not master_wallet:
                 logger.error("No master wallet found!")
@@ -251,21 +335,20 @@ async def cq_add_new_key(
             assert master_wallet.secret_key is not None, (
                 "master_wallet.secret_key must not be None"
             )
+            create_step = "decrypt_master_secret"
             master_secret = app_context.encryption_service.decrypt(
                 master_wallet.secret_key, "0"
             )
             assert master_secret is not None, "master_secret must not be None"
 
-            xdr = await service.build_payment_transaction(
+            create_step = "submit_create_account_with_retries"
+            await _submit_create_account_with_retries(
+                service=service,
+                user_id=callback.from_user.id,
                 source_account_id=master_wallet.public_key,
                 destination_account_id=kp.public_key,
-                asset_code="XLM",
-                asset_issuer=None,
-                amount="5",
-                create_account=True,
+                master_secret=master_secret,
             )
-            signed_xdr = await service.sign_transaction(xdr, master_secret)
-            await service.submit_transaction(signed_xdr)
 
             from core.constants import (
                 MTL_ASSET,
@@ -275,14 +358,37 @@ async def cq_add_new_key(
             )
 
             for asset in [MTL_ASSET, EURMTL_ASSET, SATSMTL_ASSET, USDM_ASSET]:
+                create_step = f"build_trustline_{asset.code}"
+                logger.info(
+                    "wallet_trustline_create_start user_id={} public_key={} asset_code={}",
+                    callback.from_user.id,
+                    kp.public_key,
+                    asset.code,
+                )
                 trust_xdr = await service.build_change_trust_transaction(
                     source_account_id=kp.public_key,
                     asset_code=asset.code,
                     asset_issuer=asset.issuer,  # type: ignore[arg-type]
                 )
+                create_step = f"sign_trustline_{asset.code}"
                 signed_trust = await service.sign_transaction(trust_xdr, kp.secret)
+                create_step = f"submit_trustline_{asset.code}"
                 await service.submit_transaction(signed_trust)
+                logger.info(
+                    "wallet_trustline_created user_id={} public_key={} asset_code={}",
+                    callback.from_user.id,
+                    kp.public_key,
+                    asset.code,
+                )
 
+            logger.info(
+                "wallet_trustlines_created user_id={} public_key={} count={}",
+                callback.from_user.id,
+                kp.public_key,
+                4,
+            )
+
+        create_step = "send_success_message"
         await cmd_info_message(
             session,
             callback,
@@ -291,6 +397,7 @@ async def cq_add_new_key(
         )
         with suppress(TelegramBadRequest):
             await callback.answer()
+        create_step = "run_fsm_after_send"
         data = await state.get_data()
         fsm_after_send = data.get("fsm_after_send")
         if fsm_after_send:
@@ -298,9 +405,21 @@ async def cq_add_new_key(
             await fsm_after_send_func(
                 session, callback.from_user.id, state, app_context=app_context
             )
+        logger.info(
+            "wallet_create_completed user_id={} public_key={} wallet_kind=stellar_free",
+            callback.from_user.id,
+            public_key,
+        )
 
     except Exception as e:
-        logger.error(f"Error creating wallet: {e}")
+        logger.exception(
+            "wallet_create_failed user_id={} public_key={} step={} error_type={} error={}",
+            callback.from_user.id,
+            public_key,
+            create_step,
+            type(e).__name__,
+            e,
+        )
         await callback.answer(f"Error: {e}", show_alert=True)
 
 
