@@ -44,9 +44,7 @@ def webapp_sign_keyboard(
             [
                 InlineKeyboardButton(
                     text="✍️ Подписать",
-                    web_app=WebAppInfo(
-                        url=f"{webapp_url}/sign?tx={tx_id}&lang={lang}"
-                    ),
+                    web_app=WebAppInfo(url=f"{webapp_url}/sign?tx={tx_id}&lang={lang}"),
                 )
             ],
             [

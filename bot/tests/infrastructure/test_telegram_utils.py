@@ -40,10 +40,13 @@ class TestClearState:
         )
         # Patch the import inside the function
         import sys
+
         fake_other = MagicMock()
         fake_other.faststream_tools = MagicMock(clear_pending_tx=AsyncMock())
         monkeypatch.setitem(sys.modules, "other", fake_other)
-        monkeypatch.setitem(sys.modules, "other.faststream_tools", fake_other.faststream_tools)
+        monkeypatch.setitem(
+            sys.modules, "other.faststream_tools", fake_other.faststream_tools
+        )
 
         await clear_state(mock_state)
 
@@ -53,10 +56,13 @@ class TestClearState:
     async def test_clear_state_preserves_session_fields(self, mock_state, monkeypatch):
         """clear_state keeps user_id, user_name, user_lang, show_more, etc."""
         import sys
+
         fake_other = MagicMock()
         fake_other.faststream_tools = MagicMock(clear_pending_tx=AsyncMock())
         monkeypatch.setitem(sys.modules, "other", fake_other)
-        monkeypatch.setitem(sys.modules, "other.faststream_tools", fake_other.faststream_tools)
+        monkeypatch.setitem(
+            sys.modules, "other.faststream_tools", fake_other.faststream_tools
+        )
 
         await clear_state(mock_state)
 
@@ -73,10 +79,13 @@ class TestClearState:
     async def test_clear_state_removes_transient_keys(self, mock_state, monkeypatch):
         """clear_state must NOT carry over transient keys like some_transient_key."""
         import sys
+
         fake_other = MagicMock()
         fake_other.faststream_tools = MagicMock(clear_pending_tx=AsyncMock())
         monkeypatch.setitem(sys.modules, "other", fake_other)
-        monkeypatch.setitem(sys.modules, "other.faststream_tools", fake_other.faststream_tools)
+        monkeypatch.setitem(
+            sys.modules, "other.faststream_tools", fake_other.faststream_tools
+        )
 
         await clear_state(mock_state)
 
