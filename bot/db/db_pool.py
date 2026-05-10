@@ -91,8 +91,7 @@ class DatabasePool:
             try:
                 yield session
                 # await session.commit() # Usually handled by caller or context
-            except Exception as e:
-                logger.exception(f"Session error: {e}")
+            except Exception:
                 await session.rollback()
                 raise
             # Session is automatically closed by async_sessionmaker context manager

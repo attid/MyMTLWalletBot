@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
+from loguru import logger
 
 from routers.add_wallet import (
     router as add_wallet_router,
@@ -226,6 +227,73 @@ async def test_add_wallet_new_key_flow(
     # Success message
     all_texts = get_all_texts(mock_telegram)
     assert "send_good" in all_texts
+
+
+@pytest.mark.asyncio
+async def test_add_wallet_new_key_logs_creation_steps(
+    mock_telegram, mock_horizon, router_app_context, setup_add_wallet_mocks
+):
+    """New Stellar wallet creation should leave enough step logs to diagnose gaps."""
+    log_messages = []
+    sink_id = logger.add(
+        lambda message: log_messages.append(message.record["message"]),
+        level="INFO",
+    )
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    mock_lock = MagicMock()
+    mock_lock.waiting_count.return_value = 0
+    mock_lock.__aenter__ = AsyncMock()
+    mock_lock.__aexit__ = AsyncMock()
+
+    try:
+        with patch("routers.add_wallet.new_wallet_lock", mock_lock):
+            await dp.feed_update(
+                router_app_context.bot,
+                create_callback_update(123, "AddWalletNewKey"),
+            )
+    finally:
+        logger.remove(sink_id)
+
+    assert any("wallet_create_start" in msg for msg in log_messages)
+    assert any("wallet_db_committed" in msg for msg in log_messages)
+    assert any("wallet_notification_subscribed" in msg for msg in log_messages)
+    assert any("wallet_stellar_account_created" in msg for msg in log_messages)
+    assert any("wallet_trustlines_created" in msg for msg in log_messages)
+    assert any("wallet_create_completed" in msg for msg in log_messages)
+
+
+@pytest.mark.asyncio
+async def test_add_wallet_new_key_retries_create_account_with_rebuild(
+    mock_telegram, mock_horizon, router_app_context, setup_add_wallet_mocks
+):
+    """Create-account submit should be retried with a freshly rebuilt transaction."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    mock_lock = MagicMock()
+    mock_lock.waiting_count.return_value = 0
+    mock_lock.__aenter__ = AsyncMock()
+    mock_lock.__aexit__ = AsyncMock()
+    mock_horizon.set_transaction_response(successful=False, error="tx_bad_seq")
+
+    with patch("routers.add_wallet.new_wallet_lock", mock_lock):
+        await dp.feed_update(
+            router_app_context.bot,
+            create_callback_update(123, "AddWalletNewKey"),
+        )
+
+    transaction_requests = mock_horizon.get_requests("transactions")
+    master_loads = [
+        request
+        for request in mock_horizon.get_requests("accounts")
+        if request["account_id"] == setup_add_wallet_mocks.master_wallet.public_key
+    ]
+    assert len(transaction_requests) == 3
+    assert len(master_loads) == 3
 
 
 @pytest.mark.asyncio
