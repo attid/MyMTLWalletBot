@@ -25,9 +25,7 @@ from stellar_sdk import (
 SOROBAN_RPC_URL = "https://soroban-rpc.mainnet.stellar.gateway.fm"
 TOKEN_NAME_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 TOKEN_NAME_CACHE_MAXSIZE = 256
-SIMULATE_SOURCE_ACCOUNT = (
-    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
-)
+SIMULATE_SOURCE_ACCOUNT = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
 
 
 @dataclass
@@ -276,9 +274,7 @@ def has_non_empty_sub_invocations(envelope: TransactionEnvelope) -> bool:
     return False
 
 
-def is_invoke_host_safe_for_free(
-    operation, forbidden_contract_id: str
-) -> bool:
+def is_invoke_host_safe_for_free(operation, forbidden_contract_id: str) -> bool:
     """Return True if an InvokeHostFunction op is safe for a free wallet.
 
     Rules:
@@ -340,7 +336,9 @@ def _check_sub_invocations_recursive(
         if contract_id == forbidden_contract_id:
             return False
         nested = getattr(sub, "sub_invocations", None) or []
-        if nested and not _check_sub_invocations_recursive(nested, forbidden_contract_id):
+        if nested and not _check_sub_invocations_recursive(
+            nested, forbidden_contract_id
+        ):
             return False
     return True
 

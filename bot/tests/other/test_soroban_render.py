@@ -91,7 +91,9 @@ async def test_render_tx1_transfer_summary():
         "other.soroban_render.read_token_contract_display_name",
         side_effect=fake_name,
     ):
-        lines = await render_soroban_sub_invocations(_load("tx1_allow_single_transfer.xdr"))
+        lines = await render_soroban_sub_invocations(
+            _load("tx1_allow_single_transfer.xdr")
+        )
 
     assert len(lines) == 1
     assert lines[0].startswith("Transfer ")
@@ -109,7 +111,9 @@ async def test_render_tx6_multiple_transfers():
         "other.soroban_render.read_token_contract_display_name",
         side_effect=fake_name,
     ):
-        lines = await render_soroban_sub_invocations(_load("tx6_allow_multi_transfer.xdr"))
+        lines = await render_soroban_sub_invocations(
+            _load("tx6_allow_multi_transfer.xdr")
+        )
 
     assert len(lines) == 2
     assert all(line.startswith("Transfer ") and "TOK" in line for line in lines)
@@ -123,7 +127,9 @@ async def test_render_tx4_no_subs_returns_empty():
 
 @pytest.mark.asyncio
 async def test_render_tx7_burn_skipped():
-    lines = await render_soroban_sub_invocations(_load("tx7_deny_non_transfer_burn.xdr"))
+    lines = await render_soroban_sub_invocations(
+        _load("tx7_deny_non_transfer_burn.xdr")
+    )
     # burn is not transfer → no preview lines
     assert lines == []
 

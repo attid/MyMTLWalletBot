@@ -15,6 +15,7 @@ SOROBAN_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "soroban"
 def _read_fixture(name: str) -> str:
     return (SOROBAN_FIXTURES / name).read_text().strip()
 
+
 # Mock Keypairs
 G_SIGNER = "G_SIGNER_KEY"
 S_SIGNER = "S_SIGNER_KEY"
