@@ -15,6 +15,7 @@ from datetime import datetime
 from urllib.parse import quote
 import base64
 import sentry_sdk
+from dataclasses import dataclass
 
 from db.db_pool import DatabasePool
 from db.models import MyMtlWalletBot, NotificationFilter
@@ -30,6 +31,13 @@ from collections import OrderedDict, defaultdict
 from enum import Enum
 
 SAFE = "-_.!~*'()"
+
+
+@dataclass(frozen=True)
+class NotificationWallet:
+    id: int
+    user_id: int
+    public_key: str
 
 
 class NotifierHeaders(str, Enum):
@@ -76,6 +84,7 @@ class NotificationService:
         self._notification_watchdog_task: Optional[asyncio.Task] = None
         self._notification_silence_threshold = 60 * 60
         self._notification_watchdog_interval = 5 * 60
+        self._webhook_processing_semaphore = asyncio.Semaphore(10)
 
         # Log initialization
         if not self.bot:
@@ -318,7 +327,10 @@ class NotificationService:
         logger.info(f"Starting Webhook Listener on port {port}")
         await self.site.start()
 
-        if not self._notification_watchdog_task or self._notification_watchdog_task.done():
+        if (
+            not self._notification_watchdog_task
+            or self._notification_watchdog_task.done()
+        ):
             self._notification_watchdog_task = asyncio.create_task(
                 self._run_notification_watchdog()
             )
@@ -352,7 +364,8 @@ class NotificationService:
 
             # 4. Обрабатываем
             self._mark_notification_activity()
-            await self.process_notification(payload)
+            async with self._webhook_processing_semaphore:
+                await self.process_notification(payload)
             return web.Response(text="OK")
 
         except Exception as e:
@@ -412,23 +425,31 @@ class NotificationService:
                 MyMtlWalletBot.user_id > 0,
             )
             result = await session.execute(stmt)
-            wallets = result.scalars().all()
+            wallets = [self._snapshot_wallet(w) for w in result.scalars().all()]
+            filters_by_user = await self._load_filters_by_user(session, wallets)
 
-            for wallet in wallets:
-                await self._send_notification_to_user(wallet, op_data_mapped)
+        for wallet in wallets:
+            await self._send_notification_to_user(
+                wallet,
+                op_data_mapped,
+                user_filters=filters_by_user.get(wallet.user_id, []),
+            )
 
-                # Special case: Self-payment to the same wallet.
-                # User wants to see both "Sent" and "Received" messages.
-                if (
-                    op_data_mapped.operation == "payment"
-                    and wallet.public_key == op_data_mapped.from_account
-                    and wallet.public_key == op_data_mapped.for_account
-                ):
-                    # Trigger the "Debit" (Sent) perspective, as the default is "Credit" (Received)
-                    # when decode_for == for_account.
-                    await self._send_notification_to_user(
-                        wallet, op_data_mapped, force_perspective="debit"
-                    )
+            # Special case: Self-payment to the same wallet.
+            # User wants to see both "Sent" and "Received" messages.
+            if (
+                op_data_mapped.operation == "payment"
+                and wallet.public_key == op_data_mapped.from_account
+                and wallet.public_key == op_data_mapped.for_account
+            ):
+                # Trigger the "Debit" (Sent) perspective, as the default is "Credit" (Received)
+                # when decode_for == for_account.
+                await self._send_notification_to_user(
+                    wallet,
+                    op_data_mapped,
+                    force_perspective="debit",
+                    user_filters=filters_by_user.get(wallet.user_id, []),
+                )
 
         # 4. Process internal trades (for Match Orders / Makers)
         trades = payload.get("operation", {}).get("trades", [])
@@ -449,7 +470,12 @@ class NotificationService:
                         MyMtlWalletBot.user_id > 0,
                     )
                     result = await session.execute(stmt)
-                    maker_wallets = result.scalars().all()
+                    maker_wallets = [
+                        self._snapshot_wallet(w) for w in result.scalars().all()
+                    ]
+                    maker_filters_by_user = await self._load_filters_by_user(
+                        session, maker_wallets
+                    )
 
                     # Create a map for quick lookup
                     maker_map = {w.public_key: w for w in maker_wallets}
@@ -508,7 +534,40 @@ class NotificationService:
                         )
                         op_trade.trade_bought_asset = get_trade_asset(trade, "bought")
 
-                        await self._send_notification_to_user(maker_wallet, op_trade)
+                        await self._send_notification_to_user(
+                            maker_wallet,
+                            op_trade,
+                            user_filters=maker_filters_by_user.get(
+                                maker_wallet.user_id, []
+                            ),
+                        )
+
+    def _snapshot_wallet(self, wallet: MyMtlWalletBot) -> NotificationWallet:
+        if wallet.id is None or wallet.user_id is None or wallet.public_key is None:
+            raise ValueError("Wallet notification snapshot requires id/user_id/key")
+        return NotificationWallet(
+            id=int(wallet.id),
+            user_id=int(wallet.user_id),
+            public_key=str(wallet.public_key),
+        )
+
+    async def _load_filters_by_user(
+        self, session: Any, wallets: list[NotificationWallet]
+    ) -> dict[int, list[NotificationFilter]]:
+        user_ids = {wallet.user_id for wallet in wallets}
+        if not user_ids:
+            return {}
+
+        stmt_filter = select(NotificationFilter).where(
+            NotificationFilter.user_id.in_(user_ids)
+        )
+        result_filter = await session.execute(stmt_filter)
+        filters_by_user: dict[int, list[NotificationFilter]] = defaultdict(list)
+        for notification_filter in result_filter.scalars().all():
+            filters_by_user[int(notification_filter.user_id)].append(
+                notification_filter
+            )
+        return filters_by_user
 
     def _map_payload_to_operation(
         self, payload: dict
@@ -769,9 +828,10 @@ class NotificationService:
 
     async def _send_notification_to_user(
         self,
-        wallet: MyMtlWalletBot,
+        wallet: MyMtlWalletBot | NotificationWallet,
         operation: NotificationOperation,
         force_perspective: Optional[str] = None,
+        user_filters: Optional[list[NotificationFilter]] = None,
     ):
         if wallet.user_id is None:
             return
@@ -789,12 +849,13 @@ class NotificationService:
             if not message_text:
                 return
 
-            async with self.db_pool.get_session() as session:
-                stmt_filter = select(NotificationFilter).where(
-                    NotificationFilter.user_id == user_id
-                )
-                result_filter = await session.execute(stmt_filter)
-                user_filters = result_filter.scalars().all()
+            if user_filters is None:
+                async with self.db_pool.get_session() as session:
+                    stmt_filter = select(NotificationFilter).where(
+                        NotificationFilter.user_id == user_id
+                    )
+                    result_filter = await session.execute(stmt_filter)
+                    user_filters = list(result_filter.scalars().all())
 
             should_send = True
             msg_amount = float(operation.display_amount_value or 0.0)
@@ -864,7 +925,7 @@ class NotificationService:
 
                 async with self.db_pool.get_session() as session:
                     repo = SqlAlchemyWalletRepository(session)
-                    await repo.reset_balance_cache(user_id)
+                    await repo.reset_balance_cache_by_wallet_id(int(wallet.id))
                     await session.commit()
                     logger.debug(f"Balance cache reset for user {user_id}")
             except Exception as cache_error:

@@ -281,7 +281,10 @@ async def test_cmd_refresh_balances(
 
     await dp.feed_update(router_app_context.bot, create_callback_update(123, "Refresh"))
 
-    setup_common_start_mocks.wallet_repo.reset_balance_cache.assert_called_once()
+    setup_common_start_mocks.wallet_repo.reset_balance_cache.assert_not_called()
+    setup_common_start_mocks.balance_uc.execute.assert_awaited_once_with(
+        user_id=123, force_refresh=True
+    )
 
     # Verify session.commit() was called at least once (may be twice if username updated)
     assert setup_common_start_mocks.captured_session is not None

@@ -1,6 +1,8 @@
 from datetime import datetime, UTC
+from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker
 from db.models import Base
 from infrastructure.persistence.sqlalchemy_user_repository import (
@@ -256,6 +258,111 @@ async def test_wallet_repository_reset_balance_cache_clears_cached_balances(db_s
     assert refreshed_wallet is not None
     assert refreshed_wallet.balances is None
     assert refreshed_wallet.balances_updated_at is None
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_reset_balance_cache_by_wallet_id_updates_directly(
+    db_session,
+):
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1008, username="cache_direct_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1008,
+        public_key="GCACHEDIRECT123",
+        is_default=True,
+        is_free=False,
+    )
+    await wallet_repo.create(wallet)
+    await db_session.commit()
+
+    default_wallet = await wallet_repo.get_default_wallet(1008)
+    assert default_wallet is not None
+    default_wallet.balances = [{"asset_code": "EURMTL", "balance": "100.0"}]
+    default_wallet.balances_event_id = "42"
+    default_wallet.balances_updated_at = datetime.now(UTC)
+    await wallet_repo.update_balance_cache(default_wallet)
+    await db_session.commit()
+
+    assert await wallet_repo.reset_balance_cache_by_wallet_id(default_wallet.id) is True
+    await db_session.commit()
+
+    refreshed_wallet = await wallet_repo.get_default_wallet(1008)
+    assert refreshed_wallet is not None
+    assert refreshed_wallet.balances is None
+    assert refreshed_wallet.balances_event_id == "0"
+    assert refreshed_wallet.balances_updated_at is None
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_update_balance_cache_updates_only_cache_columns(
+    db_session,
+):
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1006, username="cache_only_test", language="en")
+    await user_repo.create(user)
+
+    wallet = Wallet(
+        id=0,
+        user_id=1006,
+        public_key="GCACHEONLY123",
+        is_default=True,
+        is_free=False,
+        use_pin=2,
+        assets_visibility='{"EURMTL": "hidden"}',
+        secret_key="SECRET",
+    )
+    await wallet_repo.create(wallet)
+    await db_session.commit()
+
+    default_wallet = await wallet_repo.get_default_wallet(1006)
+    assert default_wallet is not None
+    default_wallet.balances = [{"asset_code": "EURMTL", "balance": "100.0"}]
+    default_wallet.balances_event_id = "42"
+    default_wallet.balances_updated_at = datetime.now(UTC)
+
+    assert await wallet_repo.update_balance_cache(default_wallet) is True
+    await db_session.commit()
+
+    refreshed_wallet = await wallet_repo.get_default_wallet(1006)
+    assert refreshed_wallet is not None
+    assert refreshed_wallet.balances is not None
+    assert refreshed_wallet.balances_event_id == "42"
+    assert refreshed_wallet.use_pin == 2
+    assert refreshed_wallet.assets_visibility == '{"EURMTL": "hidden"}'
+    assert refreshed_wallet.secret_key == "SECRET"
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_update_balance_cache_skips_firebird_conflict():
+    session = AsyncMock(spec=AsyncSession)
+    session.execute.side_effect = DBAPIError(
+        statement='UPDATE "MYMTLWALLETBOT" SET balances=?',
+        params=(),
+        orig=Exception("deadlock -update conflicts with concurrent update"),
+        connection_invalidated=False,
+    )
+    wallet_repo = SqlAlchemyWalletRepository(session)
+
+    wallet = Wallet(
+        id=1024,
+        user_id=1007,
+        public_key="GCONFLICT123",
+        is_default=True,
+        is_free=False,
+        balances=[{"asset_code": "EURMTL", "balance": "100.0"}],
+        balances_event_id="99",
+        balances_updated_at=datetime.now(UTC),
+    )
+
+    assert await wallet_repo.update_balance_cache(wallet) is False
+    session.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio

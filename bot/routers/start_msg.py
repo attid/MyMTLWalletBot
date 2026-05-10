@@ -8,6 +8,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -184,6 +185,7 @@ async def cmd_show_balance(
     state: FSMContext,
     need_new_msg=None,
     refresh_callback: Optional[types.CallbackQuery] = None,
+    force_refresh: bool = False,
     *,
     app_context: AppContext,
     **kwargs,
@@ -198,7 +200,13 @@ async def cmd_show_balance(
         try:
             data = await state.get_data()
             await clear_state(state)
-            msg = await get_start_text(session, state, user_id, app_context=app_context)
+            msg = await get_start_text(
+                session,
+                state,
+                user_id,
+                force_refresh=force_refresh,
+                app_context=app_context,
+            )
 
             if refresh_callback and msg == data.get("start_msg"):
                 await refresh_callback.answer(
@@ -220,6 +228,8 @@ async def cmd_show_balance(
                 )
                 await state.update_data(start_msg=msg)
 
+        except SQLAlchemyError:
+            raise
         except Exception as ex:
             logger.info(["cmd_show_balance ", user_id, ex])
             kb = [
@@ -244,7 +254,12 @@ async def cmd_show_balance(
 
 
 async def get_start_text(
-    session: AsyncSession, state: FSMContext, user_id: int, *, app_context: AppContext
+    session: AsyncSession,
+    state: FSMContext,
+    user_id: int,
+    force_refresh: bool = False,
+    *,
+    app_context: AppContext,
 ):
     use_case_factory = app_context.use_case_factory
     if use_case_factory is None:
@@ -288,7 +303,7 @@ USDT: {float2str(usdt_balance, True)}
 
     use_case = use_case_factory.create_get_wallet_balance(session)
 
-    balances = await use_case.execute(user_id)
+    balances = await use_case.execute(user_id=user_id, force_refresh=force_refresh)
 
     # Restore legacy logic for MTLAP state
     mtlap_value = any(b.asset_code == "MTLAP" for b in balances)

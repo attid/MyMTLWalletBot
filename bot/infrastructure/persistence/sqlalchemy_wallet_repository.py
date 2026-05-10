@@ -1,10 +1,19 @@
 from typing import List, Optional
 from sqlalchemy import update, func, CursorResult
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
 from core.domain.entities import Wallet
 from core.interfaces.repositories import IWalletRepository
 from db.models import MyMtlWalletBot
+
+
+def _is_firebird_update_conflict(exc: DBAPIError) -> bool:
+    message = str(exc.orig).lower()
+    return "deadlock" in message and (
+        "update conflicts" in message or "concurrent update" in message
+    )
 
 
 class SqlAlchemyWalletRepository(IWalletRepository):
@@ -114,6 +123,48 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             return self._to_entity(db_wallet)
         raise ValueError(f"Wallet with id {wallet.id} not found for update")
 
+    async def update_balance_cache(self, wallet: Wallet) -> bool:
+        """Update only balance cache fields.
+
+        Balance cache is non-authoritative. A transient Firebird write conflict
+        should not fail the user-facing live balance response.
+        """
+        import jsonpickle  # type: ignore
+
+        if wallet.id is None:
+            raise ValueError("Wallet id is required for balance cache update")
+
+        values = {
+            "balances": (
+                jsonpickle.encode(wallet.balances)
+                if wallet.balances is not None
+                else None
+            ),
+            "balances_event_id": str(wallet.balances_event_id),
+            "balances_updated_at": wallet.balances_updated_at,
+        }
+        stmt = (
+            update(MyMtlWalletBot)
+            .where(MyMtlWalletBot.id == wallet.id)
+            .values(**values)
+        )
+
+        try:
+            await self.session.execute(stmt)
+            await self.session.flush()
+        except DBAPIError as exc:
+            if _is_firebird_update_conflict(exc):
+                await self.session.rollback()
+                logger.warning(
+                    "Skipped wallet balance cache update after transient DB conflict",
+                    wallet_id=wallet.id,
+                    user_id=wallet.user_id,
+                )
+                return False
+            raise
+
+        return True
+
     async def reset_balance_cache(self, user_id: int) -> None:
         """Reset the cached balance for the user's default wallet."""
         stmt = (
@@ -129,6 +180,19 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             wallet.balances_event_id = "0"
             wallet.balances_updated_at = None
             await self.session.flush()
+
+    async def reset_balance_cache_by_wallet_id(self, wallet_id: int) -> bool:
+        """Reset cached balance fields for one wallet without loading the row."""
+        stmt = (
+            update(MyMtlWalletBot)
+            .where(MyMtlWalletBot.id == wallet_id)
+            .values(balances=None, balances_event_id="0", balances_updated_at=None)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        if isinstance(result, CursorResult):
+            return result.rowcount > 0
+        return True
 
     async def get_all_deleted(self) -> List[Wallet]:
         stmt = select(MyMtlWalletBot).where(MyMtlWalletBot.need_delete == 1)
