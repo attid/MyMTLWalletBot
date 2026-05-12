@@ -196,6 +196,45 @@ async def test_add_wallet_have_key_flow(
 
 
 @pytest.mark.asyncio
+async def test_add_wallet_have_key_expert_mode_uses_supplied_wallet_address(
+    mock_telegram, router_app_context, setup_add_wallet_mocks
+):
+    """Expert mode should store the supplied wallet address, not signer address."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    user_id = 123
+
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(user_id, "AddWalletHaveKey")
+    )
+
+    signer_secret = "SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV"
+    wallet_public_key = (
+        "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    )
+    await dp.feed_update(
+        router_app_context.bot,
+        create_message_update(
+            user_id,
+            f"{signer_secret} {wallet_public_key}",
+            update_id=2,
+            message_id=2,
+        ),
+    )
+
+    setup_add_wallet_mocks.add_wallet_uc.execute.assert_called_once()
+    call_kwargs = setup_add_wallet_mocks.add_wallet_uc.execute.call_args.kwargs
+    assert call_kwargs["public_key"] == wallet_public_key
+    assert call_kwargs["secret_key"] == "ENCRYPTED"
+    setup_add_wallet_mocks.ctx.notification_service.subscribe.assert_awaited_once_with(
+        wallet_public_key
+    )
+
+
+@pytest.mark.asyncio
 async def test_add_wallet_new_key_flow(
     mock_telegram, mock_horizon, router_app_context, setup_add_wallet_mocks
 ):

@@ -11,6 +11,7 @@ from keyboards.common_keyboards import get_kb_return, get_return_button
 from routers.sign import cmd_ask_pin, PinState
 from routers.start_msg import cmd_show_balance, cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, my_gettext
+from infrastructure.utils.stellar_utils import is_valid_stellar_address
 from other.locks import new_wallet_lock
 
 from infrastructure.services.app_context import AppContext
@@ -155,6 +156,10 @@ async def cmd_sending_private(
         secret_key = args[0]
         kp = app_context.stellar_service.get_keypair_from_secret(secret_key)
         public_key = kp.public_key
+        if len(args) == 2:
+            if not is_valid_stellar_address(args[1]):
+                raise ValueError("Invalid expert wallet public key")
+            public_key = args[1]
 
         assert app_context.use_case_factory is not None, (
             "use_case_factory must be initialized"
