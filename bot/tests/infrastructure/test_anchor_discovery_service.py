@@ -1,8 +1,10 @@
 from collections import defaultdict
+import asyncio
 
 import pytest
 
 from core.domain.value_objects import Asset
+from core.models.anchor_asset import AnchorAssetSupport, SepProtocol, SepProtocolSupport
 from infrastructure.services.anchor_discovery_service import AnchorDiscoveryService
 
 
@@ -141,3 +143,110 @@ async def test_discover_assets_lists_by_toml_without_fetching_sep_info():
     assert fake_http.calls[f"https://horizon.test/accounts/{ISSUER}"] == 1
     assert fake_http.calls["https://dead.example/.well-known/stellar.toml"] == 1
     assert fake_http.calls["https://dead.example/sep6/info"] == 0
+
+
+@pytest.mark.asyncio
+async def test_discover_assets_limits_parallel_summary_checks_to_three():
+    class TrackingDiscoveryService(AnchorDiscoveryService):
+        def __init__(self):
+            super().__init__(list_concurrency=3)
+            self.active = 0
+            self.max_active = 0
+
+        async def discover_asset_summary(
+            self, asset: Asset
+        ) -> AnchorAssetSupport | None:
+            assert asset.issuer is not None
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return AnchorAssetSupport(
+                asset=asset,
+                anchor_domain=f"{asset.code.lower()}.example",
+                web_auth_endpoint=None,
+                sep6=SepProtocolSupport(
+                    protocol=SepProtocol.SEP6,
+                    transfer_server=f"https://{asset.code.lower()}.example/sep6",
+                ),
+            )
+
+    service = TrackingDiscoveryService()
+    assets = [Asset(f"A{i}", f"GISSUER{i}") for i in range(8)]
+
+    supported = await service.discover_assets(assets)
+
+    assert service.max_active == 3
+    assert [support.asset.code for support in supported] == [
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_discover_assets_skips_summary_timeout():
+    class TimeoutDiscoveryService(AnchorDiscoveryService):
+        async def discover_asset_summary(
+            self, asset: Asset
+        ) -> AnchorAssetSupport | None:
+            assert asset.issuer is not None
+            if asset.code == "SLOW":
+                await asyncio.sleep(0.05)
+            return AnchorAssetSupport(
+                asset=asset,
+                anchor_domain=f"{asset.code.lower()}.example",
+                web_auth_endpoint=None,
+                sep6=SepProtocolSupport(
+                    protocol=SepProtocol.SEP6,
+                    transfer_server=f"https://{asset.code.lower()}.example/sep6",
+                ),
+            )
+
+    service = TimeoutDiscoveryService(summary_timeout=0.01)
+
+    supported = await service.discover_assets(
+        [
+            Asset("FAST", "GFAST"),
+            Asset("SLOW", "GSLOW"),
+        ]
+    )
+
+    assert [support.asset.code for support in supported] == ["FAST"]
+
+
+@pytest.mark.asyncio
+async def test_discover_assets_starts_next_when_one_slot_frees():
+    started = []
+
+    class SlidingWindowDiscoveryService(AnchorDiscoveryService):
+        async def discover_asset_summary(
+            self, asset: Asset
+        ) -> AnchorAssetSupport | None:
+            assert asset.issuer is not None
+            started.append(asset.code)
+            if asset.code == "A1":
+                await asyncio.sleep(0.05)
+            else:
+                await asyncio.sleep(0.01)
+            return AnchorAssetSupport(
+                asset=asset,
+                anchor_domain=f"{asset.code.lower()}.example",
+                web_auth_endpoint=None,
+                sep6=SepProtocolSupport(
+                    protocol=SepProtocol.SEP6,
+                    transfer_server=f"https://{asset.code.lower()}.example/sep6",
+                ),
+            )
+
+    service = SlidingWindowDiscoveryService(list_concurrency=3)
+
+    await service.discover_assets([Asset(f"A{i}", f"GISSUER{i}") for i in range(4)])
+
+    assert started[:3] == ["A0", "A1", "A2"]
+    assert started[3] == "A3"
