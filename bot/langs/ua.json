@@ -202,6 +202,7 @@
   "kb_decode": "Розшифрувати",
   "sign_payment_msg": "Платіж {} {}",
   "sign_sep10_msg": "Підпис запиту до Stellar anchor {}",
+  "sign_swap_msg": "Обмін {} {} → {}",
   "zero_sum": "Сума 0 =( \n буде недостатньо",
   "kb_hide_similar_messages": "Приховати схожі повідомлення",
   "kb_notification_settings_button": "⚙️",

@@ -91,6 +91,22 @@ def build_swap_confirm_message(
     return msg
 
 
+def build_swap_sign_message(
+    obj,
+    send_sum,
+    send_asset,
+    receive_asset,
+    *,
+    app_context: AppContext,
+) -> str:
+    return my_gettext(
+        obj,
+        "sign_swap_msg",
+        (send_sum, send_asset, receive_asset),
+        app_context=app_context,
+    )
+
+
 class SwapAssetForCallbackData(CallbackData, prefix="SwapAssetForCallbackData"):
     answer: str
 
@@ -460,6 +476,13 @@ async def cmd_swap_text(
         await state.update_data(
             xdr=xdr,
             operation=f"Swap {float2str(send_sum)} {send_asset_code} → {receive_asset_code}",
+            sign_msg=build_swap_sign_message(
+                message,
+                float2str(send_sum),
+                send_asset_code,
+                receive_asset_code,
+                app_context=app_context,
+            ),
             send_asset_code=send_asset_code,
             send_asset_issuer=send_asset_issuer,
             receive_asset_code=receive_asset_code,
@@ -971,6 +994,13 @@ async def cmd_swap_sum(
         await state.update_data(
             xdr=xdr,
             operation=f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}",
+            sign_msg=build_swap_sign_message(
+                message,
+                float2str(send_sum),
+                send_asset,
+                receive_asset,
+                app_context=app_context,
+            ),
             msg=None,
         )
         await send_message(
@@ -1134,6 +1164,13 @@ async def cmd_swap_receive_sum(
         await state.update_data(
             xdr=xdr,
             operation=f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}",
+            sign_msg=build_swap_sign_message(
+                message,
+                float2str(send_sum),
+                send_asset,
+                receive_asset,
+                app_context=app_context,
+            ),
             msg=None,
         )
         await send_message(

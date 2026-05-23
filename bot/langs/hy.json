@@ -182,6 +182,7 @@
   "kb_decode": "Decode",
   "sign_payment_msg": "Payment {} {}",
   "sign_sep10_msg": "Signature request for Stellar anchor {}",
+  "sign_swap_msg": "Swap {} {} → {}",
   "low_xlm": "Դուք ունեք 0,5-ից պակաս անվճար XLM",
   "kb_tools_update_multi": "Թարմացրեք բազմանշանը",
   "bsn_help_text": "Պիտակը ջնջելու համար ուղարկեք `&lt;պիտակ&gt; <code>{}</code>`\n\nՄի քանի պիտակի օգտագործում\n(օրինակ՝ Employee1, Employee2, Employee100500):\n - Եթե պիտակը չունի նշված համար, համակարգը ավտոմատ կտրամադրի հաջորդ ազատ համարը\n - Պիտակը ջնջելու կամ փոփոխելու համար անհրաժեշտ է նշել համարը\n",

@@ -242,6 +242,9 @@ async def test_cmd_swap_sum_execution(
     # Verify TEMPLATE key is present (mock my_gettext returns key or "text KEY")
     assert "confirm_swap" in req["data"]["text"]
 
+    data = await state.get_data()
+    assert data.get("sign_msg") == "sign_swap_msg"
+
     # Verify UseCase call
     router_app_context.use_case_factory.create_swap_assets.return_value.execute.assert_called_once()
 
@@ -322,6 +325,9 @@ async def test_cmd_swap_receive_sum_execution(
 
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert "confirm_swap" in req["data"]["text"]
+
+    data = await state.get_data()
+    assert data.get("sign_msg") == "sign_swap_msg"
 
     # Verify UseCase call with strict_receive=True
     call_kwargs = router_app_context.use_case_factory.create_swap_assets.return_value.execute.call_args.kwargs
@@ -445,6 +451,7 @@ async def test_cmd_swap_text_command(
     assert data.get("send_asset_code") == "XLM"
     assert data.get("receive_asset_code") == "EURMTL"
     assert data.get("xdr") == "XDR_SWAP"
+    assert data.get("sign_msg") == "sign_swap_msg"
 
 
 @pytest.mark.asyncio

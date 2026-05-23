@@ -183,6 +183,7 @@
   "kb_decode": "Decode",
   "sign_payment_msg": "Payment {} {}",
   "sign_sep10_msg": "Signature request for Stellar anchor {}",
+  "sign_swap_msg": "Swap {} {} → {}",
   "low_xlm": "ከ0.5 ነፃ XLM አለዎት",
   "kb_tools_update_multi": "MultiSign ያዘምኑ",
   "bsn_help_text": "መለያን ለማጥፋት `&lt;መለያ&gt; <code>{}</code>` ይላኩ\n\nበብዛት መጠቀም\n(ለምሳሌ: Employee1, Employee2, Employee100500):\n - መለያው ቁጥር ካልተጠቀሰበት ቁጥር እንዲሰጠው በራሱ ይወስዳል\n - መለያን ለማጥፋት ወይም ለማሻሻል ቁጥሩን መጠቀም አለብዎት\n",
