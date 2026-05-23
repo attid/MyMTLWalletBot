@@ -290,8 +290,51 @@ async def test_pin_type_10_shows_webapp_button(
         markup = latest_req["data"].get("reply_markup", "")
         # WebApp keyboard contains web_app URL and cancel_biometric_sign callback
         assert "web_app" in markup or "cancel_biometric_sign" in markup
+        assert "/decode?tx=" in markup
     finally:
         # Restore globals
+        faststream_tools.REDIS_CLIENT = old_redis_client
+        await fake_redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_pin_signing_screen_shows_webapp_decode_button(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    fake_redis = fakeredis.aioredis.FakeRedis()
+    old_redis_client = faststream_tools.REDIS_CLIENT
+    faststream_tools.REDIS_CLIENT = fake_redis
+
+    try:
+        await dp.feed_update(bot, create_callback_update(user_id, "Sign"))
+        mock_telegram.clear()
+        await dp.storage.update_data(state_key, {"user_lang": "en"})
+
+        xdr = "AAAAAgAAAAA="
+        await dp.feed_update(bot, create_message_update(user_id, xdr))
+
+        latest_req = [
+            r
+            for r in mock_telegram
+            if r["method"] in ("sendMessage", "editMessageText")
+        ][-1]
+        markup = latest_req["data"].get("reply_markup", "")
+        assert "/decode?tx=" in markup
+
+        keys = await fake_redis.keys("tx:*")
+        assert len(keys) == 1
+        tx_data = await fake_redis.hgetall(keys[0])
+        decoded_data = {k.decode(): v.decode() for k, v in tx_data.items()}
+        assert decoded_data["unsigned_xdr"] == xdr
+    finally:
         faststream_tools.REDIS_CLIENT = old_redis_client
         await fake_redis.aclose()
 

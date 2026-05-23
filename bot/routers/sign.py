@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+from html import escape
 import jsonpickle  # type: ignore
 from aiogram import Router, types, F
 from aiogram.fsm.state import StatesGroup, State
@@ -31,7 +32,7 @@ from infrastructure.log_models import LogQuery
 from shared.constants import REDIS_TX_PREFIX
 from other import faststream_tools
 from other.faststream_tools import publish_pending_tx
-from keyboards.webapp import webapp_sign_keyboard
+from keyboards.webapp import webapp_decode_button, webapp_sign_keyboard
 
 
 def format_horizon_send_error(ex: BaseHorizonError) -> str:
@@ -144,6 +145,43 @@ router.message.filter(F.chat.type == "private")
 kb_cash: dict[str, types.InlineKeyboardMarkup] = {}
 
 
+async def _ensure_decode_tx_id(
+    chat_id: int,
+    state: FSMContext,
+    *,
+    wallet_address: str,
+) -> str | None:
+    data = await state.get_data()
+    xdr = data.get("xdr")
+    if not xdr:
+        return None
+    existing_tx_id = data.get("decode_tx_id")
+    if existing_tx_id:
+        return existing_tx_id
+    try:
+        tx_id = await publish_pending_tx(
+            user_id=chat_id,
+            wallet_address=wallet_address,
+            unsigned_xdr=xdr,
+            memo=data.get("sign_msg") or data.get("operation", "Transaction"),
+        )
+    except Exception as exc:
+        logger.debug(f"Decode TX publish failed for user {chat_id}: {exc}")
+        return None
+    await state.update_data(decode_tx_id=tx_id)
+    return tx_id
+
+
+def _append_decode_button(
+    buttons: list[list[types.InlineKeyboardButton]],
+    tx_id: str | None,
+    chat_id: int,
+    app_context: AppContext,
+) -> None:
+    if tx_id:
+        buttons.append([webapp_decode_button(tx_id, chat_id, app_context)])
+
+
 @router.callback_query(F.data == "Yes_send_xdr")
 async def cmd_yes_send(
     callback: types.CallbackQuery,
@@ -174,6 +212,8 @@ async def cmd_ask_pin(
     simple_account = user_account[:4] + ".." + user_account[-4:]
     wallet_connect_info = data.get("wallet_connect_info")
     soroban_preview = data.get("soroban_preview") or ""
+    sign_msg = data.get("sign_msg")
+    sign_context = f"<b>{escape(str(sign_msg))}</b>\n\n" if sign_msg else ""
     # When a Soroban transfer preview is available, use the
     # "Подтвердите транзакцию:\n\n{}" template as the header across all
     # branches so the preview reads as the transaction summary, and skip the
@@ -206,10 +246,19 @@ async def cmd_ask_pin(
         pin_type = wallet.use_pin if wallet else 0
         await state.update_data(pin_type=pin_type)
 
+    decode_tx_id = None
+    if pin_type != 10:
+        decode_tx_id = await _ensure_decode_tx_id(
+            chat_id,
+            state,
+            wallet_address=user_account,
+        )
+
     if pin_type == 1:  # pin
         if sign_header:
             body = (
-                sign_header
+                sign_context
+                + sign_header
                 + "\n\n"
                 + my_gettext(
                     chat_id,
@@ -219,7 +268,7 @@ async def cmd_ask_pin(
                 )
             )
         else:
-            body = msg
+            body = sign_context + msg
         body = body + "\n" + "".ljust(len(pin), "*") + "\n\n" + long_line()
         if not sign_header and current_state == PinState.sign:
             body += my_gettext(
@@ -231,14 +280,17 @@ async def cmd_ask_pin(
             session,
             chat_id,
             body,
-            reply_markup=get_kb_pin(data, app_context=app_context),
+            reply_markup=get_kb_pin(
+                data, chat_id, decode_tx_id, app_context=app_context
+            ),
             app_context=app_context,
         )
 
     if pin_type == 2:  # password
         if sign_header:
             body = (
-                sign_header
+                sign_context
+                + sign_header
                 + "\n\n"
                 + my_gettext(
                     chat_id,
@@ -248,7 +300,7 @@ async def cmd_ask_pin(
                 )
             )
         else:
-            body = my_gettext(
+            body = sign_context + my_gettext(
                 chat_id, "send_password", (simple_account,), app_context=app_context
             )
             if current_state == PinState.sign:
@@ -262,16 +314,18 @@ async def cmd_ask_pin(
             session,
             chat_id,
             body,
-            reply_markup=get_kb_return(chat_id, app_context=app_context),
+            reply_markup=get_signing_return_keyboard(
+                chat_id, decode_tx_id, app_context=app_context
+            ),
             app_context=app_context,
         )
 
     if pin_type == 0:  # no password
         await state.update_data(pin=str(chat_id))
         if sign_header:
-            body = sign_header
+            body = sign_context + sign_header
         else:
-            body = my_gettext(
+            body = sign_context + my_gettext(
                 chat_id,
                 "confirm_send_mini",
                 (simple_account,),
@@ -287,7 +341,9 @@ async def cmd_ask_pin(
             session,
             chat_id,
             body,
-            reply_markup=get_kb_nopassword(chat_id, app_context=app_context),
+            reply_markup=get_kb_nopassword(
+                chat_id, decode_tx_id, app_context=app_context
+            ),
             app_context=app_context,
         )
 
@@ -312,6 +368,7 @@ async def cmd_ask_pin(
             fsm_after_send=fsm_after_send,
             success_msg=success_msg,
         )
+        await state.update_data(decode_tx_id=tx_id)
 
         # Показываем кнопку WebApp. Если есть Soroban-превью — используем уже
         # собранный sign_header (он равен biometric_sign_prompt(preview)),
@@ -340,10 +397,15 @@ async def cmd_ask_pin(
         await state.set_state(None)
 
 
-def get_kb_pin(data: dict, app_context: AppContext) -> types.InlineKeyboardMarkup:
+def get_kb_pin(
+    data: dict,
+    chat_id: int,
+    decode_tx_id: str | None,
+    app_context: AppContext,
+) -> types.InlineKeyboardMarkup:
     # Need to consider if caching is safe with app_context if it matters...
     # Assuming user_lang is enough key.
-    if data["user_lang"] in kb_cash:
+    if decode_tx_id is None and data["user_lang"] in kb_cash:
         return kb_cash[data["user_lang"]]
     else:
         buttons_list = [
@@ -366,9 +428,11 @@ def get_kb_pin(data: dict, app_context: AppContext) -> types.InlineKeyboardMarku
                 )
             kb_buttons.append(tmp_buttons)
 
+        _append_decode_button(kb_buttons, decode_tx_id, chat_id, app_context)
         kb_buttons.append(get_return_button(data["user_lang"], app_context=app_context))
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=kb_buttons)
-        kb_cash[data["user_lang"]] = keyboard
+        if decode_tx_id is None:
+            kb_cash[data["user_lang"]] = keyboard
         return keyboard
 
 
@@ -617,8 +681,20 @@ async def sign_xdr(session: AsyncSession, state, user_id, *, app_context: AppCon
     await state.update_data(pin="")
 
 
+def get_signing_return_keyboard(
+    chat_id: int,
+    decode_tx_id: str | None,
+    *,
+    app_context: AppContext,
+) -> types.InlineKeyboardMarkup:
+    buttons = []
+    _append_decode_button(buttons, decode_tx_id, chat_id, app_context)
+    buttons.append(get_return_button(chat_id, app_context=app_context))
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def get_kb_nopassword(
-    chat_id: int, app_context: AppContext
+    chat_id: int, decode_tx_id: str | None, app_context: AppContext
 ) -> types.InlineKeyboardMarkup:
     buttons = [
         [
@@ -627,8 +703,9 @@ def get_kb_nopassword(
                 callback_data=PinCallbackData(action="Enter").pack(),
             )
         ],
-        get_return_button(chat_id, app_context=app_context),
     ]
+    _append_decode_button(buttons, decode_tx_id, chat_id, app_context)
+    buttons.append(get_return_button(chat_id, app_context=app_context))
 
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard

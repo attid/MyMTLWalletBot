@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block page_title_key %}decode.page_title{% endblock %}
+{% block title %}Decode transaction{% endblock %}
+
+{% block content %}
+<div class="card" id="loading-card">
+    <div class="spinner"></div>
+    <p data-i18n="decode.loading">Loading transaction...</p>
+</div>
+
+<div class="card hidden" id="error-card">
+    <div class="icon error-icon">!</div>
+    <h2 data-i18n="common.error_title">Error</h2>
+    <p id="error-message"></p>
+    <button class="btn btn-secondary" data-i18n="common.close" onclick="Telegram.WebApp.close()">Close</button>
+</div>
+
+<div class="card hidden" id="decode-card">
+    <h2 data-i18n="decode.card_title">Transaction details</h2>
+
+    <div class="tx-info">
+        <div class="tx-memo" id="tx-memo"></div>
+        <div class="tx-address">
+            <span class="label" data-i18n="common.wallet_label">Wallet:</span>
+            <span class="value" id="tx-address"></span>
+        </div>
+    </div>
+
+    <div id="sub-invocation-summary" class="sub-invocation-summary hidden"></div>
+    <div id="operations-list" class="operations-list"></div>
+
+    <div class="divider"></div>
+
+    <button class="btn btn-secondary" data-i18n="decode.btn_show_xdr" onclick="toggleXdr()">
+        Show XDR
+    </button>
+    <textarea class="xdr-text hidden" id="xdr-text" readonly></textarea>
+    <button class="btn btn-primary" data-i18n="common.close" onclick="Telegram.WebApp.close()">Close</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TX_ID = "{{ tx_id }}";
+let txData = null;
+
+const tg = Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const AUTH_HEADERS = {
+    "X-Telegram-Init-Data": tg.initData || ""
+};
+
+document.body.style.backgroundColor = tg.themeParams.bg_color || "#fff";
+document.body.style.color = tg.themeParams.text_color || "#000";
+
+async function init() {
+    if (!TX_ID) {
+        showError(t("decode.tx_id_missing"));
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/tx/${TX_ID}`, { headers: AUTH_HEADERS });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || t("decode.tx_not_found"));
+        }
+
+        txData = await response.json();
+        document.getElementById("tx-memo").textContent = txData.memo || t("decode.no_memo");
+        document.getElementById("tx-address").textContent = formatAddress(txData.wallet_address);
+        document.getElementById("xdr-text").value = txData.unsigned_xdr;
+
+        renderSummary(txData.sub_invocation_summary || []);
+        renderOperations(txData.unsigned_xdr);
+
+        hideElement("loading-card");
+        showElement("decode-card");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+function renderSummary(lines) {
+    if (!lines.length) return;
+    const summaryEl = document.getElementById("sub-invocation-summary");
+    summaryEl.innerHTML = "";
+    for (const line of lines) {
+        const p = document.createElement("div");
+        p.className = "sub-invocation-line";
+        p.textContent = line;
+        summaryEl.appendChild(p);
+    }
+    summaryEl.classList.remove("hidden");
+}
+
+function renderOperations(xdr) {
+    const list = document.getElementById("operations-list");
+    list.innerHTML = "";
+    try {
+        const transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
+        transaction.operations.forEach((operation, index) => {
+            list.appendChild(operationCard(operation, index));
+        });
+    } catch (error) {
+        const item = document.createElement("div");
+        item.className = "operation-card";
+        item.textContent = t("decode.parse_error", { msg: error.message });
+        list.appendChild(item);
+    }
+}
+
+function operationCard(operation, index) {
+    const card = document.createElement("div");
+    card.className = "operation-card";
+
+    const title = document.createElement("div");
+    title.className = "operation-title";
+    title.textContent = `${index + 1}. ${operation.type}`;
+    card.appendChild(title);
+
+    const rows = operationRows(operation);
+    for (const [label, value] of rows) {
+        if (value == null || value === "") continue;
+        const row = document.createElement("div");
+        row.className = "operation-row";
+        const labelEl = document.createElement("span");
+        labelEl.className = "operation-label";
+        labelEl.textContent = label;
+        const valueEl = document.createElement("span");
+        valueEl.className = "operation-value";
+        valueEl.textContent = String(value);
+        row.appendChild(labelEl);
+        row.appendChild(valueEl);
+        card.appendChild(row);
+    }
+
+    return card;
+}
+
+function operationRows(operation) {
+    const rows = [];
+    if (operation.source) rows.push([t("decode.source"), operation.source]);
+    if (operation.destination) rows.push([t("decode.destination"), operation.destination]);
+    if (operation.asset) rows.push([t("decode.asset"), formatAsset(operation.asset)]);
+    if (operation.amount) rows.push([t("decode.amount"), operation.amount]);
+    if (operation.startingBalance) rows.push([t("decode.amount"), operation.startingBalance]);
+    if (operation.name) rows.push([t("decode.name"), operation.name]);
+    if (operation.value) rows.push([t("decode.value"), operation.value]);
+    if (operation.trustor) rows.push([t("decode.trustor"), operation.trustor]);
+    if (operation.limit) rows.push([t("decode.limit"), operation.limit]);
+    if (rows.length === 0) rows.push([t("decode.raw"), JSON.stringify(operation)]);
+    return rows;
+}
+
+function formatAsset(asset) {
+    if (!asset) return "";
+    if (asset.isNative && asset.isNative()) return "XLM";
+    if (asset.code) return asset.issuer ? `${asset.code}:${asset.issuer}` : asset.code;
+    return String(asset);
+}
+
+function toggleXdr() {
+    document.getElementById("xdr-text").classList.toggle("hidden");
+}
+
+function formatAddress(addr) {
+    if (!addr || addr.length < 12) return addr || "";
+    return addr.substring(0, 6) + "..." + addr.substring(addr.length - 6);
+}
+
+function showElement(id) {
+    document.getElementById(id).classList.remove("hidden");
+}
+
+function hideElement(id) {
+    document.getElementById(id).classList.add("hidden");
+}
+
+function showError(message) {
+    document.getElementById("error-message").textContent = message;
+    hideElement("loading-card");
+    hideElement("decode-card");
+    showElement("error-card");
+}
+
+init();
+</script>
+{% endblock %}
