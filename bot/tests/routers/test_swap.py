@@ -9,6 +9,7 @@ from routers.swap import (
     SwapAssetForCallbackData,
 )
 from core.domain.value_objects import Balance, PaymentResult
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -244,6 +245,12 @@ async def test_cmd_swap_sum_execution(
 
     data = await state.get_data()
     assert data.get("sign_msg") == "sign_swap_msg"
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_SWAP"
+    assert pending["purpose"] == "swap"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "Swap 10 XLM → EURMTL"
+    assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call
     router_app_context.use_case_factory.create_swap_assets.return_value.execute.assert_called_once()
@@ -328,6 +335,12 @@ async def test_cmd_swap_receive_sum_execution(
 
     data = await state.get_data()
     assert data.get("sign_msg") == "sign_swap_msg"
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_SWAP"
+    assert pending["purpose"] == "swap"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "Swap 10.5 XLM → EURMTL"
+    assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call with strict_receive=True
     call_kwargs = router_app_context.use_case_factory.create_swap_assets.return_value.execute.call_args.kwargs
@@ -452,6 +465,12 @@ async def test_cmd_swap_text_command(
     assert data.get("receive_asset_code") == "EURMTL"
     assert data.get("xdr") == "XDR_SWAP"
     assert data.get("sign_msg") == "sign_swap_msg"
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_SWAP"
+    assert pending["purpose"] == "swap"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "Swap 10 XLM → EURMTL"
+    assert pending["sign_msg"] == "sign_swap_msg"
 
 
 @pytest.mark.asyncio

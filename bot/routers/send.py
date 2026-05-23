@@ -12,6 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset, MuxedAccount
 from stellar_sdk.sep.federation import resolve_stellar_address
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 
 
 from keyboards.common_keyboards import (
@@ -820,27 +826,50 @@ async def cmd_send_04(
     #                         Asset(send_asset_name, send_asset_issuer), send_sum, memo=send_memo,
     #                         cancel_offers=cancel_offers)
 
+    operation = f"Send {float2str(send_sum)} {send_asset_name}"
+    sign_msg = my_gettext(
+        message,
+        "sign_payment_msg",
+        (float2str(send_sum), send_asset_name),
+        app_context=app_context,
+    )
+    success_msg = my_gettext(
+        message,
+        "confirm_send_success",
+        (
+            float2str(send_sum),
+            send_asset_name,
+            send_address + " " + mtlap_stars,
+            send_memo_str,
+        ),
+        app_context=app_context,
+    )
+
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=message.from_user.id,
+            wallet_address=data.get("public_key", ""),
+            xdr=xdr,
+            purpose=SignaturePurpose.PAYMENT,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=sign_msg,
+            success_msg=success_msg,
+            metadata={
+                "send_asset_code": send_asset_name,
+                "send_asset_issuer": send_asset_issuer,
+                "send_address": send_address,
+            },
+        ),
+    )
+
     await state.update_data(
         xdr=xdr,
-        operation=f"Send {float2str(send_sum)} {send_asset_name}",
-        sign_msg=my_gettext(
-            message,
-            "sign_payment_msg",
-            (float2str(send_sum), send_asset_name),
-            app_context=app_context,
-        ),
+        operation=operation,
+        sign_msg=sign_msg,
         msg=None,
-        success_msg=my_gettext(
-            message,
-            "confirm_send_success",
-            (
-                float2str(send_sum),
-                send_asset_name,
-                send_address + " " + mtlap_stars,
-                send_memo_str,
-            ),
-            app_context=app_context,
-        ),
+        success_msg=success_msg,
     )
 
     add_button_memo = federal_memo is None

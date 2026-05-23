@@ -1,6 +1,12 @@
 from typing import List
 
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import jsonpickle  # type: ignore
@@ -104,6 +110,36 @@ def build_swap_sign_message(
         "sign_swap_msg",
         (send_sum, send_asset, receive_asset),
         app_context=app_context,
+    )
+
+
+async def store_pending_swap_signature(
+    state: FSMContext,
+    *,
+    user_id: int,
+    xdr: str,
+    operation: str,
+    sign_msg: str,
+    send_asset: str,
+    receive_asset: str,
+    strict_receive: bool,
+) -> None:
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=user_id,
+            wallet_address="",
+            xdr=xdr,
+            purpose=SignaturePurpose.SWAP,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=sign_msg,
+            metadata={
+                "send_asset_code": send_asset,
+                "receive_asset_code": receive_asset,
+                "strict_receive": strict_receive,
+            },
+        ),
     )
 
 
@@ -473,16 +509,31 @@ async def cmd_swap_text(
         # Handler `routers/sign.py`? Or general handler?
         # Usually it sends the `xdr` stored in the state.
 
+        operation = (
+            f"Swap {float2str(send_sum)} {send_asset_code} → {receive_asset_code}"
+        )
+        sign_msg = build_swap_sign_message(
+            message,
+            float2str(send_sum),
+            send_asset_code,
+            receive_asset_code,
+            app_context=app_context,
+        )
+        await store_pending_swap_signature(
+            state,
+            user_id=message.from_user.id,
+            xdr=xdr,
+            operation=operation,
+            sign_msg=sign_msg,
+            send_asset=send_asset_code,
+            receive_asset=receive_asset_code,
+            strict_receive=strict_receive,
+        )
+
         await state.update_data(
             xdr=xdr,
-            operation=f"Swap {float2str(send_sum)} {send_asset_code} → {receive_asset_code}",
-            sign_msg=build_swap_sign_message(
-                message,
-                float2str(send_sum),
-                send_asset_code,
-                receive_asset_code,
-                app_context=app_context,
-            ),
+            operation=operation,
+            sign_msg=sign_msg,
             send_asset_code=send_asset_code,
             send_asset_issuer=send_asset_issuer,
             receive_asset_code=receive_asset_code,
@@ -991,16 +1042,29 @@ async def cmd_swap_sum(
                 message, "confirm_cancel_offers", (send_asset,), app_context=app_context
             )
 
+        operation = f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}"
+        sign_msg = build_swap_sign_message(
+            message,
+            float2str(send_sum),
+            send_asset,
+            receive_asset,
+            app_context=app_context,
+        )
+        await store_pending_swap_signature(
+            state,
+            user_id=message.from_user.id,
+            xdr=xdr,
+            operation=operation,
+            sign_msg=sign_msg,
+            send_asset=send_asset,
+            receive_asset=receive_asset,
+            strict_receive=False,
+        )
+
         await state.update_data(
             xdr=xdr,
-            operation=f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}",
-            sign_msg=build_swap_sign_message(
-                message,
-                float2str(send_sum),
-                send_asset,
-                receive_asset,
-                app_context=app_context,
-            ),
+            operation=operation,
+            sign_msg=sign_msg,
             msg=None,
         )
         await send_message(
@@ -1161,16 +1225,29 @@ async def cmd_swap_receive_sum(
             app_context=app_context,
         )
 
+        operation = f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}"
+        sign_msg = build_swap_sign_message(
+            message,
+            float2str(send_sum),
+            send_asset,
+            receive_asset,
+            app_context=app_context,
+        )
+        await store_pending_swap_signature(
+            state,
+            user_id=message.from_user.id,
+            xdr=xdr,
+            operation=operation,
+            sign_msg=sign_msg,
+            send_asset=send_asset,
+            receive_asset=receive_asset,
+            strict_receive=True,
+        )
+
         await state.update_data(
             xdr=xdr,
-            operation=f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}",
-            sign_msg=build_swap_sign_message(
-                message,
-                float2str(send_sum),
-                send_asset,
-                receive_asset,
-                app_context=app_context,
-            ),
+            operation=operation,
+            sign_msg=sign_msg,
             msg=None,
         )
         await send_message(
