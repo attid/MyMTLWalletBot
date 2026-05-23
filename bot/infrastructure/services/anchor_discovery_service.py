@@ -31,13 +31,17 @@ class AnchorDiscoveryService:
         fetch_text: FetchText | None = None,
         horizon_url: str | None = None,
         ttl: timedelta = timedelta(hours=1),
-        request_timeout: float = 5.0,
+        request_timeout: float = 2.0,
+        summary_timeout: float = 3.0,
+        list_concurrency: int = 3,
     ) -> None:
         self._fetch_json = fetch_json or self._default_fetch_json
         self._fetch_text = fetch_text or self._default_fetch_text
         self._horizon_url = (horizon_url or config.horizon_url).rstrip("/")
         self._ttl = ttl
         self._request_timeout = request_timeout
+        self._summary_timeout = summary_timeout
+        self._list_concurrency = max(1, list_concurrency)
         self._cache: dict[
             tuple[str, str], tuple[datetime, AnchorAssetSupport | None]
         ] = {}
@@ -45,7 +49,7 @@ class AnchorDiscoveryService:
         self._issuer_locks: dict[str, asyncio.Lock] = {}
 
     async def discover_assets(self, assets: list[Asset]) -> list[AnchorAssetSupport]:
-        supported = []
+        unique_assets = []
         seen: set[tuple[str, str]] = set()
         for asset in assets:
             if asset.issuer is None:
@@ -54,10 +58,31 @@ class AnchorDiscoveryService:
             if cache_key in seen:
                 continue
             seen.add(cache_key)
-            support = await self.discover_asset_summary(asset)
-            if support and support.supported_protocols:
-                supported.append(support)
-        return supported
+            unique_assets.append(asset)
+
+        semaphore = asyncio.Semaphore(self._list_concurrency)
+
+        async def discover_limited(asset: Asset) -> AnchorAssetSupport | None:
+            async with semaphore:
+                try:
+                    return await asyncio.wait_for(
+                        self.discover_asset_summary(asset),
+                        timeout=self._summary_timeout,
+                    )
+                except TimeoutError:
+                    logger.debug(
+                        f"SEP summary discovery timed out for {asset.to_string()}"
+                    )
+                    return None
+
+        results = await asyncio.gather(
+            *(discover_limited(asset) for asset in unique_assets)
+        )
+        return [
+            support
+            for support in results
+            if support is not None and support.supported_protocols
+        ]
 
     async def discover_asset_summary(self, asset: Asset) -> AnchorAssetSupport | None:
         if asset.issuer is None:
