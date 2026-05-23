@@ -21,6 +21,12 @@ from routers.start_msg import cmd_info_message
 from infrastructure.utils.telegram_utils import send_message, clear_last_message_id
 from infrastructure.utils.common_utils import get_user_id
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from other.lang_tools import my_gettext
 from infrastructure.utils.stellar_utils import (
     my_float,
@@ -724,7 +730,28 @@ async def cmd_send_usdt(
     #                         send_address,
     #                         usdm_asset, send_sum, memo=send_memo)
 
-    await state.update_data(xdr=xdr)
+    operation = f"USDT out {float2str(send_sum)} USDM"
+    fsm_after_send = data.get("fsm_after_send")
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=message.from_user.id,
+            wallet_address=send_address,
+            xdr=xdr,
+            purpose=SignaturePurpose.SEP6_WITHDRAW_PAYMENT,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=operation,
+            fsm_after_send=fsm_after_send,
+            metadata={
+                "usdt_address": usdt_address,
+                "usdt_sum": usdt_sum,
+                "sun_fee": sun_fee,
+            },
+        ),
+    )
+
+    await state.update_data(xdr=xdr, operation=operation, sign_msg=operation)
 
     await send_message(
         session,

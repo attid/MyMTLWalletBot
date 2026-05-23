@@ -11,6 +11,7 @@ from tests.conftest import TEST_BOT_TOKEN
 from core.domain.value_objects import Balance, PaymentResult, Asset
 from core.constants import USDM_ISSUER
 from infrastructure.services.localization_service import LocalizationService
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 
 
 class MockDbMiddleware(BaseMiddleware):
@@ -494,6 +495,19 @@ async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_cont
         sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
         assert "confirm_send" in sent[0]["data"]["text"]
         mock_pay_uc.execute.assert_called_once()
+
+        state = dp.fsm.get_context(bot=bot, chat_id=user_id, user_id=user_id)
+        state_data = await state.get_data()
+        pending = state_data.get(PENDING_SIGNATURE_REQUEST_KEY)
+        assert pending["xdr"] == "XDR_PAY"
+        assert pending["purpose"] == "sep6_withdraw_payment"
+        assert pending["mode"] == "sign_and_submit"
+        assert pending["fsm_after_send"] is not None
+        assert (
+            pending["metadata"]["usdt_address"] == "TUTBziqeXsh3LAH7QUYoaAYruzhUqLWu2n"
+        )
+        assert state_data["usdt_address"] == "TUTBziqeXsh3LAH7QUYoaAYruzhUqLWu2n"
+        assert state_data["usdt_sum"] == 20
 
 
 @pytest.mark.asyncio
