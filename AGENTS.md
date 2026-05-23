@@ -52,6 +52,9 @@ an index. Detailed rules live in `docs/`.
    documented reason not to. Direct `message.answer()`/`callback.message.answer()`
    does not update `last_message_id` and can make callback middleware reject
    fresh buttons as old.
+10. Command handlers that start a fresh flow should call `clear_state(state)`
+    and then `clear_last_message_id(user_id, app_context=app_context)` before
+    rendering the first screen.
 
 ## Task Intake Protocol
 1. First state which files/directories need changes.
