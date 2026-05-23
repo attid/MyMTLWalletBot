@@ -103,7 +103,7 @@ async def test_assets_command_shows_only_sep_supported_trustlines(
 
 
 @pytest.mark.asyncio
-async def test_assets_command_updates_last_message_in_existing_menu(
+async def test_assets_command_clears_last_message_and_sends_new_menu(
     mock_telegram, router_app_context
 ):
     user_id = 123
@@ -142,11 +142,11 @@ async def test_assets_command_updates_last_message_in_existing_menu(
         create_message_update(user_id, "/assets", message_id=10),
     )
 
-    req = get_telegram_request(mock_telegram, "editMessageText")
-    assert req["data"]["message_id"] == "99"
+    assert not any(req["method"] == "deleteMessage" for req in mock_telegram)
+    req = get_telegram_request(mock_telegram, "sendMessage")
     assert "SEP assets" in req["data"]["text"]
     state_data = await dp.storage.get_data(state_key)
-    assert state_data["last_message_id"] == 99
+    assert state_data["last_message_id"] != 99
     assert "anchor_request_asset" not in state_data
     assert "fsm_func" not in state_data
     assert state_data["anchor_assets"] == {"a0": make_support().asset.to_string()}

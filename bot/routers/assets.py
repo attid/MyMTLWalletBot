@@ -15,7 +15,11 @@ from core.models.anchor_transaction import AnchorTransaction
 from infrastructure.services.anchor_discovery_service import AnchorDiscoveryService
 from infrastructure.services.anchor_transaction_service import AnchorTransactionService
 from infrastructure.services.app_context import AppContext
-from infrastructure.utils.telegram_utils import clear_state, send_message
+from infrastructure.utils.telegram_utils import (
+    clear_last_message_id,
+    clear_state,
+    send_message,
+)
 from keyboards.assets import (
     AssetAction,
     asset_actions_keyboard,
@@ -41,6 +45,7 @@ async def cmd_assets(
         return
 
     await clear_state(state)
+    await clear_last_message_id(message.from_user.id, app_context=app_context)
 
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     balances = await balance_use_case.execute(message.from_user.id)
