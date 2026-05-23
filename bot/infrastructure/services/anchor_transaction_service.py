@@ -3,6 +3,7 @@ from typing import Any
 from urllib.parse import urlencode
 import asyncio
 
+from loguru import logger
 from stellar_sdk import Keypair, TransactionEnvelope
 
 from core.models.anchor_asset import AnchorAssetSupport, SepProtocolSupport
@@ -55,8 +56,14 @@ class AnchorTransactionService:
                 support.asset.code,
                 headers,
             ),
+            return_exceptions=True,
         )
-        transactions = [tx for protocol_txs in results for tx in protocol_txs]
+        transactions = []
+        for result in results:
+            if isinstance(result, Exception):
+                logger.info(f"SEP transactions request failed: {result}")
+                continue
+            transactions.extend(result)
         return transactions
 
     async def _authenticate(
@@ -140,5 +147,17 @@ class AnchorTransactionService:
             timeout=self._request_timeout,
         )
         if response.status >= 400 or not isinstance(response.data, dict):
-            raise ValueError(f"Unexpected JSON response from {url}: {response.status}")
+            raise AnchorTransactionRequestError(
+                url=url,
+                status=response.status,
+                body=response.data,
+            )
         return response.data
+
+
+class AnchorTransactionRequestError(Exception):
+    def __init__(self, *, url: str, status: int, body: object) -> None:
+        self.url = url
+        self.status = status
+        self.body = body
+        super().__init__(f"Unexpected JSON response from {url}: {status}; body={body}")
