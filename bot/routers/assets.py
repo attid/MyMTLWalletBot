@@ -1,6 +1,8 @@
 from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from html import escape
+import jsonpickle  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.domain.value_objects import Asset
@@ -9,7 +11,9 @@ from core.models.anchor_asset import (
     SepOperationSupport,
     SepProtocolSupport,
 )
+from core.models.anchor_transaction import AnchorTransaction
 from infrastructure.services.anchor_discovery_service import AnchorDiscoveryService
+from infrastructure.services.anchor_transaction_service import AnchorTransactionService
 from infrastructure.services.app_context import AppContext
 from infrastructure.utils.telegram_utils import send_message
 from keyboards.assets import AssetAction, asset_actions_keyboard, assets_list_keyboard
@@ -18,6 +22,7 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 
 _anchor_discovery_service = AnchorDiscoveryService()
+_anchor_transaction_service = AnchorTransactionService()
 
 
 @router.message(Command(commands=["assets"]))
@@ -103,9 +108,50 @@ async def cmd_asset_view(
     await callback.answer()
 
 
-@router.callback_query(
-    AssetAction.filter(F.action.in_({"requests", "deposit", "withdraw"}))
-)
+@router.callback_query(AssetAction.filter(F.action == "requests"))
+async def cmd_asset_requests(
+    callback: types.CallbackQuery,
+    callback_data: AssetAction,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    if callback.from_user is None:
+        return
+
+    asset = await _asset_from_state(state, callback_data.key)
+    if asset is None:
+        await callback.answer("Asset selection expired", show_alert=True)
+        return
+
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    if wallet and wallet.use_pin == 10:
+        await send_message(
+            session,
+            callback,
+            "Requests require SEP-10 signing. WebApp signing is not enabled for this flow yet.",
+            app_context=app_context,
+        )
+        await callback.answer()
+        return
+
+    await state.update_data(
+        anchor_request_asset=asset.to_string(),
+        anchor_request_key=callback_data.key,
+        fsm_func=jsonpickle.dumps(_show_asset_requests_after_pin),
+        operation=f"SEP requests for {asset.code}",
+        msg=f"Sign SEP-10 challenge to show {asset.code} requests.",
+    )
+
+    from routers.sign import PinState, cmd_ask_pin
+
+    await state.set_state(PinState.sign)
+    await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
+    await callback.answer()
+
+
+@router.callback_query(AssetAction.filter(F.action.in_({"deposit", "withdraw"})))
 async def cmd_asset_action_placeholder(
     callback: types.CallbackQuery,
     callback_data: AssetAction,
@@ -135,6 +181,15 @@ def _get_anchor_discovery_service(app_context: AppContext) -> AnchorDiscoverySer
     return _anchor_discovery_service
 
 
+def _get_anchor_transaction_service(
+    app_context: AppContext,
+) -> AnchorTransactionService:
+    service = getattr(app_context, "anchor_transaction_service", None)
+    if service is not None:
+        return service
+    return _anchor_transaction_service
+
+
 async def _asset_from_state(state: FSMContext, key: str) -> Asset | None:
     data = await state.get_data()
     asset_map = data.get("anchor_assets", {})
@@ -149,6 +204,65 @@ async def _asset_from_state(state: FSMContext, key: str) -> Asset | None:
     return Asset(code, issuer)
 
 
+async def _show_asset_requests_after_pin(
+    session: AsyncSession,
+    user_id: int,
+    state: FSMContext,
+    *,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    asset_ref = data.get("anchor_request_asset")
+    asset_key = data.get("anchor_request_key", "a0")
+    pin = data.get("pin", "")
+    if not isinstance(asset_ref, str) or ":" not in asset_ref:
+        await send_message(
+            session,
+            user_id,
+            "Asset selection expired.",
+            app_context=app_context,
+        )
+        return
+
+    code, issuer = asset_ref.split(":", 1)
+    asset = Asset(code, issuer)
+    support = await _get_anchor_discovery_service(app_context).discover_asset(asset)
+    if support is None:
+        await send_message(
+            session,
+            user_id,
+            "SEP support is not available.",
+            app_context=app_context,
+        )
+        return
+
+    keypair = await app_context.stellar_service.get_user_keypair(session, user_id, pin)
+    try:
+        transactions = await _get_anchor_transaction_service(
+            app_context
+        ).fetch_transactions(support, keypair)
+    except Exception as exc:
+        await send_message(
+            session,
+            user_id,
+            f"Could not load requests.\n{escape(str(exc))}",
+            app_context=app_context,
+        )
+        return
+
+    await send_message(
+        session,
+        user_id,
+        _format_asset_transactions(support.asset.code, transactions),
+        reply_markup=asset_actions_keyboard(
+            str(asset_key),
+            user_id,
+            app_context=app_context,
+        ),
+        app_context=app_context,
+    )
+
+
 def _format_asset_support(support: AnchorAssetSupport) -> str:
     lines = [
         f"<b>{support.asset.code}</b>",
@@ -159,6 +273,36 @@ def _format_asset_support(support: AnchorAssetSupport) -> str:
         lines.extend(_format_protocol("SEP-6", support.sep6))
     if support.sep24:
         lines.extend(_format_protocol("SEP-24", support.sep24))
+    return "\n".join(lines).strip()
+
+
+def _format_asset_transactions(
+    asset_code: str,
+    transactions: list[AnchorTransaction],
+) -> str:
+    if not transactions:
+        return f"<b>{asset_code}</b>\nRequests were not found."
+
+    lines = [f"<b>{asset_code}</b>", "Requests", ""]
+    for tx in transactions[:10]:
+        parts = [tx.protocol.value]
+        if tx.kind:
+            parts.append(escape(tx.kind))
+        if tx.status:
+            parts.append(escape(tx.status))
+        lines.append(" / ".join(parts))
+        lines.append(f"ID: <code>{escape(tx.id)}</code>")
+        amount = tx.amount_in or tx.amount_out
+        if amount:
+            lines.append(f"Amount: {escape(amount)}")
+        date_value = tx.updated_at or tx.completed_at or tx.started_at
+        if date_value:
+            lines.append(f"Date: {escape(date_value)}")
+        if tx.more_info_url:
+            lines.append(
+                f'<a href="{escape(tx.more_info_url, quote=True)}">More info</a>'
+            )
+        lines.append("")
     return "\n".join(lines).strip()
 
 
