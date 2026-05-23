@@ -16,7 +16,12 @@ from infrastructure.services.anchor_discovery_service import AnchorDiscoveryServ
 from infrastructure.services.anchor_transaction_service import AnchorTransactionService
 from infrastructure.services.app_context import AppContext
 from infrastructure.utils.telegram_utils import clear_state, send_message
-from keyboards.assets import AssetAction, asset_actions_keyboard, assets_list_keyboard
+from keyboards.assets import (
+    AssetAction,
+    asset_actions_keyboard,
+    assets_list_keyboard,
+    sep24_interactive_keyboard,
+)
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -154,25 +159,46 @@ async def cmd_asset_requests(
 
 
 @router.callback_query(AssetAction.filter(F.action.in_({"deposit", "withdraw"})))
-async def cmd_asset_action_placeholder(
+async def cmd_asset_transfer(
     callback: types.CallbackQuery,
     callback_data: AssetAction,
+    state: FSMContext,
     session: AsyncSession,
     app_context: AppContext,
 ):
     if callback.from_user is None:
         return
-    action_title = {
-        "requests": "Requests",
-        "deposit": "Deposit",
-        "withdraw": "Withdraw",
-    }[callback_data.action]
-    await send_message(
-        session,
-        callback,
-        f"{action_title} flow is not enabled yet.",
-        app_context=app_context,
+
+    asset = await _asset_from_state(state, callback_data.key)
+    if asset is None:
+        await callback.answer("Asset selection expired", show_alert=True)
+        return
+
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    if wallet and wallet.use_pin == 10:
+        await send_message(
+            session,
+            callback,
+            "SEP-24 transfer requires SEP-10 signing. WebApp signing is not enabled for this flow yet.",
+            app_context=app_context,
+        )
+        await callback.answer()
+        return
+
+    await state.update_data(
+        anchor_transfer_asset=asset.to_string(),
+        anchor_transfer_key=callback_data.key,
+        anchor_transfer_operation=callback_data.action,
+        fsm_func=jsonpickle.dumps(_show_sep24_interactive_after_pin),
+        operation=f"SEP-24 {callback_data.action} for {asset.code}",
+        msg=f"Sign SEP-10 challenge to start {asset.code} {callback_data.action}.",
     )
+
+    from routers.sign import PinState, cmd_ask_pin
+
+    await state.set_state(PinState.sign)
+    await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
     await callback.answer()
 
 
@@ -259,6 +285,69 @@ async def _show_asset_requests_after_pin(
         reply_markup=asset_actions_keyboard(
             str(asset_key),
             user_id,
+            app_context=app_context,
+        ),
+        app_context=app_context,
+    )
+
+
+async def _show_sep24_interactive_after_pin(
+    session: AsyncSession,
+    user_id: int,
+    state: FSMContext,
+    *,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    asset_ref = data.get("anchor_transfer_asset")
+    operation = data.get("anchor_transfer_operation")
+    pin = data.get("pin", "")
+    if (
+        not isinstance(asset_ref, str)
+        or ":" not in asset_ref
+        or operation not in {"deposit", "withdraw"}
+    ):
+        await send_message(
+            session,
+            user_id,
+            "Asset selection expired.",
+            app_context=app_context,
+        )
+        return
+
+    code, issuer = asset_ref.split(":", 1)
+    asset = Asset(code, issuer)
+    support = await _get_anchor_discovery_service(app_context).discover_asset(asset)
+    if support is None or support.sep24 is None:
+        await send_message(
+            session,
+            user_id,
+            "SEP-24 is not available for this asset.",
+            app_context=app_context,
+        )
+        return
+
+    keypair = await app_context.stellar_service.get_user_keypair(session, user_id, pin)
+    try:
+        url = await _get_anchor_transaction_service(
+            app_context
+        ).start_sep24_interactive(support, keypair, operation=operation)
+    except Exception as exc:
+        await send_message(
+            session,
+            user_id,
+            f"Could not start SEP-24 {operation}.\n{escape(str(exc))}",
+            app_context=app_context,
+        )
+        return
+
+    await send_message(
+        session,
+        user_id,
+        f"<b>{support.asset.code}</b>\nSEP-24 {escape(str(operation))} is ready.",
+        reply_markup=sep24_interactive_keyboard(
+            user_id,
+            url,
             app_context=app_context,
         ),
         app_context=app_context,

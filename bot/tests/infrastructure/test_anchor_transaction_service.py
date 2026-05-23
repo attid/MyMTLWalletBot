@@ -103,3 +103,42 @@ async def test_fetch_transactions_keeps_successful_protocol_when_other_fails():
 
     assert [tx.id for tx in transactions] == ["sep24-1"]
     assert transactions[0].protocol is AnchorTransactionProtocol.SEP24
+
+
+@pytest.mark.asyncio
+async def test_start_sep24_interactive_posts_asset_code_and_returns_url():
+    calls = []
+
+    async def fetch_json(method, url, params, headers, data):
+        calls.append((method, url, params, headers, data))
+        if url == "https://anchor.test/sep24/transactions/deposit/interactive":
+            return {"url": "https://anchor.test/interactive/deposit/1"}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    service = AnchorTransactionService(fetch_json=fetch_json)
+    support = AnchorAssetSupport(
+        asset=Asset("yXLM", "GISSUER"),
+        anchor_domain="anchor.test",
+        web_auth_endpoint=None,
+        sep24=SepProtocolSupport(
+            protocol=SepProtocol.SEP24,
+            transfer_server="https://anchor.test/sep24",
+        ),
+    )
+
+    url = await service.start_sep24_interactive(
+        support,
+        Keypair.random(),
+        operation="deposit",
+    )
+
+    assert url == "https://anchor.test/interactive/deposit/1"
+    assert calls == [
+        (
+            "POST",
+            "https://anchor.test/sep24/transactions/deposit/interactive",
+            None,
+            None,
+            {"asset_code": "yXLM"},
+        )
+    ]
