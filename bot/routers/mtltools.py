@@ -17,6 +17,12 @@ from infrastructure.utils.telegram_utils import (
 )
 from infrastructure.utils.stellar_utils import my_float
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from db.mongo import check_account_id_from_grist
 from other.web_tools import get_web_request
 from other.stellar_tools import (
@@ -55,6 +61,30 @@ class BIMCallbackData(CallbackData, prefix="BIMCallbackData"):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+async def store_pending_tools_signature(
+    state: FSMContext,
+    *,
+    user_id: int,
+    wallet_address: str,
+    xdr: str,
+    operation: str,
+    metadata: dict | None = None,
+) -> None:
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=user_id,
+            wallet_address=wallet_address,
+            xdr=xdr,
+            purpose=SignaturePurpose.TOOLS,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=operation,
+            metadata=metadata,
+        ),
+    )
 
 
 async def _answer_missing_stellar_account(
@@ -206,12 +236,21 @@ async def cmd_tools_del_delegate(
             delegate = name
             break
     if delegate:
+        source_account = (
+            await stellar_get_user_account(session, callback.from_user.id)
+        ).account.account_id
         xdr = await cmd_gen_data_xdr(
-            (
-                await stellar_get_user_account(session, callback.from_user.id)
-            ).account.account_id,
+            source_account,
             delegate,
             None,
+        )
+        await store_pending_tools_signature(
+            state,
+            user_id=callback.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtl_delete_delegate",
+            metadata={"data_key": delegate},
         )
         await state.update_data(xdr=xdr)
         await send_message(
@@ -268,12 +307,21 @@ async def cmd_send_add_delegate_for(
     my_account = await stellar_check_account(public_key)
     if my_account:
         delegate = my_account.account.account.account_id
+        source_account = (
+            await stellar_get_user_account(session, message.from_user.id)
+        ).account.account_id
         xdr = await cmd_gen_data_xdr(
-            (
-                await stellar_get_user_account(session, message.from_user.id)
-            ).account.account_id,
+            source_account,
             "mtl_delegate",
             delegate,
+        )
+        await store_pending_tools_signature(
+            state,
+            user_id=message.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtl_add_delegate",
+            metadata={"data_key": "mtl_delegate", "data_value": delegate},
         )
         await state.update_data(xdr=xdr)
         await send_message(
@@ -470,12 +518,24 @@ async def cmd_send_add_donate_percent(
     if my_float(message.text):
         persent = my_float(message.text)
         data = await state.get_data()
+        source_account = (
+            await stellar_get_user_account(session, message.from_user.id)
+        ).account.account_id
         xdr = await cmd_gen_data_xdr(
-            (
-                await stellar_get_user_account(session, message.from_user.id)
-            ).account.account_id,
+            source_account,
             f"mtl_donate_{data['name']}={persent}",
             data["address"],
+        )
+        await store_pending_tools_signature(
+            state,
+            user_id=message.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtl_add_donate",
+            metadata={
+                "data_key": f"mtl_donate_{data['name']}={persent}",
+                "data_value": data["address"],
+            },
         )
         await state.update_data(xdr=xdr)
         await send_message(
@@ -519,10 +579,21 @@ async def cq_donate_setting(
             msg = f"name = {donates[idx][1]} \n persent = {donates[idx][2]}\n address = {donates[idx][3]}"
             await callback.answer(msg[:200], show_alert=True)
         if answer == "Delete":
+            source_account = (
+                await stellar_get_user_account(session, user_id)
+            ).account.account_id
             xdr = await cmd_gen_data_xdr(
-                (await stellar_get_user_account(session, user_id)).account.account_id,
+                source_account,
                 donates[idx][0],
                 None,
+            )
+            await store_pending_tools_signature(
+                state,
+                user_id=user_id,
+                wallet_address=source_account,
+                xdr=xdr,
+                operation="mtl_delete_donate",
+                metadata={"data_key": donates[idx][0]},
             )
             await state.update_data(xdr=xdr)
             await send_message(
@@ -673,12 +744,21 @@ async def cmd_send_add_bim_name(
     if message.text:
         name = message.text
         data = await state.get_data()
+        source_account = (
+            await stellar_get_user_account(session, message.from_user.id)
+        ).account.account_id
         xdr = await cmd_gen_data_xdr(
-            (
-                await stellar_get_user_account(session, message.from_user.id)
-            ).account.account_id,
+            source_account,
             f"bod_{name}",
             data["address"],
+        )
+        await store_pending_tools_signature(
+            state,
+            user_id=message.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtl_add_bim",
+            metadata={"data_key": f"bod_{name}", "data_value": data["address"]},
         )
         await state.update_data(xdr=xdr)
         await send_message(
@@ -725,10 +805,21 @@ async def cq_bim_setting(
             msg = f"name = {donates[idx][1]} \n address = {donates[idx][2]}"
             await callback.answer(msg[:200], show_alert=True)
         if answer == "Delete":
+            source_account = (
+                await stellar_get_user_account(session, user_id)
+            ).account.account_id
             xdr = await cmd_gen_data_xdr(
-                (await stellar_get_user_account(session, user_id)).account.account_id,
+                source_account,
                 donates[idx][0],
                 None,
+            )
+            await store_pending_tools_signature(
+                state,
+                user_id=user_id,
+                wallet_address=source_account,
+                xdr=xdr,
+                operation="mtl_delete_bim",
+                metadata={"data_key": donates[idx][0]},
             )
             await state.update_data(xdr=xdr)
             await send_message(

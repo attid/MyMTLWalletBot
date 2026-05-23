@@ -10,6 +10,12 @@ from keyboards.common_keyboards import (
 )
 from infrastructure.utils.telegram_utils import my_gettext, send_message
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from other.stellar_tools import have_free_xlm
 
 
@@ -43,6 +49,30 @@ class MTLAPStateTools(StatesGroup):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+async def store_pending_mtlap_signature(
+    state: FSMContext,
+    *,
+    user_id: int,
+    wallet_address: str,
+    xdr: str,
+    operation: str,
+    metadata: dict | None = None,
+) -> None:
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=user_id,
+            wallet_address=wallet_address,
+            xdr=xdr,
+            purpose=SignaturePurpose.TOOLS,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=operation,
+            metadata=metadata,
+        ),
+    )
 
 
 @router.callback_query(F.data == "MTLAPTools")
@@ -211,6 +241,14 @@ async def cmd_mtlap_send_recommend(
     xdr = await app_context.stellar_service.build_manage_data_transaction(
         source_account_id=source_account, data={new_key: public_key}
     )
+    await store_pending_mtlap_signature(
+        state,
+        user_id=message.from_user.id,
+        wallet_address=source_account,
+        xdr=xdr,
+        operation="mtlap_recommend",
+        metadata={"data_key": new_key, "data_value": public_key},
+    )
     await state.update_data(xdr=xdr)
     confirm_msg = my_gettext(
         message, "recommend_confirm", (public_key, new_key), app_context=app_context
@@ -320,6 +358,14 @@ async def cmd_mtlap_tools_del_delegate_a(
         xdr = await app_context.stellar_service.build_manage_data_transaction(
             source_account_id=source_account, data={delegate: None}
         )
+        await store_pending_mtlap_signature(
+            state,
+            user_id=callback.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtlap_delete_delegate_a",
+            metadata={"data_key": delegate},
+        )
         await state.update_data(xdr=xdr)
         await send_message(
             session,
@@ -385,6 +431,14 @@ async def cmd_mtlap_send_add_delegate_for_a(
         # Generate XDR for manage data operation via DI
         xdr = await app_context.stellar_service.build_manage_data_transaction(
             source_account_id=source_account, data={"mtla_a_delegate": public_key}
+        )
+        await store_pending_mtlap_signature(
+            state,
+            user_id=message.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtlap_add_delegate_a",
+            metadata={"data_key": "mtla_a_delegate", "data_value": public_key},
         )
         await state.update_data(xdr=xdr)
         await send_message(
@@ -494,6 +548,14 @@ async def cmd_mtlap_tools_del_delegate_c(
         xdr = await app_context.stellar_service.build_manage_data_transaction(
             source_account_id=source_account, data={delegate: None}
         )
+        await store_pending_mtlap_signature(
+            state,
+            user_id=callback.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtlap_delete_delegate_c",
+            metadata={"data_key": delegate},
+        )
         await state.update_data(xdr=xdr)
         await send_message(
             session,
@@ -570,6 +632,14 @@ async def cmd_mtlap_send_add_delegate_for_c(
         # Generate XDR for manage data operation via DI
         xdr = await app_context.stellar_service.build_manage_data_transaction(
             source_account_id=source_account, data={"mtla_c_delegate": delegate}
+        )
+        await store_pending_mtlap_signature(
+            state,
+            user_id=message.from_user.id,
+            wallet_address=source_account,
+            xdr=xdr,
+            operation="mtlap_add_delegate_c",
+            metadata={"data_key": "mtla_c_delegate", "data_value": delegate},
         )
         await state.update_data(xdr=xdr)
         await send_message(
