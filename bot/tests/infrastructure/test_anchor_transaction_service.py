@@ -5,7 +5,11 @@ from stellar_sdk import Keypair
 
 from core.domain.value_objects import Asset
 from core.models.anchor_asset import AnchorAssetSupport, SepProtocol, SepProtocolSupport
-from infrastructure.services.anchor_transaction_service import AnchorTransactionService
+from core.models.anchor_transaction import AnchorTransactionProtocol
+from infrastructure.services.anchor_transaction_service import (
+    AnchorTransactionRequestError,
+    AnchorTransactionService,
+)
 
 
 @pytest.mark.asyncio
@@ -65,3 +69,37 @@ async def test_fetch_transactions_reads_sep6_and_sep24_history():
     assert transactions[1].protocol.value == "SEP-24"
     assert calls[("GET", "https://anchor.test/sep6/transactions")] == 1
     assert calls[("GET", "https://anchor.test/sep24/transactions")] == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_transactions_keeps_successful_protocol_when_other_fails():
+    async def fetch_json(method, url, params, headers, data):
+        if url == "https://anchor.test/sep6/transactions":
+            raise AnchorTransactionRequestError(
+                url=url,
+                status=403,
+                body={"type": "authentication_required"},
+            )
+        if url == "https://anchor.test/sep24/transactions":
+            return {"transactions": [{"id": "sep24-1", "status": "completed"}]}
+        raise AssertionError(f"unexpected URL: {url}")
+
+    service = AnchorTransactionService(fetch_json=fetch_json)
+    support = AnchorAssetSupport(
+        asset=Asset("yXLM", "GISSUER"),
+        anchor_domain="anchor.test",
+        web_auth_endpoint=None,
+        sep6=SepProtocolSupport(
+            protocol=SepProtocol.SEP6,
+            transfer_server="https://anchor.test/sep6",
+        ),
+        sep24=SepProtocolSupport(
+            protocol=SepProtocol.SEP24,
+            transfer_server="https://anchor.test/sep24",
+        ),
+    )
+
+    transactions = await service.fetch_transactions(support, Keypair.random())
+
+    assert [tx.id for tx in transactions] == ["sep24-1"]
+    assert transactions[0].protocol is AnchorTransactionProtocol.SEP24
