@@ -1,5 +1,6 @@
 """Tests for biometric signing flow."""
 
+import jsonpickle  # type: ignore
 import pytest
 
 import fakeredis.aioredis
@@ -21,6 +22,29 @@ from shared.constants import (
     STATUS_PENDING,
     STATUS_SIGNED,
 )
+from infrastructure.services.signing_facade import SignaturePurpose
+
+
+SEP10_WEBAPP_CALLBACK_CALLS = []
+
+
+async def sep10_webapp_test_callback(
+    session,
+    user_id: int,
+    state,
+    *,
+    app_context=None,
+):
+    data = await state.get_data()
+    SEP10_WEBAPP_CALLBACK_CALLS.append(
+        {
+            "session": session,
+            "user_id": user_id,
+            "state": state,
+            "app_context": app_context,
+            "sep10_signed_xdr": data.get("sep10_signed_xdr"),
+        }
+    )
 
 
 class TestPendingTxMessage:
@@ -553,6 +577,89 @@ class TestHandleTxSigned:
 
             # Verify submit_signed_xdr was called (means APP_CONTEXT was accessible)
             mock_submit.assert_called_once()
+
+        finally:
+            faststream_tools.APP_CONTEXT = original_context
+            await fake_redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_handle_tx_signed_runs_sep10_fsm_func_without_stellar_submit(
+        self, fake_redis
+    ):
+        """SEP-10 WebApp signatures should continue the FSM flow, not submit."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from infrastructure.workers.signing_worker import handle_tx_signed
+        from other import faststream_tools
+
+        SEP10_WEBAPP_CALLBACK_CALLS.clear()
+
+        tx_id = "123_sep10abc"
+        tx_key = f"tx:{tx_id}"
+        await fake_redis.hset(
+            tx_key,
+            mapping={
+                FIELD_USER_ID: "123",
+                FIELD_WALLET_ADDRESS: "GPUBLIC",
+                FIELD_UNSIGNED_XDR: "SEP10_CHALLENGE_XDR",
+                FIELD_SIGNED_XDR: "SIGNED_SEP10_XDR",
+                FIELD_MEMO: "SEP-10 auth",
+                FIELD_STATUS: STATUS_SIGNED,
+                FIELD_CREATED_AT: "2024-01-01T00:00:00Z",
+            },
+        )
+
+        mock_session = AsyncMock()
+        mock_db_pool = MagicMock()
+        mock_db_pool.get_session = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()
+            )
+        )
+
+        state_data = {
+            "signing_purpose": SignaturePurpose.SEP10_AUTH.value,
+            "fsm_func": jsonpickle.dumps(sep10_webapp_test_callback),
+        }
+
+        mock_state = AsyncMock()
+
+        async def update_data(**kwargs):
+            state_data.update(kwargs)
+
+        mock_state.get_data = AsyncMock(side_effect=lambda: dict(state_data))
+        mock_state.update_data = AsyncMock(side_effect=update_data)
+
+        mock_app_context = MagicMock()
+        mock_app_context.db_pool = mock_db_pool
+        mock_app_context.dispatcher.fsm.get_context.return_value = mock_state
+
+        original_context = faststream_tools.APP_CONTEXT
+        faststream_tools.APP_CONTEXT = mock_app_context
+
+        try:
+            msg = TxSignedMessage(tx_id=tx_id, user_id=123)
+
+            with patch(
+                "infrastructure.workers.signing_worker.aioredis.from_url",
+                return_value=fake_redis,
+            ):
+                with patch(
+                    "routers.sign.submit_signed_xdr", new_callable=AsyncMock
+                ) as mock_submit:
+                    await handle_tx_signed(msg)
+
+            mock_submit.assert_not_called()
+            mock_state.update_data.assert_any_await(sep10_signed_xdr="SIGNED_SEP10_XDR")
+            assert SEP10_WEBAPP_CALLBACK_CALLS == [
+                {
+                    "session": mock_session,
+                    "user_id": 123,
+                    "state": mock_state,
+                    "app_context": mock_app_context,
+                    "sep10_signed_xdr": "SIGNED_SEP10_XDR",
+                }
+            ]
+            assert await fake_redis.exists(tx_key) == 0
 
         finally:
             faststream_tools.APP_CONTEXT = original_context
