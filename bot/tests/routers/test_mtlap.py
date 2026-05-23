@@ -21,6 +21,7 @@ from routers.mtlap import (
     MTLAPStateTools,
     router as mtlap_router,
 )
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -262,6 +263,10 @@ async def test_cmd_mtlap_send_add_delegate_for_a_valid(
     # Verify XDR was stored in state
     data = await dp.storage.get_data(key=storage_key)
     assert "xdr" in data
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == data["xdr"]
+    assert pending["purpose"] == "tools"
+    assert pending["mode"] == "sign_and_submit"
 
 
 @pytest.mark.asyncio
@@ -423,6 +428,10 @@ async def test_cmd_mtlap_send_recommend_valid(
     # Verify XDR was stored
     data = await dp.storage.get_data(key=storage_key)
     assert "xdr" in data
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == data["xdr"]
+    assert pending["purpose"] == "tools"
+    assert pending["mode"] == "sign_and_submit"
 
 
 @pytest.mark.asyncio
@@ -497,6 +506,10 @@ async def test_cmd_mtlap_tools_del_delegate_a_with_delegate(
     )
     data = await dp.storage.get_data(key=storage_key)
     assert "xdr" in data
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == data["xdr"]
+    assert pending["purpose"] == "tools"
+    assert pending["mode"] == "sign_and_submit"
 
 
 @pytest.mark.asyncio

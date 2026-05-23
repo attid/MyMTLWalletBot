@@ -51,6 +51,12 @@ from other.asset_visibility_tools import (
 )
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 
 
 class DelAssetCallbackData(CallbackData, prefix="DelAssetCallbackData"):
@@ -96,6 +102,34 @@ router.message.filter(F.chat.type == "private")
 #     return ASSET_VISIBILITY_CYCLE[(idx + 1) % len(ASSET_VISIBILITY_CYCLE)]
 
 ASSETS_PER_PAGE = 30  # Max assets per page
+
+
+async def store_pending_wallet_signature(
+    state: FSMContext,
+    *,
+    user_id: int,
+    wallet_address: str,
+    xdr: str,
+    purpose: SignaturePurpose,
+    operation: str,
+    sign_msg: str | None = None,
+    fsm_after_send: str | None = None,
+    metadata: dict | None = None,
+) -> None:
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=user_id,
+            wallet_address=wallet_address,
+            xdr=xdr,
+            purpose=purpose,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=sign_msg or operation,
+            fsm_after_send=fsm_after_send,
+            metadata=metadata,
+        ),
+    )
 
 
 @router.callback_query(F.data == "WalletSetting")
@@ -701,6 +735,18 @@ async def cq_swap_choose_token_from(
         xdr = await stellar_check_xdr(tx)
 
         if xdr:
+            await store_pending_wallet_signature(
+                state,
+                user_id=callback.from_user.id,
+                wallet_address=wallet.public_key,
+                xdr=xdr,
+                purpose=SignaturePurpose.ASSET_TRUSTLINE,
+                operation="delete_asset",
+                metadata={
+                    "asset_code": asset_obj.asset_code,
+                    "asset_issuer": asset_obj.asset_issuer,
+                },
+            )
             await state.update_data(xdr=xdr, operation="delete_asset")
             msg = my_gettext(
                 callback,
@@ -1020,12 +1066,17 @@ async def cmd_add_asset_end(
         asset_issuer=asset_issuer,
     )
 
-    from routers.sign import cmd_ask_pin
-
     xdr = await stellar_check_xdr(tx)
     if xdr:
-        await state.update_data(xdr=xdr)
-        await cmd_ask_pin(session, chat_id, state, app_context=app_context)
+        await store_pending_wallet_signature(
+            state,
+            user_id=chat_id,
+            wallet_address=wallet.public_key,
+            xdr=xdr,
+            purpose=SignaturePurpose.ASSET_TRUSTLINE,
+            operation="add_asset",
+            metadata={"asset_code": asset_code, "asset_issuer": asset_issuer},
+        )
 
     msg = my_gettext(
         chat_id, "confirm_asset", (asset_code, asset_issuer), app_context=app_context
@@ -1288,6 +1339,20 @@ async def cmd_buy_private_key(
                 memo=memo,
             )
             xdr = result.xdr
+            await store_pending_wallet_signature(
+                state,
+                user_id=callback.from_user.id,
+                wallet_address=public_key,
+                xdr=xdr,
+                purpose=SignaturePurpose.PAYMENT,
+                operation=f"Buy address {config.wallet_cost} {eurmtl_asset.code}",
+                fsm_after_send=jsonpickle.dumps(cmd_after_buy),
+                metadata={
+                    "destination_address": father_key,
+                    "memo": memo,
+                    "buy_address": public_key,
+                },
+            )
             await state.update_data(xdr=xdr)
             msg = my_gettext(
                 callback,
@@ -1488,6 +1553,14 @@ async def cq_manage_data_callback(
             await callback.answer(json_data["message"], show_alert=True)
             return
         xdr = json_data["xdr"]
+        await store_pending_wallet_signature(
+            state,
+            user_id=callback.from_user.id,
+            wallet_address="",
+            xdr=xdr,
+            purpose=SignaturePurpose.GENERIC,
+            operation="remote_transaction",
+        )
         await state.update_data(xdr=xdr)
         msg = await get_web_decoded_xdr(xdr)
         await send_message(

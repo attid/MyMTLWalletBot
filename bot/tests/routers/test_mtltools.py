@@ -7,6 +7,7 @@ from routers.mtltools import (
     router as mtltools_router,
     StateTools,
 )
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -185,6 +186,13 @@ async def test_cmd_tools_del_delegate(
     req = get_latest_msg(mock_telegram)
     assert "delegate_delete" in req["data"]["text"]
     assert "Yes" in req["data"]["reply_markup"]
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=123, user_id=123
+    )
+    data = await state.get_data()
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_DEL"
+    assert pending["purpose"] == "tools"
 
 
 @pytest.mark.asyncio
@@ -234,6 +242,10 @@ async def test_add_delegate_flow(
     req = get_latest_msg(mock_telegram)
     assert "delegate_add" in req["data"]["text"]
     assert "Yes" in req["data"]["reply_markup"]
+    data = await dp.storage.get_data(state_key)
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_ADD"
+    assert pending["purpose"] == "tools"
 
 
 @pytest.mark.asyncio
@@ -309,6 +321,10 @@ async def test_donate_management_flow(
     req = get_latest_msg(mock_telegram)
     assert "donate_end" in req["data"]["text"]
     assert "Yes" in req["data"]["reply_markup"]
+    data = await dp.storage.get_data(state_key)
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_DONATE"
+    assert pending["purpose"] == "tools"
 
 
 @pytest.mark.asyncio

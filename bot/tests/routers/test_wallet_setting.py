@@ -20,6 +20,8 @@ from infrastructure.services.localization_service import LocalizationService
 from core.interfaces.repositories import IWalletRepository, IAddressBookRepository
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.payment.send_payment import SendPayment
+from infrastructure.services.stellar_service import StellarService
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 
 
 class MockDbMiddleware(BaseMiddleware):
@@ -320,7 +322,6 @@ async def test_cq_delete_asset_execute(
     mock_app_context,
 ):
     """Test actual asset deletion (trustline removal) - shows confirmation message"""
-    from infrastructure.services.stellar_service import StellarService
 
     user_id = 123
     mock_app_context.bot = bot
@@ -386,6 +387,11 @@ async def test_cq_delete_asset_execute(
         assert "xdr" in data
         assert "AAAA" in data["xdr"]
         assert data.get("operation") == "delete_asset"
+        pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+        assert pending["xdr"] == data["xdr"]
+        assert pending["purpose"] == "asset_trustline"
+        assert pending["mode"] == "sign_and_submit"
+        assert pending["operation"] == "delete_asset"
 
         # Verify confirmation message was sent with Yes/No keyboard
         sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
