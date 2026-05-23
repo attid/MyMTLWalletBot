@@ -29,6 +29,10 @@ from other.soroban_render import render_soroban_sub_invocations
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
+from infrastructure.services.signing_facade import (
+    PENDING_SIGNATURE_REQUEST_KEY,
+    SigningFacade,
+)
 from shared.constants import REDIS_TX_PREFIX
 from other import faststream_tools
 from other.faststream_tools import publish_pending_tx
@@ -189,6 +193,17 @@ async def cmd_yes_send(
     session: AsyncSession,
     app_context: AppContext,
 ):
+    data = await state.get_data()
+    if data.get(PENDING_SIGNATURE_REQUEST_KEY):
+        signing_facade = getattr(app_context, "signing_facade", None) or SigningFacade()
+        await signing_facade.request_pending_signature(
+            session=session,
+            state=state,
+            app_context=app_context,
+        )
+        await callback.answer()
+        return
+
     await state.set_state(PinState.sign_and_send)
 
     await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)

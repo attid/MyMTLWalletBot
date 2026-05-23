@@ -12,6 +12,12 @@ from routers.sign import (
     cmd_password_set2,
 )
 from infrastructure.states import StateSign
+from infrastructure.services.signing_facade import (
+    PENDING_SIGNATURE_REQUEST_KEY,
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+)
 from other import faststream_tools
 from tests.conftest import (
     RouterTestMiddleware,
@@ -227,6 +233,46 @@ async def test_cmd_yes_send_integration(
         "enter_pin" in latest_req["data"]["text"]
         or "enter_password" in latest_req["data"]["text"]
     )
+
+
+@pytest.mark.asyncio
+async def test_cmd_yes_send_uses_pending_signature_request_facade(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
+    """Confirmation callback should start pending SignatureRequest via facade."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    signing_facade = MagicMock()
+    signing_facade.request_pending_signature = AsyncMock(return_value=object())
+    router_app_context.signing_facade = signing_facade
+
+    await dp.storage.update_data(
+        state_key,
+        {
+            "user_lang": "en",
+            PENDING_SIGNATURE_REQUEST_KEY: SignatureRequest(
+                user_id=user_id,
+                wallet_address=setup_sign_mocks.public_key,
+                xdr="AAAA...",
+                purpose=SignaturePurpose.GENERIC,
+                mode=SignatureMode.SIGN_AND_SUBMIT,
+                operation="Send 10 XLM",
+                sign_msg="Payment 10 XLM",
+            ).to_state_data(),
+        },
+    )
+
+    await dp.feed_update(bot, create_callback_update(user_id, "Yes_send_xdr"))
+
+    signing_facade.request_pending_signature.assert_awaited_once()
+    call_kwargs = signing_facade.request_pending_signature.await_args.kwargs
+    assert call_kwargs["state"] is not None
+    assert call_kwargs["app_context"] is router_app_context
 
 
 @pytest.mark.asyncio
