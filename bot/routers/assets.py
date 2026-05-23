@@ -11,6 +11,7 @@ from core.models.anchor_asset import (
 )
 from infrastructure.services.anchor_discovery_service import AnchorDiscoveryService
 from infrastructure.services.app_context import AppContext
+from infrastructure.utils.telegram_utils import send_message
 from keyboards.assets import AssetAction, asset_actions_keyboard, assets_list_keyboard
 
 router = Router()
@@ -47,12 +48,24 @@ async def cmd_assets(
     )
 
     if not supported_assets:
-        await message.answer("SEP assets were not found for this wallet.")
+        await send_message(
+            session,
+            message,
+            "SEP assets were not found for this wallet.",
+            app_context=app_context,
+        )
         return
 
-    await message.answer(
+    await send_message(
+        session,
+        message,
         "SEP assets",
-        reply_markup=assets_list_keyboard(supported_assets),
+        reply_markup=assets_list_keyboard(
+            supported_assets,
+            message.from_user.id,
+            app_context=app_context,
+        ),
+        app_context=app_context,
     )
 
 
@@ -61,8 +74,11 @@ async def cmd_asset_view(
     callback: types.CallbackQuery,
     callback_data: AssetAction,
     state: FSMContext,
+    session: AsyncSession,
     app_context: AppContext,
 ):
+    if callback.from_user is None:
+        return
     asset = await _asset_from_state(state, callback_data.key)
     if asset is None:
         await callback.answer("Asset selection expired", show_alert=True)
@@ -73,9 +89,16 @@ async def cmd_asset_view(
         await callback.answer("SEP support is not available", show_alert=True)
         return
 
-    await callback.message.answer(
+    await send_message(
+        session,
+        callback,
         _format_asset_support(support),
-        reply_markup=asset_actions_keyboard(callback_data.key),
+        reply_markup=asset_actions_keyboard(
+            callback_data.key,
+            callback.from_user.id,
+            app_context=app_context,
+        ),
+        app_context=app_context,
     )
     await callback.answer()
 
@@ -86,13 +109,22 @@ async def cmd_asset_view(
 async def cmd_asset_action_placeholder(
     callback: types.CallbackQuery,
     callback_data: AssetAction,
+    session: AsyncSession,
+    app_context: AppContext,
 ):
+    if callback.from_user is None:
+        return
     action_title = {
         "requests": "Requests",
         "deposit": "Deposit",
         "withdraw": "Withdraw",
     }[callback_data.action]
-    await callback.message.answer(f"{action_title} flow is not enabled yet.")
+    await send_message(
+        session,
+        callback,
+        f"{action_title} flow is not enabled yet.",
+        app_context=app_context,
+    )
     await callback.answer()
 
 

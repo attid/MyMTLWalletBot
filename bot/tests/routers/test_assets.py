@@ -91,6 +91,46 @@ async def test_assets_command_shows_only_sep_supported_trustlines(
 
 
 @pytest.mark.asyncio
+async def test_assets_command_updates_last_message_in_existing_menu(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    await dp.storage.set_data(state_key, {"last_message_id": 99})
+
+    get_balance = MagicMock()
+    get_balance.execute = AsyncMock(
+        return_value=[Balance("BTCLN", ISSUER, "credit_alphanum12", "12000")]
+    )
+    router_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        get_balance
+    )
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_assets = AsyncMock(
+        return_value=[make_support()]
+    )
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_message_update(user_id, "/assets", message_id=10),
+    )
+
+    req = get_telegram_request(mock_telegram, "editMessageText")
+    assert req["data"]["message_id"] == "99"
+    assert "SEP assets" in req["data"]["text"]
+    state_data = await dp.storage.get_data(state_key)
+    assert state_data["last_message_id"] == 99
+
+
+@pytest.mark.asyncio
 async def test_asset_button_shows_conditions_and_action_buttons(
     mock_telegram, router_app_context
 ):
@@ -124,3 +164,44 @@ async def test_asset_button_shows_conditions_and_action_buttons(
     assert "Requests" in req["data"]["reply_markup"]
     assert "Deposit" in req["data"]["reply_markup"]
     assert "Withdraw" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_asset_button_edits_current_menu_for_action_buttons(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    await dp.storage.set_data(
+        state_key,
+        {
+            "last_message_id": 99,
+            "anchor_assets": {"a0": make_support().asset.to_string()},
+        },
+    )
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=make_support()
+    )
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(
+            user_id,
+            AssetAction(action="view", key="a0").pack(),
+            message_id=99,
+        ),
+    )
+
+    req = get_telegram_request(mock_telegram, "editMessageText")
+    assert req["data"]["message_id"] == "99"
+    assert "BTCLN" in req["data"]["text"]
+    assert "Deposit" in req["data"]["reply_markup"]

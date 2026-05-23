@@ -66,8 +66,8 @@ class AnchorAssetSupport:
     @property
     def supported_protocols(self) -> list[SepProtocol]:
         protocols = []
-        if self.sep6 and self.sep6.has_user_actions:
+        if self.sep6:
             protocols.append(SepProtocol.SEP6)
-        if self.sep24 and self.sep24.has_user_actions:
+        if self.sep24:
             protocols.append(SepProtocol.SEP24)
         return protocols
