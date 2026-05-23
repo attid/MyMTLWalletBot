@@ -9,7 +9,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from stellar_sdk import Asset
+from stellar_sdk import Asset, MuxedAccount
 from stellar_sdk.sep.federation import resolve_stellar_address
 from infrastructure.services.app_context import AppContext
 
@@ -60,6 +60,13 @@ class SendAssetCallbackData(CallbackData, prefix="send_asset_"):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+def _get_balance_lookup_account(address: str) -> str:
+    try:
+        return MuxedAccount.from_account(address).account_id
+    except ValueError:
+        return address
 
 
 def get_kb_send(
@@ -444,6 +451,9 @@ async def cmd_send_for(
     my_account = await stellar_check_account(public_key)
     if my_account:
         await state.update_data(send_address=my_account.account_id)
+        await state.update_data(
+            send_balance_address=_get_balance_lookup_account(my_account.account_id)
+        )
         if my_account.memo:
             await state.update_data(memo=my_account.memo, federal_memo=True)
 
@@ -502,16 +512,17 @@ async def cmd_send_choose_token(
         return
     data = await state.get_data()
     address = data.get("send_address")
+    balance_address = data.get("send_balance_address", address)
 
     # Refactored to use GetWalletBalance Use Case
     use_case = app_context.use_case_factory.create_get_wallet_balance(session)
 
     asset_list = await use_case.execute(user_id=message.from_user.id)
     sender_asset_list = await use_case.execute(
-        user_id=message.from_user.id, public_key=address
+        user_id=message.from_user.id, public_key=balance_address
     )
 
-    if address == "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA":
+    if balance_address == "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA":
         mtla_amount = 5
     else:
         mtlap_balance = [
