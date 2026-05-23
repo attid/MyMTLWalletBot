@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram.fsm.storage.base import StorageKey
 
+from core.domain.entities import Wallet
 from core.domain.value_objects import Asset, Balance
 from core.models.anchor_asset import (
     AnchorAssetSupport,
@@ -10,8 +11,9 @@ from core.models.anchor_asset import (
     SepProtocol,
     SepProtocolSupport,
 )
+from core.models.anchor_transaction import AnchorTransaction, AnchorTransactionProtocol
 from keyboards.assets import AssetAction
-from routers.assets import router as assets_router
+from routers.assets import _show_asset_requests_after_pin, router as assets_router
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -205,3 +207,103 @@ async def test_asset_button_edits_current_menu_for_action_buttons(
     assert req["data"]["message_id"] == "99"
     assert "BTCLN" in req["data"]["text"]
     assert "Deposit" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_asset_requests_read_only_wallet_reports_webapp_not_enabled(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    await dp.storage.set_data(
+        state_key,
+        {
+            "last_message_id": 99,
+            "anchor_assets": {"a0": make_support().asset.to_string()},
+        },
+    )
+    wallet_repo = MagicMock()
+    wallet_repo.get_default_wallet = AsyncMock(
+        return_value=Wallet(
+            id=1,
+            user_id=user_id,
+            public_key="GPUBLIC",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(
+            user_id,
+            AssetAction(action="requests", key="a0").pack(),
+            message_id=99,
+        ),
+    )
+
+    req = get_telegram_request(mock_telegram, "editMessageText")
+    assert "SEP-10 signing" in req["data"]["text"]
+    assert "WebApp signing is not enabled" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_show_asset_requests_after_pin_sends_transactions(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    state = MagicMock()
+    state.get_data = AsyncMock(
+        return_value={
+            "pin": "1234",
+            "anchor_request_asset": make_support().asset.to_string(),
+            "anchor_request_key": "a0",
+        }
+    )
+    session = MagicMock()
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=make_support()
+    )
+    router_app_context.stellar_service.get_user_keypair = AsyncMock(
+        return_value=MagicMock()
+    )
+    router_app_context.anchor_transaction_service = MagicMock()
+    router_app_context.anchor_transaction_service.fetch_transactions = AsyncMock(
+        return_value=[
+            AnchorTransaction(
+                protocol=AnchorTransactionProtocol.SEP24,
+                id="tx-1",
+                kind="deposit",
+                status="completed",
+                amount_in="100",
+                updated_at="2026-05-23T10:00:00Z",
+                more_info_url="https://anchor.test/tx-1",
+            )
+        ]
+    )
+
+    await _show_asset_requests_after_pin(
+        session,
+        user_id,
+        state,
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Requests" in req["data"]["text"]
+    assert "SEP-24 / deposit / completed" in req["data"]["text"]
+    assert "tx-1" in req["data"]["text"]
+    assert "100" in req["data"]["text"]
