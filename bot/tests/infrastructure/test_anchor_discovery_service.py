@@ -63,20 +63,28 @@ class FakeAnchorHttp:
         raise AssertionError(f"unexpected text URL: {url}")
 
 
-class FakeDeadAnchorHttp:
+class FakeListAnchorHttp:
     def __init__(self):
         self.calls = defaultdict(int)
 
     async def fetch_json(self, url: str):
         self.calls[url] += 1
         if url.endswith(f"/accounts/{ISSUER}"):
-            return {"home_domain": "dead.example"}
+            return {"home_domain": "list.example"}
+        if url == "https://list.example/sep6/info":
+            return {
+                "deposit": {
+                    "MTL": {
+                        "enabled": True,
+                    }
+                }
+            }
         raise TimeoutError(f"timeout: {url}")
 
     async def fetch_text(self, url: str):
         self.calls[url] += 1
-        if url == "https://dead.example/.well-known/stellar.toml":
-            return 'TRANSFER_SERVER="https://dead.example/sep6"'
+        if url == "https://list.example/.well-known/stellar.toml":
+            return 'TRANSFER_SERVER="https://list.example/sep6"'
         raise AssertionError(f"unexpected text URL: {url}")
 
 
@@ -123,8 +131,8 @@ async def test_discover_asset_uses_one_hour_cache_by_asset():
 
 
 @pytest.mark.asyncio
-async def test_discover_assets_lists_by_toml_without_fetching_sep_info():
-    fake_http = FakeDeadAnchorHttp()
+async def test_discover_assets_filters_by_sep_info_without_repeated_fetches():
+    fake_http = FakeListAnchorHttp()
     service = AnchorDiscoveryService(
         fetch_json=fake_http.fetch_json,
         fetch_text=fake_http.fetch_text,
@@ -139,10 +147,10 @@ async def test_discover_assets_lists_by_toml_without_fetching_sep_info():
         ]
     )
 
-    assert [support.asset.code for support in supported] == ["EURMTL", "MTL", "MTLRECT"]
+    assert [support.asset.code for support in supported] == ["MTL"]
     assert fake_http.calls[f"https://horizon.test/accounts/{ISSUER}"] == 1
-    assert fake_http.calls["https://dead.example/.well-known/stellar.toml"] == 1
-    assert fake_http.calls["https://dead.example/sep6/info"] == 0
+    assert fake_http.calls["https://list.example/.well-known/stellar.toml"] == 1
+    assert fake_http.calls["https://list.example/sep6/info"] == 1
 
 
 @pytest.mark.asyncio

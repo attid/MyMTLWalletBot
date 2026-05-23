@@ -47,6 +47,10 @@ class AnchorDiscoveryService:
         ] = {}
         self._issuer_cache: dict[str, tuple[datetime, IssuerSepInfo | None]] = {}
         self._issuer_locks: dict[str, asyncio.Lock] = {}
+        self._protocol_info_cache: dict[
+            str, tuple[datetime, dict[str, Any] | None]
+        ] = {}
+        self._protocol_info_locks: dict[str, asyncio.Lock] = {}
 
     async def discover_assets(self, assets: list[Asset]) -> list[AnchorAssetSupport]:
         unique_assets = []
@@ -91,21 +95,22 @@ class AnchorDiscoveryService:
         if issuer_info is None:
             return None
 
-        sep6 = (
-            SepProtocolSupport(
-                protocol=SepProtocol.SEP6,
-                transfer_server=issuer_info.sep6_url,
-            )
-            if issuer_info.sep6_url
-            else None
+        sep6_info, sep24_info = await asyncio.gather(
+            self._load_protocol_info(issuer_info.sep6_url),
+            self._load_protocol_info(issuer_info.sep24_url),
         )
-        sep24 = (
-            SepProtocolSupport(
-                protocol=SepProtocol.SEP24,
-                transfer_server=issuer_info.sep24_url,
-            )
-            if issuer_info.sep24_url
-            else None
+
+        sep6 = self._protocol_support_from_info(
+            SepProtocol.SEP6,
+            issuer_info.sep6_url,
+            sep6_info,
+            asset.code,
+        )
+        sep24 = self._protocol_support_from_info(
+            SepProtocol.SEP24,
+            issuer_info.sep24_url,
+            sep24_info,
+            asset.code,
         )
         support = AnchorAssetSupport(
             asset=asset,
@@ -219,8 +224,30 @@ class AnchorDiscoveryService:
     ) -> dict[str, Any] | None:
         if not transfer_server:
             return None
+        transfer_server = transfer_server.rstrip("/")
+        cached = self._protocol_info_cache.get(transfer_server)
+        if cached:
+            cached_at, info = cached
+            if datetime.now(UTC) - cached_at <= self._ttl:
+                return info
+
+        lock = self._protocol_info_locks.setdefault(transfer_server, asyncio.Lock())
+        async with lock:
+            cached = self._protocol_info_cache.get(transfer_server)
+            if cached:
+                cached_at, info = cached
+                if datetime.now(UTC) - cached_at <= self._ttl:
+                    return info
+
+            info = await self._load_protocol_info_uncached(transfer_server)
+            self._protocol_info_cache[transfer_server] = (datetime.now(UTC), info)
+            return info
+
+    async def _load_protocol_info_uncached(
+        self, transfer_server: str
+    ) -> dict[str, Any] | None:
         try:
-            return await self._fetch_json(f"{transfer_server.rstrip('/')}/info")
+            return await self._fetch_json(f"{transfer_server}/info")
         except Exception as exc:
             logger.debug(f"SEP info discovery failed for {transfer_server}: {exc}")
             return None
