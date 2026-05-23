@@ -34,6 +34,12 @@ from infrastructure.utils.telegram_utils import send_message, clear_state
 from core.constants import CHEQUE_PUBLIC_KEY
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -60,6 +66,29 @@ class ChequeQuery:
     state: FSMContext
     username: str
     for_cancel: bool = False
+
+
+async def store_pending_cheque_signature(
+    state: FSMContext,
+    *,
+    user_id: int,
+    xdr: str,
+    operation: str,
+    fsm_after_send: str | None = None,
+) -> None:
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=user_id,
+            wallet_address=cheque_public,
+            xdr=xdr,
+            purpose=SignaturePurpose.CHEQUE,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=operation,
+            fsm_after_send=fsm_after_send,
+        ),
+    )
 
 
 @router.callback_query(F.data == "CreateCheque")
@@ -156,6 +185,12 @@ async def cmd_cheque_show(
     #                         cheque_public,
     #                         eurmtl_asset, send_sum * send_count, memo=send_uuid[:16])
 
+    await store_pending_cheque_signature(
+        state,
+        user_id=message.from_user.id,
+        xdr=xdr,
+        operation="cheque",
+    )
     await state.update_data(xdr=xdr, operation="cheque")
 
     await send_message(
@@ -305,7 +340,17 @@ async def cmd_cheque_execute(
         ),
         app_context=app_context,
     )
-    await state.update_data(fsm_after_send=jsonpickle.dumps(cheque_after_send))
+    fsm_after_send = jsonpickle.dumps(cheque_after_send)
+    await state.update_data(fsm_after_send=fsm_after_send)
+    xdr = data.get("xdr")
+    if xdr and callback.from_user:
+        await store_pending_cheque_signature(
+            state,
+            user_id=callback.from_user.id,
+            xdr=xdr,
+            operation="cheque",
+            fsm_after_send=fsm_after_send,
+        )
     await send_message(
         session,
         callback,

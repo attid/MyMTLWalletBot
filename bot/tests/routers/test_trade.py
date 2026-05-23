@@ -10,6 +10,7 @@ from routers.trade import (
     EditOrderCallbackData,
 )
 from core.domain.value_objects import Balance, PaymentResult
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from other.mytypes import MyOffer, MyAsset
 from tests.conftest import (
     RouterTestMiddleware,
@@ -209,6 +210,12 @@ async def test_cmd_trade_creation_flow(
     ]
     assert args["amount"] == 100.0
     assert args["price"] == 0.1
+    data = await dp.storage.get_data(storage_key)
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_MANAGE_OFFER"
+    assert pending["purpose"] == "trade"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "trade"
 
 
 @pytest.mark.asyncio
@@ -308,6 +315,12 @@ async def test_delete_order_execution(
     ]
     assert args["amount"] == 0.0
     assert args["offer_id"] == 555
+    data = await dp.storage.get_data(storage_key)
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_MANAGE_OFFER"
+    assert pending["purpose"] == "trade"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "trade"
 
     req = get_latest_msg(mock_telegram)
     assert "delete_sale" in req["data"]["text"]
@@ -469,6 +482,16 @@ async def test_cmd_trade_create_with_price(
     assert args["amount"] == 10.0
     assert args["price"] == 0.25
     assert args["offer_id"] == 0  # New order
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=123,
+        user_id=123,
+    )
+    data = await dp.storage.get_data(state_key)
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_MANAGE_OFFER"
+    assert pending["purpose"] == "trade"
+    assert pending["mode"] == "sign_and_submit"
 
     req = get_latest_msg(mock_telegram)
     assert "confirm_sale" in req["data"]["text"]

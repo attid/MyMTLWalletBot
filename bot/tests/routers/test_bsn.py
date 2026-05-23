@@ -162,11 +162,9 @@ async def test_finish_send_bsn(
     await state.set_state(BSNStates.waiting_for_tags)
     await state.update_data(tags=jsonpickle.dumps(test_bsn_data))
 
-    # We need to mock cmd_ask_pin because it's imported in bsn.py
-    with (
-        patch("routers.bsn.cmd_ask_pin", AsyncMock()) as mock_ask_pin,
-        patch("routers.bsn.have_free_xlm", AsyncMock(return_value=True)),
-    ):
+    router_app_context.signing_facade = MagicMock()
+    router_app_context.signing_facade.request_signature = AsyncMock()
+    with patch("routers.bsn.have_free_xlm", AsyncMock(return_value=True)):
         update = create_callback_update(
             user_id=user_id, callback_data=SEND_CALLBACK_DATA
         )
@@ -176,10 +174,14 @@ async def test_finish_send_bsn(
 
         # Verify XDR was stored in state
         state_data = await state.get_data()
-        assert "xdr" in state_data
-        assert "AAAA" in state_data["xdr"]
-        # Verify PIN requested
-        mock_ask_pin.assert_called_once()
+        assert state_data.get("tags") is None
+        router_app_context.signing_facade.request_signature.assert_awaited_once()
+        request = router_app_context.signing_facade.request_signature.await_args.kwargs[
+            "request"
+        ]
+        assert "AAAA" in request.xdr
+        assert request.purpose.value == "tools"
+        assert request.mode.value == "sign_and_submit"
 
 
 @pytest.mark.asyncio

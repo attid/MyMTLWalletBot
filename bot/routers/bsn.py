@@ -20,7 +20,6 @@ from infrastructure.utils.stellar_utils import decode_data_value
 
 # from other.stellar_tools import stellar_get_user_account
 from routers.start_msg import cmd_show_balance
-from routers.sign import cmd_ask_pin, PinState
 from infrastructure.utils.telegram_utils import (
     send_message,
     clear_last_message_id,
@@ -28,6 +27,12 @@ from infrastructure.utils.telegram_utils import (
 )
 from infrastructure.utils.common_utils import get_user_id
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from other.stellar_tools import have_free_xlm
 
 bsn_router = Router()
@@ -524,11 +529,21 @@ async def finish_send_bsn(
 
     xdr = await cmd_gen_data_xdr(bsn_data, app_context=app_context)
     await state.update_data(tags=None)
-    await state.update_data(xdr=xdr)
-
-    await state.set_state(PinState.sign_and_send)
-    await cmd_ask_pin(
-        session, callback_query.from_user.id, state, app_context=app_context
+    signing_facade = getattr(app_context, "signing_facade", None) or SigningFacade()
+    await signing_facade.request_signature(
+        session=session,
+        state=state,
+        request=SignatureRequest(
+            user_id=callback_query.from_user.id,
+            wallet_address=str(bsn_data.address),
+            xdr=xdr,
+            purpose=SignaturePurpose.TOOLS,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation="bsn",
+            sign_msg="BSN update",
+            metadata={"tool": "bsn"},
+        ),
+        app_context=app_context,
     )
     await callback_query.answer()
 
