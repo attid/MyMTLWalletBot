@@ -749,6 +749,7 @@ async def cmd_send_04(
 
     send_sum: float = data.get("send_sum", 0.0)
     send_address: str | None = data.get("send_address")
+    send_balance_address: str | None = data.get("send_balance_address")
     send_memo: str | None = data.get("memo")
     federal_memo = data.get("federal_memo")
     send_asset_name = data["send_asset_code"]
@@ -793,6 +794,7 @@ async def cmd_send_04(
     result = await use_case.execute(
         user_id=message.from_user.id,
         destination_address=send_address,
+        destination_check_address=send_balance_address,
         asset=DomainAsset(code=send_asset_name, issuer=send_asset_issuer),
         amount=send_sum,
         memo=send_memo,

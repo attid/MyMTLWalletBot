@@ -354,6 +354,53 @@ async def test_cmd_send_get_sum_valid(
 
 
 @pytest.mark.asyncio
+async def test_cmd_send_get_sum_muxed_address_checks_underlying_account(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    muxed_address = (
+        "MCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYKAAAAAAAAAAXPAMAK"
+    )
+    underlying_address = "GCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYLQDJ"
+    send_uc = router_app_context.use_case_factory.create_send_payment.return_value
+
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_sum)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "send_address": muxed_address,
+            "send_balance_address": underlying_address,
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            "send_asset_max_sum": "100.0",
+            "msg": "Enter sum",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "10.5"),
+        app_context=router_app_context,
+    )
+
+    send_uc.execute.assert_awaited_once()
+    assert send_uc.execute.await_args.kwargs["destination_address"] == muxed_address
+    assert (
+        send_uc.execute.await_args.kwargs["destination_check_address"]
+        == underlying_address
+    )
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    assert "confirm_send" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
 async def test_cmd_send_get_sum_exceeds_limit(
     mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
 ):

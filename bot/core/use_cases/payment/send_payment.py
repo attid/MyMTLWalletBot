@@ -21,6 +21,7 @@ class SendPayment:
         memo: Optional[str] = None,
         cancel_offers: bool = False,
         create_account: bool = False,
+        destination_check_address: str | None = None,
     ) -> PaymentResult:
         # 1. Validation
         if amount <= 0 or math.isinf(amount):
@@ -35,7 +36,9 @@ class SendPayment:
             return PaymentResult(success=False, error_message="User wallet not found")
 
         # 3. Check Destination Exists
-        exists = await self.stellar_service.check_account_exists(destination_address)
+        exists = await self.stellar_service.check_account_exists(
+            destination_check_address or destination_address
+        )
 
         if create_account:
             if exists:
