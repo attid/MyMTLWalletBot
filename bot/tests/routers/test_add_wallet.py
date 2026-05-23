@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.base import StorageKey
 from loguru import logger
+from stellar_sdk import Keypair
 
 from routers.add_wallet import (
     router as add_wallet_router,
@@ -181,7 +182,7 @@ async def test_add_wallet_have_key_flow(
     assert await dp.storage.get_state(state_key) == StateAddWallet.sending_private
 
     # 2. Send Secret (Valid format required for SDK)
-    valid_secret = "SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV"
+    valid_secret = Keypair.random().secret
     await dp.feed_update(
         router_app_context.bot,
         create_message_update(user_id, valid_secret, update_id=2, message_id=2),
@@ -232,6 +233,50 @@ async def test_add_wallet_have_key_expert_mode_uses_supplied_wallet_address(
     setup_add_wallet_mocks.ctx.notification_service.subscribe.assert_awaited_once_with(
         wallet_public_key
     )
+
+
+@pytest.mark.asyncio
+async def test_add_wallet_have_key_pin_prompt_does_not_reuse_key_prompt(
+    mock_telegram, router_app_context, setup_add_wallet_mocks
+):
+    """PIN setup after key import should not display the private-key prompt."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    user_id = 123
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    router_app_context.stellar_service.get_user_account = AsyncMock(
+        return_value=MagicMock(
+            account=MagicMock(
+                account_id="GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            )
+        )
+    )
+    await dp.storage.set_data(state_key, {"user_lang": "en"})
+
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(user_id, "AddWalletHaveKey")
+    )
+    valid_secret = Keypair.random().secret
+    await dp.feed_update(
+        router_app_context.bot,
+        create_message_update(user_id, valid_secret, update_id=2, message_id=2),
+    )
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(user_id, "PIN", update_id=3, message_id=3),
+    )
+
+    assert await dp.storage.get_state(state_key) == PinState.set_pin
+    req = get_latest_msg(mock_telegram)
+    if req is None:
+        raise AssertionError("Expected PIN prompt message")
+    assert "send_key" not in req["data"]["text"]
+    assert "private key" not in req["data"]["text"].lower()
 
 
 @pytest.mark.asyncio

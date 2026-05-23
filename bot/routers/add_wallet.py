@@ -194,7 +194,7 @@ async def cmd_sending_private(
         if app_context.notification_service:
             await app_context.notification_service.subscribe(public_key)
 
-        await state.update_data(public_key=public_key)
+        await state.update_data(public_key=public_key, msg=None)
         await state.set_state(None)
         await cmd_show_add_wallet_choose_pin(
             session,
