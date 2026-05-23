@@ -66,6 +66,35 @@ class AnchorTransactionService:
             transactions.extend(result)
         return transactions
 
+    async def start_sep24_interactive(
+        self,
+        support: AnchorAssetSupport,
+        keypair: Keypair,
+        *,
+        operation: str,
+    ) -> str:
+        if support.sep24 is None:
+            raise ValueError("SEP-24 is not available for this asset")
+        if operation not in {"deposit", "withdraw"}:
+            raise ValueError(f"Unsupported SEP-24 operation: {operation}")
+
+        token = await self._authenticate(support.web_auth_endpoint, keypair)
+        headers = {"Authorization": f"Bearer {token}"} if token else None
+        response = await self._fetch_json(
+            "POST",
+            (
+                f"{support.sep24.transfer_server.rstrip('/')}/transactions/"
+                f"{operation}/interactive"
+            ),
+            None,
+            headers,
+            {"asset_code": support.asset.code},
+        )
+        url = response.get("url")
+        if not isinstance(url, str) or not url:
+            raise ValueError("SEP-24 interactive response did not include url")
+        return url
+
     async def _authenticate(
         self, web_auth_endpoint: str | None, keypair: Keypair
     ) -> str | None:

@@ -54,3 +54,16 @@ def asset_actions_keyboard(
         get_return_button(user_id, app_context=app_context),
     ]
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def sep24_interactive_keyboard(
+    user_id: int,
+    url: str,
+    *,
+    app_context: AppContext,
+) -> types.InlineKeyboardMarkup:
+    buttons = [
+        [types.InlineKeyboardButton(text="Open", url=url)],
+        get_return_button(user_id, app_context=app_context),
+    ]
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)

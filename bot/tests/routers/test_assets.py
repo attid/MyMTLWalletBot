@@ -13,7 +13,11 @@ from core.models.anchor_asset import (
 )
 from core.models.anchor_transaction import AnchorTransaction, AnchorTransactionProtocol
 from keyboards.assets import AssetAction
-from routers.assets import _show_asset_requests_after_pin, router as assets_router
+from routers.assets import (
+    _show_asset_requests_after_pin,
+    _show_sep24_interactive_after_pin,
+    router as assets_router,
+)
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -32,7 +36,7 @@ def cleanup_router():
         assets_router._parent_router = None
 
 
-def make_support(code: str = "BTCLN") -> AnchorAssetSupport:
+def make_support(code: str = "BTCLN", *, sep24: bool = False) -> AnchorAssetSupport:
     return AnchorAssetSupport(
         asset=Asset(code, ISSUER),
         anchor_domain="kbtrading.org",
@@ -54,6 +58,12 @@ def make_support(code: str = "BTCLN") -> AnchorAssetSupport:
             ),
             transactions_enabled=True,
         ),
+        sep24=SepProtocolSupport(
+            protocol=SepProtocol.SEP24,
+            transfer_server="https://kbtrading.org/sep24",
+        )
+        if sep24
+        else None,
     )
 
 
@@ -317,3 +327,91 @@ async def test_show_asset_requests_after_pin_sends_transactions(
     assert "SEP-24 / deposit / completed" in req["data"]["text"]
     assert "tx-1" in req["data"]["text"]
     assert "100" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_asset_deposit_read_only_wallet_reports_webapp_not_enabled(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    await dp.storage.set_data(
+        state_key,
+        {
+            "last_message_id": 99,
+            "anchor_assets": {"a0": make_support().asset.to_string()},
+        },
+    )
+    wallet_repo = MagicMock()
+    wallet_repo.get_default_wallet = AsyncMock(
+        return_value=Wallet(
+            id=1,
+            user_id=user_id,
+            public_key="GPUBLIC",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(
+            user_id,
+            AssetAction(action="deposit", key="a0").pack(),
+            message_id=99,
+        ),
+    )
+
+    req = get_telegram_request(mock_telegram, "editMessageText")
+    assert "SEP-24 transfer requires SEP-10 signing" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_show_sep24_interactive_after_pin_sends_url_button(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    state = MagicMock()
+    state.get_data = AsyncMock(
+        return_value={
+            "pin": "1234",
+            "anchor_transfer_asset": make_support().asset.to_string(),
+            "anchor_transfer_operation": "deposit",
+        }
+    )
+    session = MagicMock()
+    support = make_support(sep24=True)
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=support
+    )
+    router_app_context.stellar_service.get_user_keypair = AsyncMock(
+        return_value=MagicMock()
+    )
+    router_app_context.anchor_transaction_service = MagicMock()
+    router_app_context.anchor_transaction_service.start_sep24_interactive = AsyncMock(
+        return_value="https://anchor.test/interactive/deposit/1"
+    )
+
+    await _show_sep24_interactive_after_pin(
+        session,
+        user_id,
+        state,
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "SEP-24 deposit is ready" in req["data"]["text"]
+    assert "https://anchor.test/interactive/deposit/1" in req["data"]["reply_markup"]
