@@ -132,6 +132,7 @@ dmypy.json
 database.db
 qr
 .idea
+.antigravitycli/
 mtl-google-doc.json
 .junie/guidelines.md
 .vscode/settings.json
