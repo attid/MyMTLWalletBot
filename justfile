@@ -14,6 +14,11 @@ run: test
     docker build -t {{IMAGE_NAME}}:local .
     docker run --rm --network host --env-file .env {{IMAGE_NAME}}:local
 
+run_fast:
+    # Build and Run Docker container
+    docker build -t {{IMAGE_NAME}}:local .
+    docker run --rm --network host --env-file .env {{IMAGE_NAME}}:local
+
 shell:
     # Open a shell into the running container
     docker-compose exec {{IMAGE_NAME}} sh
