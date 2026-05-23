@@ -106,7 +106,14 @@ async def test_assets_command_updates_last_message_in_existing_menu(
         chat_id=user_id,
         user_id=user_id,
     )
-    await dp.storage.set_data(state_key, {"last_message_id": 99})
+    await dp.storage.set_data(
+        state_key,
+        {
+            "last_message_id": 99,
+            "anchor_request_asset": "STALE:GSTALE",
+            "fsm_func": "stale",
+        },
+    )
 
     get_balance = MagicMock()
     get_balance.execute = AsyncMock(
@@ -130,6 +137,9 @@ async def test_assets_command_updates_last_message_in_existing_menu(
     assert "SEP assets" in req["data"]["text"]
     state_data = await dp.storage.get_data(state_key)
     assert state_data["last_message_id"] == 99
+    assert "anchor_request_asset" not in state_data
+    assert "fsm_func" not in state_data
+    assert state_data["anchor_assets"] == {"a0": make_support().asset.to_string()}
 
 
 @pytest.mark.asyncio
