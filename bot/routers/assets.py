@@ -18,6 +18,7 @@ from infrastructure.services.app_context import AppContext
 from infrastructure.utils.telegram_utils import (
     clear_last_message_id,
     clear_state,
+    my_gettext,
     send_message,
 )
 from keyboards.assets import (
@@ -153,6 +154,12 @@ async def cmd_asset_requests(
         anchor_request_key=callback_data.key,
         fsm_func=jsonpickle.dumps(_show_asset_requests_after_pin),
         operation=f"SEP requests for {asset.code}",
+        sign_msg=my_gettext(
+            callback,
+            "sign_sep10_msg",
+            (asset.code,),
+            app_context=app_context,
+        ),
         msg=f"Sign SEP-10 challenge to show {asset.code} requests.",
     )
 
@@ -197,6 +204,12 @@ async def cmd_asset_transfer(
         anchor_transfer_operation=callback_data.action,
         fsm_func=jsonpickle.dumps(_show_sep24_interactive_after_pin),
         operation=f"SEP-24 {callback_data.action} for {asset.code}",
+        sign_msg=my_gettext(
+            callback,
+            "sign_sep10_msg",
+            (asset.code,),
+            app_context=app_context,
+        ),
         msg=f"Sign SEP-10 challenge to start {asset.code} {callback_data.action}.",
     )
 

@@ -823,6 +823,12 @@ async def cmd_send_04(
     await state.update_data(
         xdr=xdr,
         operation=f"Send {float2str(send_sum)} {send_asset_name}",
+        sign_msg=my_gettext(
+            message,
+            "sign_payment_msg",
+            (float2str(send_sum), send_asset_name),
+            app_context=app_context,
+        ),
         msg=None,
         success_msg=my_gettext(
             message,

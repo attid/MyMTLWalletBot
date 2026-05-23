@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from other.config_reader import config
 from keyboards.common_keyboards import get_return_button
 from infrastructure.services.app_context import AppContext
+from other.lang_tools import my_gettext
 
 _SUPPORTED_WEBAPP_LANGS = ("ru", "en")
 
@@ -52,8 +53,22 @@ def webapp_sign_keyboard(
                     text="📄 Показать XDR", callback_data=f"show_xdr_webapp:{tx_id}"
                 )
             ],
+            [webapp_decode_button(tx_id, user_id, app_context)],
             get_return_button(user_id, app_context=app_context),
         ]
+    )
+
+
+def webapp_decode_button(
+    tx_id: str,
+    user_id: int | None = None,
+    app_context: AppContext | None = None,
+) -> InlineKeyboardButton:
+    webapp_url = getattr(config, "webapp_url", "https://webapp.example.com")
+    lang = _resolve_webapp_lang(user_id, app_context)
+    return InlineKeyboardButton(
+        text=my_gettext(user_id or 0, "kb_decode", app_context=app_context),
+        web_app=WebAppInfo(url=f"{webapp_url}/decode?tx={tx_id}&lang={lang}"),
     )
 
 

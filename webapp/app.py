@@ -242,6 +242,15 @@ async def sign_page(request: Request, tx: str | None = None):
     })
 
 
+@app.get("/decode", response_class=HTMLResponse)
+async def decode_page(request: Request, tx: str | None = None):
+    """Render transaction decode page."""
+    return templates.TemplateResponse("decode.html", {
+        "request": request,
+        "tx_id": tx,
+    })
+
+
 @app.get("/import", response_class=HTMLResponse)
 async def import_page(request: Request, address: str | None = None):
     """Render key import page."""

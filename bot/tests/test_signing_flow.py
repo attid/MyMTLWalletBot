@@ -352,7 +352,7 @@ class TestWebAppKeyboard:
         tx_id = "123_abc12345"
         keyboard = webapp_sign_keyboard(tx_id)
 
-        assert len(keyboard.inline_keyboard) == 3
+        assert len(keyboard.inline_keyboard) == 4
 
         # First row - Web App button
         assert len(keyboard.inline_keyboard[0]) == 1
@@ -369,9 +369,15 @@ class TestWebAppKeyboard:
         assert show_xdr_btn.text == "📄 Показать XDR"
         assert show_xdr_btn.callback_data == f"show_xdr_webapp:{tx_id}"
 
-        # Third row - Return button (uses get_return_button)
+        # Third row - Decode Web App button
         assert len(keyboard.inline_keyboard[2]) == 1
-        return_btn = keyboard.inline_keyboard[2][0]
+        decode_btn = keyboard.inline_keyboard[2][0]
+        assert f"/decode?tx={tx_id}" in decode_btn.web_app.url
+        assert "lang=en" in decode_btn.web_app.url
+
+        # Fourth row - Return button (uses get_return_button)
+        assert len(keyboard.inline_keyboard[3]) == 1
+        return_btn = keyboard.inline_keyboard[3][0]
         assert return_btn.callback_data == "Return"
 
     def test_webapp_sign_keyboard_uses_user_lang(self):
@@ -390,7 +396,7 @@ class TestWebAppKeyboard:
         sign_btn = keyboard.inline_keyboard[0][0]
 
         assert "lang=ru" in sign_btn.web_app.url
-        app_context.localization_service.get_user_language.assert_called_once_with(42)
+        assert app_context.localization_service.get_user_language.call_count == 2
 
     def test_webapp_sign_keyboard_falls_back_to_en_for_unknown_lang(self):
         """Unknown lang value from localization_service should fall back to 'en'."""

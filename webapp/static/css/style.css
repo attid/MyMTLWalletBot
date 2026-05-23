@@ -127,6 +127,44 @@ body {
     padding: 2px 0;
 }
 
+.operations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.operation-card {
+    padding: 12px;
+    background: var(--tg-theme-bg-color, #fff);
+    border-radius: 8px;
+    border: 1px solid rgba(128, 128, 128, 0.18);
+}
+
+.operation-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.operation-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: 13px;
+}
+
+.operation-label {
+    color: var(--tg-theme-hint-color, #777);
+    flex: 0 0 auto;
+}
+
+.operation-value {
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+}
+
 .enter-hint {
     margin-top: 8px;
     margin-bottom: 0;
