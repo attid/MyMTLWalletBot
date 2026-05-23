@@ -687,3 +687,97 @@ async def test_cmd_send_for_custom_token(
     assert req is not None
     assert "choose_token" in req["data"]["text"]
     assert custom_code in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_send_for_muxed_address_uses_underlying_account_for_trustlines(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    muxed_address = (
+        "MCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYKAAAAAAAAAAXPAMAK"
+    )
+    underlying_address = "GCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYLQDJ"
+    custom_code = "UNLIMITED"
+    custom_issuer = "G_UNLIMITED_ISSUER"
+
+    mock_horizon.set_account(
+        underlying_address,
+        balances=[
+            {"asset_type": "native", "balance": "10.0"},
+            {
+                "asset_type": "credit_alphanum12",
+                "asset_code": custom_code,
+                "asset_issuer": custom_issuer,
+                "balance": "0.0",
+            },
+        ],
+    )
+
+    balance_uc = (
+        router_app_context.use_case_factory.create_get_wallet_balance.return_value
+    )
+
+    async def get_balances(user_id: int, public_key: str | None = None):
+        if public_key is None:
+            return [
+                Balance(
+                    asset_code="XLM",
+                    balance="100.0",
+                    asset_issuer=None,
+                    asset_type="native",
+                ),
+                Balance(
+                    asset_code=custom_code,
+                    balance="1000.0",
+                    asset_issuer=custom_issuer,
+                    asset_type="credit_alphanum12",
+                ),
+            ]
+        if public_key == underlying_address:
+            return [
+                Balance(
+                    asset_code="XLM",
+                    balance="10.0",
+                    asset_issuer=None,
+                    asset_type="native",
+                ),
+                Balance(
+                    asset_code=custom_code,
+                    balance="0.0",
+                    asset_issuer=custom_issuer,
+                    asset_type="credit_alphanum12",
+                ),
+            ]
+        return [
+            Balance(
+                asset_code="XLM",
+                balance="10.0",
+                asset_issuer=None,
+                asset_type="native",
+            )
+        ]
+
+    balance_uc.execute = AsyncMock(side_effect=get_balances)
+
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_for)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, muxed_address),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    assert custom_code in req["data"]["reply_markup"]
+
+    data = await dp.storage.get_data(key=storage_key)
+    assert data.get("send_address") == muxed_address
+    balance_uc.execute.assert_any_await(user_id=user_id, public_key=underlying_address)
