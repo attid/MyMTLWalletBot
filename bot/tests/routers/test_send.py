@@ -19,6 +19,7 @@ from aiogram.fsm.storage.base import StorageKey
 
 from routers.send import router as send_router, StateSendToken, SendAssetCallbackData
 from core.domain.value_objects import Balance, PaymentResult
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -351,6 +352,12 @@ async def test_cmd_send_get_sum_valid(
     data = await dp.storage.get_data(key=storage_key)
     assert data.get("send_sum") == 10.5
     assert data.get("xdr") == "XDR_PAYMENT"
+    pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR_PAYMENT"
+    assert pending["purpose"] == "payment"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "Send 10.5 XLM"
+    assert pending["sign_msg"] == "sign_payment_msg"
 
 
 @pytest.mark.asyncio
