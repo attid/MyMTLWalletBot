@@ -212,6 +212,7 @@
   "kb_decode": "Расшифровать",
   "sign_payment_msg": "Платеж {} {}",
   "sign_sep10_msg": "Подпись запроса к Stellar anchor {}",
+  "sign_swap_msg": "Обмен {} {} → {}",
   "sign_cancelled": "Подписание отменено",
   "sign_expired": "Транзакция истекла или уже обработана",
   "zero_sum": "Сумма 0 =( \n маловато будет",

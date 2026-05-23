@@ -201,6 +201,7 @@
   "kb_decode": "Dekodiraj",
   "sign_payment_msg": "Plaćanje {} {}",
   "sign_sep10_msg": "Potpis zahtjeva za Stellar anchor {}",
+  "sign_swap_msg": "Zamjena {} {} → {}",
   "zero_sum": "Iznos 0 =( \n neće biti dovoljan",
   "kb_hide_similar_messages": "Sakrij slične poruke",
   "kb_notification_settings_button": "⚙️",
