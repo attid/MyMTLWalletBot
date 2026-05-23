@@ -37,6 +37,7 @@ from routers.cheque import cheque_worker
 from routers import (
     add_wallet,
     admin,
+    assets,
     common_start,
     common_setting,
     mtltools,
@@ -110,6 +111,7 @@ async def bot_add_routers(
     dp.include_router(fest.router)
     dp.include_router(sign.router)
     dp.include_router(add_wallet.router)
+    dp.include_router(assets.router)
     dp.include_router(admin.router)
     dp.include_router(common_setting.router)
     dp.include_router(mtltools.router)
