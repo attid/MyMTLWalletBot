@@ -1,6 +1,7 @@
 """Worker for handling signed transactions from Web App."""
 
 import jsonpickle  # type: ignore
+import inspect
 import redis.asyncio as aioredis
 from loguru import logger
 
@@ -79,11 +80,30 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
             tools = data.get("tools")
             callback_url = data.get("callback_url")
             wallet_connect = data.get("wallet_connect")
+            signing_purpose = data.get("signing_purpose")
+            fsm_func_pickled = data.get("fsm_func")
 
             app_context = faststream_tools.APP_CONTEXT
             db_pool = app_context.db_pool
 
-            if tools or callback_url or wallet_connect:
+            if signing_purpose == "sep10_auth" and fsm_func_pickled:
+                await state.update_data(sep10_signed_xdr=signed_xdr)
+                fsm_func = jsonpickle.loads(fsm_func_pickled)
+                logger.info(f"TX {tx_id}: SEP-10 auth flow, calling fsm_func")
+
+                kwargs = {}
+                sig = inspect.signature(fsm_func)
+                if "app_context" in sig.parameters or any(
+                    p.kind == p.VAR_KEYWORD for p in sig.parameters.values()
+                ):
+                    kwargs["app_context"] = app_context
+
+                async with db_pool.get_session() as session:
+                    await fsm_func(session, user_id, state, **kwargs)
+                from infrastructure.utils.telegram_utils import clear_state
+
+                await clear_state(state)
+            elif tools or callback_url or wallet_connect:
                 # sign_tools flow: сохраняем подписанный XDR в FSM и показываем кнопки
                 await state.update_data(xdr=signed_xdr)
                 logger.info(

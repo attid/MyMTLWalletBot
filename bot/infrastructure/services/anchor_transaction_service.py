@@ -42,6 +42,13 @@ class AnchorTransactionService:
         keypair: Keypair,
     ) -> list[AnchorTransaction]:
         token = await self._authenticate(support.web_auth_endpoint, keypair)
+        return await self.fetch_transactions_with_token(support, token)
+
+    async def fetch_transactions_with_token(
+        self,
+        support: AnchorAssetSupport,
+        token: str | None,
+    ) -> list[AnchorTransaction]:
         headers = {"Authorization": f"Bearer {token}"} if token else None
         results = await asyncio.gather(
             self._fetch_protocol_transactions(
@@ -79,6 +86,24 @@ class AnchorTransactionService:
             raise ValueError(f"Unsupported SEP-24 operation: {operation}")
 
         token = await self._authenticate(support.web_auth_endpoint, keypair)
+        return await self.start_sep24_interactive_with_token(
+            support,
+            token,
+            operation=operation,
+        )
+
+    async def start_sep24_interactive_with_token(
+        self,
+        support: AnchorAssetSupport,
+        token: str | None,
+        *,
+        operation: str,
+    ) -> str:
+        if support.sep24 is None:
+            raise ValueError("SEP-24 is not available for this asset")
+        if operation not in {"deposit", "withdraw"}:
+            raise ValueError(f"Unsupported SEP-24 operation: {operation}")
+
         headers = {"Authorization": f"Bearer {token}"} if token else None
         response = await self._fetch_json(
             "POST",
@@ -95,16 +120,60 @@ class AnchorTransactionService:
             raise ValueError("SEP-24 interactive response did not include url")
         return url
 
+    async def get_sep10_challenge_xdr(
+        self, web_auth_endpoint: str | None, account: str
+    ) -> str:
+        challenge_xdr, _ = await self._fetch_sep10_challenge(
+            web_auth_endpoint,
+            account,
+        )
+        return challenge_xdr
+
+    async def exchange_sep10_token(
+        self, web_auth_endpoint: str | None, signed_challenge_xdr: str
+    ) -> str:
+        if not web_auth_endpoint:
+            raise ValueError("SEP-10 WEB_AUTH_ENDPOINT is not available")
+
+        auth_response = await self._fetch_json(
+            "POST",
+            web_auth_endpoint,
+            None,
+            None,
+            {"transaction": signed_challenge_xdr},
+        )
+        token = auth_response.get("token")
+        if not isinstance(token, str) or not token:
+            raise ValueError("SEP-10 token response is invalid")
+        return token
+
     async def _authenticate(
         self, web_auth_endpoint: str | None, keypair: Keypair
     ) -> str | None:
         if not web_auth_endpoint:
             return None
 
+        challenge_xdr, network_passphrase = await self._fetch_sep10_challenge(
+            web_auth_endpoint,
+            keypair.public_key,
+        )
+        envelope = TransactionEnvelope.from_xdr(challenge_xdr, network_passphrase)
+        envelope.sign(keypair)
+        return await self.exchange_sep10_token(
+            web_auth_endpoint,
+            envelope.to_xdr(),
+        )
+
+    async def _fetch_sep10_challenge(
+        self, web_auth_endpoint: str | None, account: str
+    ) -> tuple[str, str]:
+        if not web_auth_endpoint:
+            raise ValueError("SEP-10 WEB_AUTH_ENDPOINT is not available")
+
         challenge = await self._fetch_json(
             "GET",
             web_auth_endpoint,
-            {"account": keypair.public_key},
+            {"account": account},
             None,
             None,
         )
@@ -114,20 +183,7 @@ class AnchorTransactionService:
             network_passphrase, str
         ):
             raise ValueError("SEP-10 challenge response is invalid")
-
-        envelope = TransactionEnvelope.from_xdr(challenge_xdr, network_passphrase)
-        envelope.sign(keypair)
-        auth_response = await self._fetch_json(
-            "POST",
-            web_auth_endpoint,
-            None,
-            None,
-            {"transaction": envelope.to_xdr()},
-        )
-        token = auth_response.get("token")
-        if not isinstance(token, str) or not token:
-            raise ValueError("SEP-10 token response is invalid")
-        return token
+        return challenge_xdr, network_passphrase
 
     async def _fetch_protocol_transactions(
         self,

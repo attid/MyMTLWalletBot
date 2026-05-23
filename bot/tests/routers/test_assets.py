@@ -231,7 +231,7 @@ async def test_asset_button_edits_current_menu_for_action_buttons(
 
 
 @pytest.mark.asyncio
-async def test_asset_requests_read_only_wallet_reports_webapp_not_enabled(
+async def test_asset_requests_read_only_wallet_uses_webapp_sep10_auth(
     mock_telegram, router_app_context
 ):
     user_id = 123
@@ -265,6 +265,16 @@ async def test_asset_requests_read_only_wallet_reports_webapp_not_enabled(
     router_app_context.repository_factory.get_wallet_repository.return_value = (
         wallet_repo
     )
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=make_support()
+    )
+    router_app_context.anchor_transaction_service = MagicMock()
+    router_app_context.anchor_transaction_service.get_sep10_challenge_xdr = AsyncMock(
+        return_value="SEP10_CHALLENGE_XDR"
+    )
+    router_app_context.signing_facade = MagicMock()
+    router_app_context.signing_facade.request_signature = AsyncMock()
 
     await dp.feed_update(
         router_app_context.bot,
@@ -275,9 +285,18 @@ async def test_asset_requests_read_only_wallet_reports_webapp_not_enabled(
         ),
     )
 
-    req = get_telegram_request(mock_telegram, "editMessageText")
-    assert "SEP-10 signing" in req["data"]["text"]
-    assert "WebApp signing is not enabled" in req["data"]["text"]
+    router_app_context.signing_facade.request_signature.assert_awaited_once()
+    request = router_app_context.signing_facade.request_signature.await_args.kwargs[
+        "request"
+    ]
+    assert request.purpose is SignaturePurpose.SEP10_AUTH
+    assert request.mode is SignatureMode.SIGN_ONLY
+    assert request.xdr == "SEP10_CHALLENGE_XDR"
+    assert request.fsm_func is not None
+    router_app_context.anchor_transaction_service.get_sep10_challenge_xdr.assert_awaited_once_with(
+        "https://kbtrading.org/auth",
+        "GPUBLIC",
+    )
 
 
 @pytest.mark.asyncio
@@ -385,7 +404,68 @@ async def test_show_asset_requests_after_pin_sends_transactions(
 
 
 @pytest.mark.asyncio
-async def test_asset_deposit_read_only_wallet_reports_webapp_not_enabled(
+async def test_show_asset_requests_after_webapp_sep10_sends_transactions(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    state = MagicMock()
+    state.get_data = AsyncMock(
+        return_value={
+            "sep10_signed_xdr": "SIGNED_SEP10_XDR",
+            "anchor_request_asset": make_support().asset.to_string(),
+            "anchor_request_key": "a0",
+        }
+    )
+    session = MagicMock()
+    support = make_support()
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=support
+    )
+    router_app_context.anchor_transaction_service = MagicMock()
+    router_app_context.anchor_transaction_service.exchange_sep10_token = AsyncMock(
+        return_value="ANCHOR_TOKEN"
+    )
+    router_app_context.anchor_transaction_service.fetch_transactions_with_token = (
+        AsyncMock(
+            return_value=[
+                AnchorTransaction(
+                    protocol=AnchorTransactionProtocol.SEP24,
+                    id="tx-webapp",
+                    kind="deposit",
+                    status="completed",
+                    amount_in="100",
+                    updated_at="2026-05-23T10:00:00Z",
+                    more_info_url="https://anchor.test/tx-webapp",
+                )
+            ]
+        )
+    )
+
+    from routers.assets import _show_asset_requests_after_webapp_sep10
+
+    await _show_asset_requests_after_webapp_sep10(
+        session,
+        user_id,
+        state,
+        app_context=router_app_context,
+    )
+
+    router_app_context.anchor_transaction_service.exchange_sep10_token.assert_awaited_once_with(
+        "https://kbtrading.org/auth",
+        "SIGNED_SEP10_XDR",
+    )
+    router_app_context.anchor_transaction_service.fetch_transactions_with_token.assert_awaited_once_with(
+        support,
+        "ANCHOR_TOKEN",
+    )
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Requests" in req["data"]["text"]
+    assert "tx-webapp" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_asset_deposit_read_only_wallet_uses_webapp_sep10_auth(
     mock_telegram, router_app_context
 ):
     user_id = 123
@@ -419,6 +499,16 @@ async def test_asset_deposit_read_only_wallet_reports_webapp_not_enabled(
     router_app_context.repository_factory.get_wallet_repository.return_value = (
         wallet_repo
     )
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=make_support(sep24=True)
+    )
+    router_app_context.anchor_transaction_service = MagicMock()
+    router_app_context.anchor_transaction_service.get_sep10_challenge_xdr = AsyncMock(
+        return_value="SEP10_CHALLENGE_XDR"
+    )
+    router_app_context.signing_facade = MagicMock()
+    router_app_context.signing_facade.request_signature = AsyncMock()
 
     await dp.feed_update(
         router_app_context.bot,
@@ -429,8 +519,18 @@ async def test_asset_deposit_read_only_wallet_reports_webapp_not_enabled(
         ),
     )
 
-    req = get_telegram_request(mock_telegram, "editMessageText")
-    assert "SEP-24 transfer requires SEP-10 signing" in req["data"]["text"]
+    router_app_context.signing_facade.request_signature.assert_awaited_once()
+    request = router_app_context.signing_facade.request_signature.await_args.kwargs[
+        "request"
+    ]
+    assert request.purpose is SignaturePurpose.SEP10_AUTH
+    assert request.mode is SignatureMode.SIGN_ONLY
+    assert request.xdr == "SEP10_CHALLENGE_XDR"
+    assert request.operation == "SEP-24 deposit for BTCLN"
+    router_app_context.anchor_transaction_service.get_sep10_challenge_xdr.assert_awaited_once_with(
+        "https://kbtrading.org/auth",
+        "GPUBLIC",
+    )
 
 
 @pytest.mark.asyncio
@@ -524,3 +624,53 @@ async def test_show_sep24_interactive_after_pin_sends_url_button(
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert "SEP-24 deposit is ready" in req["data"]["text"]
     assert "https://anchor.test/interactive/deposit/1" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_show_sep24_interactive_after_webapp_sep10_sends_url_button(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    state = MagicMock()
+    state.get_data = AsyncMock(
+        return_value={
+            "sep10_signed_xdr": "SIGNED_SEP10_XDR",
+            "anchor_transfer_asset": make_support().asset.to_string(),
+            "anchor_transfer_operation": "deposit",
+        }
+    )
+    session = MagicMock()
+    support = make_support(sep24=True)
+    router_app_context.anchor_discovery_service = MagicMock()
+    router_app_context.anchor_discovery_service.discover_asset = AsyncMock(
+        return_value=support
+    )
+    router_app_context.anchor_transaction_service = MagicMock()
+    router_app_context.anchor_transaction_service.exchange_sep10_token = AsyncMock(
+        return_value="ANCHOR_TOKEN"
+    )
+    router_app_context.anchor_transaction_service.start_sep24_interactive_with_token = (
+        AsyncMock(return_value="https://anchor.test/interactive/deposit/2")
+    )
+
+    from routers.assets import _show_sep24_interactive_after_webapp_sep10
+
+    await _show_sep24_interactive_after_webapp_sep10(
+        session,
+        user_id,
+        state,
+        app_context=router_app_context,
+    )
+
+    router_app_context.anchor_transaction_service.exchange_sep10_token.assert_awaited_once_with(
+        "https://kbtrading.org/auth",
+        "SIGNED_SEP10_XDR",
+    )
+    router_app_context.anchor_transaction_service.start_sep24_interactive_with_token.assert_awaited_once_with(
+        support,
+        "ANCHOR_TOKEN",
+        operation="deposit",
+    )
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "SEP-24 deposit is ready" in req["data"]["text"]
+    assert "https://anchor.test/interactive/deposit/2" in req["data"]["reply_markup"]

@@ -145,20 +145,28 @@ async def cmd_asset_requests(
 
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    fsm_func = _show_asset_requests_after_pin
+    request_xdr = ""
     if wallet and wallet.use_pin == 10:
-        await send_message(
-            session,
-            callback,
-            "Requests require SEP-10 signing. WebApp signing is not enabled for this flow yet.",
-            app_context=app_context,
-        )
-        await callback.answer()
-        return
+        support = await _get_anchor_discovery_service(app_context).discover_asset(asset)
+        if support is None or support.web_auth_endpoint is None:
+            await send_message(
+                session,
+                callback,
+                "SEP-10 authentication is not available for this asset.",
+                app_context=app_context,
+            )
+            await callback.answer()
+            return
+        request_xdr = await _get_anchor_transaction_service(
+            app_context
+        ).get_sep10_challenge_xdr(support.web_auth_endpoint, wallet.public_key)
+        fsm_func = _show_asset_requests_after_webapp_sep10
 
     await state.update_data(
         anchor_request_asset=asset.to_string(),
         anchor_request_key=callback_data.key,
-        fsm_func=jsonpickle.dumps(_show_asset_requests_after_pin),
+        fsm_func=jsonpickle.dumps(fsm_func),
         operation=f"SEP requests for {asset.code}",
         sign_msg=my_gettext(
             callback,
@@ -176,7 +184,7 @@ async def cmd_asset_requests(
         request=SignatureRequest(
             user_id=callback.from_user.id,
             wallet_address=wallet.public_key if wallet else "",
-            xdr="",
+            xdr=request_xdr,
             purpose=SignaturePurpose.SEP10_AUTH,
             mode=SignatureMode.SIGN_ONLY,
             operation=f"SEP requests for {asset.code}",
@@ -187,7 +195,7 @@ async def cmd_asset_requests(
                 app_context=app_context,
             ),
             prompt_msg=f"Sign SEP-10 challenge to show {asset.code} requests.",
-            fsm_func=jsonpickle.dumps(_show_asset_requests_after_pin),
+            fsm_func=jsonpickle.dumps(fsm_func),
             metadata={"asset": asset.to_string(), "action": "requests"},
         ),
         app_context=app_context,
@@ -213,21 +221,29 @@ async def cmd_asset_transfer(
 
     wallet_repo = app_context.repository_factory.get_wallet_repository(session)
     wallet = await wallet_repo.get_default_wallet(callback.from_user.id)
+    fsm_func = _show_sep24_interactive_after_pin
+    request_xdr = ""
     if wallet and wallet.use_pin == 10:
-        await send_message(
-            session,
-            callback,
-            "SEP-24 transfer requires SEP-10 signing. WebApp signing is not enabled for this flow yet.",
-            app_context=app_context,
-        )
-        await callback.answer()
-        return
+        support = await _get_anchor_discovery_service(app_context).discover_asset(asset)
+        if support is None or support.sep24 is None or support.web_auth_endpoint is None:
+            await send_message(
+                session,
+                callback,
+                "SEP-24 authentication is not available for this asset.",
+                app_context=app_context,
+            )
+            await callback.answer()
+            return
+        request_xdr = await _get_anchor_transaction_service(
+            app_context
+        ).get_sep10_challenge_xdr(support.web_auth_endpoint, wallet.public_key)
+        fsm_func = _show_sep24_interactive_after_webapp_sep10
 
     await state.update_data(
         anchor_transfer_asset=asset.to_string(),
         anchor_transfer_key=callback_data.key,
         anchor_transfer_operation=callback_data.action,
-        fsm_func=jsonpickle.dumps(_show_sep24_interactive_after_pin),
+        fsm_func=jsonpickle.dumps(fsm_func),
         operation=f"SEP-24 {callback_data.action} for {asset.code}",
         sign_msg=my_gettext(
             callback,
@@ -245,7 +261,7 @@ async def cmd_asset_transfer(
         request=SignatureRequest(
             user_id=callback.from_user.id,
             wallet_address=wallet.public_key if wallet else "",
-            xdr="",
+            xdr=request_xdr,
             purpose=SignaturePurpose.SEP10_AUTH,
             mode=SignatureMode.SIGN_ONLY,
             operation=f"SEP-24 {callback_data.action} for {asset.code}",
@@ -258,7 +274,7 @@ async def cmd_asset_transfer(
             prompt_msg=(
                 f"Sign SEP-10 challenge to start {asset.code} {callback_data.action}."
             ),
-            fsm_func=jsonpickle.dumps(_show_sep24_interactive_after_pin),
+            fsm_func=jsonpickle.dumps(fsm_func),
             metadata={"asset": asset.to_string(), "action": callback_data.action},
         ),
         app_context=app_context,
@@ -396,6 +412,166 @@ async def _show_sep24_interactive_after_pin(
         url = await _get_anchor_transaction_service(
             app_context
         ).start_sep24_interactive(support, keypair, operation=operation)
+    except Exception as exc:
+        await send_message(
+            session,
+            user_id,
+            f"Could not start SEP-24 {operation}.\n{escape(str(exc))}",
+            app_context=app_context,
+        )
+        return
+
+    await send_message(
+        session,
+        user_id,
+        f"<b>{support.asset.code}</b>\nSEP-24 {escape(str(operation))} is ready.",
+        reply_markup=sep24_interactive_keyboard(
+            user_id,
+            url,
+            app_context=app_context,
+        ),
+        app_context=app_context,
+    )
+
+
+async def _get_sep10_webapp_token(
+    session: AsyncSession,
+    user_id: int,
+    state: FSMContext,
+    asset_ref: str,
+    *,
+    app_context: AppContext,
+) -> tuple[AnchorAssetSupport, str] | None:
+    data = await state.get_data()
+    signed_xdr = data.get("sep10_signed_xdr")
+    if not isinstance(signed_xdr, str) or not signed_xdr:
+        await send_message(
+            session,
+            user_id,
+            "SEP-10 signature was not found.",
+            app_context=app_context,
+        )
+        return None
+
+    code, issuer = asset_ref.split(":", 1)
+    asset = Asset(code, issuer)
+    support = await _get_anchor_discovery_service(app_context).discover_asset(asset)
+    if support is None or support.web_auth_endpoint is None:
+        await send_message(
+            session,
+            user_id,
+            "SEP-10 authentication is not available for this asset.",
+            app_context=app_context,
+        )
+        return None
+
+    token = await _get_anchor_transaction_service(app_context).exchange_sep10_token(
+        support.web_auth_endpoint,
+        signed_xdr,
+    )
+    return support, token
+
+
+async def _show_asset_requests_after_webapp_sep10(
+    session: AsyncSession,
+    user_id: int,
+    state: FSMContext,
+    *,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    asset_ref = data.get("anchor_request_asset")
+    asset_key = data.get("anchor_request_key", "a0")
+    if not isinstance(asset_ref, str) or ":" not in asset_ref:
+        await send_message(
+            session,
+            user_id,
+            "Asset selection expired.",
+            app_context=app_context,
+        )
+        return
+
+    try:
+        auth = await _get_sep10_webapp_token(
+            session,
+            user_id,
+            state,
+            asset_ref,
+            app_context=app_context,
+        )
+        if auth is None:
+            return
+        support, token = auth
+        transactions = await _get_anchor_transaction_service(
+            app_context
+        ).fetch_transactions_with_token(support, token)
+    except Exception as exc:
+        await send_message(
+            session,
+            user_id,
+            f"Could not load requests.\n{escape(str(exc))}",
+            app_context=app_context,
+        )
+        return
+
+    await send_message(
+        session,
+        user_id,
+        _format_asset_transactions(support.asset.code, transactions),
+        reply_markup=asset_actions_keyboard(
+            str(asset_key),
+            user_id,
+            app_context=app_context,
+        ),
+        app_context=app_context,
+    )
+
+
+async def _show_sep24_interactive_after_webapp_sep10(
+    session: AsyncSession,
+    user_id: int,
+    state: FSMContext,
+    *,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    asset_ref = data.get("anchor_transfer_asset")
+    operation = data.get("anchor_transfer_operation")
+    if (
+        not isinstance(asset_ref, str)
+        or ":" not in asset_ref
+        or operation not in {"deposit", "withdraw"}
+    ):
+        await send_message(
+            session,
+            user_id,
+            "Asset selection expired.",
+            app_context=app_context,
+        )
+        return
+
+    try:
+        auth = await _get_sep10_webapp_token(
+            session,
+            user_id,
+            state,
+            asset_ref,
+            app_context=app_context,
+        )
+        if auth is None:
+            return
+        support, token = auth
+        if support.sep24 is None:
+            await send_message(
+                session,
+                user_id,
+                "SEP-24 is not available for this asset.",
+                app_context=app_context,
+            )
+            return
+        url = await _get_anchor_transaction_service(
+            app_context
+        ).start_sep24_interactive_with_token(support, token, operation=operation)
     except Exception as exc:
         await send_message(
             session,
