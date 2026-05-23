@@ -47,6 +47,11 @@ an index. Detailed rules live in `docs/`.
 7. Do not add or modify `justfile` commands without explicit user approval.
 8. Do not introduce `python ...` or `uv run python ...` command patterns in
    recipes/docs/workflows without explicit user approval.
+9. Router screens with inline keyboards must use
+   `infrastructure.utils.telegram_utils.send_message()` unless there is a
+   documented reason not to. Direct `message.answer()`/`callback.message.answer()`
+   does not update `last_message_id` and can make callback middleware reject
+   fresh buttons as old.
 
 ## Task Intake Protocol
 1. First state which files/directories need changes.

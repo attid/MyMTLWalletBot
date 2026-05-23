@@ -61,6 +61,23 @@ class FakeAnchorHttp:
         raise AssertionError(f"unexpected text URL: {url}")
 
 
+class FakeDeadAnchorHttp:
+    def __init__(self):
+        self.calls = defaultdict(int)
+
+    async def fetch_json(self, url: str):
+        self.calls[url] += 1
+        if url.endswith(f"/accounts/{ISSUER}"):
+            return {"home_domain": "dead.example"}
+        raise TimeoutError(f"timeout: {url}")
+
+    async def fetch_text(self, url: str):
+        self.calls[url] += 1
+        if url == "https://dead.example/.well-known/stellar.toml":
+            return 'TRANSFER_SERVER="https://dead.example/sep6"'
+        raise AssertionError(f"unexpected text URL: {url}")
+
+
 @pytest.mark.asyncio
 async def test_discover_asset_returns_sep6_and_sep24_capabilities():
     fake_http = FakeAnchorHttp()
@@ -101,3 +118,26 @@ async def test_discover_asset_uses_one_hour_cache_by_asset():
     assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 1
     assert fake_http.calls["https://kbtrading.org/sep6/info"] == 1
     assert fake_http.calls["https://kbtrading.org/sep24/info"] == 1
+
+
+@pytest.mark.asyncio
+async def test_discover_assets_lists_by_toml_without_fetching_sep_info():
+    fake_http = FakeDeadAnchorHttp()
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+    )
+
+    supported = await service.discover_assets(
+        [
+            Asset("EURMTL", ISSUER),
+            Asset("MTL", ISSUER),
+            Asset("MTLRECT", ISSUER),
+        ]
+    )
+
+    assert [support.asset.code for support in supported] == ["EURMTL", "MTL", "MTLRECT"]
+    assert fake_http.calls[f"https://horizon.test/accounts/{ISSUER}"] == 1
+    assert fake_http.calls["https://dead.example/.well-known/stellar.toml"] == 1
+    assert fake_http.calls["https://dead.example/sep6/info"] == 0

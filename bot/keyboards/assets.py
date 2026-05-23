@@ -2,6 +2,7 @@ from aiogram import types
 from aiogram.filters.callback_data import CallbackData
 
 from core.models.anchor_asset import AnchorAssetSupport
+from infrastructure.services.app_context import AppContext
 from keyboards.common_keyboards import get_return_button
 
 
@@ -12,6 +13,9 @@ class AssetAction(CallbackData, prefix="asset"):
 
 def assets_list_keyboard(
     assets: list[AnchorAssetSupport],
+    user_id: int,
+    *,
+    app_context: AppContext,
 ) -> types.InlineKeyboardMarkup:
     buttons = [
         [
@@ -22,11 +26,16 @@ def assets_list_keyboard(
         ]
         for idx, support in enumerate(assets)
     ]
-    buttons.append(get_return_button(0))
+    buttons.append(get_return_button(user_id, app_context=app_context))
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def asset_actions_keyboard(key: str) -> types.InlineKeyboardMarkup:
+def asset_actions_keyboard(
+    key: str,
+    user_id: int,
+    *,
+    app_context: AppContext,
+) -> types.InlineKeyboardMarkup:
     buttons = [
         [
             types.InlineKeyboardButton(
@@ -42,6 +51,6 @@ def asset_actions_keyboard(key: str) -> types.InlineKeyboardMarkup:
                 callback_data=AssetAction(action="withdraw", key=key).pack(),
             ),
         ],
-        get_return_button(0),
+        get_return_button(user_id, app_context=app_context),
     ]
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
