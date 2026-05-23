@@ -2,6 +2,12 @@ import jsonpickle  # type: ignore
 from typing import List, Union
 
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
@@ -38,6 +44,27 @@ class StateSaleToken(StatesGroup):
     selling_receive_sum = State()
     editing_amount = State()
     editing_price = State()
+
+
+async def store_pending_trade_signature(
+    state: FSMContext,
+    *,
+    user_id: int,
+    xdr: str,
+    operation: str = "trade",
+) -> None:
+    await SigningFacade().store_pending_signature_request(
+        state,
+        SignatureRequest(
+            user_id=user_id,
+            wallet_address="",
+            xdr=xdr,
+            purpose=SignaturePurpose.TRADE,
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+            operation=operation,
+            sign_msg=operation,
+        ),
+    )
 
 
 class SaleAssetCallbackData(CallbackData, prefix="SaleAssetCallbackData"):
@@ -239,6 +266,11 @@ async def cmd_trade_cancel(
         )
         return
 
+    await store_pending_trade_signature(
+        state,
+        user_id=message.from_user.id,
+        xdr=result.xdr,
+    )
     await state.update_data(
         xdr=result.xdr,
         operation="trade",
@@ -409,6 +441,11 @@ async def cmd_trade_create(
         )
         return
 
+    await store_pending_trade_signature(
+        state,
+        user_id=message.from_user.id,
+        xdr=result.xdr,
+    )
     await state.update_data(
         xdr=result.xdr,
         operation="trade",
@@ -822,6 +859,11 @@ async def cmd_xdr_order(
             (send_sum, send_asset, receive_sum, receive_asset),
             app_context=app_context,
         )
+    await store_pending_trade_signature(
+        state,
+        user_id=message.from_user.id,
+        xdr=xdr,
+    )
     await state.update_data(xdr=xdr, operation="trade", msg=None)
     await send_message(
         session,

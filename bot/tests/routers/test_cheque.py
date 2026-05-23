@@ -14,10 +14,12 @@ See tests/README.md for complete testing rules.
 import pytest
 import json
 from unittest.mock import MagicMock, patch, AsyncMock
+from aiogram.fsm.storage.base import StorageKey
 
 from routers.cheque import router as cheque_router, ChequeCallbackData
 from db.models import ChequeStatus
 from core.domain.value_objects import PaymentResult, Balance
+from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from core.interfaces.repositories import IChequeRepository, IWalletRepository
 from core.domain.entities import Cheque, Wallet
 from core.use_cases.cheque.create_cheque import CreateCheque
@@ -98,6 +100,17 @@ async def test_cmd_create_cheque_flow(mock_telegram, router_app_context, dp):
     # Verify cheque preview was shown (message might be deleted, so check >= 1)
     messages = [r for r in mock_telegram if r["method"] == "sendMessage"]
     assert len(messages) >= 1, "Should send at least initial message"
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    state_data = await dp.storage.get_data(state_key)
+    pending = state_data.get(PENDING_SIGNATURE_REQUEST_KEY)
+    assert pending["xdr"] == "XDR"
+    assert pending["purpose"] == "cheque"
+    assert pending["mode"] == "sign_and_submit"
+    assert pending["operation"] == "cheque"
 
 
 @pytest.mark.asyncio
