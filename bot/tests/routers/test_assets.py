@@ -12,6 +12,7 @@ from core.models.anchor_asset import (
     SepProtocolSupport,
 )
 from core.models.anchor_transaction import AnchorTransaction, AnchorTransactionProtocol
+from infrastructure.services.signing_facade import SignatureMode, SignaturePurpose
 from keyboards.assets import AssetAction
 from routers.assets import (
     _show_asset_requests_after_pin,
@@ -280,6 +281,60 @@ async def test_asset_requests_read_only_wallet_reports_webapp_not_enabled(
 
 
 @pytest.mark.asyncio
+async def test_asset_requests_uses_signing_facade_for_sep10_auth(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    await dp.storage.set_data(
+        state_key,
+        {"anchor_assets": {"a0": make_support().asset.to_string()}},
+    )
+    wallet_repo = MagicMock()
+    wallet_repo.get_default_wallet = AsyncMock(
+        return_value=Wallet(
+            id=1,
+            user_id=user_id,
+            public_key="GPUBLIC",
+            is_default=True,
+            is_free=False,
+            use_pin=1,
+        )
+    )
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+    router_app_context.signing_facade = MagicMock()
+    router_app_context.signing_facade.request_signature = AsyncMock()
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(
+            user_id,
+            AssetAction(action="requests", key="a0").pack(),
+            message_id=99,
+        ),
+    )
+
+    router_app_context.signing_facade.request_signature.assert_awaited_once()
+    request = router_app_context.signing_facade.request_signature.await_args.kwargs[
+        "request"
+    ]
+    assert request.purpose is SignaturePurpose.SEP10_AUTH
+    assert request.mode is SignatureMode.SIGN_ONLY
+    assert request.fsm_func is not None
+    assert request.sign_msg == "sign_sep10_msg"
+
+
+@pytest.mark.asyncio
 async def test_show_asset_requests_after_pin_sends_transactions(
     mock_telegram, router_app_context
 ):
@@ -376,6 +431,60 @@ async def test_asset_deposit_read_only_wallet_reports_webapp_not_enabled(
 
     req = get_telegram_request(mock_telegram, "editMessageText")
     assert "SEP-24 transfer requires SEP-10 signing" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_asset_deposit_uses_signing_facade_for_sep10_auth(
+    mock_telegram, router_app_context
+):
+    user_id = 123
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id,
+        chat_id=user_id,
+        user_id=user_id,
+    )
+    await dp.storage.set_data(
+        state_key,
+        {"anchor_assets": {"a0": make_support(sep24=True).asset.to_string()}},
+    )
+    wallet_repo = MagicMock()
+    wallet_repo.get_default_wallet = AsyncMock(
+        return_value=Wallet(
+            id=1,
+            user_id=user_id,
+            public_key="GPUBLIC",
+            is_default=True,
+            is_free=False,
+            use_pin=1,
+        )
+    )
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+    router_app_context.signing_facade = MagicMock()
+    router_app_context.signing_facade.request_signature = AsyncMock()
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(
+            user_id,
+            AssetAction(action="deposit", key="a0").pack(),
+            message_id=99,
+        ),
+    )
+
+    router_app_context.signing_facade.request_signature.assert_awaited_once()
+    request = router_app_context.signing_facade.request_signature.await_args.kwargs[
+        "request"
+    ]
+    assert request.purpose is SignaturePurpose.SEP10_AUTH
+    assert request.mode is SignatureMode.SIGN_ONLY
+    assert request.fsm_func is not None
+    assert request.operation == "SEP-24 deposit for BTCLN"
 
 
 @pytest.mark.asyncio

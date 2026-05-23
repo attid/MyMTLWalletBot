@@ -15,6 +15,12 @@ from core.models.anchor_transaction import AnchorTransaction
 from infrastructure.services.anchor_discovery_service import AnchorDiscoveryService
 from infrastructure.services.anchor_transaction_service import AnchorTransactionService
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from infrastructure.utils.telegram_utils import (
     clear_last_message_id,
     clear_state,
@@ -163,10 +169,29 @@ async def cmd_asset_requests(
         msg=f"Sign SEP-10 challenge to show {asset.code} requests.",
     )
 
-    from routers.sign import PinState, cmd_ask_pin
-
-    await state.set_state(PinState.sign)
-    await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
+    signing_facade = getattr(app_context, "signing_facade", None) or SigningFacade()
+    await signing_facade.request_signature(
+        session=session,
+        state=state,
+        request=SignatureRequest(
+            user_id=callback.from_user.id,
+            wallet_address=wallet.public_key if wallet else "",
+            xdr="",
+            purpose=SignaturePurpose.SEP10_AUTH,
+            mode=SignatureMode.SIGN_ONLY,
+            operation=f"SEP requests for {asset.code}",
+            sign_msg=my_gettext(
+                callback,
+                "sign_sep10_msg",
+                (asset.code,),
+                app_context=app_context,
+            ),
+            prompt_msg=f"Sign SEP-10 challenge to show {asset.code} requests.",
+            fsm_func=jsonpickle.dumps(_show_asset_requests_after_pin),
+            metadata={"asset": asset.to_string(), "action": "requests"},
+        ),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
@@ -213,10 +238,31 @@ async def cmd_asset_transfer(
         msg=f"Sign SEP-10 challenge to start {asset.code} {callback_data.action}.",
     )
 
-    from routers.sign import PinState, cmd_ask_pin
-
-    await state.set_state(PinState.sign)
-    await cmd_ask_pin(session, callback.from_user.id, state, app_context=app_context)
+    signing_facade = getattr(app_context, "signing_facade", None) or SigningFacade()
+    await signing_facade.request_signature(
+        session=session,
+        state=state,
+        request=SignatureRequest(
+            user_id=callback.from_user.id,
+            wallet_address=wallet.public_key if wallet else "",
+            xdr="",
+            purpose=SignaturePurpose.SEP10_AUTH,
+            mode=SignatureMode.SIGN_ONLY,
+            operation=f"SEP-24 {callback_data.action} for {asset.code}",
+            sign_msg=my_gettext(
+                callback,
+                "sign_sep10_msg",
+                (asset.code,),
+                app_context=app_context,
+            ),
+            prompt_msg=(
+                f"Sign SEP-10 challenge to start {asset.code} {callback_data.action}."
+            ),
+            fsm_func=jsonpickle.dumps(_show_sep24_interactive_after_pin),
+            metadata={"asset": asset.to_string(), "action": callback_data.action},
+        ),
+        app_context=app_context,
+    )
     await callback.answer()
 
 
