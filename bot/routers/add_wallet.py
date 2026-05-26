@@ -212,7 +212,7 @@ async def cmd_sending_private(
             message,
             my_gettext(message, "bad_key", app_context=app_context)
             + "\n"
-            + data["msg"],
+            + str(data.get("msg") or ""),
             reply_markup=get_kb_return(message, app_context=app_context),
             app_context=app_context,
         )
@@ -528,7 +528,7 @@ async def cmd_sending_public(
             message,
             my_gettext(message, "bad_key", app_context=app_context)
             + "\n"
-            + data["msg"],
+            + str(data.get("msg") or ""),
             reply_markup=get_kb_return(message, app_context=app_context),
             app_context=app_context,
         )
