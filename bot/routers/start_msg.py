@@ -198,6 +198,9 @@ async def cmd_show_balance(
         await cmd_change_wallet(user_id, state, session, app_context=app_context)
     else:
         try:
+            wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+            if await wallet_repo.normalize_default_wallets(user_id):
+                await session.commit()
             data = await state.get_data()
             await clear_state(state)
             msg = await get_start_text(

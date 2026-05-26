@@ -281,6 +281,39 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             return result.rowcount > 0
         return False
 
+    async def normalize_default_wallets(self, user_id: int) -> bool:
+        """Ensure there is at most one active default wallet for the user."""
+        stmt = (
+            select(MyMtlWalletBot)
+            .where(MyMtlWalletBot.user_id == user_id)
+            .where(MyMtlWalletBot.default_wallet == 1)
+            .where(MyMtlWalletBot.need_delete == 0)
+            .order_by(MyMtlWalletBot.id.desc())
+        )
+        result = await self.session.execute(stmt)
+        default_wallets = result.scalars().all()
+        if len(default_wallets) <= 1:
+            return False
+
+        keep_wallet = default_wallets[0]
+        stmt_unset_duplicates = (
+            update(MyMtlWalletBot)
+            .where(MyMtlWalletBot.user_id == user_id)
+            .where(MyMtlWalletBot.need_delete == 0)
+            .where(MyMtlWalletBot.default_wallet == 1)
+            .where(MyMtlWalletBot.id != keep_wallet.id)
+            .values(default_wallet=0)
+        )
+        await self.session.execute(stmt_unset_duplicates)
+        await self.session.flush()
+        logger.warning(
+            "Normalized duplicate default wallets for user_id={}; kept wallet_id={}; duplicates={}",
+            user_id,
+            keep_wallet.id,
+            len(default_wallets) - 1,
+        )
+        return True
+
     async def delete_all_by_user(self, user_id: int) -> None:
         """Delete (soft-delete) all wallets for a user."""
         if user_id < 1:
