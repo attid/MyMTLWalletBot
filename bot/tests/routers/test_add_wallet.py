@@ -416,6 +416,35 @@ async def test_add_wallet_read_only_flow(
 
 
 @pytest.mark.asyncio
+async def test_add_wallet_read_only_error_without_msg_does_not_crash(
+    mock_telegram, router_app_context, setup_add_wallet_mocks
+):
+    """Read-only add errors should not assume an FSM prompt message exists."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(add_wallet_router)
+
+    user_id = 123
+
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(user_id, "AddWalletReadOnly")
+    )
+    setup_add_wallet_mocks.add_wallet_uc.execute.side_effect = RuntimeError(
+        "duplicate defaults"
+    )
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_message_update(user_id, "GPUBLIC", update_id=2, message_id=2),
+    )
+
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    assert "bad_key" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
 async def test_add_ton_wallet_flow(
     mock_telegram, router_app_context, setup_add_wallet_mocks
 ):

@@ -219,6 +219,89 @@ async def test_wallet_repository_deleted_not_default(db_session):
 
 
 @pytest.mark.asyncio
+async def test_wallet_repository_set_default_keeps_single_default_for_duplicate_key(
+    db_session,
+):
+    """Duplicate active public keys must not both become default."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1009, username="duplicate_key_test", language="en")
+    await user_repo.create(user)
+
+    first = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1009,
+            public_key="GDUPLICATE123",
+            is_default=False,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    second = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1009,
+            public_key="GDUPLICATE123",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+
+    assert first.id != second.id
+    assert await wallet_repo.set_default_wallet(1009, "GDUPLICATE123") is True
+    await db_session.commit()
+
+    active_wallets = await wallet_repo.get_all_active(1009)
+    defaults = [wallet for wallet in active_wallets if wallet.is_default]
+
+    assert len(defaults) == 1
+    assert defaults[0].id == second.id
+
+
+@pytest.mark.asyncio
+async def test_wallet_repository_get_default_tolerates_existing_duplicate_defaults(
+    db_session,
+):
+    """Existing bad data with multiple defaults should not crash user flows."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1010, username="duplicate_default_test", language="en")
+    await user_repo.create(user)
+
+    first = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1010,
+            public_key="GDEFAULT1",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    second = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1010,
+            public_key="GDEFAULT2",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    await db_session.commit()
+
+    default = await wallet_repo.get_default_wallet(1010)
+
+    assert first.id != second.id
+    assert default is not None
+    assert default.id == second.id
+
+
+@pytest.mark.asyncio
 async def test_wallet_repository_reset_balance_cache_clears_cached_balances(db_session):
     """Reset should invalidate cache data, not only event id marker."""
     user_repo = SqlAlchemyUserRepository(db_session)

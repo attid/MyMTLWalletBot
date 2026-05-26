@@ -48,9 +48,17 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             .where(MyMtlWalletBot.user_id == user_id)
             .where(MyMtlWalletBot.default_wallet == 1)
             .where(MyMtlWalletBot.need_delete == 0)
+            .order_by(MyMtlWalletBot.id.desc())
         )
         result = await self.session.execute(stmt)
-        db_wallet = result.scalar_one_or_none()
+        db_wallets = result.scalars().all()
+        if len(db_wallets) > 1:
+            logger.warning(
+                "Multiple default wallets found for user_id={}; using wallet_id={}",
+                user_id,
+                db_wallets[0].id,
+            )
+        db_wallet = db_wallets[0] if db_wallets else None
         if db_wallet:
             return self._to_entity(db_wallet)
         return None
@@ -238,10 +246,23 @@ class SqlAlchemyWalletRepository(IWalletRepository):
 
     async def set_default_wallet(self, user_id: int, public_key: str) -> bool:
         """Set a wallet as default for the user."""
+        stmt_target = (
+            select(MyMtlWalletBot)
+            .where(MyMtlWalletBot.user_id == user_id)
+            .where(MyMtlWalletBot.public_key == public_key)
+            .where(MyMtlWalletBot.need_delete == 0)
+            .order_by(MyMtlWalletBot.id.desc())
+        )
+        target_result = await self.session.execute(stmt_target)
+        target_wallet = target_result.scalars().first()
+        if target_wallet is None:
+            return False
+
         # Unset all default wallets
         stmt_unset = (
             update(MyMtlWalletBot)
             .where(MyMtlWalletBot.user_id == user_id)
+            .where(MyMtlWalletBot.need_delete == 0)
             .values(default_wallet=0)
         )
         await self.session.execute(stmt_unset)
@@ -249,9 +270,7 @@ class SqlAlchemyWalletRepository(IWalletRepository):
         # Set new default
         stmt_set = (
             update(MyMtlWalletBot)
-            .where(MyMtlWalletBot.user_id == user_id)
-            .where(MyMtlWalletBot.public_key == public_key)
-            .where(MyMtlWalletBot.need_delete == 0)
+            .where(MyMtlWalletBot.id == target_wallet.id)
             .values(default_wallet=1)
         )
         result = await self.session.execute(stmt_set)
