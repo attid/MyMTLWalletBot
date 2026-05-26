@@ -149,6 +149,14 @@ class IWalletRepository(ABC):
         pass
 
     @abstractmethod
+    async def normalize_default_wallets(self, user_id: int) -> bool:
+        """Repair duplicate active default wallets for a user.
+
+        Returns True when the repository changed persisted wallet defaults.
+        """
+        pass
+
+    @abstractmethod
     async def delete(
         self,
         user_id: int,

@@ -302,6 +302,65 @@ async def test_wallet_repository_get_default_tolerates_existing_duplicate_defaul
 
 
 @pytest.mark.asyncio
+async def test_wallet_repository_normalize_default_wallets_repairs_duplicates(
+    db_session,
+):
+    """Normalization should leave one active default and keep deleted rows alone."""
+    user_repo = SqlAlchemyUserRepository(db_session)
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+
+    user = User(id=1011, username="normalize_default_test", language="en")
+    await user_repo.create(user)
+
+    first = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1011,
+            public_key="GNORMALIZE1",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    second = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1011,
+            public_key="GNORMALIZE2",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    deleted = await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=1011,
+            public_key="GNORMALIZE_DELETED",
+            is_default=True,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+    await wallet_repo.delete(1011, "GNORMALIZE_DELETED")
+    await db_session.commit()
+
+    assert first.id != second.id != deleted.id
+    changed = await wallet_repo.normalize_default_wallets(1011)
+    await db_session.commit()
+
+    active_wallets = await wallet_repo.get_all_active(1011)
+    defaults = [wallet for wallet in active_wallets if wallet.is_default]
+    default = await wallet_repo.get_default_wallet(1011)
+
+    assert changed is True
+    assert len(defaults) == 1
+    assert defaults[0].id == second.id
+    assert default is not None
+    assert default.id == second.id
+
+
+@pytest.mark.asyncio
 async def test_wallet_repository_reset_balance_cache_clears_cached_balances(db_session):
     """Reset should invalidate cache data, not only event id marker."""
     user_repo = SqlAlchemyUserRepository(db_session)

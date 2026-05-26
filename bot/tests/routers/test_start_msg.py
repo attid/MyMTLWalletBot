@@ -41,6 +41,7 @@ def setup_start_mocks(router_app_context):
             self.wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
             self.wallet_repo.get_info = AsyncMock(return_value="[Info]")
             self.wallet_repo.get_all_active = AsyncMock(return_value=[self.wallet])
+            self.wallet_repo.normalize_default_wallets = AsyncMock(return_value=False)
             self.ctx.repository_factory.get_wallet_repository.return_value = (
                 self.wallet_repo
             )
@@ -112,6 +113,9 @@ async def test_cmd_show_balance_integration(
     assert req is not None
     assert "EURMTL" in req["data"]["text"]
     assert "Receive" in req["data"]["reply_markup"]
+    setup_start_mocks.wallet_repo.normalize_default_wallets.assert_awaited_once_with(
+        user_id
+    )
 
 
 @pytest.mark.asyncio
