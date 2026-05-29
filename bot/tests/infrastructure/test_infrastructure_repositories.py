@@ -11,11 +11,19 @@ from infrastructure.persistence.sqlalchemy_user_repository import (
 from infrastructure.persistence.sqlalchemy_wallet_repository import (
     SqlAlchemyWalletRepository,
 )
+from infrastructure.persistence.sqlalchemy_notification_repository import (
+    SqlAlchemyNotificationRepository,
+)
 from core.domain.entities import User, Wallet
 from infrastructure.persistence.sqlalchemy_cheque_repository import (
     SqlAlchemyChequeRepository,
 )
-from db.models import MyMtlWalletBotCheque, MyMtlWalletBotChequeHistory, ChequeStatus
+from db.models import (
+    MyMtlWalletBotCheque,
+    MyMtlWalletBotChequeHistory,
+    ChequeStatus,
+    NotificationFilter,
+)
 
 
 # Use in-memory SQLite for integration tests
@@ -216,6 +224,74 @@ async def test_wallet_repository_deleted_not_default(db_session):
     # Should not return deleted wallet as default
     default_after = await wallet_repo.get_default_wallet(1004)
     assert default_after is None
+
+
+@pytest.mark.asyncio
+async def test_notification_repository_ensures_default_xlm_filter_once(db_session):
+    user_repo = SqlAlchemyUserRepository(db_session)
+    repo = SqlAlchemyNotificationRepository(db_session)
+    user_id = 2001
+    await user_repo.create(User(id=user_id, username="dust", language="en"))
+    await db_session.commit()
+
+    created_first = await repo.ensure_default_xlm_filter(user_id)
+    created_second = await repo.ensure_default_xlm_filter(user_id)
+
+    assert created_first is True
+    assert created_second is False
+
+    filters = await repo.get_by_user_id(user_id)
+    assert len(filters) == 1
+    default_filter = filters[0]
+    assert default_filter.public_key is None
+    assert default_filter.asset_code == "XLM"
+    assert default_filter.min_amount == 0.1
+    assert default_filter.operation_type == "payment"
+
+
+@pytest.mark.asyncio
+async def test_notification_repository_backfills_default_xlm_filter(db_session):
+    user_repo = SqlAlchemyUserRepository(db_session)
+    repo = SqlAlchemyNotificationRepository(db_session)
+    user_ids = [2011, 2012, 2013]
+    for user_id in user_ids:
+        await user_repo.create(User(id=user_id, username=f"user_{user_id}", language="en"))
+
+    db_session.add(
+        NotificationFilter(
+            user_id=2012,
+            public_key=None,
+            asset_code="XLM",
+            min_amount=0.1,
+            operation_type="payment",
+        )
+    )
+    await db_session.commit()
+
+    before_counts = {
+        user_id: len(await repo.get_by_user_id(user_id)) for user_id in user_ids
+    }
+    first_created_count = await repo.backfill_default_xlm_filters()
+    second_created_count = await repo.backfill_default_xlm_filters()
+
+    assert first_created_count >= 2
+    assert second_created_count == 0
+    for user_id in user_ids:
+        filters = await repo.get_by_user_id(user_id)
+        matching = [
+            f
+            for f in filters
+            if f.public_key is None
+            and f.asset_code == "XLM"
+            and f.min_amount == 0.1
+            and f.operation_type == "payment"
+        ]
+        assert len(matching) == 1
+
+    after_counts = {user_id: len(await repo.get_by_user_id(user_id)) for user_id in user_ids}
+    assert after_counts[2011] == before_counts[2011] + 1
+    assert after_counts[2012] == before_counts[2012]
+    assert after_counts[2013] == before_counts[2013] + 1
 
 
 @pytest.mark.asyncio

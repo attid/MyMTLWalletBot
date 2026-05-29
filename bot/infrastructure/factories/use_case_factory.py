@@ -151,7 +151,8 @@ class UseCaseFactory(IUseCaseFactory):
 
         user_repo = self.repository_factory.get_user_repository(session)
         wallet_repo = self.repository_factory.get_wallet_repository(session)
-        return RegisterUser(user_repo, wallet_repo)
+        notification_repo = self.repository_factory.get_notification_repository(session)
+        return RegisterUser(user_repo, wallet_repo, notification_repo)
 
     def create_update_user_profile(self, session: Any):
         from core.use_cases.user.update_profile import UpdateUserProfile

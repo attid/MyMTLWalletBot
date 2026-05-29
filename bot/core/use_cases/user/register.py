@@ -1,6 +1,10 @@
 from typing import Tuple, Optional
 from core.domain.entities import User, Wallet
-from core.interfaces.repositories import IUserRepository, IWalletRepository
+from core.interfaces.repositories import (
+    IUserRepository,
+    IWalletRepository,
+    INotificationRepository,
+)
 # Note: In a real scenario, we might need a KeyGenerationService.
 # For now, assuming keys are passed in or generated simple.
 # Existing logic in routers/common_start.py usually generates keys.
@@ -12,10 +16,14 @@ from core.interfaces.repositories import IUserRepository, IWalletRepository
 
 class RegisterUser:
     def __init__(
-        self, user_repository: IUserRepository, wallet_repository: IWalletRepository
+        self,
+        user_repository: IUserRepository,
+        wallet_repository: IWalletRepository,
+        notification_repository: Optional[INotificationRepository] = None,
     ):
         self.user_repository = user_repository
         self.wallet_repository = wallet_repository
+        self.notification_repository = notification_repository
 
     async def execute(
         self,
@@ -62,6 +70,8 @@ class RegisterUser:
             seed_key,
             wallet_crypto_v2,
         )
+        if self.notification_repository is not None:
+            await self.notification_repository.ensure_default_xlm_filter(user_id)
 
         return saved_user, saved_wallet
 

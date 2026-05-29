@@ -308,6 +308,22 @@ class INotificationRepository(ABC):
         """Delete a filter by ID with owner verification. Returns True if deleted."""
         pass
 
+    @abstractmethod
+    async def ensure_default_xlm_filter(self, user_id: int) -> bool:
+        """Create the default XLM dust notification filter if missing.
+
+        Returns True when a new filter was created.
+        """
+        pass
+
+    @abstractmethod
+    async def backfill_default_xlm_filters(self) -> int:
+        """Create the default XLM dust notification filter for existing users.
+
+        Returns the number of created filters.
+        """
+        pass
+
 
 class IMessageRepository(ABC):
     """Interface for message queue operations."""
