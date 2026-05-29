@@ -1,6 +1,10 @@
 import pytest
 from unittest.mock import AsyncMock
-from core.interfaces.repositories import IUserRepository, IWalletRepository
+from core.interfaces.repositories import (
+    IUserRepository,
+    IWalletRepository,
+    INotificationRepository,
+)
 from core.domain.entities import User, Wallet
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.user.register import RegisterUser
@@ -79,6 +83,7 @@ async def test_register_new_user():
     # Setup Mocks
     mock_user_repo = AsyncMock(spec=IUserRepository)
     mock_wallet_repo = AsyncMock(spec=IWalletRepository)
+    mock_notification_repo = AsyncMock(spec=INotificationRepository)
 
     # Scenario: New User
     mock_user_repo.get_by_id.return_value = None
@@ -88,12 +93,13 @@ async def test_register_new_user():
     )
 
     # Execute
-    use_case = RegisterUser(mock_user_repo, mock_wallet_repo)
+    use_case = RegisterUser(mock_user_repo, mock_wallet_repo, mock_notification_repo)
     user, wallet = await use_case.execute(10, "new", "en", "PUB", "SEC")
 
     # Verify
     mock_user_repo.create.assert_called_once()
     mock_wallet_repo.create.assert_called_once()
+    mock_notification_repo.ensure_default_xlm_filter.assert_awaited_once_with(10)
     assert user.id == 10
     assert wallet.public_key == "PUB"
 
@@ -103,6 +109,7 @@ async def test_register_existing_user():
     # Setup Mocks
     mock_user_repo = AsyncMock(spec=IUserRepository)
     mock_wallet_repo = AsyncMock(spec=IWalletRepository)
+    mock_notification_repo = AsyncMock(spec=INotificationRepository)
 
     # Scenario: Existing User and Wallet
     existing_user = User(id=20, username="exist", language="en")
@@ -114,11 +121,12 @@ async def test_register_existing_user():
     mock_wallet_repo.get_default_wallet.return_value = existing_wallet
 
     # Execute
-    use_case = RegisterUser(mock_user_repo, mock_wallet_repo)
+    use_case = RegisterUser(mock_user_repo, mock_wallet_repo, mock_notification_repo)
     user, wallet = await use_case.execute(20, "exist", "en", "NEW_KEY", "NEW_SEC")
 
     # Verify: Should NOT create new user or wallet
     mock_user_repo.create.assert_not_called()
     mock_wallet_repo.create.assert_not_called()
+    mock_notification_repo.ensure_default_xlm_filter.assert_not_awaited()
     assert user == existing_user
     assert wallet == existing_wallet
