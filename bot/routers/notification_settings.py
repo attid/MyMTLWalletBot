@@ -8,6 +8,7 @@ from infrastructure.utils.telegram_utils import send_message
 from other.lang_tools import my_gettext
 from infrastructure.services.app_context import AppContext
 from infrastructure.utils.common_utils import float2str
+from middleware.notification_activity import complete_notification_flow
 
 router = Router()
 router.message.filter(F.chat.type == "private")
@@ -222,6 +223,7 @@ async def save_filter_callback(
         app_context=app_context,
     )
     await callback.answer()
+    await complete_notification_flow(app_context, user_id)
 
 
 @router.callback_query(F.data == "NotificationSettings")

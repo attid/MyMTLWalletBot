@@ -232,6 +232,7 @@ async def test_save_filter_success(
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(notification_router)
+    router_app_context.notification_coordinator = MagicMock(complete_flow=AsyncMock())
 
     user_id = 123
     state_key = StorageKey(
@@ -256,6 +257,9 @@ async def test_save_filter_success(
     assert "filter_saved" in req["data"]["text"]
     # State should be cleared
     assert await dp.storage.get_state(state_key) is None
+    router_app_context.notification_coordinator.complete_flow.assert_awaited_once_with(
+        user_id
+    )
 
 
 @pytest.mark.asyncio

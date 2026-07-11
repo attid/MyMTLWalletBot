@@ -107,6 +107,14 @@ async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_con
     """Test lang_en callback -> Set language and show balance"""
     user_id = 123
     mock_app_context.bot = bot
+    mock_app_context.notification_coordinator = MagicMock(complete_flow=AsyncMock())
+
+    async def deliver_queued_notification(user_id):
+        await bot.send_message(user_id, "queued blockchain notification")
+
+    mock_app_context.notification_coordinator.complete_flow.side_effect = (
+        deliver_queued_notification
+    )
 
     # We need to mock change_user_lang (imported in router)
     # And cmd_show_balance (imported in router) OR let it run.
@@ -140,6 +148,7 @@ async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_con
         )
     )
     mock_wallet_repo.get_info = AsyncMock(return_value="")
+    mock_wallet_repo.normalize_default_wallets = AsyncMock(return_value=False)
     mock_app_context.repository_factory.get_wallet_repository.return_value = (
         mock_wallet_repo
     )
@@ -181,6 +190,16 @@ async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_con
     answers = [r for r in mock_telegram if r["method"] == "answerCallbackQuery"]
     assert len(answers) == 1
     assert "was_set" in answers[0]["data"]["text"]  # Mock gettext
+    rendered_texts = [
+        request["data"]["text"]
+        for request in mock_telegram
+        if request["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert "your_balance" in rendered_texts[-2]
+    assert rendered_texts[-1] == "queued blockchain notification"
+    mock_app_context.notification_coordinator.complete_flow.assert_awaited_once_with(
+        user_id
+    )
 
 
 @pytest.mark.asyncio

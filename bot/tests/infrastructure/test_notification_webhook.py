@@ -17,10 +17,23 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.methods import SendMessage
 import pytest_asyncio
+import fakeredis.aioredis
 
-from infrastructure.services.notification_service import NotificationService
+from infrastructure.services.notification_service import (
+    NotificationDeliverySender,
+    NotificationService,
+)
+from infrastructure.services.notification_coordinator import NotificationCoordinator
+from infrastructure.services.notification_redis_store import NotificationRedisStore
+from infrastructure.services.telegram_delivery_service import NotificationSender
+from infrastructure.services.telegram_delivery_service import (
+    TelegramNotificationDeliveryService,
+)
+from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
+from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
 from db.models import MyMtlWalletBot
 from tests.conftest import get_telegram_request
@@ -38,6 +51,27 @@ class TrackingDbPool:
             yield self._session
         finally:
             self.active_sessions -= 1
+
+
+def blockchain_operation(transaction_hash: str = "tx-1") -> NotificationOperation:
+    return NotificationOperation(
+        id="7",
+        operation="payment",
+        dt=datetime.utcnow(),
+        from_account="GFROM" + "A" * 51,
+        for_account="GTO" + "B" * 51,
+        payment_amount=10.0,
+        payment_asset="XLM",
+        transaction_hash=transaction_hash,
+    )
+
+
+def notification_wallet() -> MagicMock:
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.id = 1
+    wallet.user_id = 12345
+    wallet.public_key = "GTO" + "B" * 53
+    return wallet
 
 
 @pytest.fixture
@@ -120,14 +154,16 @@ async def test_notification_service_sends_message_without_app_context(
     wallet.public_key = "GTEST" + "A" * 51
     wallet.id = 1
 
-    operation = MagicMock(spec=NotificationOperation)
-    operation.id = "test-op-123"
-    operation.operation = "payment"
-    operation.payment_amount = "100.0"
-    operation.payment_asset = "XLM"
-    operation.from_account = "GFROM" + "A" * 51
-    operation.for_account = "GTO" + "B" * 51
-    operation.memo = None
+    operation = NotificationOperation(
+        id="123",
+        operation="payment",
+        dt=datetime.utcnow(),
+        payment_amount=100.0,
+        payment_asset="XLM",
+        from_account="GFROM" + "A" * 51,
+        for_account="GTO" + "B" * 51,
+        transaction_hash="tx-test-123",
+    )
 
     # Mock database to return empty notification filters
     async def mock_execute(*args, **kwargs):
@@ -137,65 +173,197 @@ async def test_notification_service_sends_message_without_app_context(
 
     mock_db_pool._session.execute = mock_execute
 
-    # Execute: Call _send_notification_to_user
-    # This should NOT raise AttributeError: 'NoneType' object has no attribute 'bot'
+    coordinator = AsyncMock(spec=NotificationCoordinator)
+    notification_service.notification_coordinator = coordinator
+    # Execute: blockchain notifications must be accepted by the coordinator,
+    # never rendered through the stateful UI sender.
     await notification_service._send_notification_to_user(wallet, operation)
 
-    # Assert: Check mock_telegram received sendMessage
-    req = get_telegram_request(mock_telegram, "sendMessage")
-    assert req is not None, "Bot should send message via Telegram API"
+    coordinator.accept.assert_awaited_once()
+    event = coordinator.accept.await_args.args[0]
+    assert isinstance(event, BlockchainNotification)
+    assert event.user_id == 12345
+    assert event.transaction_hash == "tx-test-123"
+    assert event.event_type == "payment"
+    assert event.idempotency_key == "tx-test-123:payment:123:12345"
+    assert get_telegram_request(mock_telegram, "sendMessage") is None
 
-    # Verify correct user_id
-    sent_chat_id = int(req["data"]["chat_id"])
-    assert sent_chat_id == 12345, f"Expected chat_id 12345, got {sent_chat_id}"
 
-    # Verify message was sent (content doesn't matter - just that it was sent without crashing)
-    sent_text = req["data"]["text"]
-    assert len(sent_text) > 0, "Message text should not be empty"
+@pytest.mark.asyncio
+async def test_active_hold_queues_blockchain_event_without_telegram(
+    notification_service, mock_db_pool
+):
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    sender = AsyncMock(spec=NotificationSender)
+    store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=30)
+    coordinator = NotificationCoordinator(
+        store=store,
+        sender=sender,
+        badge_refresher=AsyncMock(spec=NotificationBadgeRefresher),
+        clock=lambda: 1_000,
+    )
+    notification_service.notification_coordinator = coordinator
+    await coordinator.touch(12345)
+
+    wallet = notification_wallet()
+    operation = blockchain_operation()
+    await notification_service._send_notification_to_user(
+        wallet, operation, user_filters=[]
+    )
+    await notification_service._send_notification_to_user(
+        wallet, operation, user_filters=[]
+    )
+
+    sender.send_notification.assert_not_awaited()
+    assert await store.pending_count(12345) == 1
+    await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_inactive_hold_delivers_without_changing_fsm_or_last_message(
+    notification_service, mock_telegram
+):
+    user_id = 12345
+    key = StorageKey(
+        bot_id=notification_service.bot.id, user_id=user_id, chat_id=user_id
+    )
+    await notification_service.dispatcher.storage.update_data(
+        key=key, data={"last_message_id": 777, "flow": "send"}
+    )
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=30)
+    notification_service.notification_coordinator = NotificationCoordinator(
+        store=store,
+        sender=TelegramNotificationDeliveryService(notification_service.bot),
+        badge_refresher=AsyncMock(spec=NotificationBadgeRefresher),
+        clock=lambda: 1_000,
+    )
+
+    await notification_service._send_notification_to_user(
+        notification_wallet(), blockchain_operation(), user_filters=[]
+    )
+
+    request = get_telegram_request(mock_telegram, "sendMessage")
+    assert request is not None
+    assert request["data"].get("reply_markup") is None
+    assert await notification_service.dispatcher.storage.get_data(key) == {
+        "last_message_id": 777,
+        "flow": "send",
+    }
+    await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_blockchain_event_is_delivered_once_and_failed_send_is_retained(
+    notification_service,
+):
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    sender = AsyncMock(spec=NotificationSender)
+    store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=30)
+    notification_service.notification_coordinator = NotificationCoordinator(
+        store=store,
+        sender=sender,
+        badge_refresher=AsyncMock(spec=NotificationBadgeRefresher),
+        clock=lambda: 1_000,
+    )
+    wallet = notification_wallet()
+    operation = blockchain_operation("tx-duplicate")
+
+    await notification_service._send_notification_to_user(
+        wallet, operation, user_filters=[]
+    )
+    await notification_service._send_notification_to_user(
+        wallet, operation, user_filters=[]
+    )
+
+    sender.send_notification.assert_awaited_once()
+    sender.send_notification.side_effect = RuntimeError("telegram unavailable")
+    await notification_service._send_notification_to_user(
+        wallet, blockchain_operation("tx-failure"), user_filters=[]
+    )
+    assert await store.pending_count(12345) == 1
+    await redis.aclose()
+
+
+def test_payload_event_index_uses_notifier_index_then_numeric_operation_id(
+    notification_service,
+):
+    assert (
+        notification_service._event_index_from_payload(
+            {"operation": {"operation_index": "4", "id": "7"}}
+        )
+        == 4
+    )
+    assert (
+        notification_service._event_index_from_payload({"operation": {"id": "7"}}) == 7
+    )
+    assert (
+        notification_service._event_index_from_payload({"operation": {"id": "opaque"}})
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_forbidden_notification_marks_wallet_deleted(
     notification_service, mock_db_pool
 ):
-    wallet = MagicMock(spec=MyMtlWalletBot)
-    wallet.user_id = 12345
-    wallet.public_key = "GTEST" + "A" * 51
-    wallet.id = 1
-    wallet.need_delete = 0
-
-    operation = MagicMock(spec=NotificationOperation)
-    operation.id = "test-op-forbidden"
-    operation.operation = "payment"
-    operation.payment_amount = "100.0"
-    operation.payment_asset = "XLM"
-    operation.from_account = "GFROM" + "A" * 51
-    operation.for_account = "GTO" + "B" * 51
-    operation.display_amount_value = "100.0"
-    operation.display_asset_code = "XLM"
-    operation.memo = None
-
-    async def mock_execute(*args, **kwargs):
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        return mock_result
-
-    mock_db_pool._session.execute = mock_execute
-    notification_service.bot.send_message = AsyncMock(
-        side_effect=TelegramForbiddenError(
-            method=SendMessage(chat_id=12345, text="forbidden"),
-            message="Forbidden: bot was blocked by the user",
-        )
+    delivery = AsyncMock(spec=NotificationSender)
+    delivery.send_notification.side_effect = TelegramForbiddenError(
+        method=SendMessage(chat_id=12345, text="forbidden"),
+        message="Forbidden: bot was blocked by the user",
+    )
+    event = BlockchainNotification(
+        notification_id="forbidden",
+        user_id=12345,
+        event_type="payment",
+        text="message",
+        created_at=1,
+        transaction_hash="tx-forbidden",
+        event_index=1,
+        data={"wallet_id": 1, "public_key": "GTEST" + "A" * 51},
     )
 
-    await notification_service._send_notification_to_user(wallet, operation)
+    await NotificationDeliverySender(notification_service, delivery).send_notification(
+        event
+    )
 
-    # The forbidden handler must NOT call session.add(wallet) — wallet is
-    # still attached to the session that fetched it, so add() raises
-    # InvalidRequestError in production. Instead the handler issues an
-    # UPDATE ... SET need_delete=1 via session.execute + commit.
+    delivery.send_notification.assert_awaited_once_with(event)
+    # A forbidden user is a handled delivery outcome: the queue can acknowledge
+    # it after the wallet is marked for deletion.
     mock_db_pool._session.add.assert_not_called()
     mock_db_pool._session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delivery_records_history_only_after_telegram_success(
+    notification_service,
+):
+    history = MagicMock()
+    notification_service.notification_history = history
+    delivery = AsyncMock(spec=NotificationSender)
+    event = BlockchainNotification(
+        notification_id="delivered",
+        user_id=12345,
+        event_type="payment",
+        text="message",
+        created_at=1,
+        transaction_hash="tx-delivered",
+        event_index=1,
+        data={
+            "wallet_id": 1,
+            "public_key": "GTEST" + "A" * 51,
+            "operation_id": "1",
+            "operation_type": "payment",
+            "asset_code": "XLM",
+            "amount": "100",
+        },
+    )
+
+    await NotificationDeliverySender(notification_service, delivery).send_notification(
+        event
+    )
+
+    history.add_delivered.assert_called_once_with(event)
 
 
 @pytest.mark.asyncio
@@ -250,14 +418,19 @@ async def test_notification_sell_offer_link(
     wallet.public_key = "GSELLER" + "A" * 50
     wallet.id = 1
 
-    operation = MagicMock(spec=NotificationOperation)
-    operation.id = "op-123"
-    operation.operation = "manage_sell_offer"
-    operation.offer_amount = "10.0"
-    operation.offer_price = "2.0"
-    operation.offer_selling_asset = "USDM"
-    operation.offer_buying_asset = "XLM"
-    operation.offer_id = 1821833749  # This should be the result after processing logic
+    operation = NotificationOperation(
+        id="123",
+        operation="manage_sell_offer",
+        dt=datetime.utcnow(),
+        offer_amount=10.0,
+        offer_price=2.0,
+        offer_selling_asset="USDM",
+        offer_buying_asset="XLM",
+        offer_id=1821833749,
+        transaction_hash="txhash123",
+        from_account=wallet.public_key,
+        for_account=wallet.public_key,
+    )
     # In integration test with full service, we should simulate the payload.
     # But here we are calling _send_notification_to_user with an already mapped operation.
     # So we just ensure the operation object HAS the correct ID, assuming _map_payload_to_operation works.
@@ -265,12 +438,6 @@ async def test_notification_sell_offer_link(
 
     # Let's trust that we are testing _send_notification_to_user's handling of the ID.
     # We will add a simpler unit test for mapping logic if needed.
-    operation.from_account = wallet.public_key
-    operation.for_account = wallet.public_key
-    operation.transaction_hash = "txhash123"
-    operation.display_amount_value = "10.0"  # needed for filter check logic
-    operation.memo = None
-
     # Mock db for filters
     async def mock_execute(*args, **kwargs):
         mock_result = MagicMock()
@@ -279,13 +446,16 @@ async def test_notification_sell_offer_link(
 
     mock_db_pool._session.execute = mock_execute
 
+    coordinator = AsyncMock(spec=NotificationCoordinator)
+    notification_service.notification_coordinator = coordinator
+
     # Execute
-    await notification_service._send_notification_to_user(wallet, operation)
+    await notification_service._send_notification_to_user(
+        wallet, operation, event_index=1
+    )
 
     # Assert
-    req = get_telegram_request(mock_telegram, "sendMessage")
-    assert req is not None
-    text = req["data"]["text"]
+    text = coordinator.accept.await_args.args[0].text
 
     # Check for link
     expected_link = "https://viewer.eurmtl.me/offer/1821833749"
@@ -421,6 +591,70 @@ async def test_handle_webhook_limits_concurrent_notification_processing(
     await asyncio.gather(*tasks)
 
     assert max_active <= limit
+
+
+@pytest.mark.asyncio
+async def test_webhook_returns_retryable_failure_when_durable_accept_fails(
+    notification_service,
+):
+    """The notifier must retry when an accepted event was not made durable."""
+    wallet = notification_wallet()
+    operation = blockchain_operation()
+    coordinator = AsyncMock(spec=NotificationCoordinator)
+    coordinator.accept.side_effect = RuntimeError("redis unavailable")
+    notification_service.notification_coordinator = coordinator
+    notification_service._verify_webhook_signature = MagicMock(return_value=True)
+
+    async def process(_payload):
+        await notification_service._send_notification_to_user(
+            wallet, operation, user_filters=[]
+        )
+
+    class RequestStub:
+        async def read(self):
+            return b'{"operation": {"id": "op", "type": "payment"}}'
+
+    notification_service.process_notification = process
+
+    response = await notification_service.handle_webhook(RequestStub())
+
+    assert response.status == 500
+    coordinator.accept.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_webhook_keeps_filtered_notification_as_a_successful_noop(
+    notification_service,
+):
+    """Filtering is intentional and must not turn into a notifier retry."""
+    wallet = notification_wallet()
+    operation = blockchain_operation()
+    coordinator = AsyncMock(spec=NotificationCoordinator)
+    coordinator.accept.side_effect = RuntimeError("must not be called")
+    notification_service.notification_coordinator = coordinator
+    notification_service._verify_webhook_signature = MagicMock(return_value=True)
+    notification_filter = MagicMock(
+        public_key=None,
+        asset_code=None,
+        min_amount=11.0,
+        operation_type="payment",
+    )
+
+    async def process(_payload):
+        await notification_service._send_notification_to_user(
+            wallet, operation, user_filters=[notification_filter]
+        )
+
+    class RequestStub:
+        async def read(self):
+            return b'{"operation": {"id": "op", "type": "payment"}}'
+
+    notification_service.process_notification = process
+
+    response = await notification_service.handle_webhook(RequestStub())
+
+    assert response.status == 200
+    coordinator.accept.assert_not_awaited()
 
 
 @pytest.mark.asyncio

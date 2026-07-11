@@ -1,7 +1,8 @@
 import os
+import math
 from typing import Optional
 from environs import Env
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 start_path = os.path.dirname(os.path.dirname(__file__))
@@ -54,6 +55,20 @@ class Settings(BaseSettings):
     notifier_url: Optional[str] = "http://operations-notifier:8000"
     webhook_public_url: Optional[str] = "http://mmwb_bot:8081/webhook"
     webhook_port: int = 8081
+
+    # Delayed blockchain notification delivery.
+    notification_hold_seconds: int = 120
+    notification_delivery_poll_interval_seconds: float = 5.0
+    notification_delivery_batch_size: int = 100
+
+    @field_validator("notification_delivery_poll_interval_seconds")
+    @classmethod
+    def validate_notification_delivery_poll_interval(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(
+                "notification_delivery_poll_interval_seconds must be finite and positive"
+            )
+        return value
 
     # Security for Notification Service
     notifier_public_key: Optional[str] = (

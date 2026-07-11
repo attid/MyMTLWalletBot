@@ -14,6 +14,7 @@ from aiogram.exceptions import TelegramBadRequest
 from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 import inspect
 from infrastructure.services.app_context import AppContext
+from middleware.notification_activity import complete_notification_flow
 
 from other.mytypes import MyResponse
 from other.web_tools import http_session_manager
@@ -632,6 +633,7 @@ async def sign_xdr(session: AsyncSession, state, user_id, *, app_context: AppCon
                             kwargs["app_context"] = app_context
 
                         await fsm_after_send(session, user_id, state, **kwargs)
+                    await complete_notification_flow(app_context, user_id)
                 if current_state == PinState.sign:
                     await cmd_show_sign(
                         session,
@@ -982,6 +984,7 @@ async def cmd_show_send_tr(
                     ),
                     app_context=app_context,
                 )
+                await complete_notification_flow(app_context, callback.from_user.id)
                 return
             else:
                 await cmd_info_message(
@@ -990,6 +993,7 @@ async def cmd_show_send_tr(
                     my_gettext(callback, "send_good", app_context=app_context),
                     app_context=app_context,
                 )
+                await complete_notification_flow(app_context, callback.from_user.id)
     except BaseHorizonError as ex:
         logger.info(["send BaseHorizonError", ex])
         msg = f"{ex.title}, error {ex.status}"
@@ -1125,6 +1129,7 @@ async def cmd_resend(
             my_gettext(user_id, "send_good", app_context=app_context),
             app_context=app_context,
         )
+        await complete_notification_flow(app_context, user_id)
     except BaseHorizonError as ex:
         logger.info(["ReSend BaseHorizonError", ex])
         msg = f"{ex.title}, error {ex.status}"
@@ -1223,6 +1228,8 @@ async def cmd_cancel_biometric_sign(
         await callback.message.delete()
     except TelegramBadRequest:
         pass
+    if deleted:
+        await complete_notification_flow(app_context, user_id)
 
 
 @router.callback_query(F.data == "cancel_import_key")
@@ -1247,6 +1254,7 @@ async def cmd_cancel_import_key(
         await callback.message.delete()
     except TelegramBadRequest:
         pass
+    await complete_notification_flow(app_context, user_id)
 
 
 @router.callback_query(F.data.startswith("show_xdr_webapp:"))

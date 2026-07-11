@@ -5,6 +5,7 @@ from infrastructure.services.notification_history_service import (
     NotificationHistoryService,
     NotificationRecord,
 )
+from core.models.blockchain_notification import BlockchainNotification
 
 
 class TestNotificationRecord:
@@ -70,6 +71,59 @@ class TestNotificationHistoryService:
         assert record.amount == 100.5
         assert record.wallet_id == 1
         assert record.public_key == "GKEY"
+
+    def test_add_delivered_preserves_filter_fields_for_non_payment(self):
+        service = NotificationHistoryService()
+        notification = BlockchainNotification(
+            notification_id="delivered",
+            user_id=123,
+            event_type="manage_sell_offer",
+            text="message",
+            created_at=1,
+            transaction_hash="tx",
+            event_index=1,
+            data={
+                "wallet_id": 1,
+                "public_key": "GKEY",
+                "operation_id": "1",
+                "operation_type": "manage_sell_offer",
+                "asset_code": "EURMTL",
+                "amount": "10.5",
+            },
+        )
+
+        service.add_delivered(notification)
+
+        record = service.get_recent(123)[0]
+        assert record.operation_type == "manage_sell_offer"
+        assert record.asset_code == "EURMTL"
+        assert record.amount == 10.5
+
+    def test_add_delivered_ignores_resend_after_lease_loss(self):
+        service = NotificationHistoryService()
+        notification = BlockchainNotification(
+            notification_id="retried-delivery",
+            user_id=123,
+            event_type="payment",
+            text="message",
+            created_at=1,
+            transaction_hash="tx",
+            event_index=1,
+            data={
+                "wallet_id": 1,
+                "public_key": "GKEY",
+                "operation_type": "payment",
+                "asset_code": "XLM",
+                "amount": "10",
+            },
+        )
+
+        service.add_delivered(notification)
+        service.add_delivered(notification)
+
+        records = service.get_recent(123)
+        assert len(records) == 1
+        assert records[0].operation_type == "payment"
 
     def test_add_operation_with_none_amount(self):
         """Test adding operation with None amount."""

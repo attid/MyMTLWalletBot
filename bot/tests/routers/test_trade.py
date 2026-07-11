@@ -9,6 +9,7 @@ from routers.trade import (
     SaleAssetCallbackData,
     EditOrderCallbackData,
 )
+from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance, PaymentResult
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from other.mytypes import MyOffer, MyAsset
@@ -277,6 +278,31 @@ async def test_edit_order_options(mock_telegram, router_app_context, setup_trade
     assert "EditOrderAmount" in req["data"]["reply_markup"]
     assert "EditOrderCost" in req["data"]["reply_markup"]
     assert "DeleteOrder" in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_order_amount_retry_keeps_fsm_while_touching_notification_hold(
+    mock_telegram, router_app_context, setup_trade_mocks
+):
+    """Notification activity must not change the order amount retry screen."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.message.middleware(NotificationActivityMiddleware())
+    dp.include_router(trade_router)
+    coordinator = MagicMock(touch=AsyncMock(), complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+    user_id = 123
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(storage_key, StateSaleToken.editing_amount)
+    await dp.storage.set_data(storage_key, {"msg": "Enter amount"})
+
+    await dp.feed_update(router_app_context.bot, create_message_update(user_id, "bad"))
+
+    assert await dp.storage.get_state(storage_key) == StateSaleToken.editing_amount
+    coordinator.touch.assert_awaited_once_with(user_id)
+    coordinator.complete_flow.assert_not_awaited()
 
 
 @pytest.mark.asyncio
