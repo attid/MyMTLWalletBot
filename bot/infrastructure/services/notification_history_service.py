@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import uuid
 
 from core.models.notification import NotificationOperation
+from core.models.blockchain_notification import BlockchainNotification
 
 
 @dataclass
@@ -21,6 +22,7 @@ class NotificationRecord:
     amount: float
     wallet_id: int
     public_key: str
+    notification_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -77,6 +79,40 @@ class NotificationHistoryService:
         # Trim to max size
         if len(self._history[user_id]) > self._max_per_user:
             self._history[user_id] = self._history[user_id][: self._max_per_user]
+
+    def add_delivered(self, notification: BlockchainNotification) -> None:
+        """Record a durable event only after its Telegram delivery succeeds."""
+        data = notification.data
+        wallet_id = data.get("wallet_id")
+        public_key = data.get("public_key")
+        operation_type = data.get("operation_type")
+        asset_code = data.get("asset_code")
+        amount = data.get("amount")
+        if not isinstance(wallet_id, int) or not isinstance(public_key, str):
+            raise ValueError("delivered notification is missing wallet metadata")
+        try:
+            parsed_amount = float(amount or 0)
+        except (ValueError, TypeError):
+            parsed_amount = 0.0
+        self._cleanup_user(notification.user_id)
+        records = self._history.setdefault(notification.user_id, [])
+        if any(
+            record.notification_id == notification.notification_id for record in records
+        ):
+            return
+        records.insert(
+            0,
+            NotificationRecord(
+                id=str(uuid.uuid4())[:8],
+                operation_type=str(operation_type or notification.event_type),
+                asset_code=str(asset_code or "XLM"),
+                amount=parsed_amount,
+                wallet_id=wallet_id,
+                public_key=public_key,
+                notification_id=notification.notification_id,
+            ),
+        )
+        del records[self._max_per_user :]
 
     def get_recent(self, user_id: int, limit: int = 10) -> List[NotificationRecord]:
         """

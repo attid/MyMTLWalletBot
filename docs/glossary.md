@@ -18,3 +18,13 @@
 - **Repository factory**: Factory providing repository instances bound to a DB
   session.
 - **Commit discipline**: Mandatory explicit `await session.commit()` for writes.
+- **Blockchain notification**: A wallet event confirmed by the blockchain;
+  user-flow screens such as “transaction sent” are not notifications.
+- **Notification hold**: Absolute Redis timestamp until which background
+  blockchain notifications are queued while the user remains active.
+- **Pending notification queue**: Durable ordered Redis queue independent from
+  FSM state and safe across process restarts.
+- **Notification badge**: Derived inline-keyboard row showing the pending count;
+  it does not navigate, replace the UI screen, or change FSM state.
+- **Notification flush**: Token-locked ordered delivery of a user's pending
+  queue, either after inactivity, at flow completion, or by explicit badge click.

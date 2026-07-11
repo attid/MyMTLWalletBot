@@ -19,6 +19,7 @@ from keyboards.common_keyboards import (
     get_kb_limits,
 )
 from middleware.throttling import rate_limit
+from middleware.notification_activity import complete_notification_flow
 from routers.common_setting import cmd_language
 from routers.sign import cmd_check_xdr
 from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
@@ -144,6 +145,7 @@ async def cmd_start(
             state,
             app_context=app_context,
         )
+    await complete_notification_flow(app_context, message.from_user.id)
 
 
 @router.callback_query(F.data == "Return")
@@ -182,6 +184,7 @@ async def cb_return(
         await cmd_show_balance(
             session, callback.message.chat.id, state, app_context=app_context
         )
+        await complete_notification_flow(app_context, callback.from_user.id)
         await callback.answer()
     await check_update_username(
         session,
@@ -216,6 +219,7 @@ async def cb_delete_return(
     await cmd_show_balance(
         session, callback.message.chat.id, state, app_context=app_context
     )
+    await complete_notification_flow(app_context, callback.from_user.id)
     await callback.answer()
     await check_update_username(
         session,

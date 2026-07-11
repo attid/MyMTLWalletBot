@@ -12,6 +12,13 @@ from keyboards.common_keyboards import get_kb_return, get_kb_send, get_return_bu
 from other.lang_tools import my_gettext
 from other.web_tools import get_web_request
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.notification_badge_service import (
+    NotificationBadgeService,
+    UiMarkupLeaseLost,
+    UiMarkupLockUnavailable,
+    await_ui_markup_lease_operation,
+    ensure_ui_markup_lease,
+)
 
 from infrastructure.utils.common_utils import get_user_id
 
@@ -43,50 +50,204 @@ async def send_message(
         logger.error("send_message: Dispatcher not provided")
         return
 
+    badge_service = getattr(app_context, "notification_badge_service", None)
+    if isinstance(badge_service, NotificationBadgeService):
+        try:
+            async with badge_service.ui_markup_lock(user_id) as lease_lost:
+                decorated_markup = await badge_service.decorate_markup(
+                    user_id, reply_markup
+                )
+                try:
+                    await _send_ui_message(
+                        current_bot=current_bot,
+                        current_dispatcher=current_dispatcher,
+                        user_id=user_id,
+                        msg=msg,
+                        reply_markup=decorated_markup,
+                        base_reply_markup=reply_markup,
+                        need_new_msg=need_new_msg,
+                        parse_mode=parse_mode,
+                        badge_service=badge_service,
+                        lease_lost=lease_lost,
+                    )
+                except UiMarkupLeaseLost:
+                    return
+        except UiMarkupLockUnavailable:
+            logger.bind(
+                event="notification_badge_ui_lock_unavailable", user_id=user_id
+            ).info("rendering UI without notification badge after lock contention")
+            await _send_ui_message(
+                current_bot=current_bot,
+                current_dispatcher=current_dispatcher,
+                user_id=user_id,
+                msg=msg,
+                reply_markup=reply_markup,
+                base_reply_markup=reply_markup,
+                need_new_msg=need_new_msg,
+                parse_mode=parse_mode,
+            )
+        return
+
+    await _send_ui_message(
+        current_bot=current_bot,
+        current_dispatcher=current_dispatcher,
+        user_id=user_id,
+        msg=msg,
+        reply_markup=reply_markup,
+        base_reply_markup=reply_markup,
+        need_new_msg=need_new_msg,
+        parse_mode=parse_mode,
+    )
+
+
+async def _send_ui_message(
+    *,
+    current_bot: Bot,
+    current_dispatcher,
+    user_id: int,
+    msg: str,
+    reply_markup,
+    base_reply_markup,
+    need_new_msg,
+    parse_mode: str,
+    badge_service=None,
+    lease_lost=None,
+):
     fsm_storage_key = StorageKey(
         bot_id=current_bot.id, user_id=user_id, chat_id=user_id
     )
     data = await current_dispatcher.storage.get_data(key=fsm_storage_key)
     msg_id = data.get("last_message_id", 0)
     if need_new_msg:
-        new_msg = await current_bot.send_message(
-            user_id,
-            msg,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            disable_web_page_preview=True,
+        new_msg = await _await_telegram_ui_operation(
+            lease_lost,
+            user_id=user_id,
+            operation="send_ui_message",
+            awaitable_factory=lambda: current_bot.send_message(
+                user_id,
+                msg,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                disable_web_page_preview=True,
+            ),
         )
         if msg_id > 0:
             with suppress(TelegramBadRequest):
-                await current_bot.delete_message(user_id, msg_id)
+                await _await_telegram_ui_operation(
+                    lease_lost,
+                    user_id=user_id,
+                    operation="delete_previous_ui_message",
+                    awaitable_factory=lambda: current_bot.delete_message(
+                        user_id, msg_id
+                    ),
+                )
         await current_dispatcher.storage.update_data(
             key=fsm_storage_key, data={"last_message_id": new_msg.message_id}
+        )
+        await _capture_base_markup(
+            badge_service,
+            user_id,
+            new_msg.message_id,
+            base_reply_markup,
+            lease_lost=lease_lost,
         )
     else:
         if msg_id > 0:
             try:
-                await current_bot.edit_message_text(
-                    text=msg,
-                    chat_id=user_id,
-                    message_id=msg_id,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode,
-                    disable_web_page_preview=True,
+                await _await_telegram_ui_operation(
+                    lease_lost,
+                    user_id=user_id,
+                    operation="edit_ui_message_text",
+                    awaitable_factory=lambda: current_bot.edit_message_text(
+                        text=msg,
+                        chat_id=user_id,
+                        message_id=msg_id,
+                        reply_markup=reply_markup,
+                        parse_mode=parse_mode,
+                        disable_web_page_preview=True,
+                    ),
+                )
+                await _capture_base_markup(
+                    badge_service,
+                    user_id,
+                    msg_id,
+                    base_reply_markup,
+                    lease_lost=lease_lost,
                 )
                 return
+            except UiMarkupLeaseLost:
+                raise
             except Exception as ex:
                 logger.info(["send_message edit_text error", ex.__class__])
 
-        new_msg = await current_bot.send_message(
-            user_id,
-            msg,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            disable_web_page_preview=True,
+        new_msg = await _await_telegram_ui_operation(
+            lease_lost,
+            user_id=user_id,
+            operation="send_ui_message",
+            awaitable_factory=lambda: current_bot.send_message(
+                user_id,
+                msg,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                disable_web_page_preview=True,
+            ),
         )
         await current_dispatcher.storage.update_data(
             key=fsm_storage_key, data={"last_message_id": new_msg.message_id}
         )
+        await _capture_base_markup(
+            badge_service,
+            user_id,
+            new_msg.message_id,
+            base_reply_markup,
+            lease_lost=lease_lost,
+        )
+
+
+async def _await_telegram_ui_operation(
+    lease_lost,
+    *,
+    user_id: int,
+    operation: str,
+    awaitable_factory,
+):
+    """Fence a Telegram UI mutation against lost distributed ownership."""
+    ensure_ui_markup_lease(lease_lost, user_id=user_id, operation=operation)
+    return await await_ui_markup_lease_operation(
+        lease_lost,
+        user_id=user_id,
+        operation=operation,
+        awaitable_factory=awaitable_factory,
+    )
+
+
+async def _capture_base_markup(
+    badge_service,
+    user_id: int,
+    message_id: int,
+    reply_markup: object | None,
+    *,
+    lease_lost=None,
+) -> None:
+    """Persist only successful UI render base markup, never derived badges."""
+    if badge_service is None:
+        return
+    try:
+        ensure_ui_markup_lease(
+            lease_lost, user_id=user_id, operation="capture_base_markup"
+        )
+    except UiMarkupLeaseLost:
+        return
+    try:
+        await badge_service.capture_base_markup_locked(
+            user_id, message_id, reply_markup, lease_lost=lease_lost
+        )
+    except UiMarkupLeaseLost:
+        return
+    except Exception:
+        logger.bind(
+            event="notification_badge_base_capture_failed", user_id=user_id
+        ).exception("notification badge base markup capture failed")
 
 
 async def cmd_show_sign(

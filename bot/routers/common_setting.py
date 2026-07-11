@@ -17,6 +17,7 @@ from infrastructure.utils.telegram_utils import send_message, my_gettext, clear_
 # from other.stellar_tools import stellar_get_balance_str
 # from infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from infrastructure.services.localization_service import LocalizationService
+from middleware.notification_activity import complete_notification_flow
 from infrastructure.services.app_context import AppContext
 
 
@@ -95,6 +96,7 @@ async def callbacks_lang(
     await cmd_show_balance(
         session, callback.from_user.id, state, app_context=app_context
     )
+    await complete_notification_flow(app_context, callback.from_user.id)
 
 
 @router.callback_query(F.data == "ChangeWallet")

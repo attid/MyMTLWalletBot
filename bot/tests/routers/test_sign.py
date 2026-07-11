@@ -111,8 +111,15 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("purpose", "metadata"),
+    [
+        (SignaturePurpose.PAYMENT, {"asset": "XLM"}),
+        (SignaturePurpose.TRADE, {"order_id": 42, "action": "delete"}),
+    ],
+)
 async def test_full_flow_sign_and_send_success(
-    mock_telegram, router_app_context, setup_sign_mocks
+    mock_telegram, router_app_context, setup_sign_mocks, purpose, metadata
 ):
     """
     Scenario: User clicks Sign -> enters XDR -> enters PIN 1234 -> clicks Send.
@@ -125,6 +132,13 @@ async def test_full_flow_sign_and_send_success(
 
     user_id = 123
     bot = router_app_context.bot
+    coordinator = MagicMock(complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+
+    async def deliver_queued_notification(user_id):
+        await bot.send_message(user_id, "queued blockchain notification")
+
+    coordinator.complete_flow.side_effect = deliver_queued_notification
     state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
 
     # 1. Click "Sign" button
@@ -162,6 +176,10 @@ async def test_full_flow_sign_and_send_success(
     mock_telegram.clear()
 
     # 4. Click "SendTr"
+    await dp.storage.update_data(
+        state_key,
+        {"signing_purpose": purpose.value, "signing_metadata": metadata},
+    )
     await dp.feed_update(bot, create_callback_update(user_id, "SendTr"))
 
     # Verify transaction submitted via patched stellar_tools
@@ -171,7 +189,34 @@ async def test_full_flow_sign_and_send_success(
     latest_req = [
         r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
     ][-1]
-    assert "send_good" in latest_req["data"]["text"]  # Localized key
+    terminal_texts = [
+        r["data"]["text"]
+        for r in mock_telegram
+        if r["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert terminal_texts[-2:] == ["send_good", "queued blockchain notification"]
+    coordinator.complete_flow.assert_awaited_once_with(user_id)
+
+
+@pytest.mark.asyncio
+async def test_successful_biometric_sign_cancellation_completes_notification_flow(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+    user_id = 123
+    coordinator = MagicMock(complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+    redis = MagicMock(delete=AsyncMock(return_value=1))
+
+    with patch.object(faststream_tools, "REDIS_CLIENT", redis):
+        await dp.feed_update(
+            router_app_context.bot,
+            create_callback_update(user_id, "cancel_biometric_sign:tx-1"),
+        )
+
+    coordinator.complete_flow.assert_awaited_once_with(user_id)
 
 
 @pytest.mark.asyncio

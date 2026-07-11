@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.send import router as send_router, StateSendToken, SendAssetCallbackData
+from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance, PaymentResult
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
@@ -168,6 +169,30 @@ async def test_cmd_send_callback(
     # Verify callback was answered
     answer = get_telegram_request(mock_telegram, "answerCallbackQuery")
     assert answer is not None
+
+
+@pytest.mark.asyncio
+async def test_send_command_starts_notification_hold_after_activating_fsm(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    coordinator = MagicMock(touch=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.message.middleware(NotificationActivityMiddleware())
+    dp.include_router(send_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "/send"),
+        app_context=router_app_context,
+    )
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    assert await dp.storage.get_state(state_key) == StateSendToken.sending_for
+    coordinator.touch.assert_awaited_once_with(user_id)
 
 
 @pytest.mark.asyncio
@@ -460,7 +485,10 @@ async def test_cmd_send_get_sum_invalid(
 
     # Setup router
     dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.message.middleware(NotificationActivityMiddleware())
     dp.include_router(send_router)
+    coordinator = MagicMock(touch=AsyncMock(), complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
 
     # Set state
     storage_key = StorageKey(
@@ -481,6 +509,9 @@ async def test_cmd_send_get_sum_invalid(
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
     assert "bad_sum" in req["data"]["text"]
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_sum
+    coordinator.touch.assert_awaited_once_with(user_id)
+    coordinator.complete_flow.assert_not_awaited()
 
 
 @pytest.mark.asyncio

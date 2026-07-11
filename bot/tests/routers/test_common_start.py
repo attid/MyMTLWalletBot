@@ -6,6 +6,7 @@ from routers.common_start import (
     router as start_router,
     SettingState,
 )
+from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance
 from tests.conftest import (
     RouterTestMiddleware,
@@ -58,6 +59,7 @@ def setup_common_start_mocks(router_app_context):
             self.wallet_repo.get_default_wallet = AsyncMock(return_value=self.wallet)
             self.wallet_repo.get_info = AsyncMock(return_value="[Info]")
             self.wallet_repo.reset_balance_cache = AsyncMock()
+            self.wallet_repo.normalize_default_wallets = AsyncMock(return_value=False)
 
             # Capture session to verify commit
             self.captured_session = None
@@ -200,6 +202,56 @@ async def test_cmd_start_sign_flow(
 
 
 @pytest.mark.asyncio
+async def test_start_sign_command_starts_notification_hold_after_activating_fsm(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    dp = router_app_context.dispatcher
+    coordinator = MagicMock(touch=AsyncMock(), complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.message.middleware(NotificationActivityMiddleware())
+    dp.include_router(start_router)
+    user_id = 123
+
+    async def activate_signing_flow(_session, _url, _user_id, state, *, app_context):
+        await state.set_state("Signing:awaiting_confirmation")
+
+    with (
+        patch("routers.common_start.check_user_id", AsyncMock(return_value=True)),
+        patch("routers.common_start.cmd_check_xdr", side_effect=activate_signing_flow),
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(user_id, "/start sign_12345")
+        )
+
+    state_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    assert await dp.storage.get_state(state_key) == "Signing:awaiting_confirmation"
+    coordinator.touch.assert_awaited_once_with(user_id)
+
+
+@pytest.mark.asyncio
+async def test_plain_start_completes_notification_flow_without_touching_hold(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    dp = router_app_context.dispatcher
+    coordinator = MagicMock(touch=AsyncMock(), complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.message.middleware(NotificationActivityMiddleware())
+    dp.include_router(start_router)
+
+    with patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    coordinator.touch.assert_not_awaited()
+    coordinator.complete_flow.assert_awaited_once_with(123)
+
+
+@pytest.mark.asyncio
 async def test_cb_return_to_main(
     mock_telegram, router_app_context, setup_common_start_mocks
 ):
@@ -212,6 +264,56 @@ async def test_cb_return_to_main(
 
     req = get_latest_msg(mock_telegram)
     assert "your_balance" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_start_and_return_complete_notification_flow(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """Terminal navigation releases queued blockchain notifications immediately."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+    coordinator = MagicMock(complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+
+    with patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+    await dp.feed_update(router_app_context.bot, create_callback_update(123, "Return"))
+
+    assert coordinator.complete_flow.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_return_renders_main_menu_before_flushing_notifications(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+    coordinator = MagicMock(complete_flow=AsyncMock())
+    router_app_context.notification_coordinator = coordinator
+
+    async def deliver_queued_notification(user_id):
+        await router_app_context.bot.send_message(
+            user_id, "queued blockchain notification"
+        )
+
+    coordinator.complete_flow.side_effect = deliver_queued_notification
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(123, "DeleteReturn")
+    )
+
+    terminal_texts = [
+        request["data"]["text"]
+        for request in mock_telegram
+        if request["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert "your_balance" in terminal_texts[-2]
+    assert terminal_texts[-1] == "queued blockchain notification"
 
 
 @pytest.mark.asyncio

@@ -54,6 +54,23 @@ Primary tests live in `bot/tests/`, not in the root `tests/` directory.
 
 See `bot/tests/README.md` for required fixtures and router test rules.
 
+## Delayed Blockchain Notifications
+
+Blockchain-originated wallet events use a delivery path separate from UI
+screens. Redis stores the absolute sliding hold deadline, ordered per-user
+pending queue, idempotency metadata, due-user schedule, and token-owned flush
+locks. A polling worker processes expired deadlines; it does not create a task
+or inactivity timer per user.
+
+`NotificationCoordinator` is the orchestration boundary for activity touches,
+durable event acceptance, ordered flushes, and logical flow completion.
+Notification Telegram messages are always independent messages and never read
+or change FSM data or `last_message_id`. The pending badge is derived from a
+base inline keyboard stored outside FSM and is best-effort only.
+
+See `adr/0001-delayed-blockchain-notification-delivery.md` for Redis keys,
+concurrency guarantees, and the at-least-once delivery trade-off.
+
 ## Decision Record Policy
 
 Any architecture-level change should be documented via a new ADR file under

@@ -85,6 +85,9 @@ def mock_app_context():
     ctx.dispatcher.storage.update_data = AsyncMock()
 
     ctx.admin_id = 123456
+    # Optional production dependency: tests opt out explicitly instead of
+    # allowing MagicMock to masquerade as an async badge service.
+    ctx.notification_badge_service = None
     return ctx
 
 

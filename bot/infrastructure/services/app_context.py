@@ -8,10 +8,22 @@ from infrastructure.factories.use_case_factory import IUseCaseFactory
 from db.db_pool import DatabasePool
 
 if TYPE_CHECKING:
+    from infrastructure.services.notification_coordinator import NotificationCoordinator
+    from infrastructure.services.notification_redis_store import NotificationRedisStore
+    from infrastructure.services.notification_badge_service import (
+        NotificationBadgeService,
+    )
     from infrastructure.services.notification_history_service import (
         NotificationHistoryService,
     )
+    from infrastructure.services.telegram_delivery_service import (
+        TelegramNotificationDeliveryService,
+    )
     from infrastructure.services.notification_service import NotificationService
+    from infrastructure.workers.notification_delivery_worker import (
+        NotificationDeliveryWorker,
+    )
+    from redis.asyncio import Redis
 
 
 class AppContext:
@@ -36,6 +48,12 @@ class AppContext:
         dispatcher: Optional[Dispatcher] = None,
         notification_service: Optional["NotificationService"] = None,
         notification_history: Optional["NotificationHistoryService"] = None,
+        notification_coordinator: Optional["NotificationCoordinator"] = None,
+        notification_redis: Optional["Redis"] = None,
+        notification_store: Optional["NotificationRedisStore"] = None,
+        notification_delivery: Optional["TelegramNotificationDeliveryService"] = None,
+        notification_delivery_worker: Optional["NotificationDeliveryWorker"] = None,
+        notification_badge_service: Optional["NotificationBadgeService"] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -51,3 +69,9 @@ class AppContext:
         self.dispatcher = dispatcher
         self.notification_service = notification_service
         self.notification_history = notification_history
+        self.notification_coordinator = notification_coordinator
+        self.notification_redis = notification_redis
+        self.notification_store = notification_store
+        self.notification_delivery = notification_delivery
+        self.notification_delivery_worker = notification_delivery_worker
+        self.notification_badge_service = notification_badge_service

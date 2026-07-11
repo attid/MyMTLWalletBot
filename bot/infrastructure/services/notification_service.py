@@ -19,10 +19,9 @@ from dataclasses import dataclass
 
 from db.db_pool import DatabasePool
 from db.models import MyMtlWalletBot, NotificationFilter
+from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.fsm.storage.base import StorageKey
-from routers.start_msg import cmd_info_message
 from infrastructure.utils.notification_utils import decode_db_effect
 from stellar_sdk import Keypair
 import time
@@ -40,6 +39,26 @@ class NotificationWallet:
     public_key: str
 
 
+class DurableNotificationAcceptError(RuntimeError):
+    """The notifier must retry because Redis did not durably retain an event."""
+
+
+class NotificationDeliverySender:
+    """Attach delivery-only blockchain side effects to the independent sender."""
+
+    def __init__(self, service: "NotificationService", sender: Any) -> None:
+        self._service = service
+        self._sender = sender
+
+    async def send_notification(self, notification: BlockchainNotification) -> None:
+        try:
+            await self._sender.send_notification(notification)
+        except TelegramForbiddenError as error:
+            await self._service._mark_notification_wallet_deleted(notification, error)
+            return
+        await self._service._after_notification_delivery(notification)
+
+
 class NotifierHeaders(str, Enum):
     ID = "X-Client-ID"
     SIGNATURE = "X-Signature"
@@ -55,6 +74,7 @@ class NotificationService:
         localization_service: Any,
         dispatcher: Any = None,
         notification_history: Any = None,
+        notification_coordinator: Any = None,
     ):
         self.config = config
         self.db_pool = db_pool
@@ -62,18 +82,10 @@ class NotificationService:
         self.dispatcher = dispatcher
         self.localization_service = localization_service
         self.notification_history = notification_history
+        self.notification_coordinator = notification_coordinator
 
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
-        self.notified_operations: set[str] = set()
-        # Track transaction hashes to prevent duplicate notifications
-        # Using list as a FIFO queue to keep track of the order of transactions
-        self.notified_transactions_queue: list[str] = []
-        self.notified_transactions_set: set[str] = set()
-        self.max_cache_size = (
-            100  # Reduced cache size - sufficient for short-term deduplication
-        )
-
         # Nonce management
         self._nonce = 0
         self._nonce_lock = asyncio.Lock()
@@ -92,6 +104,61 @@ class NotificationService:
 
     def _mark_notification_activity(self, now: Optional[datetime] = None) -> None:
         self.last_notification_at = now or datetime.utcnow()
+
+    def set_notification_coordinator(self, coordinator: Any) -> None:
+        """Inject the coordinator after its delivery wrapper is constructed."""
+        self.notification_coordinator = coordinator
+
+    async def _after_notification_delivery(
+        self, notification: BlockchainNotification
+    ) -> None:
+        """Persist effects that are valid only after Telegram accepted the message."""
+        if self.notification_history:
+            try:
+                self.notification_history.add_delivered(notification)
+            except Exception as history_error:
+                logger.warning(
+                    f"Failed to save notification to history: {history_error}"
+                )
+
+        wallet_id = notification.data.get("wallet_id")
+        if not isinstance(wallet_id, int) or wallet_id <= 0:
+            return
+        try:
+            from infrastructure.persistence.sqlalchemy_wallet_repository import (
+                SqlAlchemyWalletRepository,
+            )
+
+            async with self.db_pool.get_session() as session:
+                repo = SqlAlchemyWalletRepository(session)
+                await repo.reset_balance_cache_by_wallet_id(wallet_id)
+                await session.commit()
+                logger.debug(f"Balance cache reset for user {notification.user_id}")
+        except Exception as cache_error:
+            logger.error(
+                f"Failed to reset balance cache for user {notification.user_id}: {cache_error}"
+            )
+
+    async def _mark_notification_wallet_deleted(
+        self, notification: BlockchainNotification, error: TelegramForbiddenError
+    ) -> None:
+        """Treat a blocked bot as terminal delivery after disabling the wallet."""
+        wallet_id = notification.data.get("wallet_id")
+        if not isinstance(wallet_id, int) or wallet_id <= 0:
+            logger.warning(
+                f"Telegram blocked bot for user {notification.user_id}, but wallet is unknown: {error}"
+            )
+            return
+        logger.warning(
+            f"Telegram blocked bot for user {notification.user_id}, marking wallet as deleted: {error}"
+        )
+        async with self.db_pool.get_session() as session:
+            await session.execute(
+                update(MyMtlWalletBot)
+                .where(MyMtlWalletBot.id == wallet_id)
+                .values(need_delete=1)
+            )
+            await session.commit()
 
     async def _alert_admins_about_notification_silence(self, now: datetime) -> None:
         admins = getattr(self.config, "admins", []) or []
@@ -391,16 +458,6 @@ class NotificationService:
             )
             return
 
-        # Deduplicate by Stellar operation ID
-        stellar_op_id = op_info.get("id")
-        if stellar_op_id and stellar_op_id in self.notified_operations:
-            logger.info(f"Skipping duplicate operation {stellar_op_id}")
-            return
-        if stellar_op_id:
-            self.notified_operations.add(stellar_op_id)
-            if len(self.notified_operations) > 1024:
-                self.notified_operations.clear()
-
         # 2. Convert Payload to TOperations-like object
         op_data_mapped = self._map_payload_to_operation(payload)
         if not op_data_mapped:
@@ -432,6 +489,7 @@ class NotificationService:
             await self._send_notification_to_user(
                 wallet,
                 op_data_mapped,
+                event_index=self._event_index_from_payload(payload),
                 user_filters=filters_by_user.get(wallet.user_id, []),
             )
 
@@ -449,6 +507,7 @@ class NotificationService:
                     op_data_mapped,
                     force_perspective="debit",
                     user_filters=filters_by_user.get(wallet.user_id, []),
+                    event_index=self._event_index_from_payload(payload),
                 )
 
         # 4. Process internal trades (for Match Orders / Makers)
@@ -539,6 +598,9 @@ class NotificationService:
                             op_trade,
                             user_filters=maker_filters_by_user.get(
                                 maker_wallet.user_id, []
+                            ),
+                            event_index=self._event_index_from_payload(
+                                payload, offset=i + 1
                             ),
                         )
 
@@ -832,6 +894,7 @@ class NotificationService:
         operation: NotificationOperation,
         force_perspective: Optional[str] = None,
         user_filters: Optional[list[NotificationFilter]] = None,
+        event_index: Optional[int] = None,
     ):
         if wallet.user_id is None:
             return
@@ -876,80 +939,71 @@ class NotificationService:
             if not should_send:
                 return
 
-            if not self.bot:
+            if not self.notification_coordinator:
                 logger.warning(
-                    f"Bot not initialized, cannot send notification to {user_id}"
+                    f"Notification coordinator not initialized, cannot accept event for {user_id}"
                 )
                 return
-
-            fsm_storage_key = StorageKey(
-                bot_id=self.bot.id, user_id=user_id, chat_id=user_id
-            )
-            if self.dispatcher:
-                await self.dispatcher.storage.update_data(
-                    key=fsm_storage_key, data={"last_message_id": 0}
-                )
-
-            await cmd_info_message(
-                None,
-                user_id,
-                message_text,
-                operation_id=operation.id,
-                public_key=str(wallet.public_key),
-                wallet_id=int(wallet.id) if wallet.id else 0,
-                bot=self.bot,
-                dispatcher=self.dispatcher,
-                localization_service=self.localization_service,
-            )
-
-            # Save to notification history for filter creation
-            if self.notification_history:
-                try:
-                    self.notification_history.add(
-                        user_id=user_id,
-                        operation=operation,
-                        wallet_id=int(wallet.id) if wallet.id else 0,
-                        public_key=str(wallet.public_key),
-                    )
-                except Exception as history_error:
+            transaction_hash = str(operation.transaction_hash or "")
+            if not transaction_hash:
+                logger.warning("Skipping notification without transaction hash")
+                return
+            resolved_event_index = event_index
+            if resolved_event_index is None:
+                operation_id = str(operation.id)
+                if not operation_id.isdecimal():
                     logger.warning(
-                        f"Failed to save notification to history: {history_error}"
+                        "Skipping notification without a stable operation index"
                     )
-
-            # Reset balance cache to ensure user sees updated balance
-            # after receiving the transaction notification
-            try:
-                from infrastructure.persistence.sqlalchemy_wallet_repository import (
-                    SqlAlchemyWalletRepository,
-                )
-
-                async with self.db_pool.get_session() as session:
-                    repo = SqlAlchemyWalletRepository(session)
-                    await repo.reset_balance_cache_by_wallet_id(int(wallet.id))
-                    await session.commit()
-                    logger.debug(f"Balance cache reset for user {user_id}")
-            except Exception as cache_error:
-                logger.error(
-                    f"Failed to reset balance cache for user {user_id}: {cache_error}"
-                )
-
-        except TelegramForbiddenError as e:
-            logger.warning(
-                f"Telegram blocked bot for user {user_id}, marking wallet as deleted: {e}"
+                    return
+                resolved_event_index = int(operation_id)
+            event_type = operation.operation
+            if force_perspective:
+                event_type = f"{event_type}:{force_perspective}"
+            notification_id = (
+                f"{transaction_hash}:{event_type}:{resolved_event_index}:{user_id}"
             )
-            # UPDATE by id instead of session.add(wallet): the wallet ORM
-            # instance is still attached to the session that fetched it
-            # in process_notification, so re-attaching to a new session
-            # would raise InvalidRequestError.
-            async with self.db_pool.get_session() as session:
-                await session.execute(
-                    update(MyMtlWalletBot)
-                    .where(MyMtlWalletBot.id == wallet.id)
-                    .values(need_delete=1)
+            try:
+                await self.notification_coordinator.accept(
+                    BlockchainNotification(
+                        notification_id=notification_id,
+                        user_id=user_id,
+                        event_type=event_type,
+                        text=message_text,
+                        created_at=int(operation.dt.timestamp()),
+                        transaction_hash=transaction_hash,
+                        event_index=resolved_event_index,
+                        data={
+                            "wallet_id": int(wallet.id) if wallet.id else 0,
+                            "public_key": str(wallet.public_key),
+                            "operation_id": str(operation.id),
+                            "operation_type": operation.operation,
+                            "asset_code": operation.display_asset_code,
+                            "amount": str(operation.display_amount_value),
+                        },
+                    )
                 )
-                await session.commit()
+            except Exception as error:
+                logger.exception(f"Failed to durably accept notification for {user_id}")
+                raise DurableNotificationAcceptError(user_id) from error
+        except DurableNotificationAcceptError:
+            raise
         except Exception as e:
-            logger.exception(f"Failed to send notification to {user_id}: {e}")
+            logger.exception(f"Failed to accept notification for {user_id}: {e}")
+
+    @staticmethod
+    def _event_index_from_payload(payload: dict, *, offset: int = 0) -> Optional[int]:
+        """Read the notifier's stable operation index without inventing one."""
+        operation = payload.get("operation")
+        if not isinstance(operation, dict):
+            return None
+        for key in ("operation_index", "index", "id"):
+            value = operation.get(key)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                return value + offset
+            if isinstance(value, str) and value.isdecimal():
+                return int(value) + offset
+        return None
 
     async def subscribe(self, public_key: str):
         """Subscribe a wallet to the notifier."""

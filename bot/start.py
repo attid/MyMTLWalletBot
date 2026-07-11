@@ -20,6 +20,7 @@ from contextlib import suppress
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.redis import RedisStorage
+from redis.asyncio import Redis
 from aiogram.types import (
     BotCommand,
     BotCommandScopeDefault,
@@ -32,6 +33,7 @@ from sulguk import AiogramSulgukMiddleware  # type: ignore[import-untyped]
 from other.config_reader import config
 from middleware.db import DbSessionMiddleware
 from middleware.old_buttons import CheckOldButtonCallbackMiddleware
+from middleware.notification_activity import NotificationActivityMiddleware
 from middleware.log import LogButtonClickCallbackMiddleware, log_worker
 from routers.cheque import cheque_worker
 from routers import (
@@ -53,6 +55,7 @@ from routers import (
     uri,
     ton,
     notification_settings,
+    pending_notifications,
 )
 from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
@@ -98,6 +101,10 @@ async def bot_add_routers(
 
     dp.callback_query.middleware(LogButtonClickCallbackMiddleware())
     dp.callback_query.middleware(CheckOldButtonCallbackMiddleware(db_pool))
+    # Keep this inside old-button validation so rejected stale callbacks do not
+    # extend a notification hold.
+    dp.callback_query.middleware(NotificationActivityMiddleware())
+    dp.message.middleware(NotificationActivityMiddleware())
     dp.message.middleware(DbSessionMiddleware(db_pool, localization_service))
     dp.callback_query.middleware(DbSessionMiddleware(db_pool, localization_service))
     dp.inline_query.middleware(DbSessionMiddleware(db_pool, localization_service))
@@ -107,6 +114,7 @@ async def bot_add_routers(
     dp.include_router(uri.router)  # first
     dp.include_router(wallet_setting.router)  # first
     dp.include_router(notification_settings.router)  # first
+    dp.include_router(pending_notifications.router)  # badge controls
 
     dp.include_router(fest.router)
     dp.include_router(sign.router)
@@ -220,18 +228,23 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
                 )
             )
 
+    if app_context.notification_delivery_worker:
+        task_list.append(
+            asyncio.create_task(
+                app_context.notification_delivery_worker.run(),
+                name="notification-delivery-worker",
+            )
+        )
+
     dispatcher["task_list"] = task_list
 
     # config.fest_menu = await load_fest_info()
 
 
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
-    await stop_broker()
-    with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text="Bot stopped")
-
-    # Stop Notification Service
     app_context: AppContext = dispatcher["app_context"]
+
+    # Stop notification producers before cancelling consumers and closing their Redis.
     if app_context.notification_service:
         await app_context.notification_service.stop()
 
@@ -239,6 +252,21 @@ async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     if task_list:
         for task in task_list:
             task.cancel()
+        results = await asyncio.gather(*task_list, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                logger.opt(exception=result).error(
+                    "background task stopped with an error"
+                )
+
+    if app_context.notification_redis:
+        await app_context.notification_redis.aclose()  # type: ignore[attr-defined]
+
+    await stop_broker()
+    with suppress(TelegramBadRequest):
+        await bot.send_message(chat_id=config.admins[0], text="Bot stopped")
 
 
 async def main():
@@ -296,7 +324,21 @@ async def main():
 
     from infrastructure.services.encryption_service import EncryptionService
     from services.ton_service import TonService
-    from infrastructure.services.notification_service import NotificationService
+    from infrastructure.services.notification_service import (
+        NotificationDeliverySender,
+        NotificationService,
+    )
+    from infrastructure.services.notification_coordinator import NotificationCoordinator
+    from infrastructure.services.notification_redis_store import NotificationRedisStore
+    from infrastructure.services.notification_badge_service import (
+        NotificationBadgeService,
+    )
+    from infrastructure.services.telegram_delivery_service import (
+        TelegramNotificationDeliveryService,
+    )
+    from infrastructure.workers.notification_delivery_worker import (
+        NotificationDeliveryWorker,
+    )
 
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -323,6 +365,28 @@ async def main():
     notification_service = NotificationService(
         config, db_pool, bot, localization_service, dp, notification_history
     )
+    notification_redis = Redis.from_url(config.redis_url, decode_responses=True)
+    notification_store = NotificationRedisStore(
+        notification_redis,
+        hold_seconds=config.notification_hold_seconds,
+        lock_ttl_seconds=30,
+    )
+    notification_delivery = TelegramNotificationDeliveryService(bot)
+    notification_badge_service = NotificationBadgeService(
+        bot=bot, redis=notification_redis, store=notification_store
+    )
+    notification_coordinator = NotificationCoordinator(
+        store=notification_store,
+        sender=NotificationDeliverySender(notification_service, notification_delivery),
+        badge_refresher=notification_badge_service,
+    )
+    notification_service.set_notification_coordinator(notification_coordinator)
+    notification_delivery_worker = NotificationDeliveryWorker(
+        store=notification_store,
+        coordinator=notification_coordinator,
+        poll_interval_seconds=config.notification_delivery_poll_interval_seconds,
+        batch_size=config.notification_delivery_batch_size,
+    )
 
     app_context = AppContext(
         bot=bot,
@@ -339,6 +403,12 @@ async def main():
         use_case_factory=use_case_factory,
         notification_service=notification_service,
         notification_history=notification_history,
+        notification_coordinator=notification_coordinator,
+        notification_redis=notification_redis,
+        notification_store=notification_store,
+        notification_delivery=notification_delivery,
+        notification_delivery_worker=notification_delivery_worker,
+        notification_badge_service=notification_badge_service,
     )
 
     dp["app_context"] = app_context
