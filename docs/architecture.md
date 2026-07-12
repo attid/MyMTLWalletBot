@@ -64,9 +64,12 @@ or inactivity timer per user.
 
 `NotificationCoordinator` is the orchestration boundary for activity touches,
 durable event acceptance, ordered flushes, and logical flow completion.
-Notification Telegram messages are always independent messages and never read
-or change FSM data or `last_message_id`. The pending badge is derived from a
-base inline keyboard stored outside FSM and is best-effort only.
+Redis decides only when a notification is released. `NotificationService` is
+the sole Telegram sender for both immediate and queued delivery, using the
+legacy `clear_last_message_id()` plus `cmd_info_message()` path. Consequently,
+notifications use the settings/Return keyboard and replace the tracked
+`last_message_id` like other legacy notification screens. The pending badge is
+derived from a base inline keyboard stored outside FSM and is best-effort only.
 
 See `adr/0001-delayed-blockchain-notification-delivery.md` for Redis keys,
 concurrency guarantees, and the at-least-once delivery trade-off.

@@ -11,10 +11,11 @@ with bot/dispatcher but WITHOUT app_context, which caused the bug:
 
 import os
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import ANY, MagicMock, AsyncMock
 from aiogram import Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.storage.base import StorageKey
@@ -23,15 +24,13 @@ import pytest_asyncio
 import fakeredis.aioredis
 
 from infrastructure.services.notification_service import (
-    NotificationDeliverySender,
     NotificationService,
 )
-from infrastructure.services.notification_coordinator import NotificationCoordinator
-from infrastructure.services.notification_redis_store import NotificationRedisStore
-from infrastructure.services.telegram_delivery_service import NotificationSender
-from infrastructure.services.telegram_delivery_service import (
-    TelegramNotificationDeliveryService,
+from infrastructure.services.notification_coordinator import (
+    NotificationCoordinator,
+    NotificationSender,
 )
+from infrastructure.services.notification_redis_store import NotificationRedisStore
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
 from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
@@ -190,20 +189,30 @@ async def test_notification_service_sends_message_without_app_context(
 
 
 @pytest.mark.asyncio
-async def test_active_hold_queues_blockchain_event_without_telegram(
-    notification_service, mock_db_pool
+async def test_active_hold_queues_blockchain_event_until_the_legacy_sender_runs(
+    notification_service, mock_telegram, monkeypatch: pytest.MonkeyPatch
 ):
+    from infrastructure.utils.telegram_utils import clear_last_message_id
+
+    clear_message_id = AsyncMock(side_effect=clear_last_message_id)
+    monkeypatch.setattr(
+        "infrastructure.services.notification_service.clear_last_message_id",
+        clear_message_id,
+    )
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    sender = AsyncMock(spec=NotificationSender)
     store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=30)
     coordinator = NotificationCoordinator(
         store=store,
-        sender=sender,
+        sender=notification_service,
         badge_refresher=AsyncMock(spec=NotificationBadgeRefresher),
         clock=lambda: 1_000,
     )
     notification_service.notification_coordinator = coordinator
     await coordinator.touch(12345)
+    key = StorageKey(bot_id=notification_service.bot.id, user_id=12345, chat_id=12345)
+    await notification_service.dispatcher.storage.set_data(
+        key, {"last_message_id": 777, "flow": "send"}
+    )
 
     wallet = notification_wallet()
     operation = blockchain_operation()
@@ -214,27 +223,49 @@ async def test_active_hold_queues_blockchain_event_without_telegram(
         wallet, operation, user_filters=[]
     )
 
-    sender.send_notification.assert_not_awaited()
     assert await store.pending_count(12345) == 1
+    assert get_telegram_request(mock_telegram, "sendMessage") is None
+
+    await coordinator.complete_flow(12345)
+
+    request = get_telegram_request(mock_telegram, "sendMessage")
+    assert request is not None
+    keyboard = json.loads(request["data"]["reply_markup"])
+    assert keyboard["inline_keyboard"] == [
+        [{"text": "⚙️", "callback_data": "NotificationSettings"}],
+        [{"text": "Back", "callback_data": "Return"}],
+    ]
+    clear_message_id.assert_awaited_once_with(12345, app_context=ANY)
+    assert await notification_service.dispatcher.storage.get_data(key) == {
+        "last_message_id": 1,
+        "flow": "send",
+    }
     await redis.aclose()
 
 
 @pytest.mark.asyncio
-async def test_inactive_hold_delivers_without_changing_fsm_or_last_message(
-    notification_service, mock_telegram
+async def test_inactive_hold_delivers_through_the_legacy_keyboard_and_message_id_path(
+    notification_service, mock_telegram, monkeypatch: pytest.MonkeyPatch
 ):
+    from infrastructure.utils.telegram_utils import clear_last_message_id
+
+    clear_message_id = AsyncMock(side_effect=clear_last_message_id)
+    monkeypatch.setattr(
+        "infrastructure.services.notification_service.clear_last_message_id",
+        clear_message_id,
+    )
     user_id = 12345
     key = StorageKey(
         bot_id=notification_service.bot.id, user_id=user_id, chat_id=user_id
     )
-    await notification_service.dispatcher.storage.update_data(
-        key=key, data={"last_message_id": 777, "flow": "send"}
+    await notification_service.dispatcher.storage.set_data(
+        key, {"last_message_id": 777, "flow": "send"}
     )
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=30)
     notification_service.notification_coordinator = NotificationCoordinator(
         store=store,
-        sender=TelegramNotificationDeliveryService(notification_service.bot),
+        sender=notification_service,
         badge_refresher=AsyncMock(spec=NotificationBadgeRefresher),
         clock=lambda: 1_000,
     )
@@ -245,9 +276,14 @@ async def test_inactive_hold_delivers_without_changing_fsm_or_last_message(
 
     request = get_telegram_request(mock_telegram, "sendMessage")
     assert request is not None
-    assert request["data"].get("reply_markup") is None
+    keyboard = json.loads(request["data"]["reply_markup"])
+    assert keyboard["inline_keyboard"] == [
+        [{"text": "⚙️", "callback_data": "NotificationSettings"}],
+        [{"text": "Back", "callback_data": "Return"}],
+    ]
+    clear_message_id.assert_awaited_once_with(user_id, app_context=ANY)
     assert await notification_service.dispatcher.storage.get_data(key) == {
-        "last_message_id": 777,
+        "last_message_id": 1,
         "flow": "send",
     }
     await redis.aclose()
@@ -307,11 +343,15 @@ def test_payload_event_index_uses_notifier_index_then_numeric_operation_id(
 async def test_forbidden_notification_marks_wallet_deleted(
     notification_service, mock_db_pool
 ):
-    delivery = AsyncMock(spec=NotificationSender)
-    delivery.send_notification.side_effect = TelegramForbiddenError(
-        method=SendMessage(chat_id=12345, text="forbidden"),
-        message="Forbidden: bot was blocked by the user",
+    notification_service.bot = MagicMock(id=1)
+    notification_service.bot.send_message = AsyncMock(
+        side_effect=TelegramForbiddenError(
+            method=SendMessage(chat_id=12345, text="forbidden"),
+            message="Forbidden: bot was blocked by the user",
+        )
     )
+    history = MagicMock()
+    notification_service.notification_history = history
     event = BlockchainNotification(
         notification_id="forbidden",
         user_id=12345,
@@ -323,15 +363,14 @@ async def test_forbidden_notification_marks_wallet_deleted(
         data={"wallet_id": 1, "public_key": "GTEST" + "A" * 51},
     )
 
-    await NotificationDeliverySender(notification_service, delivery).send_notification(
-        event
-    )
+    await notification_service.send_notification(event)
 
-    delivery.send_notification.assert_awaited_once_with(event)
+    notification_service.bot.send_message.assert_awaited_once()
     # A forbidden user is a handled delivery outcome: the queue can acknowledge
     # it after the wallet is marked for deletion.
     mock_db_pool._session.add.assert_not_called()
     mock_db_pool._session.commit.assert_awaited_once()
+    history.add_delivered.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -340,7 +379,10 @@ async def test_delivery_records_history_only_after_telegram_success(
 ):
     history = MagicMock()
     notification_service.notification_history = history
-    delivery = AsyncMock(spec=NotificationSender)
+    notification_service.bot = MagicMock(id=1)
+    notification_service.bot.send_message = AsyncMock(
+        return_value=MagicMock(message_id=1)
+    )
     event = BlockchainNotification(
         notification_id="delivered",
         user_id=12345,
@@ -359,10 +401,9 @@ async def test_delivery_records_history_only_after_telegram_success(
         },
     )
 
-    await NotificationDeliverySender(notification_service, delivery).send_notification(
-        event
-    )
+    await notification_service.send_notification(event)
 
+    notification_service.bot.send_message.assert_awaited_once()
     history.add_delivered.assert_called_once_with(event)
 
 

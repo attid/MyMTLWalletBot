@@ -6,12 +6,11 @@
 
 ## Context
 
-Blockchain-originated wallet notifications currently pass through the shared UI
-sender. Delivery resets and then replaces `last_message_id`, so a notification
-can invalidate the inline keyboard and visual context of an active order,
-transfer, signing, or settings flow. An FSM-scoped boolean cannot solve this:
-FSM state may remain active indefinitely and is cleared independently from a
-durable notification queue.
+Blockchain-originated wallet notifications use the shared legacy notification
+sender. Delivery clears and then replaces `last_message_id`, with the normal
+notification settings and Return keyboard. Redis must delay delivery while a
+user is active, but it must not introduce a second Telegram sender or change
+the legacy notification UI semantics.
 
 The system needs a sliding inactivity window, early release at logical flow
 completion, automatic recovery after process restarts, safe operation with more
@@ -36,9 +35,10 @@ delivery. The design uses:
 An atomic enqueue script combines deduplication and queue insertion. A single
 polling worker per process selects due users from the Sorted Set; per-user locks
 and a second hold check make multiple processes safe. `flush()` peeks the first
-List item, sends it as an independent Telegram message, and removes that exact
-head only after Telegram confirms success. A token-checking Lua script releases
-the lock. A failed send leaves the item queued. The lock heartbeat exists only
+List item, calls `NotificationService`'s legacy `clear_last_message_id()` then
+`cmd_info_message()` sender path, and removes that exact head only after
+Telegram confirms success. A token-checking Lua script releases the lock. A
+failed send leaves the item queued. The lock heartbeat exists only
 for the lifetime of an active `flush()` lease, so a slow Telegram send cannot
 expire that lease. It is not a per-user inactivity or action timer: `touch()`
 only records the Redis hold and does not create an asyncio sleep or heartbeat
@@ -50,10 +50,13 @@ lock and removes the exact queue head only if it owns that new lock. If recovery
 cannot obtain a lock, the queued head remains for retry; this favours no loss
 over an unavoidable duplicate when another worker may already have taken over.
 
-The Telegram adapter exposes separate UI and notification delivery behavior.
-Notification delivery never reads or writes FSM data or `last_message_id` and
-never supplies normal navigation buttons. Badge refresh edits reply markup only
-and is best-effort; inability to edit an old message never blocks delivery.
+Redis controls only scheduling and acknowledgement. `NotificationService` is
+the single Telegram sender for both immediate acceptance and queued flushes;
+it preserves legacy FSM/`last_message_id` handling and the notification
+keyboard. A forbidden Telegram recipient is handled by marking the wallet for
+deletion, and history is written only after Telegram accepts the send. Badge
+refresh edits reply markup only and is best-effort; inability to edit an old
+message never blocks delivery.
 
 Activity middleware calls `touch()` for flow callbacks and messages handled in
 an active FSM state, excluding the badge, `/start`, back/cancel, and terminal
@@ -62,7 +65,8 @@ hold and flushes immediately.
 
 ## Consequences
 
-- Positive: active UI screens and callback validity are preserved.
+- Positive: immediate and queued notifications have identical legacy UI
+  behavior, including keyboard and `last_message_id` updates.
 - Positive: pending notifications and deadlines survive bot restarts.
 - Positive: ordered per-user delivery and distributed exclusion are explicit.
 - Positive: the signing/WalletConnect FastStream path stays independent.

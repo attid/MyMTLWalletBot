@@ -10,8 +10,6 @@ from typing import Protocol
 from loguru import logger
 
 from core.models.blockchain_notification import BlockchainNotification
-from infrastructure.services.telegram_delivery_service import NotificationSender
-
 
 COMPLETION_LOCK_RETRY_ATTEMPTS = 3
 
@@ -56,6 +54,12 @@ class NotificationBadgeRefresher(Protocol):
     """Best-effort UI badge update owned by the presentation adapter."""
 
     async def refresh(self, user_id: int) -> None: ...
+
+
+class NotificationSender(Protocol):
+    """Deliver a queued notification through the application's notification path."""
+
+    async def send_notification(self, notification: BlockchainNotification) -> None: ...
 
 
 class NotificationCoordinator:
