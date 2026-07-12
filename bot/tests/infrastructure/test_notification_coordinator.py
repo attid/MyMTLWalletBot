@@ -6,22 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 import pytest
 import fakeredis.aioredis
-from aiogram import Bot, Dispatcher
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.base import StorageKey
-from aiogram.fsm.storage.memory import MemoryStorage
-
 from core.models.blockchain_notification import BlockchainNotification
 from infrastructure.services.notification_coordinator import (
     NotificationBadgeRefresher,
     NotificationCoordinator,
+    NotificationSender,
     NotificationStore,
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
-from infrastructure.services.telegram_delivery_service import (
-    NotificationSender,
-    TelegramNotificationDeliveryService,
-)
 
 
 def notification(notification_id: str, text: str) -> BlockchainNotification:
@@ -34,12 +26,6 @@ def notification(notification_id: str, text: str) -> BlockchainNotification:
         transaction_hash=notification_id,
         event_index=0,
     )
-
-
-class ActiveFlow(StatesGroup):
-    """Concrete FSM state used to prove independent notification delivery."""
-
-    waiting_for_amount = State()
 
 
 @pytest.fixture
@@ -697,30 +683,3 @@ async def test_flush_does_not_enter_when_another_owner_has_the_lock(
     store.hold_until.assert_not_awaited()
     sender.send_notification.assert_not_awaited()
     store.release_lock.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_delivery_service_preserves_real_dispatcher_fsm_data() -> None:
-    bot = create_autospec(Bot, instance=True, spec_set=True)
-    bot.send_message = AsyncMock()
-    dispatcher = Dispatcher(storage=MemoryStorage())
-    storage_key = StorageKey(bot_id=1, chat_id=42, user_id=42)
-    original_data = {"last_message_id": 7, "active_flow": "send"}
-    original_state = ActiveFlow.waiting_for_amount.state
-    await dispatcher.storage.set_data(storage_key, original_data)
-    await dispatcher.storage.set_state(storage_key, original_state)
-    event = notification("first", "First payment")
-
-    service = TelegramNotificationDeliveryService(bot)
-    await service.send_notification(event)
-
-    sent_kwargs = bot.send_message.await_args.kwargs
-    assert sent_kwargs == {
-        "chat_id": 42,
-        "text": "First payment",
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
-    }
-    assert "reply_markup" not in sent_kwargs
-    assert await dispatcher.storage.get_data(storage_key) == original_data
-    assert await dispatcher.storage.get_state(storage_key) == original_state

@@ -16,12 +16,15 @@ from urllib.parse import quote
 import base64
 import sentry_sdk
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from db.db_pool import DatabasePool
 from db.models import MyMtlWalletBot, NotificationFilter
 from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
 from aiogram.exceptions import TelegramForbiddenError
+from routers.start_msg import cmd_info_message
+from infrastructure.utils.telegram_utils import clear_last_message_id
 from infrastructure.utils.notification_utils import decode_db_effect
 from stellar_sdk import Keypair
 import time
@@ -41,22 +44,6 @@ class NotificationWallet:
 
 class DurableNotificationAcceptError(RuntimeError):
     """The notifier must retry because Redis did not durably retain an event."""
-
-
-class NotificationDeliverySender:
-    """Attach delivery-only blockchain side effects to the independent sender."""
-
-    def __init__(self, service: "NotificationService", sender: Any) -> None:
-        self._service = service
-        self._sender = sender
-
-    async def send_notification(self, notification: BlockchainNotification) -> None:
-        try:
-            await self._sender.send_notification(notification)
-        except TelegramForbiddenError as error:
-            await self._service._mark_notification_wallet_deleted(notification, error)
-            return
-        await self._service._after_notification_delivery(notification)
 
 
 class NotifierHeaders(str, Enum):
@@ -106,8 +93,40 @@ class NotificationService:
         self.last_notification_at = now or datetime.utcnow()
 
     def set_notification_coordinator(self, coordinator: Any) -> None:
-        """Inject the coordinator after its delivery wrapper is constructed."""
+        """Inject the coordinator after Redis delivery is initialized."""
         self.notification_coordinator = coordinator
+
+    async def send_notification(self, notification: BlockchainNotification) -> None:
+        """Deliver through the original notification UI path after Redis releases it."""
+        if not self.bot:
+            raise RuntimeError("Bot not initialized for notification delivery")
+
+        app_context = SimpleNamespace(
+            bot=self.bot,
+            dispatcher=self.dispatcher,
+            localization_service=self.localization_service,
+        )
+        if self.dispatcher:
+            await clear_last_message_id(notification.user_id, app_context=app_context)
+
+        try:
+            await cmd_info_message(
+                None,
+                notification.user_id,
+                notification.text,
+                operation_id=str(notification.data.get("operation_id", "")),
+                public_key=str(notification.data.get("public_key", "")),
+                wallet_id=int(notification.data.get("wallet_id", 0) or 0),
+                bot=self.bot,
+                dispatcher=self.dispatcher,
+                localization_service=self.localization_service,
+                app_context=app_context,
+            )
+        except TelegramForbiddenError as error:
+            await self._mark_notification_wallet_deleted(notification, error)
+            return
+
+        await self._after_notification_delivery(notification)
 
     async def _after_notification_delivery(
         self, notification: BlockchainNotification

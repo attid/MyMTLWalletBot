@@ -16,9 +16,6 @@ if TYPE_CHECKING:
     from infrastructure.services.notification_history_service import (
         NotificationHistoryService,
     )
-    from infrastructure.services.telegram_delivery_service import (
-        TelegramNotificationDeliveryService,
-    )
     from infrastructure.services.notification_service import NotificationService
     from infrastructure.workers.notification_delivery_worker import (
         NotificationDeliveryWorker,
@@ -51,7 +48,6 @@ class AppContext:
         notification_coordinator: Optional["NotificationCoordinator"] = None,
         notification_redis: Optional["Redis"] = None,
         notification_store: Optional["NotificationRedisStore"] = None,
-        notification_delivery: Optional["TelegramNotificationDeliveryService"] = None,
         notification_delivery_worker: Optional["NotificationDeliveryWorker"] = None,
         notification_badge_service: Optional["NotificationBadgeService"] = None,
     ):
@@ -72,6 +68,5 @@ class AppContext:
         self.notification_coordinator = notification_coordinator
         self.notification_redis = notification_redis
         self.notification_store = notification_store
-        self.notification_delivery = notification_delivery
         self.notification_delivery_worker = notification_delivery_worker
         self.notification_badge_service = notification_badge_service

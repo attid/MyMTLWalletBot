@@ -325,16 +325,12 @@ async def main():
     from infrastructure.services.encryption_service import EncryptionService
     from services.ton_service import TonService
     from infrastructure.services.notification_service import (
-        NotificationDeliverySender,
         NotificationService,
     )
     from infrastructure.services.notification_coordinator import NotificationCoordinator
     from infrastructure.services.notification_redis_store import NotificationRedisStore
     from infrastructure.services.notification_badge_service import (
         NotificationBadgeService,
-    )
-    from infrastructure.services.telegram_delivery_service import (
-        TelegramNotificationDeliveryService,
     )
     from infrastructure.workers.notification_delivery_worker import (
         NotificationDeliveryWorker,
@@ -371,13 +367,12 @@ async def main():
         hold_seconds=config.notification_hold_seconds,
         lock_ttl_seconds=30,
     )
-    notification_delivery = TelegramNotificationDeliveryService(bot)
     notification_badge_service = NotificationBadgeService(
         bot=bot, redis=notification_redis, store=notification_store
     )
     notification_coordinator = NotificationCoordinator(
         store=notification_store,
-        sender=NotificationDeliverySender(notification_service, notification_delivery),
+        sender=notification_service,
         badge_refresher=notification_badge_service,
     )
     notification_service.set_notification_coordinator(notification_coordinator)
@@ -406,7 +401,6 @@ async def main():
         notification_coordinator=notification_coordinator,
         notification_redis=notification_redis,
         notification_store=notification_store,
-        notification_delivery=notification_delivery,
         notification_delivery_worker=notification_delivery_worker,
         notification_badge_service=notification_badge_service,
     )

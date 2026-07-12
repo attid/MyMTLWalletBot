@@ -5,21 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, create_autospec
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from core.models.blockchain_notification import BlockchainNotification
-from infrastructure.services.telegram_delivery_service import (
-    TelegramNotificationDeliveryService,
-)
 from infrastructure.utils.telegram_utils import clear_state, send_message
-
-
-class ActiveFlow(StatesGroup):
-    """Concrete FSM state used to guard independent delivery."""
-
-    waiting_for_amount = State()
 
 
 class TestClearState:
@@ -106,44 +94,6 @@ class TestClearState:
 
         call_kwargs = mock_state.set_data.call_args[0][0]
         assert "some_transient_key" not in call_kwargs
-
-
-@pytest.mark.asyncio
-async def test_notification_delivery_uses_an_independent_telegram_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Notifications must not use the UI helper that tracks last_message_id."""
-    bot = create_autospec(Bot, instance=True, spec_set=True)
-    bot.send_message = AsyncMock()
-    dispatcher = Dispatcher(storage=MemoryStorage())
-    storage_key = StorageKey(bot_id=1, chat_id=42, user_id=42)
-    original_data = {"last_message_id": 7, "active_flow": "send"}
-    original_state = ActiveFlow.waiting_for_amount.state
-    await dispatcher.storage.set_data(storage_key, original_data)
-    await dispatcher.storage.set_state(storage_key, original_state)
-    ui_sender = AsyncMock(side_effect=AssertionError("UI sender must not be used"))
-    monkeypatch.setattr("infrastructure.utils.telegram_utils.send_message", ui_sender)
-    event = BlockchainNotification(
-        notification_id="notification-tx-1",
-        user_id=42,
-        event_type="payment",
-        text="Independent payment",
-        created_at=1_000,
-        transaction_hash="tx-1",
-        event_index=0,
-    )
-
-    await TelegramNotificationDeliveryService(bot).send_notification(event)
-
-    bot.send_message.assert_awaited_once_with(
-        chat_id=42,
-        text="Independent payment",
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-    )
-    ui_sender.assert_not_awaited()
-    assert await dispatcher.storage.get_data(storage_key) == original_data
-    assert await dispatcher.storage.get_state(storage_key) == original_state
 
 
 @pytest.mark.asyncio

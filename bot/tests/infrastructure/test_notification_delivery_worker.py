@@ -12,9 +12,9 @@ from core.models.blockchain_notification import BlockchainNotification
 from infrastructure.services.notification_coordinator import (
     NotificationBadgeRefresher,
     NotificationCoordinator,
+    NotificationSender,
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
-from infrastructure.services.telegram_delivery_service import NotificationSender
 from infrastructure.workers.notification_delivery_worker import (
     NotificationDeliveryWorker,
     NotificationDueStore,
