@@ -13,6 +13,7 @@ from stellar_sdk import Asset, MuxedAccount
 from stellar_sdk.sep.federation import resolve_stellar_address
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.signing_facade import (
+    PENDING_SIGNATURE_REQUEST_KEY,
     SignatureMode,
     SignaturePurpose,
     SignatureRequest,
@@ -21,6 +22,9 @@ from infrastructure.services.signing_facade import (
 
 
 from keyboards.common_keyboards import (
+    FLOW_BACK_CALLBACK,
+    get_flow_back_button,
+    get_kb_flow_back_return,
     get_kb_return,
     get_return_button,
     get_kb_yesno_send_xdr,
@@ -56,8 +60,10 @@ from other.stellar_tools import stellar_check_account, get_first_balance_from_li
 
 class StateSendToken(StatesGroup):
     sending_for = State()
+    choosing_token = State()
     sending_sum = State()
     sending_memo = State()
+    confirming = State()
 
 
 class SendAssetCallbackData(CallbackData, prefix="send_asset_"):
@@ -96,8 +102,14 @@ def get_kb_send(
 async def cmd_send_start(
     user_id: int, state: FSMContext, session: AsyncSession, *, app_context: AppContext
 ):
-    msg = my_gettext(user_id, "send_address", app_context=app_context)
     await clear_state(state)
+    await _render_send_address_prompt(user_id, state, session, app_context=app_context)
+
+
+async def _render_send_address_prompt(
+    user_id: int, state: FSMContext, session: AsyncSession, *, app_context: AppContext
+):
+    msg = my_gettext(user_id, "send_address", app_context=app_context)
     # keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True,
     #                                     keyboard=[[types.KeyboardButtonRequestUser()]])
     # await send_message(session,user_id, msg, reply_markup=keyboard)
@@ -463,7 +475,6 @@ async def cmd_send_for(
         if my_account.memo:
             await state.update_data(memo=my_account.memo, federal_memo=True)
 
-        await state.set_state(None)
         await cmd_send_choose_token(message, state, session, app_context=app_context)
     else:
         wallet_repo = app_context.repository_factory.get_wallet_repository(session)
@@ -579,6 +590,7 @@ async def cmd_send_choose_token(
                         )
                     ]
                 )
+    kb_tmp.append(get_flow_back_button(message, app_context=app_context))
     kb_tmp.append(get_return_button(message, app_context=app_context))
     await send_message(
         session,
@@ -589,6 +601,7 @@ async def cmd_send_choose_token(
         app_context=app_context,
     )
     await state.update_data(assets=jsonpickle.encode(asset_list))
+    await state.set_state(StateSendToken.choosing_token)
 
 
 @router.callback_query(SendAssetCallbackData.filter())
@@ -654,7 +667,7 @@ async def cb_send_choose_token(
 
                 await state.set_state(StateSendToken.sending_sum)
                 keyboard = get_kb_offers_cancel(
-                    callback.from_user.id, data, app_context=app_context
+                    callback.from_user.id, data, flow_back=True, app_context=app_context
                 )
                 await send_message(
                     session,
@@ -686,7 +699,7 @@ async def cq_send_cancel_offers_click(
     # Update message with the same text and changed button checkbox state
     msg = data["msg"]
     keyboard = get_kb_offers_cancel(
-        callback.from_user.id, data, app_context=app_context
+        callback.from_user.id, data, flow_back=True, app_context=app_context
     )
     await send_message(
         session, callback, msg, reply_markup=keyboard, app_context=app_context
@@ -711,7 +724,9 @@ async def cmd_send_get_sum(
                 session,
                 message,
                 msg0 + data["msg"],
-                reply_markup=get_kb_return(message, app_context=app_context),
+                reply_markup=get_kb_offers_cancel(
+                    message.from_user.id, data, flow_back=True, app_context=app_context
+                ),
                 app_context=app_context,
             )
             await message.delete()
@@ -724,7 +739,6 @@ async def cmd_send_get_sum(
 
     if send_sum > 0.0:
         await state.update_data(send_sum=send_sum)
-        await state.set_state(None)
 
         await cmd_send_04(session, message, state, app_context=app_context)
         await message.delete()
@@ -732,7 +746,7 @@ async def cmd_send_get_sum(
         if message.from_user is None:
             return
         keyboard = get_kb_offers_cancel(
-            message.from_user.id, data, app_context=app_context
+            message.from_user.id, data, flow_back=True, app_context=app_context
         )
         await send_message(
             session,
@@ -816,7 +830,9 @@ async def cmd_send_04(
             session,
             message,
             f"Error: {result.error_message}",
-            reply_markup=get_kb_return(message, app_context=app_context),
+            reply_markup=get_kb_offers_cancel(
+                message.from_user.id, data, flow_back=True, app_context=app_context
+            ),
             app_context=app_context,
         )
         return
@@ -868,9 +884,10 @@ async def cmd_send_04(
         xdr=xdr,
         operation=operation,
         sign_msg=sign_msg,
-        msg=None,
+        flow_back_amount_msg=data.get("msg"),
         success_msg=success_msg,
     )
+    await state.set_state(StateSendToken.confirming)
 
     add_button_memo = federal_memo is None
     await send_message(
@@ -878,7 +895,10 @@ async def cmd_send_04(
         message,
         msg,
         reply_markup=get_kb_yesno_send_xdr(
-            message, add_button_memo=add_button_memo, app_context=app_context
+            message,
+            add_button_memo=add_button_memo,
+            flow_back=True,
+            app_context=app_context,
         ),
         need_new_msg=need_new_msg,
         app_context=app_context,
@@ -898,7 +918,7 @@ async def cmd_get_memo(
         session,
         callback,
         msg,
-        reply_markup=get_kb_return(callback, app_context=app_context),
+        reply_markup=get_kb_flow_back_return(callback, app_context=app_context),
         app_context=app_context,
     )
 
@@ -916,6 +936,95 @@ async def cmd_send_memo(
     await cmd_send_04(
         session, message, state, need_new_msg=True, app_context=app_context
     )
+
+
+@router.callback_query(StateSendToken.choosing_token, F.data == FLOW_BACK_CALLBACK)
+async def cq_send_back_to_address(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+        "flow_back_amount_msg",
+        "qr",
+        "memo",
+        "federal_memo",
+        "send_address",
+        "send_balance_address",
+        "mtlap_stars",
+        "send_sum",
+        "send_asset_code",
+        "send_asset_issuer",
+        "send_asset_max_sum",
+        "send_asset_blocked_sum",
+        "cancel_offers",
+        "msg",
+    ):
+        data.pop(key, None)
+    await state.set_data(data)
+    await _render_send_address_prompt(
+        callback.from_user.id, state, session, app_context=app_context
+    )
+    await callback.answer()
+
+
+@router.callback_query(StateSendToken.sending_sum, F.data == FLOW_BACK_CALLBACK)
+async def cq_send_back_to_token_choice(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await cmd_send_choose_token(callback, state, session, app_context=app_context)
+    await callback.answer()
+
+
+@router.callback_query(StateSendToken.confirming, F.data == FLOW_BACK_CALLBACK)
+async def cq_send_back_to_amount(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+    ):
+        data.pop(key, None)
+    await state.set_data(data)
+    await state.set_state(StateSendToken.sending_sum)
+    await send_message(
+        session,
+        callback,
+        data["flow_back_amount_msg"],
+        reply_markup=get_kb_offers_cancel(
+            callback.from_user.id, data, flow_back=True, app_context=app_context
+        ),
+        app_context=app_context,
+    )
+    await callback.answer()
+
+
+@router.callback_query(StateSendToken.sending_memo, F.data == FLOW_BACK_CALLBACK)
+async def cq_send_back_to_confirmation(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await cmd_send_04(session, callback, state, app_context=app_context)
+    await callback.answer()
 
 
 async def cmd_create_account(

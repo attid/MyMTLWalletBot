@@ -233,7 +233,7 @@ async def test_active_hold_queues_blockchain_event_until_the_legacy_sender_runs(
     keyboard = json.loads(request["data"]["reply_markup"])
     assert keyboard["inline_keyboard"] == [
         [{"text": "⚙️", "callback_data": "NotificationSettings"}],
-        [{"text": "Back", "callback_data": "Return"}],
+        [{"text": "🏠 Home", "callback_data": "Return"}],
     ]
     clear_message_id.assert_awaited_once_with(12345, app_context=ANY)
     assert await notification_service.dispatcher.storage.get_data(key) == {
@@ -279,7 +279,7 @@ async def test_inactive_hold_delivers_through_the_legacy_keyboard_and_message_id
     keyboard = json.loads(request["data"]["reply_markup"])
     assert keyboard["inline_keyboard"] == [
         [{"text": "⚙️", "callback_data": "NotificationSettings"}],
-        [{"text": "Back", "callback_data": "Return"}],
+        [{"text": "🏠 Home", "callback_data": "Return"}],
     ]
     clear_message_id.assert_awaited_once_with(user_id, app_context=ANY)
     assert await notification_service.dispatcher.storage.get_data(key) == {

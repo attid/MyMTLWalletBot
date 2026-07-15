@@ -2,6 +2,7 @@ from typing import List
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.signing_facade import (
+    PENDING_SIGNATURE_REQUEST_KEY,
     SignatureMode,
     SignaturePurpose,
     SignatureRequest,
@@ -26,10 +27,13 @@ from infrastructure.utils.telegram_utils import (
     clear_last_message_id,
 )
 from keyboards.common_keyboards import (
+    FLOW_BACK_CALLBACK,
+    get_flow_back_button,
+    get_kb_flow_back_return,
     get_kb_yesno_send_xdr,
     get_return_button,
     get_kb_offers_cancel,
-    get_kb_return,
+    get_kb_swap_confirm,
 )
 from other.mytypes import Balance
 from other.asset_visibility_tools import (
@@ -53,8 +57,12 @@ from core.domain.value_objects import Asset as DomainAsset
 
 
 class StateSwapToken(StatesGroup):
+    choosing_from = State()
+    choosing_for = State()
     swap_sum = State()
     swap_receive_sum = State()  # State for entering strict receive amount
+    confirming_send = State()
+    confirming_receive = State()
 
 
 class SwapAssetFromCallbackData(CallbackData, prefix="SwapAssetFromCallbackData"):
@@ -619,6 +627,7 @@ async def cmd_swap_01(
         app_context=app_context,
     )
     await state.update_data(assets=jsonpickle.encode(asset_list))
+    await state.set_state(StateSwapToken.choosing_from)
     await callback.answer()
 
 
@@ -725,6 +734,7 @@ async def cq_swap_choose_token_from(
                                 )
                             ]
                         )
+                kb_tmp.append(get_flow_back_button(callback, app_context=app_context))
                 kb_tmp.append(get_return_button(callback, app_context=app_context))
                 await send_message(
                     session,
@@ -733,6 +743,7 @@ async def cq_swap_choose_token_from(
                     reply_markup=types.InlineKeyboardMarkup(inline_keyboard=kb_tmp),
                     app_context=app_context,
                 )
+                await state.set_state(StateSwapToken.choosing_for)
 
 
 @router.callback_query(SwapAssetForCallbackData.filter())
@@ -800,7 +811,7 @@ async def cq_swap_choose_token_for(
             from keyboards.common_keyboards import get_kb_swap_confirm
 
             keyboard = get_kb_swap_confirm(
-                callback.from_user.id, data, app_context=app_context
+                callback.from_user.id, data, flow_back=True, app_context=app_context
             )
             await send_message(
                 session, callback, msg, reply_markup=keyboard, app_context=app_context
@@ -819,9 +830,10 @@ async def cq_swap_strict_receive(
     """
     Switch FSM to strict receive state and ask user to enter amount to receive.
     """
+    data = await state.get_data()
+    await state.update_data(flow_back_amount_msg=data.get("msg"))
     await state.set_state(StateSwapToken.swap_receive_sum)
     await callback.answer()
-    data = await state.get_data()
     msg = my_gettext(
         callback,
         "enter_strict_receive_sum",
@@ -832,7 +844,7 @@ async def cq_swap_strict_receive(
         session,
         callback,
         msg,
-        reply_markup=get_kb_return(callback, app_context=app_context),
+        reply_markup=get_kb_flow_back_return(callback, app_context=app_context),
         app_context=app_context,
     )
 
@@ -866,7 +878,9 @@ async def cq_swap_slippage_click(
     data = await state.get_data()  # Refresh data with new slippage
 
     msg = data.get("msg", "")
-    keyboard = get_kb_swap_confirm(callback.from_user.id, data, app_context=app_context)
+    keyboard = get_kb_swap_confirm(
+        callback.from_user.id, data, flow_back=True, app_context=app_context
+    )
     await send_message(
         session, callback, msg, reply_markup=keyboard, app_context=app_context
     )
@@ -893,7 +907,7 @@ async def cq_swap_cancel_offers_click(
     # Update message with the same text and changed button checkbox state
     msg = data["msg"]
     keyboard = get_kb_offers_cancel(
-        callback.from_user.id, data, app_context=app_context
+        callback.from_user.id, data, flow_back=True, app_context=app_context
     )
     await send_message(
         session, callback, msg, reply_markup=keyboard, app_context=app_context
@@ -921,7 +935,9 @@ async def cmd_swap_sum(
                 session,
                 message,
                 msg0 + (data.get("msg") or ""),
-                reply_markup=get_kb_return(message, app_context=app_context),
+                reply_markup=get_kb_swap_confirm(
+                    message.from_user.id, data, flow_back=True, app_context=app_context
+                ),
                 app_context=app_context,
             )
             await message.delete()
@@ -931,7 +947,6 @@ async def cmd_swap_sum(
 
     data = await state.get_data()
     if send_sum > 0.0:
-        await state.set_state(None)
         send_asset = data.get("send_asset_code")
         send_asset_code = data.get("send_asset_issuer")
         receive_asset = data.get("receive_asset_code")
@@ -966,7 +981,9 @@ async def cmd_swap_sum(
                 session,
                 message,
                 f"Не найден путь обмена {send_asset} → {receive_asset}. Возможно, нет ликвидности в стакане.\n{market_link}",
-                reply_markup=get_kb_return(message, app_context=app_context),
+                reply_markup=get_kb_swap_confirm(
+                    message.from_user.id, data, flow_back=True, app_context=app_context
+                ),
                 app_context=app_context,
             )
             await message.delete()
@@ -1003,7 +1020,7 @@ async def cmd_swap_sum(
             # Fallback
             logger.error(f"SwapAssets failed: {result.error_message}")
             keyboard = get_kb_offers_cancel(
-                message.from_user.id, data, app_context=app_context
+                message.from_user.id, data, flow_back=True, app_context=app_context
             )
             await send_message(
                 session,
@@ -1065,19 +1082,22 @@ async def cmd_swap_sum(
             xdr=xdr,
             operation=operation,
             sign_msg=sign_msg,
-            msg=None,
+            flow_back_amount_msg=data.get("msg"),
         )
         await send_message(
             session,
             message,
             msg,
-            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(
+                message, flow_back=True, app_context=app_context
+            ),
             app_context=app_context,
         )
+        await state.set_state(StateSwapToken.confirming_send)
         await message.delete()
     else:
         keyboard = get_kb_offers_cancel(
-            message.from_user.id, data, app_context=app_context
+            message.from_user.id, data, flow_back=True, app_context=app_context
         )
         await send_message(
             session,
@@ -1112,7 +1132,7 @@ async def cmd_swap_receive_sum(
                 session,
                 message,
                 msg0,
-                reply_markup=get_kb_return(message, app_context=app_context),
+                reply_markup=get_kb_flow_back_return(message, app_context=app_context),
                 app_context=app_context,
             )
             await message.delete()
@@ -1122,7 +1142,6 @@ async def cmd_swap_receive_sum(
 
     data = await state.get_data()
     if receive_sum > 0.0:
-        await state.set_state(None)
         send_asset = data.get("send_asset_code")
         send_asset_code = data.get("send_asset_issuer")
         receive_asset = data.get("receive_asset_code")
@@ -1158,7 +1177,7 @@ async def cmd_swap_receive_sum(
                 session,
                 message,
                 f"Не найден путь обмена {send_asset} → {receive_asset}. Возможно, нет ликвидности в стакане.\n{market_link}",
-                reply_markup=get_kb_return(message, app_context=app_context),
+                reply_markup=get_kb_flow_back_return(message, app_context=app_context),
                 app_context=app_context,
             )
             await message.delete()
@@ -1201,7 +1220,7 @@ async def cmd_swap_receive_sum(
             scenario = "receive"
             need_alert = False
         except Exception as ex:
-            keyboard = get_kb_return(message, app_context=app_context)
+            keyboard = get_kb_flow_back_return(message, app_context=app_context)
             await send_message(
                 session,
                 message,
@@ -1248,18 +1267,21 @@ async def cmd_swap_receive_sum(
             xdr=xdr,
             operation=operation,
             sign_msg=sign_msg,
-            msg=None,
+            flow_back_amount_msg=data.get("msg"),
         )
         await send_message(
             session,
             message,
             msg,
-            reply_markup=get_kb_yesno_send_xdr(message, app_context=app_context),
+            reply_markup=get_kb_yesno_send_xdr(
+                message, flow_back=True, app_context=app_context
+            ),
             app_context=app_context,
         )
+        await state.set_state(StateSwapToken.confirming_receive)
         await message.delete()
     else:
-        keyboard = get_kb_return(message, app_context=app_context)
+        keyboard = get_kb_flow_back_return(message, app_context=app_context)
         await send_message(
             session,
             message,
@@ -1268,3 +1290,124 @@ async def cmd_swap_receive_sum(
             app_context=app_context,
         )
         await message.delete()
+
+
+@router.callback_query(StateSwapToken.choosing_from, F.data == FLOW_BACK_CALLBACK)
+async def cq_swap_back_to_source(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await cmd_swap_01(callback, state, session, app_context=app_context)
+
+
+@router.callback_query(StateSwapToken.choosing_for, F.data == FLOW_BACK_CALLBACK)
+async def cq_swap_back_to_source_from_destination(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await cmd_swap_01(callback, state, session, app_context=app_context)
+
+
+@router.callback_query(StateSwapToken.swap_sum, F.data == FLOW_BACK_CALLBACK)
+async def cq_swap_back_to_destination(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    data = await state.get_data()
+    await state.set_state(StateSwapToken.choosing_for)
+    await cq_swap_choose_token_from(
+        callback,
+        SwapAssetFromCallbackData(answer=data["send_asset_code"]),
+        state,
+        session,
+        app_context=app_context,
+    )
+    await callback.answer()
+
+
+async def _render_swap_sum_prompt(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    *,
+    app_context: AppContext,
+) -> None:
+    data = await state.get_data()
+    amount_prompt = data.get("flow_back_amount_msg") or data.get("msg", "")
+    await state.set_state(StateSwapToken.swap_sum)
+    await send_message(
+        session,
+        callback,
+        amount_prompt,
+        reply_markup=get_kb_swap_confirm(
+            callback.from_user.id, data, flow_back=True, app_context=app_context
+        ),
+        app_context=app_context,
+    )
+
+
+async def _clear_confirmation_signing_data(state: FSMContext) -> None:
+    data = await state.get_data()
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+    ):
+        data.pop(key, None)
+    await state.set_data(data)
+
+
+@router.callback_query(StateSwapToken.swap_receive_sum, F.data == FLOW_BACK_CALLBACK)
+async def cq_swap_back_from_strict_receive(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await _render_swap_sum_prompt(callback, state, session, app_context=app_context)
+    await callback.answer()
+
+
+@router.callback_query(StateSwapToken.confirming_send, F.data == FLOW_BACK_CALLBACK)
+async def cq_swap_back_from_send_confirmation(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await _clear_confirmation_signing_data(state)
+    await _render_swap_sum_prompt(callback, state, session, app_context=app_context)
+    await callback.answer()
+
+
+@router.callback_query(StateSwapToken.confirming_receive, F.data == FLOW_BACK_CALLBACK)
+async def cq_swap_back_from_receive_confirmation(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    await _clear_confirmation_signing_data(state)
+    data = await state.get_data()
+    await state.set_state(StateSwapToken.swap_receive_sum)
+    await send_message(
+        session,
+        callback,
+        my_gettext(
+            callback,
+            "enter_strict_receive_sum",
+            (data.get("receive_asset_code"),),
+            app_context=app_context,
+        ),
+        reply_markup=get_kb_flow_back_return(callback, app_context=app_context),
+        app_context=app_context,
+    )
+    await callback.answer()
