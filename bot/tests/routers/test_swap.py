@@ -9,7 +9,7 @@ from routers.swap import (
     SwapAssetFromCallbackData,
     SwapAssetForCallbackData,
 )
-from core.domain.value_objects import Balance, PaymentResult
+from core.domain.value_objects import Asset as DomainAsset, Balance, PaymentResult
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
@@ -228,7 +228,13 @@ async def test_cmd_swap_sum_execution(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "9.5",
                 "source_amount": "10.0",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -254,7 +260,13 @@ async def test_cmd_swap_sum_execution(
     assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call
-    router_app_context.use_case_factory.create_swap_assets.return_value.execute.assert_called_once()
+    swap_execute = (
+        router_app_context.use_case_factory.create_swap_assets.return_value.execute
+    )
+    swap_execute.assert_called_once()
+    assert swap_execute.call_args.kwargs["path"] == [
+        DomainAsset(code="SATSMTL", issuer=valid_issuer)
+    ]
 
 
 @pytest.mark.asyncio
@@ -319,7 +331,13 @@ async def test_cmd_swap_receive_sum_execution(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "10.0",
                 "source_amount": "10.5",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -346,6 +364,7 @@ async def test_cmd_swap_receive_sum_execution(
     # Verify UseCase call with strict_receive=True
     call_kwargs = router_app_context.use_case_factory.create_swap_assets.return_value.execute.call_args.kwargs
     assert call_kwargs.get("strict_receive") is True
+    assert call_kwargs["path"] == [DomainAsset(code="SATSMTL", issuer=valid_issuer)]
 
 
 @pytest.mark.asyncio
@@ -785,7 +804,13 @@ async def test_cmd_swap_text_command(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "9.5",
                 "source_amount": "10.0",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -818,6 +843,12 @@ async def test_cmd_swap_text_command(
     assert pending["mode"] == "sign_and_submit"
     assert pending["operation"] == "Swap 10 XLM → EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
+    swap_execute = (
+        router_app_context.use_case_factory.create_swap_assets.return_value.execute
+    )
+    assert swap_execute.call_args.kwargs["path"] == [
+        DomainAsset(code="SATSMTL", issuer=valid_issuer)
+    ]
 
 
 @pytest.mark.asyncio
@@ -844,7 +875,13 @@ async def test_cmd_swap_text_flexible_syntax(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "9.5",
                 "source_amount": "10.0",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -868,6 +905,12 @@ async def test_cmd_swap_text_flexible_syntax(
     # My logic: receive_sum = amount = 10.
     # send_sum = computed.
     assert data.get("strict_receive") is True  # Logic change verification
+    swap_execute = (
+        router_app_context.use_case_factory.create_swap_assets.return_value.execute
+    )
+    assert swap_execute.call_args.kwargs["path"] == [
+        DomainAsset(code="SATSMTL", issuer=valid_issuer)
+    ]
 
     # Test 2: /swap 10 XLM EURMTL 5%
     # We verify state update to ensure parsing worked
