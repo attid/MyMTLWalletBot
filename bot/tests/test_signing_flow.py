@@ -26,6 +26,7 @@ from infrastructure.services.signing_facade import SignaturePurpose
 
 
 SEP10_WEBAPP_CALLBACK_CALLS = []
+WEBAPP_NOTIFICATION_COMPLETION_EVENTS = []
 
 
 async def sep10_webapp_test_callback(
@@ -45,6 +46,10 @@ async def sep10_webapp_test_callback(
             "sep10_signed_xdr": data.get("sep10_signed_xdr"),
         }
     )
+
+
+async def webapp_after_send_test_callback(session, user_id: int, state):
+    WEBAPP_NOTIFICATION_COMPLETION_EVENTS.append("fsm_after_send")
 
 
 class TestPendingTxMessage:
@@ -578,6 +583,84 @@ class TestHandleTxSigned:
             # Verify submit_signed_xdr was called (means APP_CONTEXT was accessible)
             mock_submit.assert_called_once()
 
+        finally:
+            faststream_tools.APP_CONTEXT = original_context
+            await fake_redis.aclose()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("successful", "expected_events"),
+        [
+            (True, ["fsm_after_send", "complete_flow"]),
+            (False, []),
+        ],
+    )
+    async def test_handle_tx_signed_completes_only_successful_normal_flow(
+        self, fake_redis, successful, expected_events
+    ):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from infrastructure.services.notification_coordinator import (
+            NotificationCoordinator,
+        )
+        from infrastructure.workers.signing_worker import handle_tx_signed
+        from other import faststream_tools
+
+        WEBAPP_NOTIFICATION_COMPLETION_EVENTS.clear()
+        tx_id = f"123_notification_{successful}"
+        await fake_redis.hset(
+            f"{REDIS_TX_PREFIX}{tx_id}",
+            mapping={
+                FIELD_USER_ID: "123",
+                FIELD_WALLET_ADDRESS: "GXXX...",
+                FIELD_UNSIGNED_XDR: "AAAA...",
+                FIELD_SIGNED_XDR: "BBBB...",
+                FIELD_MEMO: "Swap",
+                FIELD_STATUS: STATUS_SIGNED,
+                FIELD_CREATED_AT: "2026-07-15T00:00:00Z",
+                FIELD_FSM_AFTER_SEND: jsonpickle.dumps(webapp_after_send_test_callback),
+            },
+        )
+
+        mock_session = AsyncMock()
+        mock_db_pool = MagicMock()
+        mock_db_pool.get_session.return_value = AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()
+        )
+        mock_state = AsyncMock()
+        mock_state.get_data.return_value = {}
+
+        coordinator = MagicMock(spec=NotificationCoordinator)
+
+        async def complete_flow(_user_id):
+            WEBAPP_NOTIFICATION_COMPLETION_EVENTS.append("complete_flow")
+
+        coordinator.complete_flow = AsyncMock(side_effect=complete_flow)
+        mock_app_context = MagicMock()
+        mock_app_context.db_pool = mock_db_pool
+        mock_app_context.dispatcher.fsm.get_context.return_value = mock_state
+        mock_app_context.notification_coordinator = coordinator
+
+        original_context = faststream_tools.APP_CONTEXT
+        faststream_tools.APP_CONTEXT = mock_app_context
+        try:
+            with (
+                patch(
+                    "infrastructure.workers.signing_worker.aioredis.from_url",
+                    return_value=fake_redis,
+                ),
+                patch(
+                    "routers.sign.submit_signed_xdr", new_callable=AsyncMock
+                ) as mock_submit,
+            ):
+                mock_submit.return_value = {"successful": successful, "hash": "tx"}
+                await handle_tx_signed(TxSignedMessage(tx_id=tx_id, user_id=123))
+
+            assert WEBAPP_NOTIFICATION_COMPLETION_EVENTS == expected_events
+            if successful:
+                coordinator.complete_flow.assert_awaited_once_with(123)
+            else:
+                coordinator.complete_flow.assert_not_awaited()
         finally:
             faststream_tools.APP_CONTEXT = original_context
             await fake_redis.aclose()
