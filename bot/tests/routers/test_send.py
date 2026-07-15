@@ -12,15 +12,23 @@ This file demonstrates the correct testing patterns:
 See tests/README.md for complete testing rules.
 """
 
+import jsonpickle  # type: ignore
+
 import pytest
 from typing import Optional
 from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
-from routers.send import router as send_router, StateSendToken, SendAssetCallbackData
+from routers.send import (
+    FLOW_BACK_CALLBACK,
+    router as send_router,
+    StateSendToken,
+    SendAssetCallbackData,
+)
 from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance, PaymentResult
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
+from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -468,10 +476,51 @@ async def test_cmd_send_get_sum_exceeds_limit(
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
     assert "need_update_limits" in req["data"]["text"]
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+    assert '"callback_data": "Return"' in req["data"]["reply_markup"]
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_sum
 
     # Sum should NOT be updated
     data = await dp.storage.get_data(key=storage_key)
     assert data.get("send_sum") is None
+
+
+@pytest.mark.asyncio
+async def test_cmd_send_get_sum_build_error_rerenders_amount_with_flow_back(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    router_app_context.use_case_factory.create_send_payment.return_value.execute.return_value = PaymentResult(
+        success=False, error_message="build failed"
+    )
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_sum)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "send_address": "GDEST",
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            "msg": "Enter sum",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "10"),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Error: build failed" in req["data"]["text"]
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+    assert '"callback_data": "Return"' in req["data"]["reply_markup"]
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_sum
+    assert (await dp.storage.get_data(storage_key))["send_address"] == "GDEST"
 
 
 @pytest.mark.asyncio
@@ -634,6 +683,360 @@ async def test_cq_cancel_offers_toggle(
 
     data = await dp.storage.get_data(key=storage_key)
     assert data.get("cancel_offers") is False
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_send_amount_rerenders_asset_choice_and_preserves_data(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_sum)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "send_address": address,
+            "assets": jsonpickle.encode(
+                setup_send_mocks.ctx.use_case_factory.create_get_wallet_balance.return_value.execute.return_value
+            ),
+            "send_asset_code": "XLM",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.choosing_token
+    assert (await dp.storage.get_data(storage_key))["send_address"] == address
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "choose_token" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_send_token_clears_recipient_data_and_preserves_unrelated_data(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.choosing_token)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "qr": "GQRDEST",
+            "memo": "recipient memo",
+            "federal_memo": True,
+            "send_address": "GDEST",
+            "send_balance_address": "GBALANCEDEST",
+            "mtlap_stars": "⭐⭐",
+            "unrelated_flow_data": "keep me",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_for
+    data = await dp.storage.get_data(storage_key)
+    for key in (
+        "qr",
+        "memo",
+        "federal_memo",
+        "send_address",
+        "send_balance_address",
+        "mtlap_stars",
+    ):
+        assert key not in data
+    assert data["unrelated_flow_data"] == "keep me"
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "send_address" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_send_token_uses_typed_address_without_stale_recipient_memo(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    stale_address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    new_address = "GCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYLQDJ"
+    for address in (stale_address, new_address):
+        mock_horizon.set_account(
+            address, balances=[{"asset_type": "native", "balance": "100.0"}]
+        )
+
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.choosing_token)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "qr": stale_address,
+            "memo": "recipient memo",
+            "federal_memo": True,
+            "send_address": stale_address,
+            "send_balance_address": stale_address,
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, new_address),
+        app_context=router_app_context,
+    )
+
+    data = await dp.storage.get_data(storage_key)
+    assert data["send_address"] == new_address
+    assert "memo" not in data
+    assert "federal_memo" not in data
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_send_confirmation_rerenders_amount_prompt(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.confirming)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "last_message_id": 987,
+            "unrelated_global_data": "keep me",
+            "flow_back_amount_msg": "Enter XLM amount",
+            "send_address": "GDEST",
+            "send_sum": 10,
+            "send_asset_code": "XLM",
+            PENDING_SIGNATURE_REQUEST_KEY: {"xdr": "AAAA_CONFIRMATION_XDR"},
+            "xdr": "AAAA_CONFIRMATION_XDR",
+            "operation": "Send 10 XLM",
+            "sign_msg": "Sign payment",
+            "success_msg": "Payment sent",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_sum
+    data = await dp.storage.get_data(storage_key)
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+    ):
+        assert key not in data
+    assert data["flow_back_amount_msg"] == "Enter XLM amount"
+    assert data["send_address"] == "GDEST"
+    assert data["send_sum"] == 10
+    assert data["send_asset_code"] == "XLM"
+    assert data["last_message_id"] == 987
+    assert data["unrelated_global_data"] == "keep me"
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req["data"]["text"] == "Enter XLM amount"
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_confirmation_to_address_clears_stale_send_and_signing_payloads(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.confirming)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "last_message_id": 987,
+            "unrelated_global_data": "keep me",
+            PENDING_SIGNATURE_REQUEST_KEY: {
+                "xdr": "AAAA_CONFIRMATION_XDR",
+                "purpose": "payment",
+                "mode": "sign_and_submit",
+                "operation": "Send 10 XLM",
+                "sign_msg": "Sign payment",
+                "success_msg": "Payment sent",
+            },
+            "xdr": "AAAA_CONFIRMATION_XDR",
+            "operation": "Send 10 XLM",
+            "sign_msg": "Sign payment",
+            "success_msg": "Payment sent",
+            "flow_back_amount_msg": "Enter XLM amount",
+            "qr": "GQRDEST",
+            "memo": "recipient memo",
+            "federal_memo": True,
+            "send_address": "GDEST",
+            "send_balance_address": "GBALANCEDEST",
+            "mtlap_stars": "⭐⭐",
+            "send_sum": 10,
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            "send_asset_max_sum": 100.0,
+            "send_asset_blocked_sum": 0.0,
+            "cancel_offers": True,
+            "msg": "Enter XLM amount",
+        },
+    )
+
+    for update_id in range(1, 4):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_callback_update(
+                user_id, FLOW_BACK_CALLBACK, update_id=update_id
+            ),
+            app_context=router_app_context,
+        )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_for
+    data = await dp.storage.get_data(storage_key)
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+        "flow_back_amount_msg",
+        "qr",
+        "memo",
+        "federal_memo",
+        "send_address",
+        "send_balance_address",
+        "mtlap_stars",
+        "send_sum",
+        "send_asset_code",
+        "send_asset_issuer",
+        "send_asset_max_sum",
+        "send_asset_blocked_sum",
+        "cancel_offers",
+        "msg",
+    ):
+        assert key not in data
+    assert data["last_message_id"] == 987
+    assert data["unrelated_global_data"] == "keep me"
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_send_memo_rerenders_confirmation(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_memo)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "send_address": "GDEST",
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            "send_sum": 10,
+            "memo": "memo",
+            "msg": "Enter sum",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.confirming
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "confirm_send" in req["data"]["text"]
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+
+
+def test_terminal_return_keyboard_never_exposes_flow_back(router_app_context):
+    keyboard = get_kb_return(123, app_context=router_app_context)
+
+    callbacks = [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ]
+    assert callbacks == ["Return"]
+
+
+def test_notification_return_keyboard_never_exposes_flow_back(router_app_context):
+    keyboard = get_kb_return(123, app_context=router_app_context)
+
+    callbacks = [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ]
+    assert callbacks == ["Return"]
+
+
+@pytest.mark.parametrize(
+    ("add_button_memo", "expected_callbacks"),
+    [
+        (False, [["Yes_send_xdr", "Return"], ["Return"]]),
+        (True, [["Yes_send_xdr", "Return"], ["Memo"], ["Return"]]),
+    ],
+)
+def test_send_xdr_confirmation_defaults_to_legacy_return_callbacks(
+    router_app_context, add_button_memo, expected_callbacks
+):
+    keyboard = get_kb_yesno_send_xdr(
+        123, add_button_memo=add_button_memo, app_context=router_app_context
+    )
+
+    callbacks = [
+        [button.callback_data for button in row] for row in keyboard.inline_keyboard
+    ]
+
+    assert callbacks == expected_callbacks
+    assert FLOW_BACK_CALLBACK not in [callback for row in callbacks for callback in row]
+
+
+def test_send_xdr_confirmation_exposes_flow_back_only_when_requested(
+    router_app_context,
+):
+    keyboard = get_kb_yesno_send_xdr(
+        123, flow_back=True, app_context=router_app_context
+    )
+
+    callbacks = [
+        [button.callback_data for button in row] for row in keyboard.inline_keyboard
+    ]
+
+    assert callbacks == [["Yes_send_xdr"], [FLOW_BACK_CALLBACK], ["Return"]]
 
 
 @pytest.mark.asyncio

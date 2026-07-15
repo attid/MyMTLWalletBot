@@ -8,6 +8,9 @@ from infrastructure.services.app_context import AppContext
 from other.lang_tools import my_gettext
 
 
+FLOW_BACK_CALLBACK = "FlowBack"
+
+
 def get_return_button(
     chat_id,
     text=None,
@@ -28,6 +31,25 @@ def get_return_button(
         callback = "Return"
 
     return [InlineKeyboardButton(text=text, callback_data=callback)]
+
+
+def get_flow_back_button(
+    chat_id,
+    *,
+    app_context: AppContext = None,
+    localization_service: Any = None,
+):
+    return [
+        InlineKeyboardButton(
+            text=my_gettext(
+                chat_id,
+                "kb_back",
+                app_context=app_context,
+                localization_service=localization_service,
+            ),
+            callback_data=FLOW_BACK_CALLBACK,
+        )
+    ]
 
 
 def get_kb_return(
@@ -101,19 +123,24 @@ def get_kb_del_return(
     return keyboard
 
 
-def get_kb_yesno_send_xdr(chat_id, add_button_memo=False, *, app_context: AppContext):
+def get_kb_yesno_send_xdr(
+    chat_id, add_button_memo=False, flow_back=False, *, app_context: AppContext
+):
     buttons = [
         [
             InlineKeyboardButton(
                 text=my_gettext(chat_id, "kb_yes", app_context=app_context),
                 callback_data="Yes_send_xdr",
-            ),
+            )
+        ]
+    ]
+    if not flow_back:
+        buttons[0].append(
             InlineKeyboardButton(
                 text=my_gettext(chat_id, "kb_no", app_context=app_context),
                 callback_data="Return",
-            ),
-        ]
-    ]
+            )
+        )
     if add_button_memo:
         buttons.append(
             [
@@ -124,6 +151,8 @@ def get_kb_yesno_send_xdr(chat_id, add_button_memo=False, *, app_context: AppCon
             ]
         )
 
+    if flow_back:
+        buttons.append(get_flow_back_button(chat_id, app_context=app_context))
     buttons.append(get_return_button(chat_id, app_context=app_context))
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -186,7 +215,7 @@ def get_kb_resend(user_id: int, *, app_context: AppContext) -> InlineKeyboardMar
 
 
 def get_kb_offers_cancel(
-    user_id: int, data: dict, *, app_context: AppContext
+    user_id: int, data: dict, flow_back=False, *, app_context: AppContext
 ) -> InlineKeyboardMarkup:
     """
     Create keyboard with optional checkbox-button '🟢 Cancel offers' and 'Return'-button
@@ -203,13 +232,15 @@ def get_kb_offers_cancel(
         btn = [types.InlineKeyboardButton(text=btn_txt, callback_data="CancelOffers")]
         buttons.append(btn)
 
+    if flow_back:
+        buttons.append(get_flow_back_button(user_id, app_context=app_context))
     buttons.append(get_return_button(user_id, app_context=app_context))
 
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_kb_swap_confirm(
-    user_id: int, data: dict, *, app_context: AppContext
+    user_id: int, data: dict, flow_back=False, *, app_context: AppContext
 ) -> types.InlineKeyboardMarkup:
     """
     Create keyboard for swap confirmation with:
@@ -250,8 +281,24 @@ def get_kb_swap_confirm(
         ]
     )
 
+    if flow_back:
+        buttons.append(get_flow_back_button(user_id, app_context=app_context))
     buttons.append(get_return_button(user_id, app_context=app_context))
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_kb_flow_back_return(
+    user_id: Union[types.CallbackQuery, types.Message, int],
+    *,
+    app_context: AppContext,
+) -> InlineKeyboardMarkup:
+    user_id = get_user_id(user_id)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            get_flow_back_button(user_id, app_context=app_context),
+            get_return_button(user_id, app_context=app_context),
+        ]
+    )
 
 
 def get_kb_limits(
