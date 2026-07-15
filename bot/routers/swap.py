@@ -56,6 +56,10 @@ from other.stellar_tools import (
 from core.domain.value_objects import Asset as DomainAsset
 
 
+def _to_domain_path(path: List[Asset]) -> List[DomainAsset]:
+    return [DomainAsset(code=asset.code, issuer=asset.issuer) for asset in path]
+
+
 class StateSwapToken(StatesGroup):
     choosing_from = State()
     choosing_for = State()
@@ -360,7 +364,7 @@ async def cmd_swap_text(
                 return
 
             # Calculate Receive Path
-            receive_sum_str, need_alert = await stellar_check_receive_sum(
+            receive_sum_str, need_alert, path = await stellar_check_receive_sum(
                 Asset(send_asset_code, send_asset_issuer),
                 float2str(send_sum),
                 Asset(receive_asset_code, receive_asset_issuer),
@@ -400,6 +404,7 @@ async def cmd_swap_text(
                     code=receive_asset_code, issuer=receive_asset_issuer
                 ),
                 receive_amount=receive_sum_with_slippage,
+                path=_to_domain_path(path),
                 strict_receive=False,
                 cancel_offers=False,
             )
@@ -410,7 +415,7 @@ async def cmd_swap_text(
             receive_sum = amount
 
             # Calculate Send Path (How much to spend?)
-            send_sum_str, need_alert = await stellar_check_send_sum(
+            send_sum_str, need_alert, path = await stellar_check_send_sum(
                 Asset(send_asset_code, send_asset_issuer),
                 float2str(receive_sum),
                 Asset(receive_asset_code, receive_asset_issuer),
@@ -465,6 +470,7 @@ async def cmd_swap_text(
                     code=receive_asset_code, issuer=receive_asset_issuer
                 ),
                 receive_amount=receive_sum,
+                path=_to_domain_path(path),
                 strict_receive=True,
                 cancel_offers=False,
             )
@@ -957,7 +963,7 @@ async def cmd_swap_sum(
         if send_asset is None or receive_asset is None:
             return
 
-        receive_sum_str, need_alert = await stellar_check_receive_sum(
+        receive_sum_str, need_alert, path = await stellar_check_receive_sum(
             Asset(send_asset, send_asset_code),
             float2str(send_sum),
             Asset(receive_asset, receive_asset_code),
@@ -1010,6 +1016,7 @@ async def cmd_swap_sum(
             send_amount=send_sum,
             receive_asset=DomainAsset(code=receive_asset, issuer=receive_asset_code),
             receive_amount=receive_sum_with_slippage,  # Use slippage-adjusted value
+            path=_to_domain_path(path),
             strict_receive=False,
             cancel_offers=cancel_offers,
         )
@@ -1153,7 +1160,7 @@ async def cmd_swap_receive_sum(
             return
 
         # Calculate required send_sum to get the desired receive_sum
-        send_sum_str, need_alert = await stellar_check_send_sum(
+        send_sum_str, need_alert, path = await stellar_check_send_sum(
             Asset(send_asset, send_asset_code),
             float2str(receive_sum),
             Asset(receive_asset, receive_asset_code),
@@ -1198,6 +1205,7 @@ async def cmd_swap_receive_sum(
                     code=receive_asset, issuer=receive_asset_code
                 ),
                 receive_amount=receive_sum,
+                path=_to_domain_path(path),
                 strict_receive=True,
                 cancel_offers=cancel_offers,
             )
