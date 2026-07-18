@@ -296,10 +296,23 @@ async def test_cmd_user_wallets(mock_telegram, router_app_context, setup_admin_m
     dp.include_router(admin_router)
 
     user = MagicMock(user_id=111)
-    wallet = MagicMock(
-        public_key="GABC", default_wallet=1, free_wallet=1, need_delete=0, use_pin=0
+    main_address = "GC5QCVLOADEFTM2RJDQK7AV6SX2TC77DIQISZCUQQJOOQXZMTAZBHYPG"
+    secondary_address = "GBWB33F7HEFNADI3C6SOOILUZJCY7KOKEW72JSZB5ZSFVWUVKUBKFN57"
+    main_wallet = MagicMock(
+        public_key=main_address,
+        default_wallet=1,
+        free_wallet=1,
+        need_delete=0,
+        use_pin=0,
     )
-    setup_admin_mocks.set_user_wallets(user, [wallet])
+    secondary_wallet = MagicMock(
+        public_key=secondary_address,
+        default_wallet=0,
+        free_wallet=1,
+        need_delete=0,
+        use_pin=0,
+    )
+    setup_admin_mocks.set_user_wallets(user, [main_wallet, secondary_wallet])
 
     await dp.feed_update(
         bot=router_app_context.bot,
@@ -308,8 +321,10 @@ async def test_cmd_user_wallets(mock_telegram, router_app_context, setup_admin_m
     )
 
     req = get_telegram_request(mock_telegram, "sendMessage")
-    assert "GABC" in req["data"]["text"]
-    assert "main" in req["data"]["text"]
+    assert req["data"]["text"] == (
+        f'<code>{main_address}</code> (main, free, no pin) (<a href="https://viewer.eurmtl.me/account/{main_address}">viewer</a>)\n'
+        f'<code>{secondary_address}</code> (free, no pin) (<a href="https://viewer.eurmtl.me/account/{secondary_address}">viewer</a>)'
+    )
 
 
 @pytest.mark.asyncio
