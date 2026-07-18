@@ -9,6 +9,7 @@ from typing import Awaitable, Callable, TypeVar
 import uuid
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from loguru import logger
 from redis.asyncio import Redis
@@ -251,6 +252,20 @@ class NotificationBadgeService:
             )
         except UiMarkupLeaseLost:
             return
+        except TelegramBadRequest as error:
+            if "message is not modified" in str(error).lower():
+                logger.bind(
+                    event="notification_badge_already_current",
+                    user_id=user_id,
+                    message_id=base.message_id,
+                ).debug(
+                    f"notification badge already current: user_id={user_id} "
+                    f"message_id={base.message_id}"
+                )
+                return
+            logger.bind(
+                event="notification_badge_edit_failed", user_id=user_id
+            ).exception("notification badge refresh failed")
         except Exception:
             logger.bind(
                 event="notification_badge_edit_failed", user_id=user_id

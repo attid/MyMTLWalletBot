@@ -7,9 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, create_autospec
 import fakeredis.aioredis
 import pytest
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from loguru import logger
 
 from infrastructure.services.notification_badge_service import (
     NotificationBadgeService,
@@ -126,6 +128,36 @@ async def test_failed_markup_edit_is_nonfatal(badge_service):
     await service.refresh(42)
 
     assert await service.get_base_markup(42) is not None
+
+
+@pytest.mark.asyncio
+async def test_identical_markup_response_is_logged_as_a_debug_noop(badge_service):
+    service, store, bot = badge_service
+    bot.edit_message_reply_markup = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=MagicMock(),
+            message="Bad Request: message is not modified: specified new message "
+            "content and reply markup are exactly the same",
+        )
+    )
+    await service.capture_base_markup(
+        42,
+        7,
+        InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Menu", callback_data="menu")]]
+        ),
+    )
+    await store.enqueue(42, _notification(42, "one"))
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="DEBUG")
+    try:
+        await service.refresh(42)
+    finally:
+        logger.remove(sink_id)
+
+    events = [record["extra"].get("event") for record in records]
+    assert "notification_badge_already_current" in events
+    assert "notification_badge_edit_failed" not in events
 
 
 @pytest.mark.asyncio

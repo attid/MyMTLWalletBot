@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+import math
 import time
 import uuid
 from collections.abc import Callable
@@ -12,6 +13,7 @@ from loguru import logger
 from core.models.blockchain_notification import BlockchainNotification
 
 COMPLETION_LOCK_RETRY_ATTEMPTS = 3
+DEFAULT_DELIVERY_TIMEOUT_SECONDS = 30.0
 
 
 class NotificationStore(Protocol):
@@ -75,6 +77,7 @@ class NotificationCoordinator:
         token_factory: Callable[[], str] | None = None,
         lock_ttl_seconds: float = 30,
         heartbeat_interval: float | None = None,
+        delivery_timeout_seconds: float = DEFAULT_DELIVERY_TIMEOUT_SECONDS,
     ) -> None:
         if lock_ttl_seconds <= 0:
             raise ValueError("lock_ttl_seconds must be positive")
@@ -88,12 +91,15 @@ class NotificationCoordinator:
             raise ValueError(
                 "heartbeat_interval must be greater than zero and below TTL"
             )
+        if not math.isfinite(delivery_timeout_seconds) or delivery_timeout_seconds <= 0:
+            raise ValueError("delivery_timeout_seconds must be finite and positive")
         self._store = store
         self._sender = sender
         self._badge_refresher = badge_refresher
         self._clock = clock or _unix_time
         self._token_factory = token_factory or _new_token
         self._heartbeat_interval = selected_heartbeat_interval
+        self._delivery_timeout_seconds = delivery_timeout_seconds
 
     async def touch(self, user_id: int) -> int:
         """Start or extend the user's sliding activity hold."""
@@ -139,8 +145,13 @@ class NotificationCoordinator:
         token = self._token_factory()
         if not await self._store.acquire_lock(user_id, token):
             logger.bind(
-                event="notification_flush_lock_unavailable", user_id=user_id
-            ).info("notification flush skipped because lock is owned")
+                event="notification_flush_lock_unavailable",
+                user_id=user_id,
+                reason=reason,
+            ).info(
+                f"notification flush skipped because lock is owned: "
+                f"user_id={user_id} reason={reason}"
+            )
             return
 
         await self._flush_with_owned_lock(
@@ -191,7 +202,23 @@ class NotificationCoordinator:
                 return
 
             try:
-                await self._sender.send_notification(notification)
+                async with asyncio.timeout(self._delivery_timeout_seconds):
+                    await self._sender.send_notification(notification)
+            except TimeoutError:
+                logger.bind(
+                    event="notification_delivery_timed_out",
+                    user_id=user_id,
+                    notification_id=notification.notification_id,
+                    reason=reason,
+                    timeout_seconds=self._delivery_timeout_seconds,
+                ).warning(
+                    f"notification delivery timed out; queue head retained: "
+                    f"user_id={user_id} "
+                    f"notification_id={notification.notification_id} "
+                    f"reason={reason} "
+                    f"timeout_seconds={self._delivery_timeout_seconds}"
+                )
+                return
             except Exception:
                 logger.bind(
                     event="notification_delivery_failed",
@@ -299,7 +326,21 @@ class NotificationCoordinator:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError):
                 await heartbeat
-            await self._store.release_lock(user_id, token)
+            released = await self._store.release_lock(user_id, token)
+            release_log = logger.bind(
+                event="notification_flush_lock_released",
+                user_id=user_id,
+                reason=reason,
+                released=released,
+            )
+            message = (
+                f"notification flush lock release completed: user_id={user_id} "
+                f"reason={reason} released={released}"
+            )
+            if released:
+                release_log.debug(message)
+            else:
+                release_log.warning(message)
 
     async def _heartbeat_lock(
         self, user_id: int, token: str, lease_lost: asyncio.Event
