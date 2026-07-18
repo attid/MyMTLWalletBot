@@ -51,7 +51,6 @@ from routers import (
     inout,
     cheque,
     mtlap,
-    fest,
     uri,
     ton,
     notification_settings,
@@ -116,7 +115,6 @@ async def bot_add_routers(
     dp.include_router(notification_settings.router)  # first
     dp.include_router(pending_notifications.router)  # badge controls
 
-    dp.include_router(fest.router)
     dp.include_router(sign.router)
     dp.include_router(add_wallet.router)
     dp.include_router(assets.router)
@@ -201,7 +199,6 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=config.admins[0], text="Bot started")
-    # fest.fest_menu = await gs_update_fest_menu()
     # Start Notification Service (Webhook Server)
     if app_context.notification_service:
         await app_context.notification_service.start_server()
@@ -237,8 +234,6 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
         )
 
     dispatcher["task_list"] = task_list
-
-    # config.fest_menu = await load_fest_info()
 
 
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):

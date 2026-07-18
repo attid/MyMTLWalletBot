@@ -16,7 +16,6 @@ dependencies = [
     "environs~=11.2.1",
     "faststream[redis]==0.6.0rc1",
     "fdb>=2.0.4",
-    "gspread-asyncio~=2.0.0",
     "jsonpickle==3.3.0",
     "loguru~=0.7.2",
     "motor~=3.6.0",
