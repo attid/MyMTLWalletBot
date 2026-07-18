@@ -125,6 +125,15 @@ def build_swap_sign_message(
     )
 
 
+def build_swap_operation(
+    send_sum: str,
+    send_asset: str,
+    receive_sum: str,
+    receive_asset: str,
+) -> str:
+    return f"Swap {send_sum} {send_asset} → {receive_sum} {receive_asset}"
+
+
 async def store_pending_swap_signature(
     state: FSMContext,
     *,
@@ -523,8 +532,11 @@ async def cmd_swap_text(
         # Handler `routers/sign.py`? Or general handler?
         # Usually it sends the `xdr` stored in the state.
 
-        operation = (
-            f"Swap {float2str(send_sum)} {send_asset_code} → {receive_asset_code}"
+        operation = build_swap_operation(
+            float2str(send_sum),
+            send_asset_code,
+            float2str(receive_sum),
+            receive_asset_code,
         )
         sign_msg = build_swap_sign_message(
             message,
@@ -1066,7 +1078,12 @@ async def cmd_swap_sum(
                 message, "confirm_cancel_offers", (send_asset,), app_context=app_context
             )
 
-        operation = f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}"
+        operation = build_swap_operation(
+            float2str(send_sum),
+            send_asset,
+            float2str(receive_sum),
+            receive_asset,
+        )
         sign_msg = build_swap_sign_message(
             message,
             float2str(send_sum),
@@ -1252,7 +1269,12 @@ async def cmd_swap_receive_sum(
             app_context=app_context,
         )
 
-        operation = f"Swap {float2str(send_sum)} {send_asset} → {receive_asset}"
+        operation = build_swap_operation(
+            float2str(send_sum),
+            send_asset,
+            float2str(receive_sum),
+            receive_asset,
+        )
         sign_msg = build_swap_sign_message(
             message,
             float2str(send_sum),

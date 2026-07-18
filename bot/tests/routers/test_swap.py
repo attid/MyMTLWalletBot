@@ -256,7 +256,7 @@ async def test_cmd_swap_sum_execution(
     assert pending["xdr"] == "XDR_SWAP"
     assert pending["purpose"] == "swap"
     assert pending["mode"] == "sign_and_submit"
-    assert pending["operation"] == "Swap 10 XLM → EURMTL"
+    assert pending["operation"] == "Swap 10 XLM → 9.5 EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call
@@ -358,7 +358,7 @@ async def test_cmd_swap_receive_sum_execution(
     assert pending["xdr"] == "XDR_SWAP"
     assert pending["purpose"] == "swap"
     assert pending["mode"] == "sign_and_submit"
-    assert pending["operation"] == "Swap 10.5 XLM → EURMTL"
+    assert pending["operation"] == "Swap 10.5 XLM → 10 EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call with strict_receive=True
@@ -831,7 +831,7 @@ async def test_cmd_swap_text_command(
         bot=router_app_context.bot, chat_id=user_id, user_id=user_id
     )
     data = await state.get_data()
-    assert data.get("operation") == "Swap 10 XLM → EURMTL"
+    assert data.get("operation") == "Swap 10 XLM → 9.5 EURMTL"
     assert data.get("send_sum") == 10.0
     assert data.get("send_asset_code") == "XLM"
     assert data.get("receive_asset_code") == "EURMTL"
@@ -841,7 +841,7 @@ async def test_cmd_swap_text_command(
     assert pending["xdr"] == "XDR_SWAP"
     assert pending["purpose"] == "swap"
     assert pending["mode"] == "sign_and_submit"
-    assert pending["operation"] == "Swap 10 XLM → EURMTL"
+    assert pending["operation"] == "Swap 10 XLM → 9.5 EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
     swap_execute = (
         router_app_context.use_case_factory.create_swap_assets.return_value.execute
