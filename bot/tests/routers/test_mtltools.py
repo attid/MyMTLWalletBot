@@ -30,7 +30,7 @@ class WalletSessionMiddleware(BaseMiddleware):
         session.rollback = AsyncMock()
 
         result = MagicMock()
-        result.scalar_one_or_none.return_value = self.db_wallet
+        result.scalars.return_value.all.return_value = [self.db_wallet]
         session.execute.return_value = result
 
         data["session"] = session
