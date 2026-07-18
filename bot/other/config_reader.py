@@ -38,7 +38,6 @@ class Settings(BaseSettings):
     ton_token: str
     wallet_cost: float
     test_mode: bool = True
-    fest_menu: dict = {}
     admins: list = []
 
     # Master Key Encryption Password (defaults to "0" for backward compatibility)
