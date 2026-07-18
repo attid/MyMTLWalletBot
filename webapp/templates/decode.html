@@ -145,6 +145,15 @@ function operationRows(operation) {
     const rows = [];
     if (operation.source) rows.push([t("decode.source"), operation.source]);
     if (operation.destination) rows.push([t("decode.destination"), operation.destination]);
+    if (operation.sendAsset) rows.push([t("decode.send_asset"), formatAsset(operation.sendAsset)]);
+    if (operation.sendAmount) rows.push([t("decode.send_amount"), operation.sendAmount]);
+    if (operation.sendMax) rows.push([t("decode.send_max"), operation.sendMax]);
+    if (operation.destAsset) rows.push([t("decode.destination_asset"), formatAsset(operation.destAsset)]);
+    if (operation.destMin) rows.push([t("decode.destination_min"), operation.destMin]);
+    if (operation.destAmount) rows.push([t("decode.destination_amount"), operation.destAmount]);
+    if (operation.sendAsset && operation.destAsset && Array.isArray(operation.path)) {
+        rows.push([t("decode.path"), formatPaymentPath(operation)]);
+    }
     if (operation.asset) rows.push([t("decode.asset"), formatAsset(operation.asset)]);
     if (operation.amount) rows.push([t("decode.amount"), operation.amount]);
     if (operation.startingBalance) rows.push([t("decode.amount"), operation.startingBalance]);
@@ -154,6 +163,13 @@ function operationRows(operation) {
     if (operation.limit) rows.push([t("decode.limit"), operation.limit]);
     if (rows.length === 0) rows.push([t("decode.raw"), JSON.stringify(operation)]);
     return rows;
+}
+
+function formatPaymentPath(operation) {
+    return [operation.sendAsset, ...(operation.path || []), operation.destAsset]
+        .map(formatAsset)
+        .filter(Boolean)
+        .join(" → ");
 }
 
 function formatAsset(asset) {
