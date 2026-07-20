@@ -48,16 +48,19 @@ def get_stellar_error_message(result_codes: dict) -> str:
     else:
         tx_msg = None
 
-    # If there are operation errors — take the first one
+    # Successful operations can precede the operation that failed.
     op_codes = result_codes.get("operations")
-    if op_codes and len(op_codes) > 0:
-        op_code = op_codes[0]
+    for operation_number, op_code in enumerate(op_codes or (), start=1):
+        if op_code == "op_success":
+            continue
+
         if op_code in OPERATION_ERROR_CODES:
-            op_msg = OPERATION_ERROR_CODES[op_code]
-        else:
-            op_msg = f"Operation code: {op_code}"
-        # If there is an operation error — it is more important
-        return op_msg
+            return (
+                f"Operation {operation_number}: {op_code} — "
+                f"{OPERATION_ERROR_CODES[op_code]}"
+            )
+
+        return f"Operation {operation_number}: {op_code}"
 
     # If only transaction error
     if tx_msg:
