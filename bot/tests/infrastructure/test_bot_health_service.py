@@ -79,7 +79,27 @@ async def test_health_fails_when_scheduler_has_not_completed_after_grace() -> No
 
 
 @pytest.mark.asyncio
-async def test_health_fails_when_scheduler_run_is_stale() -> None:
+async def test_health_fails_when_scheduler_has_not_run_again() -> None:
+    clock = FakeClock()
+    service = health_service_class()(
+        db_pool=FakeDbPool(FakeSession()),
+        clock=clock,
+        startup_grace_seconds=60,
+        scheduler_stale_seconds=30,
+        database_timeout_seconds=0.01,
+    )
+    service.mark_scheduler_started()
+    service.mark_scheduler_completed()
+    clock.now = 31
+
+    report = await service.check()
+
+    assert report.healthy is False
+    assert report.checks["scheduler"] == "stale"
+
+
+@pytest.mark.asyncio
+async def test_health_stays_ok_while_scheduler_is_running_long() -> None:
     clock = FakeClock()
     service = health_service_class()(
         db_pool=FakeDbPool(FakeSession()),
@@ -93,8 +113,11 @@ async def test_health_fails_when_scheduler_run_is_stale() -> None:
 
     report = await service.check()
 
-    assert report.healthy is False
-    assert report.checks["scheduler"] == "stale"
+    assert report.healthy is True
+    assert report.checks == {
+        "scheduler": "running_long",
+        "database": "ok",
+    }
 
 
 @pytest.mark.asyncio

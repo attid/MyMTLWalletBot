@@ -54,7 +54,9 @@ class BotHealthService:
         scheduler = self._scheduler_status()
         database = await self._database_status()
         return BotHealthReport(
-            healthy=scheduler in {"ok", "starting"} and database == "ok",
+            healthy=scheduler
+            in {"ok", "starting", "running", "running_long"}
+            and database == "ok",
             checks={"scheduler": scheduler, "database": database},
         )
 
@@ -62,8 +64,8 @@ class BotHealthService:
         now = self._clock()
         if self._scheduler_started_at is not None:
             if now - self._scheduler_started_at > self._scheduler_stale_seconds:
-                return "stale"
-            return "ok"
+                return "running_long"
+            return "running"
         if self._scheduler_completed_at is not None:
             if now - self._scheduler_completed_at > self._scheduler_stale_seconds:
                 return "stale"
