@@ -330,6 +330,7 @@ async def main():
     from infrastructure.workers.notification_delivery_worker import (
         NotificationDeliveryWorker,
     )
+    from infrastructure.services.bot_health_service import BotHealthService
 
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -352,9 +353,16 @@ async def main():
     )
 
     notification_history = NotificationHistoryService(ttl_hours=12, max_per_user=50)
+    bot_health_service = BotHealthService(db_pool=db_pool)
 
     notification_service = NotificationService(
-        config, db_pool, bot, localization_service, dp, notification_history
+        config,
+        db_pool,
+        bot,
+        localization_service,
+        dp,
+        notification_history,
+        bot_health_service=bot_health_service,
     )
     notification_redis = Redis.from_url(config.redis_url, decode_responses=True)
     notification_store = NotificationRedisStore(
@@ -398,6 +406,7 @@ async def main():
         notification_store=notification_store,
         notification_delivery_worker=notification_delivery_worker,
         notification_badge_service=notification_badge_service,
+        bot_health_service=bot_health_service,
     )
 
     dp["app_context"] = app_context
