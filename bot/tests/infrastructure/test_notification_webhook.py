@@ -32,6 +32,10 @@ from infrastructure.services.notification_coordinator import (
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
+from infrastructure.services.bot_health_service import (
+    BotHealthReport,
+    BotHealthService,
+)
 from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
 from db.models import MyMtlWalletBot
@@ -186,6 +190,32 @@ async def test_notification_service_sends_message_without_app_context(
     assert event.event_type == "payment"
     assert event.idempotency_key == "tx-test-123:payment:123:12345"
     assert get_telegram_request(mock_telegram, "sendMessage") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("healthy", "expected_status"),
+    [(True, 200), (False, 503)],
+)
+async def test_health_endpoint_reflects_functional_health(
+    notification_service, healthy: bool, expected_status: int
+) -> None:
+    health_service = AsyncMock(spec=BotHealthService)
+    health_service.check.return_value = BotHealthReport(
+        healthy=healthy,
+        checks={
+            "scheduler": "ok" if healthy else "stale",
+            "database": "ok",
+        },
+    )
+    notification_service.bot_health_service = health_service
+
+    response = await notification_service.handle_health(None)
+
+    assert response.status == expected_status
+    assert json.loads(response.text)["status"] == (
+        "ok" if healthy else "unhealthy"
+    )
 
 
 @pytest.mark.asyncio
