@@ -14,6 +14,8 @@ from core.models.blockchain_notification import BlockchainNotification
 
 COMPLETION_LOCK_RETRY_ATTEMPTS = 3
 DEFAULT_DELIVERY_TIMEOUT_SECONDS = 30.0
+DEFAULT_LOCK_LIFETIME_SECONDS = 90.0
+DEFAULT_BADGE_TIMEOUT_SECONDS = 10.0
 
 
 class NotificationStore(Protocol):
@@ -78,6 +80,8 @@ class NotificationCoordinator:
         lock_ttl_seconds: float = 30,
         heartbeat_interval: float | None = None,
         delivery_timeout_seconds: float = DEFAULT_DELIVERY_TIMEOUT_SECONDS,
+        lock_lifetime_seconds: float = DEFAULT_LOCK_LIFETIME_SECONDS,
+        badge_timeout_seconds: float = DEFAULT_BADGE_TIMEOUT_SECONDS,
     ) -> None:
         if lock_ttl_seconds <= 0:
             raise ValueError("lock_ttl_seconds must be positive")
@@ -93,6 +97,10 @@ class NotificationCoordinator:
             )
         if not math.isfinite(delivery_timeout_seconds) or delivery_timeout_seconds <= 0:
             raise ValueError("delivery_timeout_seconds must be finite and positive")
+        if not math.isfinite(lock_lifetime_seconds) or lock_lifetime_seconds <= 0:
+            raise ValueError("lock_lifetime_seconds must be finite and positive")
+        if not math.isfinite(badge_timeout_seconds) or badge_timeout_seconds <= 0:
+            raise ValueError("badge_timeout_seconds must be finite and positive")
         self._store = store
         self._sender = sender
         self._badge_refresher = badge_refresher
@@ -100,6 +108,8 @@ class NotificationCoordinator:
         self._token_factory = token_factory or _new_token
         self._heartbeat_interval = selected_heartbeat_interval
         self._delivery_timeout_seconds = delivery_timeout_seconds
+        self._lock_lifetime_seconds = lock_lifetime_seconds
+        self._badge_timeout_seconds = badge_timeout_seconds
 
     async def touch(self, user_id: int) -> int:
         """Start or extend the user's sliding activity hold."""
@@ -166,27 +176,49 @@ class NotificationCoordinator:
         ignore_hold: bool = False,
         reason: str,
         lease_lost: asyncio.Event | None = None,
-    ) -> None:
+        progress: dict[str, object] | None = None,
+    ) -> bool:
         """Flush with an already-held lock, rechecking the hold per item."""
+        badge_refresh_needed = False
+
+        def mark_stage(stage: str, notification_id: str | None = None) -> None:
+            if progress is not None:
+                progress["stage"] = stage
+                progress["notification_id"] = notification_id
+            logger.bind(
+                event="notification_flush_stage",
+                user_id=user_id,
+                reason=reason,
+                stage=stage,
+                notification_id=notification_id,
+            ).debug("notification flush stage")
+
         expired_hold_until: int | None = None
         if not ignore_hold:
+            mark_stage("hold")
             can_flush, expired_hold_until = await self._hold_allows_flush(user_id)
             if not can_flush:
                 logger.bind(
                     event="notification_flush_held", user_id=user_id, reason=reason
                 ).info("notification flush deferred by active hold")
-                return
+                return badge_refresh_needed
 
-        while notification := await self._store.peek(user_id):
+        while True:
+            mark_stage("peek")
+            notification = await self._store.peek(user_id)
+            if notification is None:
+                break
+            mark_stage("renew", notification.notification_id)
             if lease_lost is not None and lease_lost.is_set():
-                return
+                return badge_refresh_needed
             if not await self._store.renew_lock(user_id, token):
                 logger.bind(
                     event="notification_flush_lock_lost", user_id=user_id, reason=reason
                 ).warning("notification flush stopped after lock ownership was lost")
-                return
+                return badge_refresh_needed
 
             if not ignore_hold:
+                mark_stage("hold", notification.notification_id)
                 can_flush, observed_expired_hold = await self._hold_allows_flush(
                     user_id
                 )
@@ -194,14 +226,15 @@ class NotificationCoordinator:
                     logger.bind(
                         event="notification_flush_held", user_id=user_id, reason=reason
                     ).info("notification flush deferred by renewed hold")
-                    return
+                    return badge_refresh_needed
                 if observed_expired_hold is not None:
                     expired_hold_until = observed_expired_hold
 
             if lease_lost is not None and lease_lost.is_set():
-                return
+                return badge_refresh_needed
 
             try:
+                mark_stage("send", notification.notification_id)
                 async with asyncio.timeout(self._delivery_timeout_seconds):
                     await self._sender.send_notification(notification)
             except TimeoutError:
@@ -218,7 +251,7 @@ class NotificationCoordinator:
                     f"reason={reason} "
                     f"timeout_seconds={self._delivery_timeout_seconds}"
                 )
-                return
+                return badge_refresh_needed
             except Exception:
                 logger.bind(
                     event="notification_delivery_failed",
@@ -226,11 +259,12 @@ class NotificationCoordinator:
                     notification_id=notification.notification_id,
                     reason=reason,
                 ).exception("notification delivery failed; queue head retained")
-                return
+                return badge_refresh_needed
 
             if lease_lost is not None and lease_lost.is_set():
                 await self._acknowledge_after_lease_loss(user_id, notification)
-                return
+                return badge_refresh_needed
+            mark_stage("ack", notification.notification_id)
             if not await self._store.acknowledge_if_lock_owned(
                 user_id, notification, token
             ):
@@ -240,9 +274,9 @@ class NotificationCoordinator:
                     notification_id=notification.notification_id,
                     reason=reason,
                 ).warning("notification acknowledgement did not match queue head")
-                return
+                return badge_refresh_needed
 
-            await self._refresh_badge(user_id)
+            badge_refresh_needed = True
             logger.bind(
                 event="notification_delivered",
                 user_id=user_id,
@@ -250,6 +284,7 @@ class NotificationCoordinator:
                 reason=reason,
             ).info("notification delivered and acknowledged")
 
+        mark_stage("cleanup")
         if expired_hold_until is not None:
             await self._store.release_hold_if_unchanged(
                 user_id, expired_hold_until, now=self._clock()
@@ -257,6 +292,7 @@ class NotificationCoordinator:
         await self._store.clear_immediate_due_if_empty_and_lock_owned(
             user_id, token, now=self._clock()
         )
+        return badge_refresh_needed
 
     async def complete_flow(self, user_id: int) -> None:
         """Release and flush only the locked flow generation that completed."""
@@ -292,13 +328,15 @@ class NotificationCoordinator:
         token = self._token_factory()
         if not await self._store.acquire_lock(user_id, token):
             return
+        acknowledged = False
         try:
-            if await self._store.acknowledge_if_lock_owned(
+            acknowledged = await self._store.acknowledge_if_lock_owned(
                 user_id, notification, token
-            ):
-                await self._refresh_badge(user_id)
+            )
         finally:
             await self._store.release_lock(user_id, token)
+        if acknowledged:
+            await self._refresh_badge(user_id)
 
     async def _flush_with_owned_lock(
         self,
@@ -314,14 +352,34 @@ class NotificationCoordinator:
             self._heartbeat_lock(user_id, token, lease_lost),
             name=f"notification-lock-heartbeat-{user_id}",
         )
+        progress: dict[str, object] = {
+            "stage": "starting",
+            "notification_id": None,
+        }
+        badge_refresh_needed = False
         try:
-            await self._flush_owned(
-                user_id,
-                token,
-                ignore_hold=ignore_hold,
-                reason=reason,
-                lease_lost=lease_lost,
-            )
+            try:
+                async with asyncio.timeout(self._lock_lifetime_seconds):
+                    badge_refresh_needed = await self._flush_owned(
+                        user_id,
+                        token,
+                        ignore_hold=ignore_hold,
+                        reason=reason,
+                        lease_lost=lease_lost,
+                        progress=progress,
+                    )
+            except TimeoutError:
+                logger.bind(
+                    event="notification_flush_timed_out",
+                    user_id=user_id,
+                    reason=reason,
+                    stage=progress["stage"],
+                    notification_id=progress["notification_id"],
+                    timeout_seconds=self._lock_lifetime_seconds,
+                ).warning(
+                    "notification flush ownership budget expired; "
+                    "unacknowledged queue head retained"
+                )
         finally:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError):
@@ -341,6 +399,8 @@ class NotificationCoordinator:
                 release_log.debug(message)
             else:
                 release_log.warning(message)
+        if badge_refresh_needed is True:
+            await self._refresh_badge(user_id)
 
     async def _heartbeat_lock(
         self, user_id: int, token: str, lease_lost: asyncio.Event
@@ -366,7 +426,20 @@ class NotificationCoordinator:
 
     async def _refresh_badge(self, user_id: int) -> None:
         try:
-            await self._badge_refresher.refresh(user_id)
+            logger.bind(
+                event="notification_badge_refresh_stage",
+                user_id=user_id,
+                stage="badge",
+            ).debug("notification badge refresh started")
+            async with asyncio.timeout(self._badge_timeout_seconds):
+                await self._badge_refresher.refresh(user_id)
+        except TimeoutError:
+            logger.bind(
+                event="notification_badge_refresh_timed_out",
+                user_id=user_id,
+                stage="badge",
+                timeout_seconds=self._badge_timeout_seconds,
+            ).warning("notification badge refresh timed out")
         except Exception:
             logger.bind(
                 event="notification_badge_refresh_failed", user_id=user_id
