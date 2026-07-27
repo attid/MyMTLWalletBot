@@ -1,5 +1,7 @@
 """Tests for biometric signing flow."""
 
+import asyncio
+
 import jsonpickle  # type: ignore
 import pytest
 
@@ -27,6 +29,7 @@ from infrastructure.services.signing_facade import SignaturePurpose
 
 SEP10_WEBAPP_CALLBACK_CALLS = []
 WEBAPP_NOTIFICATION_COMPLETION_EVENTS = []
+WC_NOTIFICATION_COMPLETION_EVENTS = []
 
 
 async def sep10_webapp_test_callback(
@@ -50,6 +53,66 @@ async def sep10_webapp_test_callback(
 
 async def webapp_after_send_test_callback(session, user_id: int, state):
     WEBAPP_NOTIFICATION_COMPLETION_EVENTS.append("fsm_after_send")
+
+
+class TestWalletConnectSigning:
+    @pytest.mark.asyncio
+    async def test_success_screen_completes_notification_flow(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from infrastructure.services.notification_coordinator import (
+            NotificationCoordinator,
+        )
+        from other import faststream_tools
+
+        WC_NOTIFICATION_COMPLETION_EVENTS.clear()
+        state = AsyncMock()
+        state.get_data.return_value = {
+            "internal_request_id": "internal-request",
+            "original_request_id": "original-request",
+            "xdr": "signed-xdr",
+            "method": "stellar_signXDR",
+        }
+        coordinator = MagicMock(spec=NotificationCoordinator)
+
+        async def complete_flow(_: int) -> None:
+            WC_NOTIFICATION_COMPLETION_EVENTS.append("complete_flow")
+
+        async def render_success(*args, **kwargs) -> None:
+            WC_NOTIFICATION_COMPLETION_EVENTS.append("success_screen")
+
+        coordinator.complete_flow = AsyncMock(side_effect=complete_flow)
+        app_context = MagicMock()
+        app_context.notification_coordinator = coordinator
+        original_context = faststream_tools.APP_CONTEXT
+        original_pending = dict(faststream_tools.PENDING_SIGN_REQUESTS)
+        faststream_tools.APP_CONTEXT = app_context
+        faststream_tools.PENDING_SIGN_REQUESTS.clear()
+        faststream_tools.PENDING_SIGN_REQUESTS["internal-request"] = {
+            "event": asyncio.Event()
+        }
+        try:
+            with (
+                patch(
+                    "other.faststream_tools.send_message",
+                    new=AsyncMock(side_effect=render_success),
+                ),
+                patch("other.faststream_tools.my_gettext", return_value="success"),
+                patch("other.faststream_tools.get_kb_return", return_value=None),
+            ):
+                await faststream_tools.do_wc_sign_and_respond(
+                    AsyncMock(), 7394698, state
+                )
+
+            assert WC_NOTIFICATION_COMPLETION_EVENTS == [
+                "success_screen",
+                "complete_flow",
+            ]
+            coordinator.complete_flow.assert_awaited_once_with(7394698)
+        finally:
+            faststream_tools.APP_CONTEXT = original_context
+            faststream_tools.PENDING_SIGN_REQUESTS.clear()
+            faststream_tools.PENDING_SIGN_REQUESTS.update(original_pending)
 
 
 class TestPendingTxMessage:

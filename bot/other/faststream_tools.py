@@ -18,6 +18,7 @@ from other.config_reader import config
 from other.lang_tools import my_gettext
 
 from infrastructure.services.app_context import AppContext
+from middleware.notification_activity import complete_notification_flow
 
 from shared.constants import (
     REDIS_TX_PREFIX,
@@ -233,6 +234,13 @@ async def do_wc_sign_and_respond(
             reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT),
             app_context=APP_CONTEXT,
         )
+        try:
+            await complete_notification_flow(APP_CONTEXT, user_id)
+        except Exception:
+            logger.exception(
+                f"Failed to complete notification flow after WC signing: "
+                f"user_id={user_id}"
+            )
         logger.info(f"pending_req: {pending_req}")
 
     except Exception as e:
