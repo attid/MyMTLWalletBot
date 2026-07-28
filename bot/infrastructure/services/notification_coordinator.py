@@ -185,13 +185,6 @@ class NotificationCoordinator:
             if progress is not None:
                 progress["stage"] = stage
                 progress["notification_id"] = notification_id
-            logger.bind(
-                event="notification_flush_stage",
-                user_id=user_id,
-                reason=reason,
-                stage=stage,
-                notification_id=notification_id,
-            ).debug("notification flush stage")
 
         expired_hold_until: int | None = None
         if not ignore_hold:
@@ -378,7 +371,10 @@ class NotificationCoordinator:
                     timeout_seconds=self._lock_lifetime_seconds,
                 ).warning(
                     "notification flush ownership budget expired; "
-                    "unacknowledged queue head retained"
+                    f"unacknowledged queue head retained: user_id={user_id} "
+                    f"reason={reason} stage={progress['stage']} "
+                    f"notification_id={progress['notification_id']} "
+                    f"timeout_seconds={self._lock_lifetime_seconds:g}"
                 )
         finally:
             heartbeat.cancel()
@@ -426,11 +422,6 @@ class NotificationCoordinator:
 
     async def _refresh_badge(self, user_id: int) -> None:
         try:
-            logger.bind(
-                event="notification_badge_refresh_stage",
-                user_id=user_id,
-                stage="badge",
-            ).debug("notification badge refresh started")
             async with asyncio.timeout(self._badge_timeout_seconds):
                 await self._badge_refresher.refresh(user_id)
         except TimeoutError:
