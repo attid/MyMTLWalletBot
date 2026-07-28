@@ -377,6 +377,32 @@ async def test_flush_cancels_a_stuck_store_call_and_releases_its_lock(
     assert timeout_record["extra"]["user_id"] == 42
     assert timeout_record["extra"]["reason"] == "flow_completed"
     assert timeout_record["extra"]["stage"] == "peek"
+    assert "user_id=42" in timeout_record["message"]
+    assert "reason=flow_completed" in timeout_record["message"]
+    assert "stage=peek" in timeout_record["message"]
+    assert "notification_id=None" in timeout_record["message"]
+    assert "timeout_seconds=0.01" in timeout_record["message"]
+
+
+@pytest.mark.asyncio
+async def test_successful_flush_does_not_log_each_stage_or_badge_start(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    store.renew_lock.return_value = True
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="DEBUG")
+    try:
+        await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+    finally:
+        logger.remove(sink_id)
+
+    events = {record["extra"].get("event") for record in records}
+    assert "notification_flush_stage" not in events
+    assert "notification_badge_refresh_stage" not in events
+    assert "notification_delivered" in events
 
 
 @pytest.mark.asyncio
