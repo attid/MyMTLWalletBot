@@ -161,6 +161,36 @@ async def test_identical_markup_response_is_logged_as_a_debug_noop(badge_service
 
 
 @pytest.mark.asyncio
+async def test_missing_badge_target_clears_stale_base_without_error(badge_service):
+    service, store, bot = badge_service
+    bot.edit_message_reply_markup = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=MagicMock(),
+            message="Bad Request: message to edit not found",
+        )
+    )
+    await service.capture_base_markup(
+        42,
+        7,
+        InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Menu", callback_data="menu")]]
+        ),
+    )
+    await store.enqueue(42, _notification(42, "one"))
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="DEBUG")
+    try:
+        await service.refresh(42)
+    finally:
+        logger.remove(sink_id)
+
+    assert await service.get_base_markup(42) is None
+    events = [record["extra"].get("event") for record in records]
+    assert "notification_badge_target_missing" in events
+    assert "notification_badge_edit_failed" not in events
+
+
+@pytest.mark.asyncio
 async def test_ui_render_waits_for_refresh_before_replacing_its_base_markup(
     badge_service,
 ) -> None:
