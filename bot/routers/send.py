@@ -57,6 +57,21 @@ from infrastructure.utils.stellar_utils import (
 )
 from other.stellar_tools import stellar_check_account, get_first_balance_from_list
 
+MAX_TELEGRAM_USERNAME_LENGTH = 32
+
+
+def _is_username_search_query(query: str) -> bool:
+    candidate = query.removeprefix("@")
+    return (
+        bool(candidate)
+        and len(candidate) <= MAX_TELEGRAM_USERNAME_LENGTH
+        and all(
+            character.isascii()
+            and (character.isalnum() or character == "_")
+            for character in candidate
+        )
+    )
+
 
 class StateSendToken(StatesGroup):
     sending_for = State()
@@ -1233,23 +1248,23 @@ async def cmd_inline_query(
                         )
                     )
 
-        # Query from users
-        # from infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
-        user_repo = app_context.repository_factory.get_user_repository(session)
-        usernames = await user_repo.search_by_username(inline_query.query)
-        for username in usernames:
-            user = f"@{username}"
-            if user not in seen_ids:
-                seen_ids.add(user)
-                results.append(
-                    types.InlineQueryResultArticle(
-                        id=user,
-                        title=user,
-                        input_message_content=types.InputTextMessageContent(
-                            message_text=user
-                        ),
+        if _is_username_search_query(inline_query.query):
+            # Query from users
+            user_repo = app_context.repository_factory.get_user_repository(session)
+            usernames = await user_repo.search_by_username(inline_query.query)
+            for username in usernames:
+                user = f"@{username}"
+                if user not in seen_ids:
+                    seen_ids.add(user)
+                    results.append(
+                        types.InlineQueryResultArticle(
+                            id=user,
+                            title=user,
+                            input_message_content=types.InputTextMessageContent(
+                                message_text=user
+                            ),
+                        )
                     )
-                )
 
         await inline_query.answer(results[:49], is_personal=True)  # type: ignore[arg-type]
 

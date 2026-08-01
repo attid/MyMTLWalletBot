@@ -253,7 +253,8 @@ class NotificationBadgeService:
         except UiMarkupLeaseLost:
             return
         except TelegramBadRequest as error:
-            if "message is not modified" in str(error).lower():
+            error_message = str(error).lower()
+            if "message is not modified" in error_message:
                 logger.bind(
                     event="notification_badge_already_current",
                     user_id=user_id,
@@ -261,6 +262,27 @@ class NotificationBadgeService:
                 ).debug(
                     f"notification badge already current: user_id={user_id} "
                     f"message_id={base.message_id}"
+                )
+                return
+            if "message to edit not found" in error_message:
+                try:
+                    await await_ui_markup_lease_operation(
+                        lease_lost,
+                        user_id=user_id,
+                        operation="discard_missing_badge_target",
+                        awaitable_factory=lambda: self._redis.delete(
+                            self._key(user_id)
+                        ),
+                    )
+                except UiMarkupLeaseLost:
+                    return
+                logger.bind(
+                    event="notification_badge_target_missing",
+                    user_id=user_id,
+                    message_id=base.message_id,
+                ).debug(
+                    f"discarded missing notification badge target: "
+                    f"user_id={user_id} message_id={base.message_id}"
                 )
                 return
             logger.bind(

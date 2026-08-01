@@ -17,6 +17,7 @@ import jsonpickle  # type: ignore
 import pytest
 from typing import Optional
 from unittest.mock import MagicMock, AsyncMock
+from aiogram import types
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.send import (
@@ -35,7 +36,11 @@ from tests.conftest import (
     create_message_update,
     get_telegram_request,
 )
-from core.interfaces.repositories import IWalletRepository, IUserRepository
+from core.interfaces.repositories import (
+    IAddressBookRepository,
+    IUserRepository,
+    IWalletRepository,
+)
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.payment.send_payment import SendPayment
 from core.domain.entities import User, Wallet
@@ -147,6 +152,51 @@ def setup_send_mocks(router_app_context):
 
 
 # --- Tests ---
+
+
+@pytest.mark.asyncio
+async def test_inline_stellar_uri_does_not_search_usernames(
+    mock_telegram, router_app_context, dp
+):
+    user_id = 474834212
+    addressbook_repo = MagicMock(spec=IAddressBookRepository)
+    addressbook_repo.get_all = AsyncMock(return_value=[])
+    wallet_repo = MagicMock(spec=IWalletRepository)
+    wallet_repo.get_all_active = AsyncMock(return_value=[])
+    user_repo = MagicMock(spec=IUserRepository)
+    user_repo.search_by_username = AsyncMock(return_value=[])
+    router_app_context.repository_factory.get_addressbook_repository.return_value = (
+        addressbook_repo
+    )
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+    router_app_context.repository_factory.get_user_repository.return_value = user_repo
+    dp.inline_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    update = types.Update(
+        update_id=1,
+        inline_query=types.InlineQuery(
+            id="inline-stellar-uri",
+            from_user=types.User(
+                id=user_id, is_bot=False, first_name="User", username="user"
+            ),
+            query=(
+                "web+stellar:pay?destination="
+                "GCZZTHQ6KLXA77XEGUAM6ANQDZ6KKMKZHOKV7RD4PPK5RBV7SXHOROSO"
+                "&amount=9.00&asset_code=EURMTL"
+            ),
+            offset="",
+            chat_type="sender",
+        ),
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot, update=update, app_context=router_app_context
+    )
+
+    user_repo.search_by_username.assert_not_awaited()
+    assert get_telegram_request(mock_telegram, "answerInlineQuery") is not None
 
 
 @pytest.mark.asyncio
