@@ -33,6 +33,9 @@ uv run pytest -m external -v
 - Docker должен быть установлен и запущен
 - Доступ к интернету для скачивания образов контейнеров
 - Свободный порт 8081 для webhook-сервера
+- Доступный Redis и `REDIS_URL`, указывающий на отдельную тестовую базу. В
+  GitHub Actions используется disposable `redis:7-alpine` на
+  `redis://localhost:6379/0`
 
 ## Текущие тесты
 
@@ -42,3 +45,8 @@ uv run pytest -m external -v
 - `test_notifier_webhook_delivery` - E2E доставка webhook уведомлений
 - `test_nonce_lookup` - проверка nonce в token auth режиме
 - `test_nonce_concurrency` - безопасность конкурентной генерации nonce
+
+### `test_notification_redis_store_real.py`
+
+Проверяет Lua-операции notification store на настоящем Redis: согласованность
+очереди, блокировок и очистку устаревших записей due-index.
