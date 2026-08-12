@@ -111,3 +111,7 @@ def test_sealedbox_page_contains_local_only_decryption_contract() -> None:
     assert "/complete" in content
     assert 'fetchJson(`/api/sealedbox/${token}/complete`, {method: "POST"})' in content
     assert "body: plaintext" not in content
+    assert 'id="download-link"' in content
+    assert 'document.getElementById("download-link")' in content
+    assert 'window.addEventListener("pagehide", cleanupDownload)' in content
+    assert "link.remove()" not in content

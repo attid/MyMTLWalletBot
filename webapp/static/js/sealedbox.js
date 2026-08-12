@@ -6,6 +6,7 @@
     const headers = {"X-Telegram-Init-Data": tg.initData || ""};
     let metadata = null;
     let ciphertext = null;
+    let downloadUrl = null;
 
     tg.ready();
     tg.expand();
@@ -80,11 +81,12 @@
         const curvePrivate = sodium.crypto_sign_ed25519_sk_to_curve25519(signKeys.privateKey);
         const plaintext = sodium.crypto_box_seal_open(ciphertext, curvePublic, curvePrivate);
         if (!plaintext) throw new Error(t("sealedbox.decrypt_failed"));
-        downloadPlaintext(plaintext, outputFilename(plaintext));
+        const downloadLink = prepareDownload(plaintext, outputFilename(plaintext));
         await fetchJson(`/api/sealedbox/${token}/complete`, {method: "POST"});
         hide("decrypt-card");
         hide("password-card");
         show("success-card");
+        downloadLink.click();
     }
 
     function outputFilename(plaintext) {
@@ -97,15 +99,19 @@
         }
     }
 
-    function downloadPlaintext(plaintext, filename) {
-        const url = URL.createObjectURL(new Blob([plaintext], {type: "application/octet-stream"}));
-        const link = document.createElement("a");
-        link.href = url;
+    function prepareDownload(plaintext, filename) {
+        cleanupDownload();
+        downloadUrl = URL.createObjectURL(new Blob([plaintext], {type: "application/octet-stream"}));
+        const link = document.getElementById("download-link");
+        link.href = downloadUrl;
         link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
+        return link;
+    }
+
+    function cleanupDownload() {
+        if (!downloadUrl) return;
+        URL.revokeObjectURL(downloadUrl);
+        downloadUrl = null;
     }
 
     function formatAddress(address) {
@@ -140,5 +146,6 @@
         window.location.href = `/import?address=${encodeURIComponent(metadata.wallet_address)}&lang=${encodeURIComponent(lang)}`;
     });
 
+    window.addEventListener("pagehide", cleanupDownload);
     initialize();
 })();
