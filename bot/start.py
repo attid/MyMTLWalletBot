@@ -370,7 +370,6 @@ async def main():
         dp,
         notification_history,
         bot_health_service=bot_health_service,
-        stellar_sealedbox_service=stellar_sealedbox_service,
     )
     notification_redis = Redis.from_url(config.redis_url, decode_responses=True)
     notification_store = NotificationRedisStore(
@@ -415,6 +414,7 @@ async def main():
         notification_delivery_worker=notification_delivery_worker,
         notification_badge_service=notification_badge_service,
         bot_health_service=bot_health_service,
+        stellar_sealedbox_service=stellar_sealedbox_service,
     )
 
     dp["app_context"] = app_context
