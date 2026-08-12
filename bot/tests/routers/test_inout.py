@@ -1,30 +1,13 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram import types
 import datetime
 
 from routers.inout import router as inout_router
-from tests.conftest import TEST_BOT_TOKEN
+from tests.conftest import RouterTestMiddleware
 from core.domain.value_objects import Balance, PaymentResult, Asset
 from core.constants import USDM_ISSUER
-from infrastructure.services.localization_service import LocalizationService
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
-
-
-class MockDbMiddleware(BaseMiddleware):
-    def __init__(self, session, app_context):
-        self.session = session
-        self.app_context = app_context
-        self.l10n = MagicMock(spec=LocalizationService)
-
-    async def __call__(self, handler, event, data):
-        data["session"] = self.session
-        data["app_context"] = self.app_context
-        data["l10n"] = self.l10n
-        return await handler(event, data)
 
 
 @pytest.fixture(autouse=True)
@@ -35,26 +18,9 @@ def cleanup_router():
 
 
 @pytest.fixture
-def mock_session():
-    session = MagicMock()
-    session.commit = AsyncMock()
-    return session
-
-
-@pytest.fixture
-async def bot(telegram_server_config):
-    session = AiohttpSession(
-        api=TelegramAPIServer.from_base(telegram_server_config["url"])
-    )
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    yield bot
-    await bot.session.close()
-
-
-@pytest.fixture
-def dp(mock_session, mock_app_context):
-    dp = Dispatcher()
-    middleware = MockDbMiddleware(mock_session, mock_app_context)
+def dp(mock_session, router_app_context):
+    dp = router_app_context.dispatcher
+    middleware = RouterTestMiddleware(router_app_context, mock_session)
     dp.message.middleware(middleware)
     dp.callback_query.middleware(middleware)
     dp.include_router(inout_router)
@@ -62,10 +28,10 @@ def dp(mock_session, mock_app_context):
 
 
 @pytest.mark.asyncio
-async def test_menu_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_menu_flow(mock_telegram, dp, mock_session, mock_app_context):
     """Test navigation in InOut menu"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # 1. Open InOut Menu
     await dp.feed_update(
@@ -114,16 +80,18 @@ async def test_menu_flow(mock_telegram, bot, dp, mock_session, mock_app_context)
             ),
         ),
     )
-    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
-    assert len(sent) == 1
-    assert "inout_usdt" in sent[0]["data"]["text"]
+    rendered = [
+        r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert len(rendered) == 1
+    assert "inout_usdt" in rendered[0]["data"]["text"]
 
 
 @pytest.mark.asyncio
-async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_usdt_in_flow(mock_telegram, dp, mock_session, mock_app_context):
     """Test USDT Deposit flow"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # Mocks for dependencies
     mock_balance_uc = MagicMock()
@@ -269,11 +237,11 @@ async def test_usdt_in_flow(mock_telegram, bot, dp, mock_session, mock_app_conte
 
 @pytest.mark.asyncio
 async def test_usdt_in_commits_after_get_key(
-    mock_telegram, bot, dp, mock_session, mock_app_context
+    mock_telegram, dp, mock_session, mock_app_context
 ):
     """USDT_IN should commit after get_usdt_key to persist newly generated key."""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_balance_uc = MagicMock()
     mock_balance_uc.execute = AsyncMock(
@@ -324,11 +292,11 @@ async def test_usdt_in_commits_after_get_key(
 
 @pytest.mark.asyncio
 async def test_usdt_check_commits_before_early_return(
-    mock_telegram, bot, dp, mock_session, mock_app_context
+    mock_telegram, dp, mock_session, mock_app_context
 ):
     """USDT_CHECK should commit key creation even when income is below minimum."""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_balance_uc = MagicMock()
     mock_balance_uc.execute = AsyncMock(
@@ -386,10 +354,10 @@ async def test_usdt_check_commits_before_early_return(
 
 
 @pytest.mark.asyncio
-async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_usdt_out_flow(mock_telegram, dp, mock_session, mock_app_context):
     """Test USDT Withdrawal flow"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_wallet_repo = MagicMock()
     mock_wallet_repo.get_default_wallet = AsyncMock(
@@ -456,8 +424,10 @@ async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_cont
             ),
         )
 
-    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
-    assert "send_sum" in sent[0]["data"]["text"]
+    rendered = [
+        r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert "send_sum" in rendered[0]["data"]["text"]
     mock_telegram.clear()
 
     # 3. Send Sum
@@ -492,8 +462,12 @@ async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_cont
             ),
         )
 
-        sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
-        assert "confirm_send" in sent[0]["data"]["text"]
+        rendered = [
+            r
+            for r in mock_telegram
+            if r["method"] in ("sendMessage", "editMessageText")
+        ]
+        assert "confirm_send" in rendered[0]["data"]["text"]
         mock_pay_uc.execute.assert_called_once()
 
         state = dp.fsm.get_context(bot=bot, chat_id=user_id, user_id=user_id)
@@ -511,10 +485,10 @@ async def test_usdt_out_flow(mock_telegram, bot, dp, mock_session, mock_app_cont
 
 
 @pytest.mark.asyncio
-async def test_btc_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_btc_flow(mock_telegram, dp, mock_session, mock_app_context):
     """Test BTC In flow"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # 1. Click BTC
     await dp.feed_update(
@@ -593,8 +567,10 @@ async def test_btc_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
             ),
         ),
     )
-    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
-    assert "btc_in" in sent[0]["data"]["text"]
+    rendered = [
+        r for r in mock_telegram if r["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert "btc_in" in rendered[0]["data"]["text"]
     mock_telegram.clear()
 
     # 3. Enter Sum
@@ -621,13 +597,11 @@ async def test_btc_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
 
 
 @pytest.mark.asyncio
-async def test_cmd_balance_admin(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_cmd_balance_admin(mock_telegram, dp, mock_session, mock_app_context):
     """Test /balance command (admin only)"""
     user_id = 123
     username = "itolstov"
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_user_repo = MagicMock()
     mock_user_repo.get_all_with_usdt_balance = AsyncMock(
