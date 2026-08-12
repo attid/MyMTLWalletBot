@@ -34,9 +34,16 @@
 <div class="card hidden" id="success-card">
     <div class="icon success-icon">&#10003;</div>
     <h2 data-i18n="sealedbox.success_title">File decrypted</h2>
-    <p data-i18n="sealedbox.success_body">Click Download file to save it on this device.</p>
-    <a class="btn btn-primary" id="download-link" data-i18n="sealedbox.download_button">Download file</a>
+    <p data-i18n="sealedbox.success_body">Use the button below to save or share the file.</p>
+    <button class="btn btn-primary" id="save-file-button" data-i18n="sealedbox.save_button">Save or share file</button>
+    <a class="hidden" id="download-fallback">Download file</a>
+    <p class="error" id="download-error"></p>
     <button class="btn btn-secondary" data-i18n="common.close" onclick="Telegram.WebApp.close()">Close</button>
+</div>
+
+<div class="card hidden" id="plaintext-card">
+    <h2 data-i18n="sealedbox.text_title">Decrypted text</h2>
+    <pre id="plaintext-output"></pre>
 </div>
 
 <div class="card hidden" id="error-card">

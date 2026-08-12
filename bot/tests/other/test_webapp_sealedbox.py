@@ -111,7 +111,11 @@ def test_sealedbox_page_contains_local_only_decryption_contract() -> None:
     assert "/complete" in content
     assert 'fetchJson(`/api/sealedbox/${token}/complete`, {method: "POST"})' in content
     assert "body: plaintext" not in content
-    assert 'id="download-link"' in content
-    assert 'document.getElementById("download-link")' in content
+    assert 'id="save-file-button"' in content
+    assert "new File(" in content
+    assert "navigator.canShare({files: [decryptedFile]})" in content
+    assert "navigator.share({files: [decryptedFile]" in content
+    assert 'document.getElementById("plaintext-output").textContent' in content
+    assert 'id="download-fallback"' in content
     assert 'window.addEventListener("pagehide", cleanupDownload)' in content
     assert "link.remove()" not in content

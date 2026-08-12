@@ -7,6 +7,7 @@
     let metadata = null;
     let ciphertext = null;
     let downloadUrl = null;
+    let decryptedFile = null;
 
     tg.ready();
     tg.expand();
@@ -81,12 +82,11 @@
         const curvePrivate = sodium.crypto_sign_ed25519_sk_to_curve25519(signKeys.privateKey);
         const plaintext = sodium.crypto_box_seal_open(ciphertext, curvePublic, curvePrivate);
         if (!plaintext) throw new Error(t("sealedbox.decrypt_failed"));
-        const downloadLink = prepareDownload(plaintext, outputFilename(plaintext));
+        prepareResult(plaintext, outputFilename(plaintext));
         await fetchJson(`/api/sealedbox/${token}/complete`, {method: "POST"});
         hide("decrypt-card");
         hide("password-card");
         show("success-card");
-        downloadLink.click();
     }
 
     function outputFilename(plaintext) {
@@ -99,19 +99,66 @@
         }
     }
 
-    function prepareDownload(plaintext, filename) {
+    function prepareResult(plaintext, filename) {
         cleanupDownload();
-        downloadUrl = URL.createObjectURL(new Blob([plaintext], {type: "application/octet-stream"}));
-        const link = document.getElementById("download-link");
+        decryptedFile = new File(
+            [plaintext],
+            filename,
+            {type: mimeTypeFor(filename)}
+        );
+        downloadUrl = URL.createObjectURL(decryptedFile);
+        const link = document.getElementById("download-fallback");
         link.href = downloadUrl;
         link.download = filename;
-        return link;
+        try {
+            const text = new TextDecoder("utf-8", {fatal: true}).decode(plaintext);
+            document.getElementById("plaintext-output").textContent = text;
+            show("plaintext-card");
+        } catch (_) {
+            hide("plaintext-card");
+        }
+    }
+
+    function mimeTypeFor(filename) {
+        const extension = filename.split(".").pop().toLowerCase();
+        return {
+            txt: "text/plain",
+            json: "application/json",
+            pdf: "application/pdf",
+            png: "image/png",
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            webp: "image/webp",
+            zip: "application/zip",
+        }[extension] || "application/octet-stream";
     }
 
     function cleanupDownload() {
-        if (!downloadUrl) return;
-        URL.revokeObjectURL(downloadUrl);
+        if (downloadUrl) URL.revokeObjectURL(downloadUrl);
         downloadUrl = null;
+        decryptedFile = null;
+    }
+
+    async function saveDecryptedFile() {
+        if (!decryptedFile) return;
+        const error = document.getElementById("download-error");
+        error.textContent = "";
+        try {
+            if (
+                navigator.share &&
+                navigator.canShare &&
+                navigator.canShare({files: [decryptedFile]})
+            ) {
+                await navigator.share({files: [decryptedFile], title: decryptedFile.name});
+                return;
+            }
+            document.getElementById("download-fallback").click();
+            error.textContent = t("sealedbox.share_unsupported");
+        } catch (shareError) {
+            if (shareError.name !== "AbortError") {
+                error.textContent = t("sealedbox.share_failed");
+            }
+        }
     }
 
     function formatAddress(address) {
@@ -146,6 +193,7 @@
         window.location.href = `/import?address=${encodeURIComponent(metadata.wallet_address)}&lang=${encodeURIComponent(lang)}`;
     });
 
+    document.getElementById("save-file-button").addEventListener("click", saveDecryptedFile);
     window.addEventListener("pagehide", cleanupDownload);
     initialize();
 })();
