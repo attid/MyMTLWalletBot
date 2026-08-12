@@ -6,6 +6,7 @@ from pathlib import Path
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.notification_service import NotificationService
+from start import get_startup_message
 
 
 START_PATH = Path(__file__).resolve().parents[2] / "start.py"
@@ -40,3 +41,11 @@ def test_startup_injects_sealedbox_service_into_app_context() -> None:
     assert "stellar_sealedbox_service" not in _constructor_keywords(
         "NotificationService"
     )
+
+
+def test_startup_message_includes_short_commit() -> None:
+    assert get_startup_message("1234567890") == "Bot started (commit: 1234567)"
+
+
+def test_startup_message_falls_back_when_commit_is_missing() -> None:
+    assert get_startup_message("") == "Bot started (commit: unknown)"
