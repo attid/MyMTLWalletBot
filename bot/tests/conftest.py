@@ -674,10 +674,16 @@ def mock_state():
 @pytest.fixture
 def mock_callback():
     callback = AsyncMock(spec=CallbackQuery)
-    callback.from_user.id = 123
-    callback.from_user.username = "user"
-    callback.message = AsyncMock(spec=Message)
-    callback.message.chat.id = 123
+    user = MagicMock(spec=types.User)
+    user.id = 123
+    user.username = "user"
+    callback.from_user = user
+    callback.answer = AsyncMock()
+    message = AsyncMock(spec=Message)
+    chat = MagicMock(spec=types.Chat)
+    chat.id = 123
+    message.chat = chat
+    callback.message = message
     return callback
 
 
@@ -699,21 +705,24 @@ class RouterTestMiddleware(BaseMiddleware):
     Injects session and app_context into handler data.
     """
 
-    def __init__(self, app_context):
+    def __init__(self, app_context, session=None):
         self.app_context = app_context
+        self.session = session
 
     async def __call__(self, handler, event, data):
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
-        session.rollback = AsyncMock()
+        session = self.session
+        if session is None:
+            session = MagicMock()
+            session.execute = AsyncMock()
+            session.commit = AsyncMock()
+            session.rollback = AsyncMock()
 
-        result = MagicMock()
-        result.scalars.return_value.all.return_value = []
-        result.scalar_one_or_none.return_value = None
-        result.scalar.return_value = None
-        result.all.return_value = []
-        session.execute.return_value = result
+            result = MagicMock()
+            result.scalars.return_value.all.return_value = []
+            result.scalar_one_or_none.return_value = None
+            result.scalar.return_value = None
+            result.all.return_value = []
+            session.execute.return_value = result
 
         data["session"] = session
         data["app_context"] = self.app_context
@@ -730,13 +739,14 @@ async def router_bot(mock_telegram, telegram_server_config):
     session = AiohttpSession(
         api=TelegramAPIServer.from_base(telegram_server_config["url"])
     )
+    local_http_session = await session.create_session()
     bot = Bot(
         token=TEST_BOT_TOKEN,
         session=session,
         default=DefaultBotProperties(parse_mode="HTML"),
     )
     yield bot
-    await bot.session.close()
+    await local_http_session.close()
 
 
 @pytest.fixture

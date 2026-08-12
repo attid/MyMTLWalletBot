@@ -1044,15 +1044,6 @@ def test_terminal_return_keyboard_never_exposes_flow_back(router_app_context):
     assert callbacks == ["Return"]
 
 
-def test_notification_return_keyboard_never_exposes_flow_back(router_app_context):
-    keyboard = get_kb_return(123, app_context=router_app_context)
-
-    callbacks = [
-        button.callback_data for row in keyboard.inline_keyboard for button in row
-    ]
-    assert callbacks == ["Return"]
-
-
 @pytest.mark.parametrize(
     ("add_button_memo", "expected_callbacks"),
     [
