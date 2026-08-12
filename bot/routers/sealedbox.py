@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import base64
+from contextlib import suppress
 from io import BytesIO
 import re
 
 from aiogram import F, Router, types
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile
@@ -28,6 +29,7 @@ from infrastructure.utils.telegram_utils import (
     clear_state,
     send_message,
 )
+from keyboards.common_keyboards import get_kb_return
 from middleware.notification_activity import complete_notification_flow
 from other.lang_tools import my_gettext
 
@@ -109,7 +111,6 @@ async def open_sealedbox_menu(
     user_id = callback.from_user.id
     await clear_state(state)
     await state.update_data(user_id=user_id)
-    await clear_last_message_id(user_id, app_context=app_context)
     await _show_menu(session, user_id, app_context)
     await callback.answer()
 
@@ -186,18 +187,6 @@ async def back_to_recipient_selection(
     await callback.answer()
 
 
-async def _delete_inbound_message(message: types.Message) -> None:
-    try:
-        await message.delete()
-    except TelegramAPIError as exc:
-        logger.warning(
-            "failed to delete sealed-box input: user_id={} message_id={} error={}",
-            message.from_user.id if message.from_user else None,
-            message.message_id,
-            exc,
-        )
-
-
 @router.message(SealedBoxState.recipient)
 async def receive_recipient(
     message: types.Message,
@@ -207,8 +196,8 @@ async def receive_recipient(
 ) -> None:
     if message.from_user is None:
         return
-    await _delete_inbound_message(message)
     recipient = message.text.strip().upper() if message.text else ""
+    await message.delete()
     if not StrKey.is_valid_ed25519_public_key(recipient):
         await _show_error(
             session,
@@ -253,10 +242,10 @@ async def receive_encrypt_content(
 ) -> None:
     if message.from_user is None:
         return
-    await _delete_inbound_message(message)
     user_id = message.from_user.id
     if message.document:
         if (message.document.file_size or 0) > MAX_PLAINTEXT_BYTES:
+            await message.delete()
             await _show_error(
                 session,
                 user_id,
@@ -266,9 +255,12 @@ async def receive_encrypt_content(
             )
             return
         try:
-            plaintext = await _download_document(
-                message, app_context, MAX_PLAINTEXT_BYTES
-            )
+            try:
+                plaintext = await _download_document(
+                    message, app_context, MAX_PLAINTEXT_BYTES
+                )
+            finally:
+                await message.delete()
         except ValueError:
             await _show_error(
                 session,
@@ -282,7 +274,9 @@ async def receive_encrypt_content(
     elif message.text:
         plaintext = message.text.encode("utf-8")
         filename = "message.txt"
+        await message.delete()
     else:
+        await message.delete()
         await _show_error(
             session, user_id, "sealedbox_send_as_file", "recipient", app_context
         )
@@ -314,7 +308,9 @@ async def receive_encrypt_content(
         )
         return
 
-    await app_context.bot.send_document(
+    await _send_result_document(
+        state,
+        app_context,
         user_id,
         BufferedInputFile(ciphertext, filename=f"{filename}.ssb"),
         caption=my_gettext(
@@ -401,22 +397,26 @@ async def receive_decrypt_file(
 ) -> None:
     if message.from_user is None:
         return
-    await _delete_inbound_message(message)
     user_id = message.from_user.id
     if message.document is None:
+        await message.delete()
         await _show_error(
             session, user_id, "sealedbox_send_as_file", "menu", app_context
         )
         return
     if (message.document.file_size or 0) > MAX_BASE64_CIPHERTEXT_BYTES:
+        await message.delete()
         await _show_error(
             session, user_id, "sealedbox_file_too_large", "menu", app_context
         )
         return
     try:
-        payload = await _download_document(
-            message, app_context, MAX_BASE64_CIPHERTEXT_BYTES
-        )
+        try:
+            payload = await _download_document(
+                message, app_context, MAX_BASE64_CIPHERTEXT_BYTES
+            )
+        finally:
+            await message.delete()
     except ValueError:
         await _show_error(
             session, user_id, "sealedbox_file_too_large", "menu", app_context
@@ -467,8 +467,9 @@ async def receive_decrypt_password(
 ) -> None:
     if message.from_user is None:
         return
-    await _delete_inbound_message(message)
     user_id = message.from_user.id
+    password = message.text.upper() if message.text else ""
+    await message.delete()
     if message.text is None:
         await _show_error(session, user_id, "bad_password", "decrypt_file", app_context)
         return
@@ -484,7 +485,7 @@ async def receive_decrypt_password(
         user_id,
         base64.b64decode(encoded, validate=True),
         str(data.get("sealedbox_pending_filename", "")),
-        message.text.upper(),
+        password,
         "decrypt_file",
         state,
         app_context,
@@ -527,7 +528,9 @@ async def _decrypt_server(
         )
         return
 
-    await app_context.bot.send_document(
+    await _send_result_document(
+        state,
+        app_context,
         user_id,
         BufferedInputFile(
             plaintext, filename=_resolve_output_filename(filename, plaintext)
@@ -539,6 +542,26 @@ async def _decrypt_server(
         len(payload),
     )
     await _complete_flow(user_id, state, app_context)
+
+
+async def _send_result_document(
+    state: FSMContext,
+    app_context: AppContext,
+    user_id: int,
+    document: BufferedInputFile,
+    *,
+    caption: str | None = None,
+) -> None:
+    previous_message_id = int((await state.get_data()).get("last_message_id", 0))
+    await app_context.bot.send_document(
+        user_id,
+        document,
+        caption=caption,
+        reply_markup=get_kb_return(user_id, app_context=app_context),
+    )
+    if previous_message_id > 0:
+        with suppress(TelegramBadRequest):
+            await app_context.bot.delete_message(user_id, previous_message_id)
 
 
 async def _start_webapp_decrypt(

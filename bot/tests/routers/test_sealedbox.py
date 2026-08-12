@@ -80,6 +80,25 @@ async def test_menu_offers_encrypt_decrypt_back_and_home(
 
 
 @pytest.mark.asyncio
+async def test_opening_menu_from_callback_edits_current_screen(
+    mock_telegram, sealedbox_context
+) -> None:
+    dp = sealedbox_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+    user_id = 123
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.update_data(key, {"last_message_id": 1})
+
+    await dp.feed_update(
+        sealedbox_context.bot, create_callback_update(user_id, "SealedBoxMenu")
+    )
+
+    assert get_telegram_request(mock_telegram, "editMessageText") is not None
+    assert get_telegram_request(mock_telegram, "sendMessage") is None
+
+
+@pytest.mark.asyncio
 async def test_encrypts_text_for_manually_entered_recipient(
     mock_telegram, sealedbox_context
 ) -> None:
@@ -112,8 +131,47 @@ async def test_encrypts_text_for_manually_entered_recipient(
     assert request is not None
     assert "message.txt.ssb" in str(request["data"])
     assert request["data"]["caption"] == "sealedbox_encrypted_for"
+    assert '"callback_data": "Return"' in request["data"]["reply_markup"]
+    assert 1 in _deleted_message_ids(mock_telegram)
     assert {2, 3}.issubset(_deleted_message_ids(mock_telegram))
     assert await dp.storage.get_state(key) is None
+
+
+@pytest.mark.asyncio
+async def test_encrypt_document_is_downloaded_before_source_message_is_deleted(
+    mock_telegram, sealedbox_context
+) -> None:
+    user_id = 123
+    recipient = Keypair.random().public_key
+    plaintext = b"document bytes"
+
+    async def download(_document, destination):
+        assert 4 not in _deleted_message_ids(mock_telegram)
+        destination.write(plaintext)
+        return destination
+
+    sealedbox_context.bot.download = AsyncMock(side_effect=download)
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(key, SealedBoxState.encrypt_content)
+    await dp.storage.update_data(
+        key, {"sealedbox_recipient": recipient, "last_message_id": 77}
+    )
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        _document_update(user_id, file_name="report.pdf", file_size=14, update_id=4),
+    )
+
+    assert 4 in _deleted_message_ids(mock_telegram)
+    assert 77 in _deleted_message_ids(mock_telegram)
+    result = get_telegram_request(mock_telegram, "sendDocument")
+    assert result is not None
+    assert '"callback_data": "Return"' in result["data"]["reply_markup"]
+    assert await dp.storage.get_state(key) is None
+    assert (await dp.storage.get_data(key))["last_message_id"] == 0
 
 
 @pytest.mark.asyncio
@@ -292,6 +350,7 @@ async def test_decrypts_with_current_no_pin_wallet(
     )
 
     async def download(_document, destination):
+        assert 3 not in _deleted_message_ids(mock_telegram)
         destination.write(ciphertext)
         destination.seek(0)
         return destination
@@ -319,6 +378,7 @@ async def test_decrypts_with_current_no_pin_wallet(
     request = get_telegram_request(mock_telegram, "sendDocument")
     assert request is not None
     assert "report.pdf" in str(request["data"])
+    assert '"callback_data": "Return"' in request["data"]["reply_markup"]
     assert 3 in _deleted_message_ids(mock_telegram)
     assert (
         await dp.storage.get_state(

@@ -97,8 +97,11 @@ message, and releases the delayed-notification hold. Successful Telegram or
 WebApp completion performs the same terminal cleanup.
 
 The flow uses the shared Telegram screen sender so `last_message_id` remains
-correct. Starting the flow clears previous FSM state and the last tracked
-message before rendering its first screen.
+correct. Starting from the MTL Tools callback clears previous FSM state while
+preserving the tracked message, allowing the first sealed-box screen to edit
+the current UI in place. Result documents use the shared Home keyboard; after
+sending a result, the previous tracked UI screen is deleted and its tracking is
+cleared so the document's Home callback remains valid.
 
 ## Verification
 
