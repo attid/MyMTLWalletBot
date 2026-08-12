@@ -868,7 +868,7 @@ async def stellar_check_account(public_key: str) -> AccountAndMemo:
 
 async def stellar_check_receive_sum_one(
     send_asset: Asset, send_sum: str, receive_asset: Asset
-) -> str:
+) -> tuple[str, List[Asset]]:
     try:
         async with ServerAsync(
             horizon_url=config.horizon_url, client=AiohttpClient()
@@ -877,11 +877,16 @@ async def stellar_check_receive_sum_one(
                 send_asset, send_sum, [receive_asset]
             ).call()
             if len(call_result["_embedded"]["records"]) > 0:
-                return float2str(
-                    float(call_result["_embedded"]["records"][0]["destination_amount"])
-                )
+                best_path = call_result["_embedded"]["records"][0]
+                path = [
+                    Asset.native()
+                    if item["asset_type"] == "native"
+                    else Asset(item["asset_code"], item["asset_issuer"])
+                    for item in best_path.get("path", [])
+                ]
+                return float2str(float(best_path["destination_amount"])), path
             else:
-                return "0"
+                return "0", []
     except Exception as ex:
         logger.info(
             [
@@ -890,28 +895,28 @@ async def stellar_check_receive_sum_one(
                 ex,
             ]
         )
-        return "0"
+        return "0", []
 
 
 # LEGACY: Use StellarService path finding methods instead
 # TODO: Remove after routers/swap.py is refactored
 async def stellar_check_receive_sum(
     send_asset: Asset, send_sum: str, receive_asset: Asset
-) -> (str, bool):
+) -> tuple[str, bool, List[Asset]]:
     check_sum = float2str(float(send_sum) / 100)
 
-    expected_receive = await stellar_check_receive_sum_one(
+    expected_receive, _ = await stellar_check_receive_sum_one(
         send_asset, check_sum, receive_asset
     )
     expected_receive = float2str(float(expected_receive) * 100)
-    actual_receive = await stellar_check_receive_sum_one(
+    actual_receive, actual_path = await stellar_check_receive_sum_one(
         send_asset, send_sum, receive_asset
     )
 
     # Считаем, на сколько процентов цена отличается при разных объемах сделки
     expected_receive_float = float(expected_receive)
     if expected_receive_float == 0:
-        return actual_receive, True  # No path found or zero liquidity - warn user
+        return actual_receive, True, actual_path
 
     difference_percentage = abs(
         (float(actual_receive) - expected_receive_float) / expected_receive_float * 100
@@ -919,19 +924,19 @@ async def stellar_check_receive_sum(
 
     # Если разница больше 10%, возвращаем предупреждение
     if difference_percentage > 10:
-        return actual_receive, True
+        return actual_receive, True, actual_path
 
-    return actual_receive, False
+    return actual_receive, False, actual_path
 
 
 # LEGACY: Use StellarService path finding methods instead
 # TODO: Remove after routers/swap.py is refactored
 async def stellar_check_send_sum(
     send_asset: Asset, receive_sum: str, receive_asset: Asset
-) -> (str, bool):
+) -> tuple[str, bool, List[Asset]]:
     """
     Calculate the required send amount to receive a given amount of receive_asset.
-    Returns (send_amount, need_alert)
+    Returns (send_amount, need_alert, path).
     """
     # Use Stellar pathfinding to get the best path and required send amount
     # For simplicity, use the same logic as in stellar_check_receive_sum_one, but for strict receive
@@ -951,11 +956,17 @@ async def stellar_check_send_sum(
             or not paths.get("_embedded")
             or not paths["_embedded"].get("records")
         ):
-            return "0", True
+            return "0", True, []
         best_path = paths["_embedded"]["records"][0]
         send_amount = best_path["source_amount"]
+        path = [
+            Asset.native()
+            if item["asset_type"] == "native"
+            else Asset(item["asset_code"], item["asset_issuer"])
+            for item in best_path.get("path", [])
+        ]
         # Optionally, add alert if path is too long or liquidity is low
-        return send_amount, False
+        return send_amount, False, path
 
 
 # LEGACY: Use StellarService.find_strict_send_path instead

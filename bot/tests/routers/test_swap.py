@@ -3,12 +3,13 @@ import jsonpickle  # type: ignore
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from routers.swap import (
+    FLOW_BACK_CALLBACK,
     router as swap_router,
     StateSwapToken,
     SwapAssetFromCallbackData,
     SwapAssetForCallbackData,
 )
-from core.domain.value_objects import Balance, PaymentResult
+from core.domain.value_objects import Asset as DomainAsset, Balance, PaymentResult
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
@@ -227,7 +228,13 @@ async def test_cmd_swap_sum_execution(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "9.5",
                 "source_amount": "10.0",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -249,11 +256,17 @@ async def test_cmd_swap_sum_execution(
     assert pending["xdr"] == "XDR_SWAP"
     assert pending["purpose"] == "swap"
     assert pending["mode"] == "sign_and_submit"
-    assert pending["operation"] == "Swap 10 XLM → EURMTL"
+    assert pending["operation"] == "Swap 10 XLM → 9.5 EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call
-    router_app_context.use_case_factory.create_swap_assets.return_value.execute.assert_called_once()
+    swap_execute = (
+        router_app_context.use_case_factory.create_swap_assets.return_value.execute
+    )
+    swap_execute.assert_called_once()
+    assert swap_execute.call_args.kwargs["path"] == [
+        DomainAsset(code="SATSMTL", issuer=valid_issuer)
+    ]
 
 
 @pytest.mark.asyncio
@@ -318,7 +331,13 @@ async def test_cmd_swap_receive_sum_execution(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "10.0",
                 "source_amount": "10.5",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -339,12 +358,13 @@ async def test_cmd_swap_receive_sum_execution(
     assert pending["xdr"] == "XDR_SWAP"
     assert pending["purpose"] == "swap"
     assert pending["mode"] == "sign_and_submit"
-    assert pending["operation"] == "Swap 10.5 XLM → EURMTL"
+    assert pending["operation"] == "Swap 10.5 XLM → 10 EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
 
     # Verify UseCase call with strict_receive=True
     call_kwargs = router_app_context.use_case_factory.create_swap_assets.return_value.execute.call_args.kwargs
     assert call_kwargs.get("strict_receive") is True
+    assert call_kwargs["path"] == [DomainAsset(code="SATSMTL", issuer=valid_issuer)]
 
 
 @pytest.mark.asyncio
@@ -379,6 +399,352 @@ async def test_cq_swap_cancel_offers_toggle(
     # UI should be refreshed
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("state_name", "amount"),
+    [
+        (StateSwapToken.swap_sum, "6000"),
+        (StateSwapToken.swap_receive_sum, "6000"),
+        (StateSwapToken.swap_receive_sum, "not-a-number"),
+    ],
+)
+async def test_swap_amount_errors_rerender_with_flow_back_and_preserve_retry_data(
+    mock_telegram,
+    router_app_context,
+    setup_swap_mocks,
+    state_name,
+    amount,
+):
+    dp = router_app_context.dispatcher
+    setup_swap_mocks.user.can_5000 = 0
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(state_name)
+    await state.update_data(
+        msg="Enter XLM amount",
+        send_asset_code="XLM",
+        send_asset_issuer=None,
+        receive_asset_code="EURMTL",
+        receive_asset_issuer="GISSUER",
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, amount),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+    assert '"callback_data": "Return"' in req["data"]["reply_markup"]
+    assert await state.get_state() == state_name
+    assert (await state.get_data())["send_asset_code"] == "XLM"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "state_name", [StateSwapToken.swap_sum, StateSwapToken.swap_receive_sum]
+)
+async def test_swap_no_path_rerenders_with_flow_back_and_preserves_retry_data(
+    mock_telegram,
+    router_app_context,
+    setup_swap_mocks,
+    mock_horizon,
+    horizon_server_config,
+    state_name,
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(state_name)
+    await state.update_data(
+        msg="Enter XLM amount",
+        send_asset_code="XLM",
+        send_asset_issuer=None,
+        receive_asset_code="EURMTL",
+        receive_asset_issuer="GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+    )
+    mock_horizon.set_paths([])
+
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(user_id, "10"),
+            app_context=router_app_context,
+        )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Не найден путь обмена" in req["data"]["text"]
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+    assert '"callback_data": "Return"' in req["data"]["reply_markup"]
+    assert await state.get_state() == state_name
+    assert (await state.get_data())["receive_asset_code"] == "EURMTL"
+
+
+@pytest.mark.asyncio
+async def test_swap_strict_receive_build_error_rerenders_with_flow_back(
+    mock_telegram,
+    router_app_context,
+    setup_swap_mocks,
+    mock_horizon,
+    horizon_server_config,
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    router_app_context.use_case_factory.create_swap_assets.return_value.execute.return_value = PaymentResult(
+        success=False, error_message="build failed"
+    )
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(StateSwapToken.swap_receive_sum)
+    await state.update_data(
+        msg="Enter EURMTL amount",
+        send_asset_code="XLM",
+        send_asset_issuer=None,
+        receive_asset_code="EURMTL",
+        receive_asset_issuer="GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+    )
+    mock_horizon.set_paths(
+        [{"destination_amount": "10", "source_amount": "10.5", "path": []}]
+    )
+
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(user_id, "10"),
+            app_context=router_app_context,
+        )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "build failed" in req["data"]["text"]
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+    assert '"callback_data": "Return"' in req["data"]["reply_markup"]
+    assert await state.get_state() == StateSwapToken.swap_receive_sum
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_strict_receive_rerenders_normal_amount_prompt(
+    mock_telegram, router_app_context, setup_swap_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(StateSwapToken.swap_sum)
+    await state.update_data(
+        msg="Enter XLM amount",
+        send_asset_code="XLM",
+        receive_asset_code="EURMTL",
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, "SwapStrictReceive"),
+        app_context=router_app_context,
+    )
+
+    assert await state.get_state() == StateSwapToken.swap_receive_sum
+    assert (await state.get_data())["flow_back_amount_msg"] == "Enter XLM amount"
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await state.get_state() == StateSwapToken.swap_sum
+    data = await state.get_data()
+    assert data["send_asset_code"] == "XLM"
+    assert data["receive_asset_code"] == "EURMTL"
+    req = get_telegram_request(mock_telegram, "editMessageText")
+    assert req["data"]["text"] == "Enter XLM amount"
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_destination_rerenders_source_and_preserves_assets(
+    mock_telegram, router_app_context, setup_swap_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(StateSwapToken.choosing_for)
+    await state.update_data(send_asset_code="XLM", receive_asset_code="EURMTL")
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await state.get_state() == StateSwapToken.choosing_from
+    assert (await state.get_data())["receive_asset_code"] == "EURMTL"
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "choose_token_swap" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_swap_amount_rerenders_destination_and_preserves_source(
+    mock_telegram,
+    router_app_context,
+    setup_swap_mocks,
+    mock_horizon,
+    horizon_server_config,
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(StateSwapToken.swap_sum)
+    await state.update_data(
+        assets=jsonpickle.encode(setup_swap_mocks.balances),
+        send_asset_code="XLM",
+        send_asset_issuer=None,
+        receive_asset_code="EURMTL",
+    )
+    mock_horizon.set_paths([])
+
+    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+            app_context=router_app_context,
+        )
+
+    assert await state.get_state() == StateSwapToken.choosing_for
+    assert (await state.get_data())["send_asset_code"] == "XLM"
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "choose_token_swap2" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_send_confirmation_rerenders_swap_amount(
+    mock_telegram, router_app_context, setup_swap_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(StateSwapToken.confirming_send)
+    await state.update_data(
+        last_message_id=987,
+        unrelated_global_data="keep me",
+        flow_back_amount_msg="Enter XLM amount",
+        send_asset_code="XLM",
+        receive_asset_code="EURMTL",
+        xdr="AAAA_CONFIRMATION_XDR",
+        operation="Swap 10 XLM",
+        sign_msg="Sign swap",
+        success_msg="Swap complete",
+    )
+    await state.update_data(
+        **{PENDING_SIGNATURE_REQUEST_KEY: {"xdr": "AAAA_CONFIRMATION_XDR"}}
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await state.get_state() == StateSwapToken.swap_sum
+    data = await state.get_data()
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+    ):
+        assert key not in data
+    assert data["flow_back_amount_msg"] == "Enter XLM amount"
+    assert data["send_asset_code"] == "XLM"
+    assert data["receive_asset_code"] == "EURMTL"
+    assert data["last_message_id"] == 987
+    assert data["unrelated_global_data"] == "keep me"
+    assert (
+        get_telegram_request(mock_telegram, "editMessageText")["data"]["text"]
+        == "Enter XLM amount"
+    )
+
+
+@pytest.mark.asyncio
+async def test_flow_back_from_receive_confirmation_rerenders_strict_receive(
+    mock_telegram, router_app_context, setup_swap_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(swap_router)
+    user_id = 123
+    state = dp.fsm.get_context(
+        bot=router_app_context.bot, chat_id=user_id, user_id=user_id
+    )
+    await state.set_state(StateSwapToken.confirming_receive)
+    await state.update_data(
+        last_message_id=987,
+        unrelated_global_data="keep me",
+        flow_back_amount_msg="Enter EURMTL amount",
+        send_asset_code="XLM",
+        receive_asset_code="EURMTL",
+        xdr="AAAA_CONFIRMATION_XDR",
+        operation="Swap 10 XLM",
+        sign_msg="Sign swap",
+        success_msg="Swap complete",
+    )
+    await state.update_data(
+        **{PENDING_SIGNATURE_REQUEST_KEY: {"xdr": "AAAA_CONFIRMATION_XDR"}}
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert await state.get_state() == StateSwapToken.swap_receive_sum
+    data = await state.get_data()
+    for key in (
+        PENDING_SIGNATURE_REQUEST_KEY,
+        "xdr",
+        "operation",
+        "sign_msg",
+        "success_msg",
+    ):
+        assert key not in data
+    assert data["flow_back_amount_msg"] == "Enter EURMTL amount"
+    assert data["send_asset_code"] == "XLM"
+    assert data["receive_asset_code"] == "EURMTL"
+    assert data["last_message_id"] == 987
+    assert data["unrelated_global_data"] == "keep me"
+    req = get_telegram_request(mock_telegram, "editMessageText")
+    assert "enter_strict_receive_sum" in req["data"]["text"]
+    assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
@@ -438,7 +804,13 @@ async def test_cmd_swap_text_command(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "9.5",
                 "source_amount": "10.0",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -459,7 +831,7 @@ async def test_cmd_swap_text_command(
         bot=router_app_context.bot, chat_id=user_id, user_id=user_id
     )
     data = await state.get_data()
-    assert data.get("operation") == "Swap 10 XLM → EURMTL"
+    assert data.get("operation") == "Swap 10 XLM → 9.5 EURMTL"
     assert data.get("send_sum") == 10.0
     assert data.get("send_asset_code") == "XLM"
     assert data.get("receive_asset_code") == "EURMTL"
@@ -469,8 +841,14 @@ async def test_cmd_swap_text_command(
     assert pending["xdr"] == "XDR_SWAP"
     assert pending["purpose"] == "swap"
     assert pending["mode"] == "sign_and_submit"
-    assert pending["operation"] == "Swap 10 XLM → EURMTL"
+    assert pending["operation"] == "Swap 10 XLM → 9.5 EURMTL"
     assert pending["sign_msg"] == "sign_swap_msg"
+    swap_execute = (
+        router_app_context.use_case_factory.create_swap_assets.return_value.execute
+    )
+    assert swap_execute.call_args.kwargs["path"] == [
+        DomainAsset(code="SATSMTL", issuer=valid_issuer)
+    ]
 
 
 @pytest.mark.asyncio
@@ -497,7 +875,13 @@ async def test_cmd_swap_text_flexible_syntax(
                 "destination_asset_issuer": valid_issuer,
                 "destination_amount": "9.5",
                 "source_amount": "10.0",
-                "path": [],
+                "path": [
+                    {
+                        "asset_type": "credit_alphanum12",
+                        "asset_code": "SATSMTL",
+                        "asset_issuer": valid_issuer,
+                    }
+                ],
             }
         ]
     )
@@ -521,6 +905,12 @@ async def test_cmd_swap_text_flexible_syntax(
     # My logic: receive_sum = amount = 10.
     # send_sum = computed.
     assert data.get("strict_receive") is True  # Logic change verification
+    swap_execute = (
+        router_app_context.use_case_factory.create_swap_assets.return_value.execute
+    )
+    assert swap_execute.call_args.kwargs["path"] == [
+        DomainAsset(code="SATSMTL", issuer=valid_issuer)
+    ]
 
     # Test 2: /swap 10 XLM EURMTL 5%
     # We verify state update to ensure parsing worked

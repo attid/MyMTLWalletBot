@@ -1,10 +1,14 @@
 """Shared schemas and constants for MMWB bot and webapp."""
 
-from shared.schemas import PendingTxMessage, TxSignedMessage
+from shared.schemas import PendingTxMessage, SealedBoxCompletedMessage, TxSignedMessage
 from shared.constants import (
     QUEUE_TX_SIGNED,
+    QUEUE_SEALEDBOX_COMPLETED,
     REDIS_TX_PREFIX,
     REDIS_TX_TTL,
+    REDIS_SEALEDBOX_PREFIX,
+    REDIS_SEALEDBOX_USER_PREFIX,
+    REDIS_SEALEDBOX_TTL,
     FIELD_USER_ID,
     FIELD_WALLET_ADDRESS,
     FIELD_UNSIGNED_XDR,
@@ -13,18 +17,26 @@ from shared.constants import (
     FIELD_SIGNED_XDR,
     FIELD_CREATED_AT,
     FIELD_ERROR,
+    FIELD_SEALEDBOX_CIPHERTEXT,
+    FIELD_SEALEDBOX_OUTPUT_FILENAME,
     STATUS_PENDING,
     STATUS_SIGNED,
     STATUS_EXPIRED,
     STATUS_ERROR,
+    STATUS_COMPLETED,
 )
 
 __all__ = [
     "PendingTxMessage",
     "TxSignedMessage",
+    "SealedBoxCompletedMessage",
     "QUEUE_TX_SIGNED",
+    "QUEUE_SEALEDBOX_COMPLETED",
     "REDIS_TX_PREFIX",
     "REDIS_TX_TTL",
+    "REDIS_SEALEDBOX_PREFIX",
+    "REDIS_SEALEDBOX_USER_PREFIX",
+    "REDIS_SEALEDBOX_TTL",
     "FIELD_USER_ID",
     "FIELD_WALLET_ADDRESS",
     "FIELD_UNSIGNED_XDR",
@@ -33,8 +45,11 @@ __all__ = [
     "FIELD_SIGNED_XDR",
     "FIELD_CREATED_AT",
     "FIELD_ERROR",
+    "FIELD_SEALEDBOX_CIPHERTEXT",
+    "FIELD_SEALEDBOX_OUTPUT_FILENAME",
     "STATUS_PENDING",
     "STATUS_SIGNED",
     "STATUS_EXPIRED",
     "STATUS_ERROR",
+    "STATUS_COMPLETED",
 ]

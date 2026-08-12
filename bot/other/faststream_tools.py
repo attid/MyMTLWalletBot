@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from other.config_reader import config
 from other.lang_tools import my_gettext
 
 from infrastructure.services.app_context import AppContext
+from middleware.notification_activity import complete_notification_flow
 
 from shared.constants import (
     REDIS_TX_PREFIX,
@@ -32,6 +34,11 @@ from shared.constants import (
     FIELD_SUCCESS_MSG,
     FIELD_SUB_INVOCATION_SUMMARY,
     STATUS_PENDING,
+    FIELD_SEALEDBOX_CIPHERTEXT,
+    FIELD_SEALEDBOX_OUTPUT_FILENAME,
+    REDIS_SEALEDBOX_PREFIX,
+    REDIS_SEALEDBOX_TTL,
+    REDIS_SEALEDBOX_USER_PREFIX,
 )
 from other.soroban_render import render_soroban_sub_invocations
 
@@ -175,6 +182,59 @@ async def clear_pending_tx(
     return deleted_count
 
 
+async def publish_pending_sealedbox(
+    user_id: int,
+    wallet_address: str,
+    ciphertext: bytes,
+    output_filename: str,
+    *,
+    redis_client: Optional[aioredis.Redis] = None,
+) -> str:
+    """Store one owner-bound encrypted payload for local WebApp decryption."""
+    _redis = redis_client or REDIS_CLIENT
+    if _redis is None:
+        raise RuntimeError("Redis is not initialized")
+
+    await clear_pending_sealedbox(user_id, redis_client=_redis)
+    token = secrets.token_hex(20)
+    request_key = f"{REDIS_SEALEDBOX_PREFIX}{token}"
+    user_key = f"{REDIS_SEALEDBOX_USER_PREFIX}{user_id}"
+    await _redis.hset(
+        request_key,
+        mapping={
+            FIELD_USER_ID: str(user_id),
+            FIELD_WALLET_ADDRESS: wallet_address,
+            FIELD_SEALEDBOX_CIPHERTEXT: base64.b64encode(ciphertext).decode("ascii"),
+            FIELD_SEALEDBOX_OUTPUT_FILENAME: output_filename,
+            FIELD_STATUS: STATUS_PENDING,
+            FIELD_CREATED_AT: datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    await _redis.expire(request_key, REDIS_SEALEDBOX_TTL)
+    await _redis.set(user_key, token, ex=REDIS_SEALEDBOX_TTL)
+    logger.info("Stored pending sealed-box request for user {}", user_id)
+    return token
+
+
+async def clear_pending_sealedbox(
+    user_id: int,
+    *,
+    redis_client: Optional[aioredis.Redis] = None,
+) -> bool:
+    """Delete the user's active WebApp sealed-box request, if any."""
+    _redis = redis_client or REDIS_CLIENT
+    if _redis is None:
+        return False
+    user_key = f"{REDIS_SEALEDBOX_USER_PREFIX}{user_id}"
+    token = await _redis.get(user_key)
+    if isinstance(token, bytes):
+        token = token.decode()
+    if token:
+        await _redis.delete(f"{REDIS_SEALEDBOX_PREFIX}{token}")
+    deleted = bool(await _redis.delete(user_key))
+    return bool(token) or deleted
+
+
 # --- Логика для WalletConnect ---
 
 
@@ -233,6 +293,13 @@ async def do_wc_sign_and_respond(
             reply_markup=get_kb_return(user_id, app_context=APP_CONTEXT),
             app_context=APP_CONTEXT,
         )
+        try:
+            await complete_notification_flow(APP_CONTEXT, user_id)
+        except Exception:
+            logger.exception(
+                f"Failed to complete notification flow after WC signing: "
+                f"user_id={user_id}"
+            )
         logger.info(f"pending_req: {pending_req}")
 
     except Exception as e:

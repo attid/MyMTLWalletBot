@@ -30,7 +30,7 @@ class WalletSessionMiddleware(BaseMiddleware):
         session.rollback = AsyncMock()
 
         result = MagicMock()
-        result.scalar_one_or_none.return_value = self.db_wallet
+        result.scalars.return_value.all.return_value = [self.db_wallet]
         session.execute.return_value = result
 
         data["session"] = session
@@ -93,6 +93,7 @@ async def test_cmd_tools_menu(mock_telegram, router_app_context, setup_mtltools_
     assert "mtl_tools_msg" in req["data"]["text"]
     assert "MTLToolsDonate" in req["data"]["reply_markup"]
     assert "MTLToolsDelegate" in req["data"]["reply_markup"]
+    assert "SealedBoxMenu" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio

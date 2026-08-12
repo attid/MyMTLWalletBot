@@ -1,5 +1,8 @@
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+import time
+from typing import AsyncGenerator, Callable, Iterator
 import asyncio
 import random
 
@@ -9,6 +12,76 @@ from sqlalchemy import event
 
 from other.config_reader import config
 from db.models import MyMtlWalletBot
+
+
+@dataclass(frozen=True)
+class DbCheckoutObservation:
+    elapsed_seconds: float
+    task_name: str
+    user_id: int | None
+    update_type: str | None
+
+
+@dataclass(frozen=True)
+class _DbCheckoutLease:
+    started_at: float
+    task_name: str
+    user_id: int | None
+    update_type: str | None
+
+
+_DB_CHECKOUT_OWNER: ContextVar[tuple[int | None, str | None]] = ContextVar(
+    "db_checkout_owner",
+    default=(None, None),
+)
+
+
+@contextmanager
+def db_checkout_owner(
+    *, user_id: int | None, update_type: str | None
+) -> Iterator[None]:
+    token = _DB_CHECKOUT_OWNER.set((user_id, update_type))
+    try:
+        yield
+    finally:
+        _DB_CHECKOUT_OWNER.reset(token)
+
+
+class DbCheckoutTracker:
+    _INFO_KEY = "mmwb_checkout_lease"
+
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+
+    def start(
+        self, connection_record, *, task_name: str | None = None
+    ) -> _DbCheckoutLease:
+        if task_name is None:
+            try:
+                task = asyncio.current_task()
+            except RuntimeError:
+                task = None
+            task_name = task.get_name() if task is not None else "no-asyncio-task"
+        user_id, update_type = _DB_CHECKOUT_OWNER.get()
+        lease = _DbCheckoutLease(
+            started_at=self._clock(),
+            task_name=task_name,
+            user_id=user_id,
+            update_type=update_type,
+        )
+        connection_record.info[self._INFO_KEY] = lease
+        return lease
+
+    def finish(self, connection_record) -> DbCheckoutObservation | None:
+        lease = connection_record.info.pop(self._INFO_KEY, None)
+        if not isinstance(lease, _DbCheckoutLease):
+            return None
+        return DbCheckoutObservation(
+            elapsed_seconds=max(0.0, self._clock() - lease.started_at),
+            task_name=lease.task_name,
+            user_id=lease.user_id,
+            update_type=lease.update_type,
+        )
 
 
 class DatabasePool:
@@ -43,6 +116,8 @@ class DatabasePool:
         )
         self.active_connections = 0
         self.pool_connections = 0
+        self.checkout_tracker = DbCheckoutTracker()
+        self.slow_checkout_seconds = 30.0
 
         # Note: SQLAlchemy async engine events are slightly different.
         # Standard engine events like 'connect', 'checkout' work on the sync driver under the hood
@@ -67,14 +142,41 @@ class DatabasePool:
             @event.listens_for(self.engine.sync_engine, "checkout")
             def checkout(dbapi_connection, connection_record, connection_proxy):
                 self.active_connections += 1
+                lease = self.checkout_tracker.start(connection_record)
                 if self.active_connections > 3:
-                    logger.info(
-                        f"Соединение взято из пула. Соединений {self.active_connections}/{self.pool_connections}"
+                    logger.bind(
+                        event="db_checkout",
+                        task_name=lease.task_name,
+                        user_id=lease.user_id,
+                        update_type=lease.update_type,
+                    ).info(
+                        f"Соединение взято из пула. "
+                        f"Соединений {self.active_connections}/{self.pool_connections} "
+                        f"task_name={lease.task_name} user_id={lease.user_id} "
+                        f"update_type={lease.update_type}"
                     )
 
             @event.listens_for(self.engine.sync_engine, "checkin")
             def checkin(dbapi_connection, connection_record):
+                observation = self.checkout_tracker.finish(connection_record)
                 self.active_connections -= 1
+                if (
+                    observation is not None
+                    and observation.elapsed_seconds >= self.slow_checkout_seconds
+                ):
+                    logger.bind(
+                        event="slow_db_checkout",
+                        elapsed_seconds=round(observation.elapsed_seconds, 3),
+                        task_name=observation.task_name,
+                        user_id=observation.user_id,
+                        update_type=observation.update_type,
+                    ).warning(
+                        f"Database connection returned after a long checkout: "
+                        f"elapsed_seconds={observation.elapsed_seconds:.3f} "
+                        f"task_name={observation.task_name} "
+                        f"user_id={observation.user_id} "
+                        f"update_type={observation.update_type}"
+                    )
                 if self.active_connections > 3:
                     logger.info(
                         f"Соединение возвращено в пул. Соединений {self.active_connections}/{self.pool_connections}"

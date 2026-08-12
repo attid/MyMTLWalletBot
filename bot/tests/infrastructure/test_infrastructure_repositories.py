@@ -1,5 +1,5 @@
 from datetime import datetime, UTC
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.exc import DBAPIError
@@ -69,6 +69,20 @@ async def test_user_repository(db_session):
 
     fetched_again = await repo.get_by_id(123)
     assert fetched_again.username == "updated_user"
+
+
+@pytest.mark.asyncio
+async def test_user_repository_rejects_oversized_username_search_before_db():
+    session = MagicMock(spec=AsyncSession)
+    session.execute = AsyncMock(
+        side_effect=AssertionError("oversized search must not reach the database")
+    )
+    repo = SqlAlchemyUserRepository(session)
+
+    result = await repo.search_by_username("x" * 59)
+
+    assert result == []
+    session.execute.assert_not_awaited()
 
 
 @pytest.mark.asyncio

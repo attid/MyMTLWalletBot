@@ -253,10 +253,16 @@ class RouterTestMiddleware(BaseMiddleware):
 async def router_bot(mock_telegram, telegram_server_config):
     """Creates a Bot instance connected to mock Telegram server."""
     session = AiohttpSession(api=TelegramAPIServer.from_base(telegram_server_config["url"]))
+    local_http_session = await session.create_session()
     bot = Bot(token=TEST_BOT_TOKEN, session=session)
     yield bot
-    await bot.session.close()
+    # The mock server is plain HTTP; bypass Aiogram's SSL shutdown delay.
+    await local_http_session.close()
 ```
+
+Router modules must not create their own `Bot` or `AiohttpSession` fixtures.
+Use `router_bot`/`router_app_context`. When a test must assert database calls,
+pass the shared `mock_session` to `RouterTestMiddleware(app_context, session)`.
 
 ### router_app_context
 

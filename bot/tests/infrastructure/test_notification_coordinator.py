@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 import pytest
 import fakeredis.aioredis
+from loguru import logger
 from core.models.blockchain_notification import BlockchainNotification
 from infrastructure.services.notification_coordinator import (
     NotificationBadgeRefresher,
@@ -33,6 +34,7 @@ def store() -> MagicMock:
     mock = create_autospec(NotificationStore, instance=True, spec_set=True)
     mock.acquire_lock.return_value = True
     mock.acknowledge_if_lock_owned.return_value = True
+    mock.release_lock.return_value = True
     return mock
 
 
@@ -53,7 +55,17 @@ def coordinator(
     *,
     now: int = 1_000,
     heartbeat_interval: float = 0.01,
+    delivery_timeout_seconds: float | None = None,
+    lock_lifetime_seconds: float | None = None,
+    badge_timeout_seconds: float | None = None,
 ) -> NotificationCoordinator:
+    kwargs = {}
+    if delivery_timeout_seconds is not None:
+        kwargs["delivery_timeout_seconds"] = delivery_timeout_seconds
+    if lock_lifetime_seconds is not None:
+        kwargs["lock_lifetime_seconds"] = lock_lifetime_seconds
+    if badge_timeout_seconds is not None:
+        kwargs["badge_timeout_seconds"] = badge_timeout_seconds
     return NotificationCoordinator(
         store=store,
         sender=sender,
@@ -61,7 +73,44 @@ def coordinator(
         clock=MagicMock(spec=Callable, return_value=now),
         token_factory=MagicMock(return_value="flush-token"),
         heartbeat_interval=heartbeat_interval,
+        **kwargs,
     )
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+def test_coordinator_rejects_a_non_positive_or_non_finite_delivery_timeout(
+    store: MagicMock,
+    sender: MagicMock,
+    badge_refresher: MagicMock,
+    timeout: float,
+) -> None:
+    with pytest.raises(
+        ValueError, match="delivery_timeout_seconds must be finite and positive"
+    ):
+        NotificationCoordinator(
+            store=store,
+            sender=sender,
+            badge_refresher=badge_refresher,
+            delivery_timeout_seconds=timeout,
+        )
+
+
+@pytest.mark.parametrize("setting", ["lock_lifetime_seconds", "badge_timeout_seconds"])
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan")])
+def test_coordinator_rejects_non_positive_or_non_finite_lifecycle_timeouts(
+    store: MagicMock,
+    sender: MagicMock,
+    badge_refresher: MagicMock,
+    setting: str,
+    timeout: float,
+) -> None:
+    with pytest.raises(ValueError, match=f"{setting} must be finite and positive"):
+        NotificationCoordinator(
+            store=store,
+            sender=sender,
+            badge_refresher=badge_refresher,
+            **{setting: timeout},
+        )
 
 
 @pytest.mark.asyncio
@@ -229,6 +278,172 @@ async def test_flush_rechecks_lease_after_hold_check_before_sending(
 
     sender.send_notification.assert_not_awaited()
     store.acknowledge_if_lock_owned.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_flush_cancels_a_stuck_sender_and_releases_its_lock(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    event = notification("stuck", "Stuck payment")
+    store.hold_until.return_value = None
+    store.peek.return_value = event
+    store.renew_lock.return_value = True
+    sender_cancelled = asyncio.Event()
+
+    async def stuck_send(_: BlockchainNotification) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            sender_cancelled.set()
+            raise
+
+    sender.send_notification.side_effect = stuck_send
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="DEBUG")
+    try:
+        await asyncio.wait_for(
+            coordinator(
+                store,
+                sender,
+                badge_refresher,
+                delivery_timeout_seconds=0.01,
+            ).flush(42, reason="flow_completed"),
+            timeout=0.2,
+        )
+    finally:
+        logger.remove(sink_id)
+
+    assert sender_cancelled.is_set()
+    store.acknowledge_if_lock_owned.assert_not_awaited()
+    badge_refresher.refresh.assert_not_awaited()
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
+    timeout_record = next(
+        record
+        for record in records
+        if record["extra"].get("event") == "notification_delivery_timed_out"
+    )
+    assert "user_id=42" in timeout_record["message"]
+    assert "notification_id=stuck" in timeout_record["message"]
+    assert "reason=flow_completed" in timeout_record["message"]
+    assert "timeout_seconds=0.01" in timeout_record["message"]
+    release_record = next(
+        record
+        for record in records
+        if record["extra"].get("event") == "notification_flush_lock_released"
+    )
+    assert "user_id=42" in release_record["message"]
+    assert "reason=flow_completed" in release_record["message"]
+    assert "released=True" in release_record["message"]
+
+
+@pytest.mark.asyncio
+async def test_flush_cancels_a_stuck_store_call_and_releases_its_lock(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    store.hold_until.return_value = None
+    store_call_cancelled = asyncio.Event()
+
+    async def stuck_peek(_: int) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            store_call_cancelled.set()
+            raise
+
+    store.peek.side_effect = stuck_peek
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="DEBUG")
+    try:
+        await asyncio.wait_for(
+            coordinator(
+                store,
+                sender,
+                badge_refresher,
+                lock_lifetime_seconds=0.01,
+            ).flush(42, reason="flow_completed"),
+            timeout=0.2,
+        )
+    finally:
+        logger.remove(sink_id)
+
+    assert store_call_cancelled.is_set()
+    sender.send_notification.assert_not_awaited()
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
+    timeout_record = next(
+        record
+        for record in records
+        if record["extra"].get("event") == "notification_flush_timed_out"
+    )
+    assert timeout_record["extra"]["user_id"] == 42
+    assert timeout_record["extra"]["reason"] == "flow_completed"
+    assert timeout_record["extra"]["stage"] == "peek"
+    assert "user_id=42" in timeout_record["message"]
+    assert "reason=flow_completed" in timeout_record["message"]
+    assert "stage=peek" in timeout_record["message"]
+    assert "notification_id=None" in timeout_record["message"]
+    assert "timeout_seconds=0.01" in timeout_record["message"]
+
+
+@pytest.mark.asyncio
+async def test_successful_flush_does_not_log_each_stage_or_badge_start(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    store.renew_lock.return_value = True
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="DEBUG")
+    try:
+        await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+    finally:
+        logger.remove(sink_id)
+
+    events = {record["extra"].get("event") for record in records}
+    assert "notification_flush_stage" not in events
+    assert "notification_badge_refresh_stage" not in events
+    assert "notification_delivered" in events
+
+
+@pytest.mark.asyncio
+async def test_stuck_badge_refresh_is_bounded_after_delivery_lock_release(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    store.renew_lock.return_value = True
+    lifecycle: list[str] = []
+    badge_cancelled = asyncio.Event()
+
+    async def release_lock(user_id: int, token: str) -> bool:
+        lifecycle.append("lock_released")
+        return True
+
+    async def stuck_badge(_: int) -> None:
+        lifecycle.append("badge_started")
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            badge_cancelled.set()
+            raise
+
+    store.release_lock.side_effect = release_lock
+    badge_refresher.refresh.side_effect = stuck_badge
+
+    await asyncio.wait_for(
+        coordinator(
+            store,
+            sender,
+            badge_refresher,
+            badge_timeout_seconds=0.01,
+        ).flush(42, reason="worker"),
+        timeout=0.2,
+    )
+
+    assert lifecycle == ["lock_released", "badge_started"]
+    assert badge_cancelled.is_set()
+    store.acknowledge_if_lock_owned.assert_awaited_once_with(42, event, "flush-token")
 
 
 @pytest.mark.asyncio
@@ -677,9 +892,20 @@ async def test_flush_does_not_enter_when_another_owner_has_the_lock(
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
     store.acquire_lock.return_value = False
-
-    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+    records = []
+    sink_id = logger.add(lambda message: records.append(message.record), level="INFO")
+    try:
+        await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+    finally:
+        logger.remove(sink_id)
 
     store.hold_until.assert_not_awaited()
     sender.send_notification.assert_not_awaited()
     store.release_lock.assert_not_awaited()
+    contention_record = next(
+        record
+        for record in records
+        if record["extra"].get("event") == "notification_flush_lock_unavailable"
+    )
+    assert "user_id=42" in contention_record["message"]
+    assert "reason=worker" in contention_record["message"]

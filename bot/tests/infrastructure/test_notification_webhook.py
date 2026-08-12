@@ -32,6 +32,10 @@ from infrastructure.services.notification_coordinator import (
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
+from infrastructure.services.bot_health_service import (
+    BotHealthReport,
+    BotHealthService,
+)
 from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
 from db.models import MyMtlWalletBot
@@ -189,6 +193,32 @@ async def test_notification_service_sends_message_without_app_context(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("healthy", "expected_status"),
+    [(True, 200), (False, 503)],
+)
+async def test_health_endpoint_reflects_functional_health(
+    notification_service, healthy: bool, expected_status: int
+) -> None:
+    health_service = AsyncMock(spec=BotHealthService)
+    health_service.check.return_value = BotHealthReport(
+        healthy=healthy,
+        checks={
+            "scheduler": "ok" if healthy else "stale",
+            "database": "ok",
+        },
+    )
+    notification_service.bot_health_service = health_service
+
+    response = await notification_service.handle_health(None)
+
+    assert response.status == expected_status
+    assert json.loads(response.text)["status"] == (
+        "ok" if healthy else "unhealthy"
+    )
+
+
+@pytest.mark.asyncio
 async def test_active_hold_queues_blockchain_event_until_the_legacy_sender_runs(
     notification_service, mock_telegram, monkeypatch: pytest.MonkeyPatch
 ):
@@ -233,7 +263,7 @@ async def test_active_hold_queues_blockchain_event_until_the_legacy_sender_runs(
     keyboard = json.loads(request["data"]["reply_markup"])
     assert keyboard["inline_keyboard"] == [
         [{"text": "⚙️", "callback_data": "NotificationSettings"}],
-        [{"text": "Back", "callback_data": "Return"}],
+        [{"text": "🏠 Home", "callback_data": "Return"}],
     ]
     clear_message_id.assert_awaited_once_with(12345, app_context=ANY)
     assert await notification_service.dispatcher.storage.get_data(key) == {
@@ -279,7 +309,7 @@ async def test_inactive_hold_delivers_through_the_legacy_keyboard_and_message_id
     keyboard = json.loads(request["data"]["reply_markup"])
     assert keyboard["inline_keyboard"] == [
         [{"text": "⚙️", "callback_data": "NotificationSettings"}],
-        [{"text": "Back", "callback_data": "Return"}],
+        [{"text": "🏠 Home", "callback_data": "Return"}],
     ]
     clear_message_id.assert_awaited_once_with(user_id, app_context=ANY)
     assert await notification_service.dispatcher.storage.get_data(key) == {

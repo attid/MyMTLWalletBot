@@ -1,9 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from aiogram import Bot, Dispatcher, types
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.storage.base import StorageKey
 import datetime
 import jsonpickle  # type: ignore
@@ -15,26 +14,12 @@ from routers.wallet_setting import (
 )
 from core.domain.entities import Wallet, AddressBookEntry
 from core.domain.value_objects import Balance, PaymentResult
-from tests.conftest import TEST_BOT_TOKEN
-from infrastructure.services.localization_service import LocalizationService
+from tests.conftest import RouterTestMiddleware, create_callback_update
 from core.interfaces.repositories import IWalletRepository, IAddressBookRepository
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.payment.send_payment import SendPayment
 from infrastructure.services.stellar_service import StellarService
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
-
-
-class MockDbMiddleware(BaseMiddleware):
-    def __init__(self, session, app_context):
-        self.session = session
-        self.app_context = app_context
-        self.l10n = MagicMock(spec=LocalizationService)
-
-    async def __call__(self, handler, event, data):
-        data["session"] = self.session
-        data["app_context"] = self.app_context
-        data["l10n"] = self.l10n
-        return await handler(event, data)
 
 
 @pytest.fixture(autouse=True)
@@ -49,13 +34,8 @@ def cleanup_router():
 
 
 @pytest.fixture
-def mock_session():
-    from sqlalchemy.orm import Session
-
-    session = MagicMock(spec=Session)
-
-    # Configure execute to return a mock result that supports scalar_one_or_none
-    mock_result = MagicMock()
+def dp(mock_session, router_app_context):
+    mock_result = mock_session.execute.return_value
     mock_db_wallet = MagicMock()
     mock_db_wallet.balances = "[]"
     mock_db_wallet.public_key = "GUSER"
@@ -67,28 +47,8 @@ def mock_session():
     mock_result.scalar_one_or_none.return_value = mock_db_wallet
     mock_result.scalars.return_value.first.return_value = mock_db_wallet
 
-    session.execute = AsyncMock(
-        return_value=mock_result
-    )  # Fix for await session.execute
-    session.commit = AsyncMock()
-    session.rollback = AsyncMock()
-    return session
-
-
-@pytest.fixture
-async def bot(telegram_server_config):
-    session = AiohttpSession(
-        api=TelegramAPIServer.from_base(telegram_server_config["url"])
-    )
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    yield bot
-    await bot.session.close()
-
-
-@pytest.fixture
-def dp(mock_session, mock_app_context):
-    dp = Dispatcher()
-    middleware = MockDbMiddleware(mock_session, mock_app_context)
+    dp = router_app_context.dispatcher
+    middleware = RouterTestMiddleware(router_app_context, mock_session)
     dp.message.middleware(middleware)
     dp.callback_query.middleware(middleware)
     dp.include_router(wallet_setting_router)
@@ -96,12 +56,10 @@ def dp(mock_session, mock_app_context):
 
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_cmd_wallet_setting(mock_telegram, dp, mock_session, mock_app_context):
     """Test WalletSetting main menu"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.is_free = True
@@ -137,12 +95,10 @@ async def test_cmd_wallet_setting(
 
 
 @pytest.mark.asyncio
-async def test_asset_visibility_menu(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_asset_visibility_menu(mock_telegram, dp, mock_session, mock_app_context):
     """Test AssetVisibilityMenu loading"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # Setup Wallet and Balances
     mock_wallet = MagicMock(spec=Wallet)
@@ -202,11 +158,11 @@ async def test_asset_visibility_menu(
 
 @pytest.mark.asyncio
 async def test_asset_visibility_toggle(
-    mock_telegram, bot, dp, mock_session, mock_app_context
+    mock_telegram, dp, mock_session, mock_app_context
 ):
     """Test toggling asset visibility"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.assets_visibility = "{}"
@@ -263,12 +219,10 @@ async def test_asset_visibility_toggle(
 
 
 @pytest.mark.asyncio
-async def test_cmd_delete_asset_list(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_cmd_delete_asset_list(mock_telegram, dp, mock_session, mock_app_context):
     """Test DeleteAsset menu"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_balance_uc = MagicMock(spec=GetWalletBalance)
     mock_balance_uc.execute = AsyncMock(
@@ -316,7 +270,6 @@ async def test_cq_delete_asset_execute(
     mock_telegram,
     mock_horizon,
     horizon_server_config,
-    bot,
     dp,
     mock_session,
     mock_app_context,
@@ -324,7 +277,7 @@ async def test_cq_delete_asset_execute(
     """Test actual asset deletion (trustline removal) - shows confirmation message"""
 
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # 1. Prepare state with assets
     storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
@@ -401,10 +354,10 @@ async def test_cq_delete_asset_execute(
 
 
 @pytest.mark.asyncio
-async def test_buy_address_flow(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_buy_address_flow(mock_telegram, dp, mock_session, mock_app_context):
     """Test BuyAddress flow"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_wallet = MagicMock(spec=Wallet)
     mock_wallet.is_free = True
@@ -470,12 +423,10 @@ async def test_buy_address_flow(mock_telegram, bot, dp, mock_session, mock_app_c
 
 
 @pytest.mark.asyncio
-async def test_address_book_view(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_address_book_view(mock_telegram, dp, mock_session, mock_app_context):
     """Test AddressBook viewing"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     mock_entry = MagicMock(spec=AddressBookEntry)
     mock_entry.id = 1
@@ -513,3 +464,81 @@ async def test_address_book_view(
     assert "address_book" in sent[0]["data"]["text"]
     assert "GADDR" in sent[0]["data"]["reply_markup"]
     assert "My Friend" in sent[0]["data"]["reply_markup"]
+
+
+def setup_asset_visibility_error_path(mock_app_context):
+    wallet = MagicMock(spec=Wallet)
+    wallet.public_key = "G_TEST_PUBLIC_KEY"
+    wallet.is_free = False
+    wallet.assets_visibility = "{}"
+
+    repo = AsyncMock(spec=IWalletRepository)
+    repo.get_default_wallet.return_value = wallet
+    mock_app_context.repository_factory.get_wallet_repository.return_value = repo
+
+    balance_uc = MagicMock(spec=GetWalletBalance)
+    balance_uc.execute = AsyncMock(
+        return_value=[
+            Balance(
+                asset_code="EURMTL",
+                asset_issuer="GISSUER",
+                balance="1",
+                asset_type="credit_alphanum12",
+            )
+        ]
+    )
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        balance_uc
+    )
+
+
+@pytest.mark.asyncio
+async def test_asset_visibility_ignores_message_not_modified(
+    mock_telegram, dp, mock_session, mock_app_context
+):
+    setup_asset_visibility_error_path(mock_app_context)
+    callback_data = AssetVisibilityCallbackData(
+        action="set", code="EURMTL", status=2, page=1
+    ).pack()
+    error = TelegramBadRequest(
+        method="editMessageText", message="message is not modified"
+    )
+
+    with (
+        patch.object(Message, "edit_text", side_effect=error),
+        patch.object(CallbackQuery, "answer", new_callable=AsyncMock) as answer,
+    ):
+        await dp.feed_update(
+            bot=mock_app_context.bot,
+            update=create_callback_update(12345, callback_data),
+        )
+
+    for call in answer.call_args_list:
+        assert not call.args or "UI update failed" not in call.args[0]
+        assert call.kwargs.get("show_alert") is not True
+    mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_asset_visibility_reports_unexpected_ui_error(
+    mock_telegram, dp, mock_session, mock_app_context
+):
+    setup_asset_visibility_error_path(mock_app_context)
+    callback_data = AssetVisibilityCallbackData(
+        action="set", code="EURMTL", status=2, page=1
+    ).pack()
+
+    with (
+        patch.object(Message, "edit_text", side_effect=Exception("Generic error")),
+        patch.object(CallbackQuery, "answer", new_callable=AsyncMock) as answer,
+    ):
+        await dp.feed_update(
+            bot=mock_app_context.bot,
+            update=create_callback_update(12345, callback_data),
+        )
+
+    assert any(
+        call.args and "UI update failed" in call.args[0]
+        for call in answer.call_args_list
+    )
+    mock_session.commit.assert_awaited_once()

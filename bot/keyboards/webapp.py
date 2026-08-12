@@ -102,3 +102,34 @@ def webapp_import_key_keyboard(
             get_return_button(user_id, app_context=app_context),
         ]
     )
+
+
+def webapp_sealedbox_keyboard(
+    token: str,
+    user_id: int | None = None,
+    app_context: AppContext | None = None,
+) -> InlineKeyboardMarkup:
+    """Open an owner-bound local sealed-box decryption request."""
+    webapp_url = getattr(config, "webapp_url", "https://webapp.example.com")
+    lang = _resolve_webapp_lang(user_id, app_context)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=my_gettext(
+                        user_id or 0, "sealedbox_decrypt", app_context=app_context
+                    ),
+                    web_app=WebAppInfo(
+                        url=f"{webapp_url}/sealedbox?token={token}&lang={lang}"
+                    ),
+                )
+            ],
+            get_return_button(
+                user_id or 0,
+                text=my_gettext(user_id or 0, "kb_back", app_context=app_context),
+                callback="SealedBoxBack:decrypt_file",
+                app_context=app_context,
+            ),
+            get_return_button(user_id or 0, app_context=app_context),
+        ]
+    )

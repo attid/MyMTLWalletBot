@@ -9,6 +9,7 @@ from routers.sign import (
     PinState,
     PinCallbackData,
     cq_pin,
+    cmd_sign,
     cmd_password_set2,
 )
 from infrastructure.states import StateSign
@@ -536,6 +537,27 @@ async def test_cq_pin_set_pin2_commits_password_change(
         )
 
     session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_sign_forwards_app_context(
+    mock_telegram,
+    mock_callback,
+    mock_state,
+    mock_session,
+    router_app_context,
+):
+    mock_callback.data = "Sign"
+
+    with patch("routers.sign.cmd_show_sign", autospec=True) as show_sign:
+        await cmd_sign(
+            mock_callback,
+            mock_state,
+            mock_session,
+            app_context=router_app_context,
+        )
+
+    assert show_sign.call_args.kwargs["app_context"] is router_app_context
 
 
 @pytest.mark.asyncio

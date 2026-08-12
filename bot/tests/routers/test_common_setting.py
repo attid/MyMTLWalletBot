@@ -1,35 +1,16 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from aiogram import Bot, Dispatcher, types
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.client.telegram import TelegramAPIServer
-from aiogram.dispatcher.middlewares.base import BaseMiddleware
+from aiogram import types
 import datetime
 
 from routers.common_setting import router as common_setting_router, LangCallbackData
 from routers.start_msg import WalletSettingCallbackData
-from infrastructure.services.localization_service import LocalizationService
 from aiogram.fsm.storage.base import StorageKey
-from tests.conftest import TEST_BOT_TOKEN
+from tests.conftest import RouterTestMiddleware
 from core.interfaces.repositories import IUserRepository, IWalletRepository
 from core.interfaces.services import IWalletSecretService
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.domain.entities import User, Wallet
-
-
-class MockDbMiddleware(BaseMiddleware):
-    def __init__(self, session, app_context):
-        self.session = session
-        self.app_context = app_context
-        # We need to mock l10n.lang_dict for cmd_language
-        self.l10n = MagicMock(spec=LocalizationService)
-        self.l10n.lang_dict = {"en": {"1_lang": "English"}, "ru": {"1_lang": "Russian"}}
-
-    async def __call__(self, handler, event, data):
-        data["session"] = self.session
-        data["app_context"] = self.app_context
-        data["l10n"] = self.l10n
-        return await handler(event, data)
 
 
 @pytest.fixture(autouse=True)
@@ -40,26 +21,13 @@ def cleanup_router():
 
 
 @pytest.fixture
-def mock_session():
-    session = MagicMock()
-    session.commit = AsyncMock()
-    return session
-
-
-@pytest.fixture
-async def bot(telegram_server_config):
-    session = AiohttpSession(
-        api=TelegramAPIServer.from_base(telegram_server_config["url"])
-    )
-    bot = Bot(token=TEST_BOT_TOKEN, session=session)
-    yield bot
-    await bot.session.close()
-
-
-@pytest.fixture
-def dp(mock_session, mock_app_context):
-    dp = Dispatcher()
-    middleware = MockDbMiddleware(mock_session, mock_app_context)
+def dp(mock_session, router_app_context):
+    dp = router_app_context.dispatcher
+    router_app_context.localization_service.lang_dict = {
+        "en": {"1_lang": "English"},
+        "ru": {"1_lang": "Russian"},
+    }
+    middleware = RouterTestMiddleware(router_app_context, mock_session)
     dp.message.middleware(middleware)
     dp.callback_query.middleware(middleware)
     dp.include_router(common_setting_router)
@@ -67,10 +35,10 @@ def dp(mock_session, mock_app_context):
 
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_lang(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_cmd_wallet_lang(mock_telegram, dp, mock_session, router_app_context):
     """Test ChangeLang callback -> Show language menu"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = router_app_context.bot
 
     await dp.feed_update(
         bot=bot,
@@ -103,10 +71,10 @@ async def test_cmd_wallet_lang(mock_telegram, bot, dp, mock_session, mock_app_co
 
 
 @pytest.mark.asyncio
-async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_callbacks_lang(mock_telegram, dp, mock_session, mock_app_context):
     """Test lang_en callback -> Set language and show balance"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
     mock_app_context.notification_coordinator = MagicMock(complete_flow=AsyncMock())
 
     async def deliver_queued_notification(user_id):
@@ -203,12 +171,12 @@ async def test_callbacks_lang(mock_telegram, bot, dp, mock_session, mock_app_con
 
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting(
-    mock_telegram, bot, dp, mock_session, mock_app_context
+async def test_change_wallet_callback_lists_active_wallets(
+    mock_telegram, dp, mock_session, mock_app_context
 ):
     """Test ChangeWallet callback"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # cmd_change_wallet calls get_wallet_repository.get_all_active
     mock_wallet_repo = MagicMock(spec=IWalletRepository)
@@ -245,12 +213,12 @@ async def test_cmd_wallet_setting(
 
 
 @pytest.mark.asyncio
-async def test_cmd_wallet_setting_msg(
-    mock_telegram, bot, dp, mock_session, mock_app_context
+async def test_change_wallet_command_handles_empty_wallet_list(
+    mock_telegram, dp, mock_session, mock_app_context
 ):
     """Test /change_wallet command"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # cmd_change_wallet calls get_wallet_repository.get_all_active
     mock_wallet_repo = MagicMock(spec=IWalletRepository)
@@ -282,12 +250,10 @@ async def test_cmd_wallet_setting_msg(
 
 
 @pytest.mark.asyncio
-async def test_cq_setting_delete(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_cq_setting_delete(mock_telegram, dp, mock_session, mock_app_context):
     """Test WalletSettingCallbackData DELETE action"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     # Needs state data with wallets
     # We can patch state.get_data or set it if using real FSM.
@@ -330,12 +296,10 @@ async def test_cq_setting_delete(
 
 
 @pytest.mark.asyncio
-async def test_cq_setting_set_active(
-    mock_telegram, bot, dp, mock_session, mock_app_context
-):
+async def test_cq_setting_set_active(mock_telegram, dp, mock_session, mock_app_context):
     """Test WalletSettingCallbackData SET_ACTIVE action"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
     wallets = {"1": "GWALLET1"}
@@ -379,10 +343,10 @@ async def test_cq_setting_set_active(
 
 
 @pytest.mark.asyncio
-async def test_cq_setting_name(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_cq_setting_name(mock_telegram, dp, mock_session, mock_app_context):
     """Test WalletSettingCallbackData NAME action"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
     wallets = {"1": "GWALLET1"}
@@ -446,10 +410,10 @@ async def test_cq_setting_name(mock_telegram, bot, dp, mock_session, mock_app_co
 
 
 @pytest.mark.asyncio
-async def test_cmd_yes_delete(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_cmd_yes_delete(mock_telegram, dp, mock_session, mock_app_context):
     """Test YES_DELETE callback"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     storage_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
     wallets = {"1": "GWALLET1"}
@@ -490,10 +454,10 @@ async def test_cmd_yes_delete(mock_telegram, bot, dp, mock_session, mock_app_con
 
 
 @pytest.mark.asyncio
-async def test_cmd_support(mock_telegram, bot, dp, mock_session, mock_app_context):
+async def test_cmd_support(mock_telegram, dp, mock_session, mock_app_context):
     """Test Support callback"""
     user_id = 123
-    mock_app_context.bot = bot
+    bot = mock_app_context.bot
 
     await dp.feed_update(
         bot=bot,

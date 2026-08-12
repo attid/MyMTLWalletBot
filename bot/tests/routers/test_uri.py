@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import ANY, MagicMock, patch, AsyncMock
 
 from routers.uri import router as uri_router
 from core.use_cases.stellar.process_uri import ProcessStellarUriResult
@@ -46,9 +46,20 @@ def setup_uri_mocks(router_app_context):
                 self.process_uri_uc
             )
 
-        def set_uri_result(self, xdr="XDR_DATA", callback=None, return_url=None):
+        def set_uri_result(
+            self,
+            xdr="XDR_DATA",
+            callback=None,
+            return_url=None,
+            success=True,
+            error_message=None,
+        ):
             self.process_uri_uc.execute.return_value = ProcessStellarUriResult(
-                success=True, xdr=xdr, callback_url=callback, return_url=return_url
+                success=success,
+                xdr=xdr,
+                callback_url=callback,
+                return_url=return_url,
+                error_message=error_message,
             )
 
     return URIMockHelper(router_app_context)
@@ -143,3 +154,81 @@ async def test_process_wc_uri(mock_telegram, router_app_context, setup_uri_mocks
 
         # Verify original message deleted
         assert any(r["method"] == "deleteMessage" for r in mock_telegram)
+
+
+@pytest.mark.asyncio
+async def test_remote_uri_failure_does_not_decode_missing_xdr(
+    mock_telegram, router_app_context, setup_uri_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(uri_router)
+
+    user_id = 123
+    setup_uri_mocks.set_uri_result(success=False, xdr=None, error_message="Some error")
+    response = MagicMock(
+        status=200,
+        data={"uri": "web+stellar:tx?xdr=..."},
+    )
+
+    with (
+        patch(
+            "routers.uri.http_session_manager.get_web_request",
+            AsyncMock(return_value=response),
+        ),
+        patch("routers.uri.cmd_check_xdr", AsyncMock()) as check_xdr,
+        patch("routers.uri.send_message", AsyncMock()) as send_message,
+    ):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(
+                user_id, "/start uri_Jw6RUA0_cMS0aGHw2lXdPzwXx0M"
+            ),
+            app_context=router_app_context,
+        )
+
+    check_xdr.assert_not_called()
+    send_message.assert_called_with(ANY, user_id, ANY, app_context=router_app_context)
+
+
+@pytest.mark.asyncio
+async def test_remote_uri_preserves_real_encoded_payload(
+    mock_telegram, router_app_context, setup_uri_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(uri_router)
+
+    user_id = 123
+    real_uri = (
+        "web+stellar:tx?xdr=AAAAAgAAAAA%2FHWyX8fwoUZSqStT7Am3ezdktyPTkutQ%2F"
+        "%2B5GWy%2BTJAAAAAMgAAAAAAAAAAQAAAAEAAAAAaXzu6wAAAABpfPAXAAAAAAAAAAIA"
+        "AAAAAAAACgAAAApic24uZXhwZXJ0AAAAAAABAAAAEDQ5N2ZjN2QyYjEzNzExNzYAAAAAAAAA"
+        "CgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAApic24uZXhwZXJ0AAAAAAAAAAAAAcvkyQ"
+        "AAAABALx6Jiwp4JFrut7cIL8LoxBpj1Ct9o7PWTSUjqQ6ko8ZzHpQzT1kqtGzjuSQmaQ"
+        "erRcFtePFnbHlKDhkYlb85Ag%3D%3D&replace=sourceAccount%3AX%3BX%3Aaccount+to"
+        "+authenticate&callback=url%3Ahttps%3A%2F%2Fbsn.expert%2Flogin%2Fcallback"
+        "&msg=bsn.expert+auth&origin_domain=bsn.expert&signature=tuMphNLs46wzd0Qom"
+        "%2FxBGX7%2FLB8760%2BwOqYRj%2Fc5xX%2BTHZkd8rN%2FUca2t%2F1ZgAgptfJPE6X"
+        "%2FlmT9HFIOyNOvBA%3D%3D"
+    )
+    setup_uri_mocks.set_uri_result(xdr="DECODED_XDR")
+    response = MagicMock(status=200, data={"uri": real_uri})
+
+    with (
+        patch(
+            "routers.uri.http_session_manager.get_web_request",
+            AsyncMock(return_value=response),
+        ),
+        patch("routers.uri.cmd_check_xdr", AsyncMock()) as check_xdr,
+    ):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(
+                user_id, "/start uri_Jw6RUA0_cMS0aGHw2lXdPzwXx0M"
+            ),
+            app_context=router_app_context,
+        )
+
+    setup_uri_mocks.process_uri_uc.execute.assert_awaited_once_with(real_uri, user_id)
+    check_xdr.assert_awaited_once()

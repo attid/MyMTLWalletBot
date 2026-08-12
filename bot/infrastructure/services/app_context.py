@@ -3,7 +3,12 @@ from typing import Optional, TYPE_CHECKING
 from aiogram import Bot, Dispatcher
 from infrastructure.services.localization_service import LocalizationService
 from core.interfaces.repositories import IRepositoryFactory
-from core.interfaces.services import IStellarService, IEncryptionService, ITonService
+from core.interfaces.services import (
+    IEncryptionService,
+    IStellarSealedBoxService,
+    IStellarService,
+    ITonService,
+)
 from infrastructure.factories.use_case_factory import IUseCaseFactory
 from db.db_pool import DatabasePool
 
@@ -17,6 +22,7 @@ if TYPE_CHECKING:
         NotificationHistoryService,
     )
     from infrastructure.services.notification_service import NotificationService
+    from infrastructure.services.bot_health_service import BotHealthService
     from infrastructure.workers.notification_delivery_worker import (
         NotificationDeliveryWorker,
     )
@@ -50,6 +56,8 @@ class AppContext:
         notification_store: Optional["NotificationRedisStore"] = None,
         notification_delivery_worker: Optional["NotificationDeliveryWorker"] = None,
         notification_badge_service: Optional["NotificationBadgeService"] = None,
+        bot_health_service: Optional["BotHealthService"] = None,
+        stellar_sealedbox_service: Optional[IStellarSealedBoxService] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -70,3 +78,5 @@ class AppContext:
         self.notification_store = notification_store
         self.notification_delivery_worker = notification_delivery_worker
         self.notification_badge_service = notification_badge_service
+        self.bot_health_service = bot_health_service
+        self.stellar_sealedbox_service = stellar_sealedbox_service
