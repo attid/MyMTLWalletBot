@@ -34,6 +34,14 @@ def _latest_screen(mock_telegram: list[dict]) -> dict:
     return screens[-1]
 
 
+def _deleted_message_ids(mock_telegram: list[dict]) -> set[int]:
+    return {
+        int(request["data"]["message_id"])
+        for request in mock_telegram
+        if request["method"] == "deleteMessage"
+    }
+
+
 @pytest.fixture(autouse=True)
 def detach_router():
     yield
@@ -104,6 +112,7 @@ async def test_encrypts_text_for_manually_entered_recipient(
     assert request is not None
     assert "message.txt.ssb" in str(request["data"])
     assert request["data"]["caption"] == "sealedbox_encrypted_for"
+    assert {2, 3}.issubset(_deleted_message_ids(mock_telegram))
     assert await dp.storage.get_state(key) is None
 
 
@@ -141,20 +150,45 @@ async def test_encrypt_content_back_returns_to_recipient_selection(
 
 
 @pytest.mark.asyncio
-async def test_invalid_addressbook_callback_is_rejected_before_repository_lookup(
+async def test_recipient_prompt_uses_send_inline_chooser_without_address_buttons(
     mock_telegram, sealedbox_context
 ) -> None:
     repo = sealedbox_context.repository_factory.get_addressbook_repository.return_value
+    repo.get_all.return_value = [
+        MagicMock(id=7, name="Alice", address=Keypair.random().public_key)
+    ]
     dp = sealedbox_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
     dp.include_router(sealedbox_router)
 
     await dp.feed_update(
         sealedbox_context.bot,
-        create_callback_update(123, "SealedBoxRecipient:not-an-id"),
+        create_callback_update(123, "SealedBoxEncrypt"),
     )
 
-    repo.get_by_id.assert_not_awaited()
+    markup = _latest_screen(mock_telegram)["data"]["reply_markup"]
+    assert '"switch_inline_query_current_chat": ""' in markup
+    assert "SealedBoxRecipient:" not in markup
+    repo.get_all.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_recipient_message_is_deleted(
+    mock_telegram, sealedbox_context
+) -> None:
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+    user_id = 123
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(key, SealedBoxState.recipient)
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_message_update(user_id, "not-an-address", message_id=9),
+    )
+
+    assert 9 in _deleted_message_ids(mock_telegram)
 
 
 @pytest.mark.asyncio
@@ -189,6 +223,7 @@ async def test_encrypt_content_error_goes_back_to_recipient_selection(
 
     await dp.feed_update(sealedbox_context.bot, unsupported)
 
+    assert 3 in _deleted_message_ids(mock_telegram)
     assert (
         "SealedBoxBack:recipient"
         in _latest_screen(mock_telegram)["data"]["reply_markup"]
@@ -284,6 +319,7 @@ async def test_decrypts_with_current_no_pin_wallet(
     request = get_telegram_request(mock_telegram, "sendDocument")
     assert request is not None
     assert "report.pdf" in str(request["data"])
+    assert 3 in _deleted_message_ids(mock_telegram)
     assert (
         await dp.storage.get_state(
             StorageKey(
@@ -422,7 +458,46 @@ async def test_password_wallet_waits_for_password_before_decrypting(
 
     get_secrets.execute.assert_awaited_once_with(user_id, "HUNTER2")
     assert get_telegram_request(mock_telegram, "sendDocument") is not None
+    assert {3, 5, 6}.issubset(_deleted_message_ids(mock_telegram))
     assert await dp.storage.get_state(key) is None
+
+
+@pytest.mark.asyncio
+async def test_non_document_decrypt_input_is_deleted(
+    mock_telegram, sealedbox_context
+) -> None:
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+    user_id = 123
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(key, SealedBoxState.decrypt_file)
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_message_update(user_id, "not-a-file", message_id=11),
+    )
+
+    assert 11 in _deleted_message_ids(mock_telegram)
+
+
+@pytest.mark.asyncio
+async def test_non_text_decrypt_auth_input_is_deleted(
+    mock_telegram, sealedbox_context
+) -> None:
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+    user_id = 123
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(key, SealedBoxState.decrypt_auth)
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        _document_update(user_id, file_name="wrong.bin", file_size=1, update_id=12),
+    )
+
+    assert 12 in _deleted_message_ids(mock_telegram)
 
 
 @pytest.mark.asyncio

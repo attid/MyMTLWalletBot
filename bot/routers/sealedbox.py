@@ -7,6 +7,7 @@ from io import BytesIO
 import re
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile
@@ -155,15 +156,13 @@ async def _show_recipient_selection(
     state: FSMContext,
     app_context: AppContext,
 ) -> None:
-    repo = app_context.repository_factory.get_addressbook_repository(session)
-    entries = await repo.get_all(user_id)
     buttons = [
-        _button(
-            f"{entry.name} — {_short_address(entry.address)}",
-            f"SealedBoxRecipient:{entry.id}",
-        )
-        for entry in entries
-        if StrKey.is_valid_ed25519_public_key(entry.address)
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(user_id, "kb_choose", app_context=app_context),
+                switch_inline_query_current_chat="",
+            )
+        ]
     ]
     buttons.extend(_navigation(user_id, "menu", app_context))
     await state.set_state(SealedBoxState.recipient)
@@ -187,47 +186,29 @@ async def back_to_recipient_selection(
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("SealedBoxRecipient:"))
-async def choose_book_recipient(
-    callback: types.CallbackQuery,
-    state: FSMContext,
-    session: AsyncSession,
-    app_context: AppContext,
-) -> None:
-    user_id = callback.from_user.id
-    raw_entry_id = callback.data.rsplit(":", 1)[-1] if callback.data else ""
+async def _delete_inbound_message(message: types.Message) -> None:
     try:
-        entry_id = int(raw_entry_id)
-    except ValueError:
-        await callback.answer(
-            my_gettext(user_id, "sealedbox_bad_address", app_context=app_context),
-            show_alert=True,
+        await message.delete()
+    except TelegramAPIError as exc:
+        logger.warning(
+            "failed to delete sealed-box input: user_id={} message_id={} error={}",
+            message.from_user.id if message.from_user else None,
+            message.message_id,
+            exc,
         )
-        return
-    repo = app_context.repository_factory.get_addressbook_repository(session)
-    entry = await repo.get_by_id(entry_id, user_id)
-    if entry is None or not StrKey.is_valid_ed25519_public_key(entry.address):
-        await callback.answer(
-            my_gettext(user_id, "sealedbox_bad_address", app_context=app_context),
-            show_alert=True,
-        )
-        return
-    await _accept_recipient(
-        session, user_id, entry.address, state, app_context=app_context
-    )
-    await callback.answer()
 
 
-@router.message(SealedBoxState.recipient, F.text)
+@router.message(SealedBoxState.recipient)
 async def receive_recipient(
     message: types.Message,
     state: FSMContext,
     session: AsyncSession,
     app_context: AppContext,
 ) -> None:
-    if message.from_user is None or message.text is None:
+    if message.from_user is None:
         return
-    recipient = message.text.strip().upper()
+    await _delete_inbound_message(message)
+    recipient = message.text.strip().upper() if message.text else ""
     if not StrKey.is_valid_ed25519_public_key(recipient):
         await _show_error(
             session,
@@ -272,6 +253,7 @@ async def receive_encrypt_content(
 ) -> None:
     if message.from_user is None:
         return
+    await _delete_inbound_message(message)
     user_id = message.from_user.id
     if message.document:
         if (message.document.file_size or 0) > MAX_PLAINTEXT_BYTES:
@@ -419,6 +401,7 @@ async def receive_decrypt_file(
 ) -> None:
     if message.from_user is None:
         return
+    await _delete_inbound_message(message)
     user_id = message.from_user.id
     if message.document is None:
         await _show_error(
@@ -475,16 +458,20 @@ async def receive_decrypt_file(
     )
 
 
-@router.message(SealedBoxState.decrypt_auth, F.text)
+@router.message(SealedBoxState.decrypt_auth)
 async def receive_decrypt_password(
     message: types.Message,
     state: FSMContext,
     session: AsyncSession,
     app_context: AppContext,
 ) -> None:
-    if message.from_user is None or message.text is None:
+    if message.from_user is None:
         return
+    await _delete_inbound_message(message)
     user_id = message.from_user.id
+    if message.text is None:
+        await _show_error(session, user_id, "bad_password", "decrypt_file", app_context)
+        return
     data = await state.get_data()
     encoded = data.get("sealedbox_pending_ciphertext")
     if not encoded:
@@ -492,7 +479,6 @@ async def receive_decrypt_password(
             session, user_id, "sealedbox_file_expired", "menu", app_context
         )
         return
-    await message.delete()
     await _decrypt_server(
         session,
         user_id,

@@ -53,7 +53,6 @@ FLOW_CALLBACK_PREFIXES = (
     "notif_filter:",
     "create_filter_from:",
     "AVD_:",
-    "SealedBoxRecipient:",
 )
 """CallbackData namespaces that advance an interactive flow."""
 

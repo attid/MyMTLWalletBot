@@ -59,7 +59,7 @@ def callback(data: str) -> CallbackQuery:
         ("SealedBoxMenu", True),
         ("SealedBoxEncrypt", True),
         ("SealedBoxDecrypt", True),
-        ("SealedBoxRecipient:7", True),
+        ("SealedBoxRecipient:7", False),
         ("save_filter", False),
         ("notification_pending:flush", False),
         ("Return", False),
