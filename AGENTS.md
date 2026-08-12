@@ -79,6 +79,3 @@ an index. Detailed rules live in `docs/`.
   `bot/`, `webapp/`, or `shared/` when no execution plan file is staged.
 - The hook also blocks commits that stage a fully completed plan in
   `docs/exec-plans/active/`; completed plans must move to `completed/`.
-
-## Post-Push Step
-- After every successful `git push`, run `just push-gitdocker`.
