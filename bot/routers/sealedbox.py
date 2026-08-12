@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import StrKey
 
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.localization_service import LocalizationService
 from infrastructure.services.stellar_sealedbox_service import (
     MAX_BASE64_CIPHERTEXT_BYTES,
     MAX_PLAINTEXT_BYTES,
@@ -90,7 +91,7 @@ async def _show_menu(
             my_gettext(user_id, "sealedbox_decrypt", app_context=app_context),
             "SealedBoxDecrypt",
         ),
-        *_navigation(user_id, "tools", app_context),
+        *_navigation(user_id, "settings", app_context),
     ]
     await send_message(
         session,
@@ -127,17 +128,19 @@ async def back_to_sealedbox_menu(
     await callback.answer()
 
 
-@router.callback_query(F.data == "SealedBoxBack:tools")
-async def back_to_tools(
+@router.callback_query(F.data == "SealedBoxBack:settings")
+async def back_to_settings(
     callback: types.CallbackQuery,
     state: FSMContext,
     session: AsyncSession,
     app_context: AppContext,
+    l10n: LocalizationService,
 ) -> None:
-    from routers.mtltools import cmd_tools
+    from routers.wallet_setting import cmd_wallet_setting
 
     await clear_state(state)
-    await cmd_tools(callback, state, session, app_context)
+    await cmd_wallet_setting(callback, state, session, app_context, l10n)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "SealedBoxEncrypt")
