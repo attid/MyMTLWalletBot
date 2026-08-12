@@ -547,6 +547,29 @@ class TestWebAppKeyboard:
         assert "lang=ru" in keyboard.inline_keyboard[0][0].web_app.url
         app_context.localization_service.get_user_language.assert_called_once_with(7)
 
+    def test_webapp_sealedbox_keyboard_uses_owner_token_and_language(self):
+        from unittest.mock import MagicMock
+
+        from keyboards.webapp import webapp_sealedbox_keyboard
+
+        app_context = MagicMock()
+        app_context.localization_service.get_user_language.return_value = "ru"
+        app_context.localization_service.get_text.side_effect = (
+            lambda user_id, key, params=(): key
+        )
+
+        keyboard = webapp_sealedbox_keyboard(
+            "safe-token", user_id=7, app_context=app_context
+        )
+
+        button = keyboard.inline_keyboard[0][0]
+        assert "/sealedbox?token=safe-token&lang=ru" in button.web_app.url
+        assert (
+            keyboard.inline_keyboard[1][0].callback_data
+            == "SealedBoxBack:decrypt_file"
+        )
+        assert keyboard.inline_keyboard[2][0].callback_data == "Return"
+
 
 class TestHandleTxSigned:
     """Tests for handle_tx_signed worker."""

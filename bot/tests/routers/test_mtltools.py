@@ -93,6 +93,7 @@ async def test_cmd_tools_menu(mock_telegram, router_app_context, setup_mtltools_
     assert "mtl_tools_msg" in req["data"]["text"]
     assert "MTLToolsDonate" in req["data"]["reply_markup"]
     assert "MTLToolsDelegate" in req["data"]["reply_markup"]
+    assert "SealedBoxMenu" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio

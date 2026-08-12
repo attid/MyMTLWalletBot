@@ -55,6 +55,7 @@ from routers import (
     ton,
     notification_settings,
     pending_notifications,
+    sealedbox,
 )
 from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
@@ -63,8 +64,9 @@ from other.faststream_tools import start_broker, stop_broker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
 
-# Import signing worker to register its FastStream handlers
+# Import workers to register their FastStream handlers
 import infrastructure.workers.signing_worker  # noqa: F401
+import infrastructure.workers.sealedbox_worker  # noqa: F401
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
@@ -121,6 +123,7 @@ async def bot_add_routers(
     dp.include_router(admin.router)
     dp.include_router(common_setting.router)
     dp.include_router(mtltools.router)
+    dp.include_router(sealedbox.router)
     dp.include_router(receive.router)
     dp.include_router(trade.router)
     dp.include_router(send.router)
@@ -318,6 +321,9 @@ async def main():
     from infrastructure.services.stellar_service import StellarService
 
     from infrastructure.services.encryption_service import EncryptionService
+    from infrastructure.services.stellar_sealedbox_service import (
+        StellarSealedBoxService,
+    )
     from services.ton_service import TonService
     from infrastructure.services.notification_service import (
         NotificationService,
@@ -338,6 +344,7 @@ async def main():
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
     encryption_service = EncryptionService()
+    stellar_sealedbox_service = StellarSealedBoxService()
     ton_service = TonService()
 
     # Create UseCaseFactory for DI
@@ -363,6 +370,7 @@ async def main():
         dp,
         notification_history,
         bot_health_service=bot_health_service,
+        stellar_sealedbox_service=stellar_sealedbox_service,
     )
     notification_redis = Redis.from_url(config.redis_url, decode_responses=True)
     notification_store = NotificationRedisStore(
