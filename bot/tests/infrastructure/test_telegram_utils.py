@@ -58,9 +58,7 @@ class TestClearState:
         await clear_state(mock_state)
 
         mock_state.set_state.assert_called_once_with(None)
-        fake_other.faststream_tools.clear_pending_sealedbox.assert_awaited_once_with(
-            42
-        )
+        fake_other.faststream_tools.clear_pending_sealedbox.assert_awaited_once_with(42)
 
     @pytest.mark.asyncio
     async def test_clear_state_preserves_session_fields(self, mock_state, monkeypatch):

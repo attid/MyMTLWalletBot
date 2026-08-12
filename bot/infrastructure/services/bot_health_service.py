@@ -54,8 +54,7 @@ class BotHealthService:
         scheduler = self._scheduler_status()
         database = await self._database_status()
         return BotHealthReport(
-            healthy=scheduler
-            in {"ok", "starting", "running", "running_long"}
+            healthy=scheduler in {"ok", "starting", "running", "running_long"}
             and database == "ok",
             checks={"scheduler": scheduler, "database": database},
         )

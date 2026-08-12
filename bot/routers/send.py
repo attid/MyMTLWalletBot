@@ -66,8 +66,7 @@ def _is_username_search_query(query: str) -> bool:
         bool(candidate)
         and len(candidate) <= MAX_TELEGRAM_USERNAME_LENGTH
         and all(
-            character.isascii()
-            and (character.isalnum() or character == "_")
+            character.isascii() and (character.isalnum() or character == "_")
             for character in candidate
         )
     )

@@ -8,6 +8,5 @@ def test_reports_failing_operation_number_after_successful_operations() -> None:
     }
 
     assert get_stellar_error_message(result_codes) == (
-        "Operation 3: op_low_reserve — "
-        "Not enough XLM to meet the minimum reserve"
+        "Operation 3: op_low_reserve — Not enough XLM to meet the minimum reserve"
     )

@@ -213,9 +213,7 @@ async def test_health_endpoint_reflects_functional_health(
     response = await notification_service.handle_health(None)
 
     assert response.status == expected_status
-    assert json.loads(response.text)["status"] == (
-        "ok" if healthy else "unhealthy"
-    )
+    assert json.loads(response.text)["status"] == ("ok" if healthy else "unhealthy")
 
 
 @pytest.mark.asyncio
