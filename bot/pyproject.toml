@@ -16,7 +16,6 @@ dependencies = [
     "environs~=11.2.1",
     "faststream[redis]==0.6.0rc1",
     "fdb>=2.0.4",
-    "gspread-asyncio~=2.0.0",
     "jsonpickle==3.3.0",
     "loguru~=0.7.2",
     "motor~=3.6.0",
@@ -24,6 +23,7 @@ dependencies = [
     "opencv-python~=4.10.0.84",
     "pillow~=10.4.0",
     "protobuf~=5.28.3",
+    "pynacl>=1.5.0",
     "pydantic~=2.9.2",
     "pydantic-settings~=2.6.0",
     "python-dateutil~=2.9.0",
@@ -61,6 +61,8 @@ dev = [
     "aiosqlite>=0.17.0",
     "testcontainers>=3.7.1",
     "fakeredis>=2.21.0",
+    "fastapi>=0.115.0",
+    "jinja2>=3.1.0",
 ]
 
 [tool.uv.sources]

@@ -274,7 +274,12 @@ async def cmd_user_wallets(message: types.Message, session: AsyncSession):
         if wallet.need_delete == 1:
             labels.append("deleted")
         labels.append(_pin_label(wallet.use_pin or 0))
-        lines.append(f"{wallet.public_key} ({', '.join(labels)})")
+        address = wallet.public_key
+        viewer_url = f"https://viewer.eurmtl.me/account/{address}"
+        lines.append(
+            f"<code>{address}</code> ({', '.join(labels)}) "
+            f'(<a href="{viewer_url}">viewer</a>)'
+        )
     await message.answer("\n".join(lines))
 
 

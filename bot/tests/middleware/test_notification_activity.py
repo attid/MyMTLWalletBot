@@ -16,6 +16,7 @@ from middleware.notification_activity import (
     NotificationActivityMiddleware,
     should_touch_callback,
 )
+from keyboards.common_keyboards import get_notification_keyboard
 
 
 def callback(data: str) -> CallbackQuery:
@@ -55,9 +56,14 @@ def callback(data: str) -> CallbackQuery:
         ("toggle_token_notify", True),
         ("change_amount", True),
         ("toggle_wallets_notify", True),
+        ("SealedBoxMenu", True),
+        ("SealedBoxEncrypt", True),
+        ("SealedBoxDecrypt", True),
+        ("SealedBoxRecipient:7", True),
         ("save_filter", False),
         ("notification_pending:flush", False),
         ("Return", False),
+        ("FlowBack", False),
         ("DeleteReturn", False),
         ("Yes_send_xdr", True),
         ("cancel_biometric_sign:tx", False),
@@ -65,6 +71,24 @@ def callback(data: str) -> CallbackQuery:
 )
 def test_should_touch_callback_classifies_interactive_flow_controls(data, expected):
     assert should_touch_callback(data) is expected
+
+
+def test_flow_back_touches_only_with_an_active_fsm():
+    assert should_touch_callback("FlowBack") is False
+    assert should_touch_callback("FlowBack", fsm_active=True) is True
+
+
+def test_notification_keyboard_remains_isolated_from_flow_back():
+    keyboard = get_notification_keyboard(
+        42, localization_service=MagicMock(get_text=lambda *_: "text")
+    )
+
+    assert [
+        button.callback_data for row in keyboard.inline_keyboard for button in row
+    ] == [
+        "NotificationSettings",
+        "Return",
+    ]
 
 
 @pytest.mark.asyncio

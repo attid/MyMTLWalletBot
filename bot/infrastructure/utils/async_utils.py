@@ -1,6 +1,6 @@
 import asyncio
+from contextlib import suppress
 from functools import wraps
-from time import time
 from typing import Callable, Optional
 
 from loguru import logger
@@ -64,49 +64,31 @@ async def task_with_timeout(
             kill_task(task)
 
 
-def with_timeout(timeout: int, kill_on_timeout: bool = False):
+def with_timeout(timeout: float):
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            start_time = time()
-            task = asyncio.create_task(func(*args, **kwargs))
-            minutes_logged = 0
-
-            while not task.done():
-                await asyncio.sleep(1)  # Check every second
-                elapsed_time = time() - start_time
-                minutes = int(elapsed_time / 60)
-                if elapsed_time > timeout and minutes > minutes_logged:
-                    logger.warning(
-                        f"Function {func.__name__} running for {minutes} minutes"
+            async def log_long_runtime() -> None:
+                warnings = 0
+                while True:
+                    await asyncio.sleep(timeout)
+                    warnings += 1
+                    logger.bind(
+                        event="async_task_running_long",
+                        function=func.__name__,
+                        elapsed_seconds=timeout * warnings,
+                    ).warning(
+                        f"Function {func.__name__} is still running: "
+                        f"elapsed_seconds={timeout * warnings:g}"
                     )
 
-                    if kill_on_timeout:
-                        task.cancel()
-                        try:
-                            await task
-                        except asyncio.CancelledError:
-                            logger.error(f"Task {func.__name__} forced stopped")
-                        return None
-                    else:
-                        logger.info(f"Waiting for {func.__name__} finish after timeout")
-
-                    minutes_logged = minutes
-
+            warning_task = asyncio.create_task(log_long_runtime())
             try:
-                result = await task
-                return result
+                return await func(*args, **kwargs)
             finally:
-                if not task.done():
-                    logger.warning(
-                        f"Task {func.__name__} still running after processing"
-                    )
-                else:
-                    total_minutes = int((time() - start_time) / 60)
-                    if total_minutes > 0:
-                        logger.info(
-                            f"Function {func.__name__} finished, total runtime: {total_minutes} minutes"
-                        )
+                warning_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await warning_task
 
         return wrapper
 

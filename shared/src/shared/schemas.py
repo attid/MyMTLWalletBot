@@ -18,3 +18,10 @@ class TxSignedMessage(BaseModel):
 
     tx_id: str
     user_id: int
+
+
+class SealedBoxCompletedMessage(BaseModel):
+    """A browser completed local sealed-box decryption."""
+
+    token: str
+    user_id: int

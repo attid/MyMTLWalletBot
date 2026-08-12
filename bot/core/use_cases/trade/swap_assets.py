@@ -18,6 +18,7 @@ class SwapAssets:
         send_amount: float,
         receive_asset: Asset,
         receive_amount: float,
+        path: list[Asset] | None = None,
         strict_receive: bool = False,
         cancel_offers: bool = False,
     ) -> PaymentResult:
@@ -42,6 +43,7 @@ class SwapAssets:
                 send_amount=str(send_amount),
                 receive_asset=receive_asset,
                 receive_amount=str(receive_amount),
+                path=path or [],
                 strict_receive=strict_receive,
                 cancel_offers=cancel_offers,
             )

@@ -150,6 +150,15 @@ async def cmd_tools(
                 callback_data="MTLToolsUpdateMulti",
             )
         ],
+        [
+            types.InlineKeyboardButton(
+                text="🔐 "
+                + my_gettext(
+                    user_id, "sealedbox_tools_button", app_context=app_context
+                ),
+                callback_data="SealedBoxMenu",
+            )
+        ],
         get_return_button(user_id, app_context=app_context),
     ]
     await send_message(

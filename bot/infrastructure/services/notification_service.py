@@ -62,6 +62,7 @@ class NotificationService:
         dispatcher: Any = None,
         notification_history: Any = None,
         notification_coordinator: Any = None,
+        bot_health_service: Any = None,
     ):
         self.config = config
         self.db_pool = db_pool
@@ -70,6 +71,7 @@ class NotificationService:
         self.localization_service = localization_service
         self.notification_history = notification_history
         self.notification_coordinator = notification_coordinator
+        self.bot_health_service = bot_health_service
 
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
@@ -402,6 +404,7 @@ class NotificationService:
 
         app = web.Application()
         app.router.add_post("/webhook", self.handle_webhook)
+        app.router.add_get("/health", self.handle_health)
 
         self.runner = web.AppRunner(app)
         await self.runner.setup()
@@ -457,6 +460,21 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error handling webhook: {e}")
             return web.Response(text=f"Error: {e}", status=500)
+
+    async def handle_health(self, _request: web.Request) -> web.Response:
+        if self.bot_health_service is None:
+            return web.json_response(
+                {
+                    "status": "unhealthy",
+                    "checks": {"health_service": "not_configured"},
+                },
+                status=503,
+            )
+        report = await self.bot_health_service.check()
+        return web.json_response(
+            report.as_dict(),
+            status=200 if report.healthy else 503,
+        )
 
     async def process_notification(self, payload: dict):
         """Process the notification payload."""

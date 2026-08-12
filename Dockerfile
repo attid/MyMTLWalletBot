@@ -89,5 +89,9 @@ ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl --fail --silent --show-error --max-time 8 \
+        http://127.0.0.1:8081/health || exit 1
+
 # Run the application directly with python
 CMD ["python", "start.py"]

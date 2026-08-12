@@ -7,6 +7,8 @@ from core.interfaces.repositories import IUserRepository
 from db.models import MyMtlWalletBotUsers
 from other.tron_tools import create_trc_private_key
 
+MAX_USERNAME_SEARCH_QUERY_LENGTH = 58
+
 
 class SqlAlchemyUserRepository(IUserRepository):
     def __init__(self, session: AsyncSession):
@@ -100,6 +102,8 @@ class SqlAlchemyUserRepository(IUserRepository):
 
     async def search_by_username(self, query: str) -> list[str]:
         """Search users by partial username match."""
+        if len(query) > MAX_USERNAME_SEARCH_QUERY_LENGTH:
+            return []
         stmt = (
             select(MyMtlWalletBotUsers.user_name)
             .where(MyMtlWalletBotUsers.user_name.isnot(None))

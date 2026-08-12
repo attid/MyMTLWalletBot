@@ -51,11 +51,11 @@ from routers import (
     inout,
     cheque,
     mtlap,
-    fest,
     uri,
     ton,
     notification_settings,
     pending_notifications,
+    sealedbox,
 )
 from routers import wallet_setting, common_end
 from routers.bsn import bsn_router
@@ -64,8 +64,9 @@ from other.faststream_tools import start_broker, stop_broker
 from infrastructure.scheduler.job_scheduler import scheduler_jobs
 from infrastructure.utils.async_utils import setup_async_utils
 
-# Import signing worker to register its FastStream handlers
+# Import workers to register their FastStream handlers
 import infrastructure.workers.signing_worker  # noqa: F401
+import infrastructure.workers.sealedbox_worker  # noqa: F401
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
@@ -116,13 +117,13 @@ async def bot_add_routers(
     dp.include_router(notification_settings.router)  # first
     dp.include_router(pending_notifications.router)  # badge controls
 
-    dp.include_router(fest.router)
     dp.include_router(sign.router)
     dp.include_router(add_wallet.router)
     dp.include_router(assets.router)
     dp.include_router(admin.router)
     dp.include_router(common_setting.router)
     dp.include_router(mtltools.router)
+    dp.include_router(sealedbox.router)
     dp.include_router(receive.router)
     dp.include_router(trade.router)
     dp.include_router(send.router)
@@ -201,7 +202,6 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await set_commands(bot)
     with suppress(TelegramBadRequest):
         await bot.send_message(chat_id=config.admins[0], text="Bot started")
-    # fest.fest_menu = await gs_update_fest_menu()
     # Start Notification Service (Webhook Server)
     if app_context.notification_service:
         await app_context.notification_service.start_server()
@@ -237,8 +237,6 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
         )
 
     dispatcher["task_list"] = task_list
-
-    # config.fest_menu = await load_fest_info()
 
 
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
@@ -323,6 +321,9 @@ async def main():
     from infrastructure.services.stellar_service import StellarService
 
     from infrastructure.services.encryption_service import EncryptionService
+    from infrastructure.services.stellar_sealedbox_service import (
+        StellarSealedBoxService,
+    )
     from services.ton_service import TonService
     from infrastructure.services.notification_service import (
         NotificationService,
@@ -335,6 +336,7 @@ async def main():
     from infrastructure.workers.notification_delivery_worker import (
         NotificationDeliveryWorker,
     )
+    from infrastructure.services.bot_health_service import BotHealthService
 
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -342,6 +344,7 @@ async def main():
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
     encryption_service = EncryptionService()
+    stellar_sealedbox_service = StellarSealedBoxService()
     ton_service = TonService()
 
     # Create UseCaseFactory for DI
@@ -357,9 +360,17 @@ async def main():
     )
 
     notification_history = NotificationHistoryService(ttl_hours=12, max_per_user=50)
+    bot_health_service = BotHealthService(db_pool=db_pool)
 
     notification_service = NotificationService(
-        config, db_pool, bot, localization_service, dp, notification_history
+        config,
+        db_pool,
+        bot,
+        localization_service,
+        dp,
+        notification_history,
+        bot_health_service=bot_health_service,
+        stellar_sealedbox_service=stellar_sealedbox_service,
     )
     notification_redis = Redis.from_url(config.redis_url, decode_responses=True)
     notification_store = NotificationRedisStore(
@@ -403,6 +414,7 @@ async def main():
         notification_store=notification_store,
         notification_delivery_worker=notification_delivery_worker,
         notification_badge_service=notification_badge_service,
+        bot_health_service=bot_health_service,
     )
 
     dp["app_context"] = app_context
