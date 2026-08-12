@@ -8,6 +8,8 @@ from aiogram.fsm.storage.base import StorageKey
 from stellar_sdk import Keypair
 
 from infrastructure.services.stellar_sealedbox_service import StellarSealedBoxService
+from core.domain.entities import Wallet
+from core.interfaces.repositories import IWalletRepository
 from routers.sealedbox import (
     SealedBoxState,
     _requested_output_filename,
@@ -61,7 +63,7 @@ def sealedbox_context(router_app_context):
 
 
 @pytest.mark.asyncio
-async def test_menu_offers_encrypt_decrypt_back_and_home(
+async def test_menu_offers_encrypt_decrypt_settings_back_and_home(
     mock_telegram, sealedbox_context
 ) -> None:
     dp = sealedbox_context.dispatcher
@@ -75,8 +77,33 @@ async def test_menu_offers_encrypt_decrypt_back_and_home(
     markup = _latest_screen(mock_telegram)["data"]["reply_markup"]
     assert "SealedBoxEncrypt" in markup
     assert "SealedBoxDecrypt" in markup
-    assert "SealedBoxBack:tools" in markup
+    assert "SealedBoxBack:settings" in markup
     assert '"callback_data": "Return"' in markup
+
+
+@pytest.mark.asyncio
+async def test_menu_back_returns_to_wallet_settings(
+    mock_telegram, sealedbox_context
+) -> None:
+    wallet = MagicMock(spec=Wallet)
+    wallet.is_free = True
+    wallet_repo = MagicMock(spec=IWalletRepository)
+    wallet_repo.get_default_wallet = AsyncMock(return_value=wallet)
+    sealedbox_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+    dp = sealedbox_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_callback_update(123, "SealedBoxBack:settings"),
+    )
+
+    screen = _latest_screen(mock_telegram)
+    assert screen["data"]["text"] == "wallet_setting_msg"
+    assert "SealedBoxMenu" in screen["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio

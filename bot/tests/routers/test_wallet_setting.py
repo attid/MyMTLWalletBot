@@ -92,6 +92,7 @@ async def test_cmd_wallet_setting(mock_telegram, dp, mock_session, mock_app_cont
     assert len(sent) == 1
     assert "wallet_setting_msg" in sent[0]["data"]["text"]
     assert "BuyAddress" in sent[0]["data"]["reply_markup"]
+    assert "SealedBoxMenu" in sent[0]["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio

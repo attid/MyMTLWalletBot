@@ -220,6 +220,15 @@ async def cmd_wallet_setting(
                 callback_data="ChangeLang",
             )
         ],
+        [
+            types.InlineKeyboardButton(
+                text="🔐 "
+                + my_gettext(
+                    callback, "sealedbox_tools_button", app_context=app_context
+                ),
+                callback_data="SealedBoxMenu",
+            )
+        ],
         # last button
         get_return_button(callback, app_context=app_context),
     ]
