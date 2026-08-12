@@ -31,6 +31,9 @@ FLOW_ENTRY_CALLBACKS = frozenset(
         "toggle_token_notify",
         "change_amount",
         "toggle_wallets_notify",
+        "SealedBoxMenu",
+        "SealedBoxEncrypt",
+        "SealedBoxDecrypt",
     }
 )
 """Menu controls that begin a user-operated flow even without FSM state."""
@@ -50,6 +53,7 @@ FLOW_CALLBACK_PREFIXES = (
     "notif_filter:",
     "create_filter_from:",
     "AVD_:",
+    "SealedBoxRecipient:",
 )
 """CallbackData namespaces that advance an interactive flow."""
 

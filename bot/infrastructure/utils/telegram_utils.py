@@ -357,6 +357,7 @@ async def clear_state(state: FSMContext):
         from other import faststream_tools
 
         await faststream_tools.clear_pending_tx(user_id)
+        await faststream_tools.clear_pending_sealedbox(user_id)
 
     await state.set_data(
         {

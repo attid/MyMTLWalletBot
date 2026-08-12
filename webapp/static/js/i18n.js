@@ -115,6 +115,17 @@
             "settings.delete_confirm": "Удалить ключ {address}?",
             "settings.key_deleted": "Ключ удален",
             "settings.error_prefix": "Ошибка: {msg}",
+
+            "sealedbox.page_title": "Расшифровать файл",
+            "sealedbox.loading": "Загрузка файла...",
+            "sealedbox.card_title": "Расшифровать файл",
+            "sealedbox.decrypt_button": "Расшифровать",
+            "sealedbox.key_missing": "Ключ этого кошелька не найден на устройстве.",
+            "sealedbox.success_title": "Файл расшифрован",
+            "sealedbox.success_body": "Файл сохранён на этом устройстве.",
+            "sealedbox.expired": "Файл устарел. Вернитесь в бот и отправьте его ещё раз.",
+            "sealedbox.decrypt_failed": "Не удалось расшифровать файл. Возможно, он предназначен для другого кошелька или повреждён.",
+            "sealedbox.biometric_reason": "Расшифровать файл",
         },
         en: {
             "common.close": "Close",
@@ -225,6 +236,17 @@
             "settings.delete_confirm": "Delete key {address}?",
             "settings.key_deleted": "Key deleted",
             "settings.error_prefix": "Error: {msg}",
+
+            "sealedbox.page_title": "Decrypt file",
+            "sealedbox.loading": "Loading file...",
+            "sealedbox.card_title": "Decrypt file",
+            "sealedbox.decrypt_button": "Decrypt",
+            "sealedbox.key_missing": "The key for this wallet was not found on this device.",
+            "sealedbox.success_title": "File decrypted",
+            "sealedbox.success_body": "The file was saved on this device.",
+            "sealedbox.expired": "The file expired. Return to the bot and send it again.",
+            "sealedbox.decrypt_failed": "Could not decrypt the file. It may be intended for another wallet or damaged.",
+            "sealedbox.biometric_reason": "Decrypt file",
         },
     };
 

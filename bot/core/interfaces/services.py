@@ -218,6 +218,24 @@ class IStellarService(ABC):
         pass
 
 
+class IStellarSealedBoxService(ABC):
+    """Encrypt and decrypt libsodium sealed boxes using Stellar keys."""
+
+    @abstractmethod
+    async def encrypt(
+        self, user_id: int, recipient_public_key: str, plaintext: bytes
+    ) -> bytes:
+        """Encrypt plaintext for a Stellar public address."""
+        pass
+
+    @abstractmethod
+    async def decrypt(
+        self, user_id: int, recipient_secret: str, payload: bytes
+    ) -> bytes:
+        """Decrypt raw or base64 ciphertext with a Stellar secret seed."""
+        pass
+
+
 class ITonService(ABC):
     @abstractmethod
     def create_wallet(self):

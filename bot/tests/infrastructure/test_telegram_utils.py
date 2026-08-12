@@ -38,14 +38,18 @@ class TestClearState:
         # Patch out faststream_tools to avoid real Redis calls
         monkeypatch.setattr(
             "infrastructure.utils.telegram_utils.faststream_tools",
-            MagicMock(clear_pending_tx=AsyncMock()),
+            MagicMock(
+                clear_pending_tx=AsyncMock(), clear_pending_sealedbox=AsyncMock()
+            ),
             raising=False,
         )
         # Patch the import inside the function
         import sys
 
         fake_other = MagicMock()
-        fake_other.faststream_tools = MagicMock(clear_pending_tx=AsyncMock())
+        fake_other.faststream_tools = MagicMock(
+            clear_pending_tx=AsyncMock(), clear_pending_sealedbox=AsyncMock()
+        )
         monkeypatch.setitem(sys.modules, "other", fake_other)
         monkeypatch.setitem(
             sys.modules, "other.faststream_tools", fake_other.faststream_tools
@@ -54,6 +58,9 @@ class TestClearState:
         await clear_state(mock_state)
 
         mock_state.set_state.assert_called_once_with(None)
+        fake_other.faststream_tools.clear_pending_sealedbox.assert_awaited_once_with(
+            42
+        )
 
     @pytest.mark.asyncio
     async def test_clear_state_preserves_session_fields(self, mock_state, monkeypatch):
@@ -61,7 +68,9 @@ class TestClearState:
         import sys
 
         fake_other = MagicMock()
-        fake_other.faststream_tools = MagicMock(clear_pending_tx=AsyncMock())
+        fake_other.faststream_tools = MagicMock(
+            clear_pending_tx=AsyncMock(), clear_pending_sealedbox=AsyncMock()
+        )
         monkeypatch.setitem(sys.modules, "other", fake_other)
         monkeypatch.setitem(
             sys.modules, "other.faststream_tools", fake_other.faststream_tools
@@ -84,7 +93,9 @@ class TestClearState:
         import sys
 
         fake_other = MagicMock()
-        fake_other.faststream_tools = MagicMock(clear_pending_tx=AsyncMock())
+        fake_other.faststream_tools = MagicMock(
+            clear_pending_tx=AsyncMock(), clear_pending_sealedbox=AsyncMock()
+        )
         monkeypatch.setitem(sys.modules, "other", fake_other)
         monkeypatch.setitem(
             sys.modules, "other.faststream_tools", fake_other.faststream_tools

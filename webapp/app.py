@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
@@ -26,8 +26,13 @@ from shared.constants import (
     STATUS_PENDING,
     STATUS_SIGNED,
     QUEUE_TX_SIGNED,
+    FIELD_SEALEDBOX_CIPHERTEXT,
+    FIELD_SEALEDBOX_OUTPUT_FILENAME,
+    QUEUE_SEALEDBOX_COMPLETED,
+    REDIS_SEALEDBOX_PREFIX,
+    STATUS_COMPLETED,
 )
-from shared.schemas import TxSignedMessage
+from shared.schemas import SealedBoxCompletedMessage, TxSignedMessage
 
 
 # Config
@@ -121,7 +126,6 @@ templates.env.globals["git_commit"] = GIT_COMMIT
 
 
 # --- Models ---
-
 class TxData(BaseModel):
     """Transaction data returned to frontend."""
     tx_id: str
@@ -138,8 +142,14 @@ class SignRequest(BaseModel):
     signed_xdr: str
 
 
-# --- API Endpoints ---
+class SealedBoxMetadata(BaseModel):
+    """Safe metadata required for local browser decryption."""
 
+    wallet_address: str
+    output_filename: str
+
+
+# --- API Endpoints ---
 @app.get("/api/tx/{tx_id}", response_model=TxData)
 async def get_transaction(
     tx_id: str,
@@ -231,8 +241,79 @@ async def submit_signed_transaction(
     return {"success": True, "tx_id": tx_id}
 
 
-# --- HTML Pages ---
+async def _owned_sealedbox_request(
+    token: str, init_data: str
+) -> tuple[str, dict[str, str]]:
+    if not redis_client:
+        raise HTTPException(status_code=503, detail="Redis not available")
+    if not BOT_TOKEN:
+        raise HTTPException(status_code=503, detail="Telegram auth is not configured")
+    request_key = f"{REDIS_SEALEDBOX_PREFIX}{token}"
+    data = await redis_client.hgetall(request_key)
+    if not data:
+        raise HTTPException(status_code=404, detail="File not found or expired")
+    requester_id = get_user_id_from_init_data(init_data)
+    if requester_id is None:
+        raise HTTPException(status_code=401, detail="Invalid Telegram auth")
+    if requester_id != int(data.get(FIELD_USER_ID, 0)):
+        logger.warning(
+            "Foreign sealed-box request rejected: user_id={} operation=decrypt result=forbidden",
+            requester_id,
+        )
+        raise HTTPException(status_code=403, detail="Access denied")
+    return request_key, data
 
+
+@app.get("/api/sealedbox/{token}", response_model=SealedBoxMetadata)
+async def get_sealedbox_metadata(
+    token: str,
+    x_telegram_init_data: str = Header(default=""),
+) -> SealedBoxMetadata:
+    """Return owner-checked metadata without exposing any secret material."""
+    _, data = await _owned_sealedbox_request(token, x_telegram_init_data)
+    return SealedBoxMetadata(
+        wallet_address=data.get(FIELD_WALLET_ADDRESS, ""),
+        output_filename=data.get(FIELD_SEALEDBOX_OUTPUT_FILENAME, ""),
+    )
+
+
+@app.get("/api/sealedbox/{token}/ciphertext")
+async def get_sealedbox_ciphertext(
+    token: str,
+    x_telegram_init_data: str = Header(default=""),
+) -> Response:
+    """Return the encrypted payload as raw bytes to its Telegram owner."""
+    import base64
+
+    _, data = await _owned_sealedbox_request(token, x_telegram_init_data)
+    try:
+        ciphertext = base64.b64decode(
+            data.get(FIELD_SEALEDBOX_CIPHERTEXT, ""), validate=True
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Stored file is invalid") from exc
+    return Response(content=ciphertext, media_type="application/octet-stream")
+
+
+@app.post("/api/sealedbox/{token}/complete")
+async def complete_sealedbox(
+    token: str,
+    x_telegram_init_data: str = Header(default=""),
+) -> dict[str, bool]:
+    """Acknowledge local completion without accepting plaintext from the browser."""
+    request_key, data = await _owned_sealedbox_request(token, x_telegram_init_data)
+    if data.get(FIELD_STATUS) != STATUS_PENDING:
+        raise HTTPException(status_code=409, detail="Request already completed")
+    user_id = int(data[FIELD_USER_ID])
+    assert redis_client is not None
+    await redis_client.hset(request_key, FIELD_STATUS, STATUS_COMPLETED)
+    event = SealedBoxCompletedMessage(token=token, user_id=user_id)
+    await redis_client.lpush(QUEUE_SEALEDBOX_COMPLETED, event.model_dump_json())
+    logger.info("Sealed-box WebApp completion accepted for user {}", user_id)
+    return {"success": True}
+
+
+# --- HTML Pages ---
 @app.get("/sign", response_class=HTMLResponse)
 async def sign_page(request: Request, tx: str | None = None):
     """Render transaction signing page."""
@@ -266,6 +347,14 @@ async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {
         "request": request,
     })
+
+
+@app.get("/sealedbox", response_class=HTMLResponse)
+async def sealedbox_page(request: Request, token: str | None = None):
+    """Render local sealed-box decryption page."""
+    return templates.TemplateResponse(
+        "sealedbox.html", {"request": request, "token": token}
+    )
 
 
 @app.get("/health")

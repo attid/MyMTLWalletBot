@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block page_title_key %}sealedbox.page_title{% endblock %}
+{% block title %}Decrypt file{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/libsodium-sumo@0.7.15/dist/modules-sumo/libsodium-sumo.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers-sumo@0.7.15/dist/modules-sumo/libsodium-wrappers.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="card" id="loading-card">
+    <div class="spinner"></div>
+    <p data-i18n="sealedbox.loading">Loading file...</p>
+</div>
+
+<div class="card hidden" id="decrypt-card">
+    <h2 data-i18n="sealedbox.card_title">Decrypt file</h2>
+    <p id="wallet-address"></p>
+    <button class="btn btn-primary" id="decrypt-button" data-i18n="sealedbox.decrypt_button">Decrypt</button>
+</div>
+
+<div class="card hidden" id="password-card">
+    <h2 data-i18n="sign.password_title">Enter password</h2>
+    <input id="password-input" type="password" autocomplete="current-password" data-i18n-placeholder="sign.password_placeholder">
+    <button class="btn btn-primary" id="password-button" data-i18n="sealedbox.decrypt_button">Decrypt</button>
+</div>
+
+<div class="card hidden" id="missing-key-card">
+    <p data-i18n="sealedbox.key_missing">The key for this wallet was not found on this device.</p>
+    <button class="btn btn-primary" id="import-button" data-i18n="sign.btn_add_key">Add key</button>
+</div>
+
+<div class="card hidden" id="success-card">
+    <div class="icon success-icon">&#10003;</div>
+    <h2 data-i18n="sealedbox.success_title">File decrypted</h2>
+    <p data-i18n="sealedbox.success_body">The file was saved on this device.</p>
+    <button class="btn btn-secondary" data-i18n="common.close" onclick="Telegram.WebApp.close()">Close</button>
+</div>
+
+<div class="card hidden" id="error-card">
+    <div class="icon error-icon">!</div>
+    <h2 data-i18n="common.error_title">Error</h2>
+    <p id="error-message"></p>
+    <button class="btn btn-secondary" data-i18n="common.close" onclick="Telegram.WebApp.close()">Close</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.SEALEDBOX_TOKEN = {{ token | tojson }};</script>
+<script src="/static/js/sealedbox.js?v={{ git_commit }}"></script>
+{% endblock %}
