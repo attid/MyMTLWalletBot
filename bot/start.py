@@ -1,4 +1,5 @@
 import asyncio
+import os
 import warnings
 
 # Suppress Pydantic warning about 'model_' protected namespace (common in aiogram types)
@@ -79,6 +80,16 @@ from middleware.sentry_error_handler import sentry_error_handler
 # https://docs.aiogram.dev/en/dev-3.x/dispatcher/filters/index.html
 # https://surik00.gitbooks.io/aiogram-lessons/content/chapter3.html
 # https://mastergroosha.github.io/aiogram-3-guide/buttons/
+
+
+def get_git_commit(git_commit: str | None = None) -> str:
+    if git_commit is None:
+        git_commit = os.environ.get("GIT_COMMIT", "unknown")
+    return (git_commit.strip() or "unknown")[:7]
+
+
+def get_startup_message(git_commit: str | None = None) -> str:
+    return f"Bot started (commit: {get_git_commit(git_commit)})"
 
 
 @logger.catch
@@ -201,7 +212,9 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await start_broker(app_context)
     await set_commands(bot)
     with suppress(TelegramBadRequest):
-        await bot.send_message(chat_id=config.admins[0], text="Bot started")
+        await bot.send_message(
+            chat_id=config.admins[0], text=get_startup_message()
+        )
     # Start Notification Service (Webhook Server)
     if app_context.notification_service:
         await app_context.notification_service.start_server()
@@ -429,10 +442,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    import os
-
-    git_commit = os.environ.get("GIT_COMMIT", "unknown")
-    logger.info(f"Starting MMWB Bot (commit: {git_commit})")
+    logger.info(f"Starting MMWB Bot (commit: {get_git_commit()})")
     logger.add("logs/mmwb.log", rotation="1 MB")
     try:
         uvloop.install()
