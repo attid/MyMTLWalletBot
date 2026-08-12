@@ -213,9 +213,7 @@ async def test_add_wallet_have_key_expert_mode_uses_supplied_wallet_address(
     )
 
     signer_secret = "SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV"
-    wallet_public_key = (
-        "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
-    )
+    wallet_public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
     await dp.feed_update(
         router_app_context.bot,
         create_message_update(

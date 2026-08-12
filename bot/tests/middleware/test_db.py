@@ -44,7 +44,9 @@ async def test_long_handler_is_warned_about_without_being_cancelled() -> None:
         return "done"
 
     records = []
-    sink_id = logger.add(lambda message: records.append(message.record), level="WARNING")
+    sink_id = logger.add(
+        lambda message: records.append(message.record), level="WARNING"
+    )
     task = asyncio.create_task(
         middleware(long_handler, SimpleNamespace(from_user=None), {})
     )

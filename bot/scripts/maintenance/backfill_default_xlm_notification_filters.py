@@ -9,7 +9,9 @@ import sys
 from loguru import logger
 
 # Add bot package root for direct script execution from this nested directory.
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from db.db_pool import db_pool
 from infrastructure.persistence.sqlalchemy_notification_repository import (

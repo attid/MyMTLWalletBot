@@ -269,7 +269,9 @@ async def test_notification_repository_backfills_default_xlm_filter(db_session):
     repo = SqlAlchemyNotificationRepository(db_session)
     user_ids = [2011, 2012, 2013]
     for user_id in user_ids:
-        await user_repo.create(User(id=user_id, username=f"user_{user_id}", language="en"))
+        await user_repo.create(
+            User(id=user_id, username=f"user_{user_id}", language="en")
+        )
 
     db_session.add(
         NotificationFilter(
@@ -302,7 +304,9 @@ async def test_notification_repository_backfills_default_xlm_filter(db_session):
         ]
         assert len(matching) == 1
 
-    after_counts = {user_id: len(await repo.get_by_user_id(user_id)) for user_id in user_ids}
+    after_counts = {
+        user_id: len(await repo.get_by_user_id(user_id)) for user_id in user_ids
+    }
     assert after_counts[2011] == before_counts[2011] + 1
     assert after_counts[2012] == before_counts[2012]
     assert after_counts[2013] == before_counts[2013] + 1

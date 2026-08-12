@@ -565,8 +565,7 @@ class TestWebAppKeyboard:
         button = keyboard.inline_keyboard[0][0]
         assert "/sealedbox?token=safe-token&lang=ru" in button.web_app.url
         assert (
-            keyboard.inline_keyboard[1][0].callback_data
-            == "SealedBoxBack:decrypt_file"
+            keyboard.inline_keyboard[1][0].callback_data == "SealedBoxBack:decrypt_file"
         )
         assert keyboard.inline_keyboard[2][0].callback_data == "Return"
 

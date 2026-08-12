@@ -187,9 +187,7 @@ async def test_cmd_tools_del_delegate(
     req = get_latest_msg(mock_telegram)
     assert "delegate_delete" in req["data"]["text"]
     assert "Yes" in req["data"]["reply_markup"]
-    state = dp.fsm.get_context(
-        bot=router_app_context.bot, chat_id=123, user_id=123
-    )
+    state = dp.fsm.get_context(bot=router_app_context.bot, chat_id=123, user_id=123)
     data = await state.get_data()
     pending = data.get(PENDING_SIGNATURE_REQUEST_KEY)
     assert pending["xdr"] == "XDR_DEL"

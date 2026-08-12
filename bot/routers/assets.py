@@ -225,7 +225,11 @@ async def cmd_asset_transfer(
     request_xdr = ""
     if wallet and wallet.use_pin == 10:
         support = await _get_anchor_discovery_service(app_context).discover_asset(asset)
-        if support is None or support.sep24 is None or support.web_auth_endpoint is None:
+        if (
+            support is None
+            or support.sep24 is None
+            or support.web_auth_endpoint is None
+        ):
             await send_message(
                 session,
                 callback,
