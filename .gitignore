@@ -133,6 +133,7 @@ database.db
 qr
 .idea
 .antigravitycli/
+/.belief_map_cache.json
 mtl-google-doc.json
 .junie/guidelines.md
 .vscode/settings.json
