@@ -10,10 +10,24 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from infrastructure.utils.telegram_utils import (
+    build_text_document_caption,
     clear_state,
     send_message,
     send_ui_document,
 )
+
+
+def test_text_document_caption_contains_short_escaped_text() -> None:
+    assert build_text_document_caption("Привет <&".encode()) == (
+        "<code>Привет &lt;&amp;</code>"
+    )
+
+
+@pytest.mark.parametrize("payload", [b"x" * 1001, b"\xff", b""])
+def test_text_document_caption_omits_long_binary_or_empty_content(
+    payload: bytes,
+) -> None:
+    assert build_text_document_caption(payload) is None
 
 
 class TestClearState:

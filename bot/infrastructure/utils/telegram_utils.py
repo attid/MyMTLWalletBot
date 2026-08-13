@@ -1,4 +1,5 @@
 from contextlib import suppress
+from html import escape
 from typing import Union, Any, Optional
 from aiogram import types, Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -23,6 +24,18 @@ from infrastructure.services.notification_badge_service import (
 from infrastructure.utils.common_utils import get_user_id
 
 TELEGRAM_API_ERROR: Any = object()
+TEXT_DOCUMENT_CAPTION_LIMIT = 1000
+
+
+def build_text_document_caption(payload: bytes) -> str | None:
+    """Return a safe monospaced caption for a short UTF-8 document."""
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text or len(text) > TEXT_DOCUMENT_CAPTION_LIMIT:
+        return None
+    return f"<code>{escape(text)}</code>"
 
 
 async def send_message(

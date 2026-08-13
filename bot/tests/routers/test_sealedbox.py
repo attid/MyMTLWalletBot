@@ -521,6 +521,7 @@ async def test_decrypts_base64_ciphertext_sent_as_text(
     result = get_telegram_request(mock_telegram, "sendDocument")
     assert result is not None
     assert "sealedbox-output.txt" in str(result["data"])
+    assert result["data"]["caption"] == "<code>decrypted text</code>"
     assert 2 in _deleted_message_ids(mock_telegram)
 
 
