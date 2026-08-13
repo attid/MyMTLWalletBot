@@ -2,6 +2,9 @@ import base64
 
 import fakeredis.aioredis
 import pytest
+from aiogram import Dispatcher
+from aiogram.fsm.storage.base import StorageKey
+from aiogram.fsm.storage.memory import MemoryStorage
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from other.faststream_tools import (
@@ -154,11 +157,12 @@ async def test_relay_worker_sends_plaintext_and_clears_request() -> None:
             FIELD_SEALEDBOX_PLAINTEXT: base64.b64encode(b"pdf bytes").decode(),
         },
     )
-    state = AsyncMock()
     app_context = MagicMock()
-    app_context.bot.send_document = AsyncMock()
+    app_context.bot.id = 1
+    app_context.bot.send_document = AsyncMock(return_value=MagicMock(message_id=91))
     app_context.localization_service.get_text.return_value = "Home"
-    app_context.dispatcher.fsm.get_context.return_value = state
+    app_context.notification_badge_service = None
+    app_context.dispatcher = Dispatcher(storage=MemoryStorage())
     old_context = faststream_tools.APP_CONTEXT
     faststream_tools.APP_CONTEXT = app_context
     try:
@@ -176,8 +180,12 @@ async def test_relay_worker_sends_plaintext_and_clears_request() -> None:
         sent_document = app_context.bot.send_document.await_args.args[1]
         assert sent_document.data == b"pdf bytes"
         assert sent_document.filename == "report.pdf"
-        clear.assert_awaited_once_with(state)
+        clear.assert_awaited_once()
         complete.assert_awaited_once_with(app_context, 42)
+        key = StorageKey(bot_id=1, chat_id=42, user_id=42)
+        assert (await app_context.dispatcher.storage.get_data(key))[
+            "last_message_id"
+        ] == 91
         assert not await redis.exists(f"{REDIS_SEALEDBOX_PREFIX}{token}")
     finally:
         faststream_tools.APP_CONTEXT = old_context
