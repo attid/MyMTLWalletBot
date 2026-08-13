@@ -5,9 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, create_autospec
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import BufferedInputFile
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from infrastructure.utils.telegram_utils import clear_state, send_message
+from infrastructure.utils.telegram_utils import (
+    clear_state,
+    send_message,
+    send_ui_document,
+)
 
 
 class TestClearState:
@@ -126,3 +132,30 @@ async def test_ui_sender_keeps_existing_behavior_without_badge_service() -> None
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_document_ui_sender_tracks_new_message_and_deletes_previous() -> None:
+    bot = create_autospec(Bot, instance=True, spec_set=True)
+    bot.id = 1
+    bot.send_document = AsyncMock(return_value=MagicMock(message_id=8))
+    dispatcher = Dispatcher(storage=MemoryStorage())
+    key = StorageKey(bot_id=1, chat_id=42, user_id=42)
+    await dispatcher.storage.update_data(key, {"last_message_id": 7})
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Home", callback_data="Return")]]
+    )
+    app_context = MagicMock(bot=bot, dispatcher=dispatcher)
+    app_context.notification_badge_service = None
+    document = BufferedInputFile(b"result", filename="result.bin")
+
+    await send_ui_document(
+        42,
+        document,
+        caption="ready",
+        reply_markup=markup,
+        app_context=app_context,
+    )
+
+    assert (await dispatcher.storage.get_data(key))["last_message_id"] == 8
+    bot.delete_message.assert_awaited_once_with(42, 7)

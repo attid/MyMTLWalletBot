@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import base64
-from contextlib import suppress
 from io import BytesIO
 import re
 
 from aiogram import F, Router, types
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -30,6 +28,7 @@ from infrastructure.utils.telegram_utils import (
     clear_last_message_id,
     clear_state,
     send_message,
+    send_ui_document,
 )
 from keyboards.common_keyboards import get_kb_return
 from middleware.notification_activity import complete_notification_flow
@@ -337,7 +336,6 @@ async def receive_encrypt_content(
         return
 
     await _send_result_document(
-        state,
         app_context,
         user_id,
         BufferedInputFile(ciphertext, filename=f"{filename}.ssb"),
@@ -568,7 +566,6 @@ async def _decrypt_server(
         return
 
     await _send_result_document(
-        state,
         app_context,
         user_id,
         BufferedInputFile(
@@ -584,23 +581,19 @@ async def _decrypt_server(
 
 
 async def _send_result_document(
-    state: FSMContext,
     app_context: AppContext,
     user_id: int,
     document: BufferedInputFile,
     *,
     caption: str | None = None,
 ) -> None:
-    previous_message_id = int((await state.get_data()).get("last_message_id", 0))
-    await app_context.bot.send_document(
+    await send_ui_document(
         user_id,
         document,
         caption=caption,
         reply_markup=get_kb_return(user_id, app_context=app_context),
+        app_context=app_context,
     )
-    if previous_message_id > 0:
-        with suppress(TelegramBadRequest):
-            await app_context.bot.delete_message(user_id, previous_message_id)
 
 
 async def _start_webapp_decrypt(
@@ -661,7 +654,6 @@ async def _complete_flow(
     user_id: int, state: FSMContext, app_context: AppContext
 ) -> None:
     await clear_state(state)
-    await clear_last_message_id(user_id, app_context=app_context)
     await complete_notification_flow(app_context, user_id)
 
 

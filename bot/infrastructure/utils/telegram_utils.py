@@ -204,6 +204,109 @@ async def _send_ui_message(
         )
 
 
+async def send_ui_document(
+    user_id: int,
+    document: types.InputFile,
+    *,
+    caption: str | None = None,
+    reply_markup=None,
+    parse_mode: str = "HTML",
+    app_context: AppContext,
+) -> types.Message | None:
+    """Send a document as the user's tracked interactive UI screen."""
+    badge_service = getattr(app_context, "notification_badge_service", None)
+    if isinstance(badge_service, NotificationBadgeService):
+        try:
+            async with badge_service.ui_markup_lock(user_id) as lease_lost:
+                decorated_markup = await badge_service.decorate_markup(
+                    user_id, reply_markup
+                )
+                return await _send_ui_document(
+                    current_bot=app_context.bot,
+                    current_dispatcher=app_context.dispatcher,
+                    user_id=user_id,
+                    document=document,
+                    caption=caption,
+                    reply_markup=decorated_markup,
+                    base_reply_markup=reply_markup,
+                    parse_mode=parse_mode,
+                    badge_service=badge_service,
+                    lease_lost=lease_lost,
+                )
+        except UiMarkupLeaseLost:
+            return None
+        except UiMarkupLockUnavailable:
+            logger.bind(
+                event="notification_badge_ui_lock_unavailable", user_id=user_id
+            ).info(
+                "rendering document UI without notification badge after lock contention"
+            )
+
+    return await _send_ui_document(
+        current_bot=app_context.bot,
+        current_dispatcher=app_context.dispatcher,
+        user_id=user_id,
+        document=document,
+        caption=caption,
+        reply_markup=reply_markup,
+        base_reply_markup=reply_markup,
+        parse_mode=parse_mode,
+    )
+
+
+async def _send_ui_document(
+    *,
+    current_bot: Bot,
+    current_dispatcher,
+    user_id: int,
+    document: types.InputFile,
+    caption: str | None,
+    reply_markup,
+    base_reply_markup,
+    parse_mode: str,
+    badge_service=None,
+    lease_lost=None,
+) -> types.Message:
+    fsm_storage_key = StorageKey(
+        bot_id=current_bot.id, user_id=user_id, chat_id=user_id
+    )
+    data = await current_dispatcher.storage.get_data(key=fsm_storage_key)
+    previous_message_id = int(data.get("last_message_id", 0))
+    new_message = await _await_telegram_ui_operation(
+        lease_lost,
+        user_id=user_id,
+        operation="send_ui_document",
+        awaitable_factory=lambda: current_bot.send_document(
+            user_id,
+            document,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        ),
+    )
+    if previous_message_id > 0:
+        with suppress(TelegramBadRequest):
+            await _await_telegram_ui_operation(
+                lease_lost,
+                user_id=user_id,
+                operation="delete_previous_ui_message",
+                awaitable_factory=lambda: current_bot.delete_message(
+                    user_id, previous_message_id
+                ),
+            )
+    await current_dispatcher.storage.update_data(
+        key=fsm_storage_key, data={"last_message_id": new_message.message_id}
+    )
+    await _capture_base_markup(
+        badge_service,
+        user_id,
+        new_message.message_id,
+        base_reply_markup,
+        lease_lost=lease_lost,
+    )
+    return new_message
+
+
 async def _await_telegram_ui_operation(
     lease_lost,
     *,

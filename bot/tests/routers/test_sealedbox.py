@@ -251,7 +251,9 @@ async def test_encrypt_document_is_downloaded_before_source_message_is_deleted(
     assert result is not None
     assert '"callback_data": "Return"' in result["data"]["reply_markup"]
     assert await dp.storage.get_state(key) is None
-    assert (await dp.storage.get_data(key))["last_message_id"] == 0
+    tracked_message_id = (await dp.storage.get_data(key))["last_message_id"]
+    assert tracked_message_id > 0
+    assert tracked_message_id != 77
 
 
 @pytest.mark.asyncio
