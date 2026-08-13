@@ -7,7 +7,11 @@ from aiogram.types import BufferedInputFile
 from loguru import logger
 
 from keyboards.common_keyboards import get_kb_return
-from infrastructure.utils.telegram_utils import clear_state, send_ui_document
+from infrastructure.utils.telegram_utils import (
+    build_text_document_caption,
+    clear_state,
+    send_ui_document,
+)
 from middleware.notification_activity import complete_notification_flow
 from other import faststream_tools
 from other.config_reader import config
@@ -115,6 +119,7 @@ async def handle_sealedbox_relay(message: SealedBoxRelayMessage) -> None:
         await send_ui_document(
             message.user_id,
             BufferedInputFile(plaintext, filename=filename[:180]),
+            caption=build_text_document_caption(plaintext),
             reply_markup=get_kb_return(message.user_id, app_context=app_context),
             app_context=app_context,
         )

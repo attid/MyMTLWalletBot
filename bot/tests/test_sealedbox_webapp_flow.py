@@ -154,7 +154,7 @@ async def test_relay_worker_sends_plaintext_and_clears_request() -> None:
         f"{REDIS_SEALEDBOX_PREFIX}{token}",
         mapping={
             FIELD_STATUS: STATUS_RELAY_PENDING,
-            FIELD_SEALEDBOX_PLAINTEXT: base64.b64encode(b"pdf bytes").decode(),
+            FIELD_SEALEDBOX_PLAINTEXT: base64.b64encode(b"relay <text>").decode(),
         },
     )
     app_context = MagicMock()
@@ -178,8 +178,11 @@ async def test_relay_worker_sends_plaintext_and_clears_request() -> None:
             )
 
         sent_document = app_context.bot.send_document.await_args.args[1]
-        assert sent_document.data == b"pdf bytes"
+        assert sent_document.data == b"relay <text>"
         assert sent_document.filename == "report.pdf"
+        assert app_context.bot.send_document.await_args.kwargs["caption"] == (
+            "<code>relay &lt;text&gt;</code>"
+        )
         clear.assert_awaited_once()
         complete.assert_awaited_once_with(app_context, 42)
         key = StorageKey(bot_id=1, chat_id=42, user_id=42)

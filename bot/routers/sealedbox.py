@@ -32,6 +32,7 @@ from infrastructure.services.stellar_sealedbox_service import (
     SealedBoxSizeError,
 )
 from infrastructure.utils.telegram_utils import (
+    build_text_document_caption,
     clear_last_message_id,
     clear_state,
     send_message,
@@ -579,6 +580,7 @@ async def _decrypt_server(
         BufferedInputFile(
             plaintext, filename=_resolve_output_filename(filename, plaintext)
         ),
+        caption=build_text_document_caption(plaintext),
     )
     logger.info(
         "sealed-box operation completed: user_id={} operation=decrypt size={} result=success",
