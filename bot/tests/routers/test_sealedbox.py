@@ -1,3 +1,4 @@
+import base64
 import datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,6 +15,7 @@ from routers.sealedbox import (
     SealedBoxState,
     _requested_output_filename,
     _resolve_output_filename,
+    _short_address,
     _LimitedBytesIO,
     router as sealedbox_router,
 )
@@ -126,6 +128,23 @@ async def test_opening_menu_from_callback_edits_current_screen(
 
 
 @pytest.mark.asyncio
+async def test_crypto_command_opens_menu_and_deletes_command(
+    mock_telegram, sealedbox_context
+) -> None:
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_message_update(123, "/crypto", message_id=8),
+    )
+
+    assert 8 in _deleted_message_ids(mock_telegram)
+    assert _latest_screen(mock_telegram)["data"]["text"] == "sealedbox_menu"
+
+
+@pytest.mark.asyncio
 async def test_encrypts_text_for_manually_entered_recipient(
     mock_telegram, sealedbox_context
 ) -> None:
@@ -135,6 +154,11 @@ async def test_encrypts_text_for_manually_entered_recipient(
     dp.include_router(sealedbox_router)
     user_id = 123
     recipient = Keypair.from_raw_ed25519_seed(bytes([4]) * 32)
+    sealedbox_context.localization_service.get_text.side_effect = (
+        lambda _user_id, key_name, params=(): (
+            f"{key_name} {params[0]}" if params else key_name
+        )
+    )
     key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
 
     await dp.feed_update(
@@ -148,6 +172,10 @@ async def test_encrypts_text_for_manually_entered_recipient(
         create_message_update(user_id, recipient.public_key, update_id=2, message_id=2),
     )
     assert await dp.storage.get_state(key) == SealedBoxState.encrypt_content
+    assert (
+        _short_address(recipient.public_key)
+        in _latest_screen(mock_telegram)["data"]["text"]
+    )
 
     await dp.feed_update(
         sealedbox_context.bot,
@@ -157,11 +185,36 @@ async def test_encrypts_text_for_manually_entered_recipient(
     request = get_telegram_request(mock_telegram, "sendDocument")
     assert request is not None
     assert "message.txt.ssb" in str(request["data"])
-    assert request["data"]["caption"] == "sealedbox_encrypted_for"
+    assert "sealedbox_encrypted_for" in request["data"]["caption"]
+    assert _short_address(recipient.public_key) in request["data"]["caption"]
+    assert "<code>" in request["data"]["caption"]
     assert '"callback_data": "Return"' in request["data"]["reply_markup"]
     assert 1 in _deleted_message_ids(mock_telegram)
     assert {2, 3}.issubset(_deleted_message_ids(mock_telegram))
     assert await dp.storage.get_state(key) is None
+
+
+@pytest.mark.asyncio
+async def test_large_encrypted_text_uses_document_caption_without_base64(
+    mock_telegram, sealedbox_context
+) -> None:
+    user_id = 123
+    recipient = Keypair.random().public_key
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.set_state(key, SealedBoxState.encrypt_content)
+    await dp.storage.update_data(key, {"sealedbox_recipient": recipient})
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_message_update(user_id, "x" * 1000, message_id=10),
+    )
+
+    request = get_telegram_request(mock_telegram, "sendDocument")
+    assert request is not None
+    assert "<code>" not in request["data"]["caption"]
 
 
 @pytest.mark.asyncio
@@ -420,6 +473,52 @@ async def test_decrypts_with_current_no_pin_wallet(
 
 
 @pytest.mark.asyncio
+async def test_decrypts_base64_ciphertext_sent_as_text(
+    mock_telegram, sealedbox_context
+) -> None:
+    user_id = 123
+    keypair = Keypair.from_raw_ed25519_seed(bytes([7]) * 32)
+    ciphertext = await sealedbox_context.stellar_sealedbox_service.encrypt(
+        999, keypair.public_key, b"decrypted text"
+    )
+    wallet_repo = AsyncMock()
+    wallet_repo.get_default_wallet.return_value = MagicMock(
+        public_key=keypair.public_key, use_pin=0
+    )
+    sealedbox_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+    get_secrets = AsyncMock()
+    get_secrets.execute.return_value = MagicMock(secret_key=keypair.secret)
+    sealedbox_context.use_case_factory.create_get_wallet_secrets.return_value = (
+        get_secrets
+    )
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_router(sealedbox_router)
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_callback_update(user_id, "SealedBoxDecrypt"),
+    )
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_message_update(
+            user_id,
+            base64.b64encode(ciphertext).decode("ascii"),
+            update_id=2,
+            message_id=2,
+        ),
+    )
+
+    result = get_telegram_request(mock_telegram, "sendDocument")
+    assert result is not None
+    assert "sealedbox-output.txt" in str(result["data"])
+    assert 2 in _deleted_message_ids(mock_telegram)
+
+
+@pytest.mark.asyncio
 async def test_read_only_wallet_hands_ciphertext_to_owner_bound_webapp(
     mock_telegram, sealedbox_context
 ) -> None:
@@ -550,7 +649,7 @@ async def test_password_wallet_waits_for_password_before_decrypting(
 
 
 @pytest.mark.asyncio
-async def test_non_document_decrypt_input_is_deleted(
+async def test_invalid_text_decrypt_input_is_deleted(
     mock_telegram, sealedbox_context
 ) -> None:
     dp = sealedbox_context.dispatcher
@@ -562,10 +661,11 @@ async def test_non_document_decrypt_input_is_deleted(
 
     await dp.feed_update(
         sealedbox_context.bot,
-        create_message_update(user_id, "not-a-file", message_id=11),
+        create_message_update(user_id, "not-base64", message_id=11),
     )
 
     assert 11 in _deleted_message_ids(mock_telegram)
+    assert _latest_screen(mock_telegram)["data"]["text"] == "sealedbox_decrypt_failed"
 
 
 @pytest.mark.asyncio

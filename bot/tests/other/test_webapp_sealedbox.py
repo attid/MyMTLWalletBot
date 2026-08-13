@@ -10,12 +10,15 @@ from fastapi.responses import Response
 from shared.constants import (
     FIELD_SEALEDBOX_CIPHERTEXT,
     FIELD_SEALEDBOX_OUTPUT_FILENAME,
+    FIELD_SEALEDBOX_PLAINTEXT,
     FIELD_STATUS,
     FIELD_USER_ID,
     FIELD_WALLET_ADDRESS,
     QUEUE_SEALEDBOX_COMPLETED,
+    QUEUE_SEALEDBOX_RELAY,
     REDIS_SEALEDBOX_PREFIX,
     STATUS_PENDING,
+    STATUS_RELAY_PENDING,
 )
 
 
@@ -101,6 +104,36 @@ async def test_completion_queues_status_without_plaintext(webapp_redis) -> None:
     await webapp_redis.aclose()
 
 
+@pytest.mark.asyncio
+async def test_owner_can_queue_plaintext_for_telegram_relay(webapp_redis) -> None:
+    await _store(webapp_redis, "token")
+
+    result = await webapp_app.relay_sealedbox("token", b"pdf bytes", "valid")
+
+    assert result == {"success": True}
+    request = await webapp_redis.hgetall(f"{REDIS_SEALEDBOX_PREFIX}token")
+    assert request[FIELD_STATUS] == STATUS_RELAY_PENDING
+    assert base64.b64decode(request[FIELD_SEALEDBOX_PLAINTEXT]) == b"pdf bytes"
+    event = await webapp_redis.lpop(QUEUE_SEALEDBOX_RELAY)
+    assert "token" in event
+    assert "42" in event
+    await webapp_redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_relay_rejects_plaintext_over_10_mb(webapp_redis) -> None:
+    await _store(webapp_redis, "token")
+
+    with pytest.raises(HTTPException) as error:
+        await webapp_app.relay_sealedbox(
+            "token", b"x" * (10 * 1024 * 1024 + 1), "valid"
+        )
+
+    assert error.value.status_code == 413
+    assert await webapp_redis.llen(QUEUE_SEALEDBOX_RELAY) == 0
+    await webapp_redis.aclose()
+
+
 def test_sealedbox_page_contains_local_only_decryption_contract() -> None:
     template = Path(webapp_app.BASE_DIR) / "templates" / "sealedbox.html"
     script = Path(webapp_app.BASE_DIR) / "static" / "js" / "sealedbox.js"
@@ -117,5 +150,8 @@ def test_sealedbox_page_contains_local_only_decryption_contract() -> None:
     assert "navigator.share({files: [decryptedFile]" in content
     assert 'document.getElementById("plaintext-output").textContent' in content
     assert 'id="download-fallback"' in content
+    assert 'id="relay-file-button"' in content
+    assert "fetch(`/api/sealedbox/${token}/relay`" in content
+    assert "body: decryptedFile" in content
     assert 'window.addEventListener("pagehide", cleanupDownload)' in content
     assert "link.remove()" not in content

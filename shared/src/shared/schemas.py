@@ -25,3 +25,10 @@ class SealedBoxCompletedMessage(BaseModel):
 
     token: str
     user_id: int
+
+
+class SealedBoxRelayMessage(BaseModel):
+    """A browser requested owner-approved plaintext relay through Telegram."""
+
+    token: str
+    user_id: int

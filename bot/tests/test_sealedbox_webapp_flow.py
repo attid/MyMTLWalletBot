@@ -11,13 +11,15 @@ from other.faststream_tools import (
 from shared.constants import (
     FIELD_SEALEDBOX_CIPHERTEXT,
     FIELD_SEALEDBOX_OUTPUT_FILENAME,
+    FIELD_SEALEDBOX_PLAINTEXT,
     FIELD_USER_ID,
     REDIS_SEALEDBOX_PREFIX,
     REDIS_SEALEDBOX_USER_PREFIX,
     FIELD_STATUS,
     STATUS_COMPLETED,
+    STATUS_RELAY_PENDING,
 )
-from shared.schemas import SealedBoxCompletedMessage
+from shared.schemas import SealedBoxCompletedMessage, SealedBoxRelayMessage
 
 
 @pytest.mark.asyncio
@@ -124,6 +126,56 @@ async def test_completion_worker_clears_fsm_and_releases_notifications() -> None
                 SealedBoxCompletedMessage(token=token, user_id=42)
             )
 
+        clear.assert_awaited_once_with(state)
+        complete.assert_awaited_once_with(app_context, 42)
+        assert not await redis.exists(f"{REDIS_SEALEDBOX_PREFIX}{token}")
+    finally:
+        faststream_tools.APP_CONTEXT = old_context
+        await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_relay_worker_sends_plaintext_and_clears_request() -> None:
+    from infrastructure.workers import sealedbox_worker
+    from other import faststream_tools
+
+    redis = fakeredis.aioredis.FakeRedis()
+    token = await publish_pending_sealedbox(
+        user_id=42,
+        wallet_address="GACTIVE",
+        ciphertext=b"cipher",
+        output_filename="report.pdf",
+        redis_client=redis,
+    )
+    await redis.hset(
+        f"{REDIS_SEALEDBOX_PREFIX}{token}",
+        mapping={
+            FIELD_STATUS: STATUS_RELAY_PENDING,
+            FIELD_SEALEDBOX_PLAINTEXT: base64.b64encode(b"pdf bytes").decode(),
+        },
+    )
+    state = AsyncMock()
+    app_context = MagicMock()
+    app_context.bot.send_document = AsyncMock()
+    app_context.localization_service.get_text.return_value = "Home"
+    app_context.dispatcher.fsm.get_context.return_value = state
+    old_context = faststream_tools.APP_CONTEXT
+    faststream_tools.APP_CONTEXT = app_context
+    try:
+        with (
+            patch.object(sealedbox_worker.aioredis, "from_url", return_value=redis),
+            patch.object(sealedbox_worker, "clear_state", AsyncMock()) as clear,
+            patch.object(
+                sealedbox_worker, "complete_notification_flow", AsyncMock()
+            ) as complete,
+        ):
+            await sealedbox_worker.handle_sealedbox_relay(
+                SealedBoxRelayMessage(token=token, user_id=42)
+            )
+
+        sent_document = app_context.bot.send_document.await_args.args[1]
+        assert sent_document.data == b"pdf bytes"
+        assert sent_document.filename == "report.pdf"
         clear.assert_awaited_once_with(state)
         complete.assert_awaited_once_with(app_context, 42)
         assert not await redis.exists(f"{REDIS_SEALEDBOX_PREFIX}{token}")

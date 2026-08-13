@@ -49,3 +49,9 @@ def test_startup_message_includes_short_commit() -> None:
 
 def test_startup_message_falls_back_when_commit_is_missing() -> None:
     assert get_startup_message("") == "Bot started (commit: unknown)"
+
+
+def test_private_commands_include_crypto_entry() -> None:
+    content = START_PATH.read_text(encoding="utf-8")
+
+    assert 'command="crypto"' in content

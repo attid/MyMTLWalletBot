@@ -8,6 +8,7 @@
     let ciphertext = null;
     let downloadUrl = null;
     let decryptedFile = null;
+    let flowCompleted = false;
 
     tg.ready();
     tg.expand();
@@ -83,7 +84,6 @@
         const plaintext = sodium.crypto_box_seal_open(ciphertext, curvePublic, curvePrivate);
         if (!plaintext) throw new Error(t("sealedbox.decrypt_failed"));
         prepareResult(plaintext, outputFilename(plaintext));
-        await fetchJson(`/api/sealedbox/${token}/complete`, {method: "POST"});
         hide("decrypt-card");
         hide("password-card");
         show("success-card");
@@ -150,15 +150,56 @@
                 navigator.canShare({files: [decryptedFile]})
             ) {
                 await navigator.share({files: [decryptedFile], title: decryptedFile.name});
+                await completeFlow();
                 return;
             }
             document.getElementById("download-fallback").click();
-            error.textContent = t("sealedbox.share_unsupported");
+            showRelayOption("sealedbox.share_unsupported");
         } catch (shareError) {
             if (shareError.name !== "AbortError") {
-                error.textContent = t("sealedbox.share_failed");
+                showRelayOption("sealedbox.share_failed");
             }
         }
+    }
+
+    function showRelayOption(messageKey) {
+        document.getElementById("download-error").textContent = t(messageKey);
+        show("relay-file-button");
+    }
+
+    async function completeFlow() {
+        if (flowCompleted) return;
+        await fetchJson(`/api/sealedbox/${token}/complete`, {method: "POST"});
+        flowCompleted = true;
+    }
+
+    async function relayDecryptedFile() {
+        if (!decryptedFile || flowCompleted) return;
+        const button = document.getElementById("relay-file-button");
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/sealedbox/${token}/relay`, {
+                method: "POST",
+                headers: {...headers, "Content-Type": "application/octet-stream"},
+                body: decryptedFile,
+            });
+            if (!response.ok) throw new Error("relay failed");
+            flowCompleted = true;
+            document.getElementById("download-error").textContent = t("sealedbox.relay_queued");
+            document.getElementById("save-file-button").disabled = true;
+        } catch (_) {
+            button.disabled = false;
+            document.getElementById("download-error").textContent = t("sealedbox.relay_failed");
+        }
+    }
+
+    async function closeWebApp() {
+        try {
+            await completeFlow();
+        } catch (_) {
+            // The Redis request will expire even if completion cannot be reported.
+        }
+        tg.close();
     }
 
     function formatAddress(address) {
@@ -194,6 +235,8 @@
     });
 
     document.getElementById("save-file-button").addEventListener("click", saveDecryptedFile);
+    document.getElementById("relay-file-button").addEventListener("click", relayDecryptedFile);
+    document.getElementById("close-button").addEventListener("click", closeWebApp);
     window.addEventListener("pagehide", cleanupDownload);
     initialize();
 })();
