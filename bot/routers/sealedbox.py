@@ -6,6 +6,7 @@ import base64
 from io import BytesIO
 import re
 
+import jsonpickle  # type: ignore
 from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -17,6 +18,12 @@ from stellar_sdk import StrKey
 
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.localization_service import LocalizationService
+from infrastructure.services.signing_facade import (
+    SignatureMode,
+    SignaturePurpose,
+    SignatureRequest,
+    SigningFacade,
+)
 from infrastructure.services.stellar_sealedbox_service import (
     MAX_BASE64_CIPHERTEXT_BYTES,
     MAX_PLAINTEXT_BYTES,
@@ -45,7 +52,6 @@ class SealedBoxState(StatesGroup):
     recipient = State()
     encrypt_content = State()
     decrypt_file = State()
-    decrypt_auth = State()
 
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
@@ -472,13 +478,23 @@ async def receive_decrypt_file(
             sealedbox_pending_ciphertext=base64.b64encode(payload).decode("ascii"),
             sealedbox_pending_filename=filename,
         )
-        await state.set_state(SealedBoxState.decrypt_auth)
-        await send_message(
-            session,
-            user_id,
-            my_gettext(user_id, "sealedbox_enter_password", app_context=app_context),
-            reply_markup=types.InlineKeyboardMarkup(
-                inline_keyboard=_navigation(user_id, "decrypt_file", app_context)
+        signing_facade = getattr(app_context, "signing_facade", None) or SigningFacade()
+        await signing_facade.request_signature(
+            session=session,
+            state=state,
+            request=SignatureRequest(
+                user_id=user_id,
+                wallet_address=str(data.get("sealedbox_wallet_address", "")),
+                xdr="",
+                purpose=SignaturePurpose.TOOLS,
+                mode=SignatureMode.SIGN_ONLY,
+                operation="Sealed-box decryption",
+                prompt_msg=my_gettext(
+                    user_id, "sealedbox_enter_password", app_context=app_context
+                ),
+                fsm_func=jsonpickle.dumps(_decrypt_after_auth),
+                decode_enabled=False,
+                metadata={"flow": "sealedbox_decrypt"},
             ),
             app_context=app_context,
         )
@@ -495,21 +511,13 @@ async def receive_decrypt_file(
     )
 
 
-@router.message(SealedBoxState.decrypt_auth)
-async def receive_decrypt_password(
-    message: types.Message,
-    state: FSMContext,
+async def _decrypt_after_auth(
     session: AsyncSession,
+    user_id: int,
+    state: FSMContext,
+    *,
     app_context: AppContext,
 ) -> None:
-    if message.from_user is None:
-        return
-    user_id = message.from_user.id
-    password = message.text.upper() if message.text else ""
-    await message.delete()
-    if message.text is None:
-        await _show_error(session, user_id, "bad_password", "decrypt_file", app_context)
-        return
     data = await state.get_data()
     encoded = data.get("sealedbox_pending_ciphertext")
     if not encoded:
@@ -522,7 +530,7 @@ async def receive_decrypt_password(
         user_id,
         base64.b64decode(encoded, validate=True),
         str(data.get("sealedbox_pending_filename", "")),
-        password,
+        str(data.get("pin", "")),
         "decrypt_file",
         state,
         app_context,

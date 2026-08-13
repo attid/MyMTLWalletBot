@@ -19,6 +19,7 @@ from routers.sealedbox import (
     _LimitedBytesIO,
     router as sealedbox_router,
 )
+from routers.sign import PinState, router as sign_router
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -51,11 +52,14 @@ def detach_router():
     yield
     if sealedbox_router.parent_router:
         sealedbox_router._parent_router = None
+    if sign_router.parent_router:
+        sign_router._parent_router = None
 
 
 @pytest.fixture
 def sealedbox_context(router_app_context):
     router_app_context.stellar_sealedbox_service = StellarSealedBoxService()
+    router_app_context.signing_facade = None
     addressbook_repo = AsyncMock()
     addressbook_repo.get_all.return_value = []
     router_app_context.repository_factory.get_addressbook_repository.return_value = (
@@ -601,11 +605,15 @@ async def test_password_wallet_waits_for_password_before_decrypting(
         return destination
 
     sealedbox_context.bot.download = AsyncMock(side_effect=download)
+    sealedbox_context.stellar_service.get_user_account = AsyncMock(
+        return_value=MagicMock(account=MagicMock(account_id=keypair.public_key))
+    )
     dp = sealedbox_context.dispatcher
     dp.message.middleware(RouterTestMiddleware(sealedbox_context))
     dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
-    dp.include_router(sealedbox_router)
+    dp.include_routers(sealedbox_router, sign_router)
     key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.update_data(key, {"user_lang": "en"})
 
     await dp.feed_update(
         sealedbox_context.bot,
@@ -615,39 +623,67 @@ async def test_password_wallet_waits_for_password_before_decrypting(
         sealedbox_context.bot,
         _document_update(user_id, file_name="file.bin.ssb", file_size=len(ciphertext)),
     )
-    assert await dp.storage.get_state(key) == SealedBoxState.decrypt_auth
+    assert await dp.storage.get_state(key) == PinState.ask_password
     assert get_telegram_request(mock_telegram, "sendDocument") is None
 
     markup = _latest_screen(mock_telegram)["data"]["reply_markup"]
-    assert "SealedBoxBack:decrypt_file" in markup
-
+    assert '"callback_data": "Return"' in markup
     await dp.feed_update(
         sealedbox_context.bot,
-        create_callback_update(user_id, "SealedBoxBack:decrypt_file", update_id=4),
-    )
-    assert await dp.storage.get_state(key) == SealedBoxState.decrypt_file
-    state_data = await dp.storage.get_data(key)
-    assert "sealedbox_pending_ciphertext" not in state_data
-    assert _latest_screen(mock_telegram)["data"]["text"] == "sealedbox_send_file"
-
-    await dp.feed_update(
-        sealedbox_context.bot,
-        _document_update(
-            user_id,
-            file_name="file.bin.ssb",
-            file_size=len(ciphertext),
-            update_id=5,
-        ),
-    )
-    await dp.feed_update(
-        sealedbox_context.bot,
-        create_message_update(user_id, "hunter2", update_id=6, message_id=6),
+        create_message_update(user_id, "hunter2", update_id=4, message_id=4),
     )
 
-    get_secrets.execute.assert_awaited_once_with(user_id, "HUNTER2")
+    get_secrets.execute.assert_awaited_once_with(user_id, "hunter2")
     assert get_telegram_request(mock_telegram, "sendDocument") is not None
-    assert {3, 5, 6}.issubset(_deleted_message_ids(mock_telegram))
+    assert {3, 4}.issubset(_deleted_message_ids(mock_telegram))
     assert await dp.storage.get_state(key) is None
+
+
+@pytest.mark.asyncio
+async def test_pin_wallet_uses_shared_signing_keyboard(
+    mock_telegram, sealedbox_context
+) -> None:
+    user_id = 123
+    keypair = Keypair.from_raw_ed25519_seed(bytes([9]) * 32)
+    ciphertext = await sealedbox_context.stellar_sealedbox_service.encrypt(
+        999, keypair.public_key, b"protected"
+    )
+    wallet_repo = AsyncMock()
+    wallet_repo.get_default_wallet.return_value = MagicMock(
+        public_key=keypair.public_key, use_pin=1
+    )
+    sealedbox_context.repository_factory.get_wallet_repository.return_value = (
+        wallet_repo
+    )
+    sealedbox_context.stellar_service.get_user_account = AsyncMock(
+        return_value=MagicMock(account=MagicMock(account_id=keypair.public_key))
+    )
+
+    async def download(_document, destination):
+        destination.write(ciphertext)
+        return destination
+
+    sealedbox_context.bot.download = AsyncMock(side_effect=download)
+    dp = sealedbox_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
+    dp.include_routers(sealedbox_router, sign_router)
+    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.update_data(key, {"user_lang": "en"})
+
+    await dp.feed_update(
+        sealedbox_context.bot,
+        create_callback_update(user_id, "SealedBoxDecrypt"),
+    )
+    await dp.feed_update(
+        sealedbox_context.bot,
+        _document_update(user_id, file_name="file.bin.ssb", file_size=len(ciphertext)),
+    )
+
+    assert await dp.storage.get_state(key) == PinState.sign
+    markup = _latest_screen(mock_telegram)["data"]["reply_markup"]
+    assert '"callback_data": "pin_:1"' in markup
+    assert '"callback_data": "pin_:Enter"' in markup
 
 
 @pytest.mark.asyncio
@@ -668,25 +704,6 @@ async def test_invalid_text_decrypt_input_is_deleted(
 
     assert 11 in _deleted_message_ids(mock_telegram)
     assert _latest_screen(mock_telegram)["data"]["text"] == "sealedbox_decrypt_failed"
-
-
-@pytest.mark.asyncio
-async def test_non_text_decrypt_auth_input_is_deleted(
-    mock_telegram, sealedbox_context
-) -> None:
-    dp = sealedbox_context.dispatcher
-    dp.message.middleware(RouterTestMiddleware(sealedbox_context))
-    dp.include_router(sealedbox_router)
-    user_id = 123
-    key = StorageKey(bot_id=sealedbox_context.bot.id, chat_id=user_id, user_id=user_id)
-    await dp.storage.set_state(key, SealedBoxState.decrypt_auth)
-
-    await dp.feed_update(
-        sealedbox_context.bot,
-        _document_update(user_id, file_name="wrong.bin", file_size=1, update_id=12),
-    )
-
-    assert 12 in _deleted_message_ids(mock_telegram)
 
 
 @pytest.mark.asyncio
@@ -711,10 +728,13 @@ async def test_bad_wallet_password_goes_back_to_file_selection(
         return destination
 
     sealedbox_context.bot.download = AsyncMock(side_effect=download)
+    sealedbox_context.stellar_service.get_user_account = AsyncMock(
+        return_value=MagicMock(account=MagicMock(account_id=wallet.public_key))
+    )
     dp = sealedbox_context.dispatcher
     dp.message.middleware(RouterTestMiddleware(sealedbox_context))
     dp.callback_query.middleware(RouterTestMiddleware(sealedbox_context))
-    dp.include_router(sealedbox_router)
+    dp.include_routers(sealedbox_router, sign_router)
 
     await dp.feed_update(
         sealedbox_context.bot,

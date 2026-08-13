@@ -134,6 +134,7 @@ qr
 .idea
 .antigravitycli/
 /.belief_map_cache.json
+/.belief_map.sexp
 mtl-google-doc.json
 .junie/guidelines.md
 .vscode/settings.json
