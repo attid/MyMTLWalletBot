@@ -9,6 +9,7 @@ import re
 
 from aiogram import F, Router, types
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile
@@ -37,6 +38,8 @@ from other.lang_tools import my_gettext
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+DOCUMENT_CAPTION_LIMIT = 1024
 
 
 class SealedBoxState(StatesGroup):
@@ -114,6 +117,23 @@ async def open_sealedbox_menu(
     await state.update_data(user_id=user_id)
     await _show_menu(session, user_id, app_context)
     await callback.answer()
+
+
+@router.message(Command(commands=["crypto"]))
+async def open_sealedbox_menu_command(
+    message: types.Message,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+) -> None:
+    if message.from_user is None:
+        return
+    user_id = message.from_user.id
+    await message.delete()
+    await clear_state(state)
+    await clear_last_message_id(user_id, app_context=app_context)
+    await state.update_data(user_id=user_id)
+    await _show_menu(session, user_id, app_context)
 
 
 @router.callback_query(F.data == "SealedBoxBack:menu")
@@ -228,7 +248,12 @@ async def _accept_recipient(
     await send_message(
         session,
         user_id,
-        my_gettext(user_id, "sealedbox_send_content", app_context=app_context),
+        my_gettext(
+            user_id,
+            "sealedbox_send_content",
+            (_short_address(recipient),),
+            app_context=app_context,
+        ),
         reply_markup=types.InlineKeyboardMarkup(
             inline_keyboard=_navigation(user_id, "recipient", app_context)
         ),
@@ -316,12 +341,7 @@ async def receive_encrypt_content(
         app_context,
         user_id,
         BufferedInputFile(ciphertext, filename=f"{filename}.ssb"),
-        caption=my_gettext(
-            user_id,
-            "sealedbox_encrypted_for",
-            (_short_address(recipient),),
-            app_context=app_context,
-        ),
+        caption=_build_encryption_caption(user_id, recipient, ciphertext, app_context),
     )
     logger.info(
         "sealed-box operation completed: user_id={} operation=encrypt size={} result=success",
@@ -401,31 +421,47 @@ async def receive_decrypt_file(
     if message.from_user is None:
         return
     user_id = message.from_user.id
-    if message.document is None:
+    if message.document is not None:
+        if (message.document.file_size or 0) > MAX_BASE64_CIPHERTEXT_BYTES:
+            await message.delete()
+            await _show_error(
+                session, user_id, "sealedbox_file_too_large", "menu", app_context
+            )
+            return
+        try:
+            try:
+                payload = await _download_document(
+                    message, app_context, MAX_BASE64_CIPHERTEXT_BYTES
+                )
+            finally:
+                await message.delete()
+        except ValueError:
+            await _show_error(
+                session, user_id, "sealedbox_file_too_large", "menu", app_context
+            )
+            return
+        filename = _requested_output_filename(message.document.file_name)
+    elif message.text is not None:
+        encoded = "".join(message.text.split())
+        await message.delete()
+        try:
+            if len(encoded) > MAX_BASE64_CIPHERTEXT_BYTES:
+                raise ValueError("ciphertext is too large")
+            payload = base64.b64decode(encoded, validate=True)
+            if not payload:
+                raise ValueError("ciphertext is empty")
+        except (ValueError, base64.binascii.Error):
+            await _show_error(
+                session, user_id, "sealedbox_decrypt_failed", "menu", app_context
+            )
+            return
+        filename = ""
+    else:
         await message.delete()
         await _show_error(
             session, user_id, "sealedbox_send_as_file", "menu", app_context
         )
         return
-    if (message.document.file_size or 0) > MAX_BASE64_CIPHERTEXT_BYTES:
-        await message.delete()
-        await _show_error(
-            session, user_id, "sealedbox_file_too_large", "menu", app_context
-        )
-        return
-    try:
-        try:
-            payload = await _download_document(
-                message, app_context, MAX_BASE64_CIPHERTEXT_BYTES
-            )
-        finally:
-            await message.delete()
-    except ValueError:
-        await _show_error(
-            session, user_id, "sealedbox_file_too_large", "menu", app_context
-        )
-        return
-    filename = _requested_output_filename(message.document.file_name)
     data = await state.get_data()
     pin_type = int(data.get("sealedbox_pin_type", 0))
     if pin_type == 10:
@@ -631,6 +667,24 @@ async def _complete_flow(
 
 def _short_address(address: str) -> str:
     return f"{address[:4]}…{address[-4:]}" if len(address) > 10 else address
+
+
+def _build_encryption_caption(
+    user_id: int,
+    recipient: str,
+    ciphertext: bytes,
+    app_context: AppContext,
+) -> str:
+    address_caption = my_gettext(
+        user_id,
+        "sealedbox_encrypted_for",
+        (_short_address(recipient),),
+        app_context=app_context,
+    )
+    encoded = base64.b64encode(ciphertext).decode("ascii")
+    if len(address_caption) + 2 + len(encoded) <= DOCUMENT_CAPTION_LIMIT:
+        return f"{address_caption}\n\n<code>{encoded}</code>"
+    return address_caption
 
 
 def _safe_filename(filename: str | None, fallback: str) -> str:

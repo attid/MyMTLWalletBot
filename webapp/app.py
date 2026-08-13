@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import parse_qsl
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Body, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,11 +28,19 @@ from shared.constants import (
     QUEUE_TX_SIGNED,
     FIELD_SEALEDBOX_CIPHERTEXT,
     FIELD_SEALEDBOX_OUTPUT_FILENAME,
+    FIELD_SEALEDBOX_PLAINTEXT,
     QUEUE_SEALEDBOX_COMPLETED,
+    QUEUE_SEALEDBOX_RELAY,
     REDIS_SEALEDBOX_PREFIX,
     STATUS_COMPLETED,
+    STATUS_RELAY_PENDING,
+    SEALEDBOX_MAX_PLAINTEXT_BYTES,
 )
-from shared.schemas import SealedBoxCompletedMessage, TxSignedMessage
+from shared.schemas import (
+    SealedBoxCompletedMessage,
+    SealedBoxRelayMessage,
+    TxSignedMessage,
+)
 
 
 # Config
@@ -62,9 +70,7 @@ def validate_init_data(init_data: str) -> dict | None:
             return None
 
         # Create data-check-string
-        data_check_string = "\n".join(
-            f"{k}={v}" for k, v in sorted(parsed.items())
-        )
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
         # Create secret key: HMAC-SHA256(bot_token, "WebAppData")
         secret_key = hmac.new(
@@ -95,6 +101,7 @@ def get_user_id_from_init_data(init_data: str) -> int | None:
 
     try:
         import json
+
         user_data = json.loads(parsed.get("user", "{}"))
         return user_data.get("id")
     except Exception:
@@ -120,7 +127,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="MMWB WebApp", lifespan=lifespan)
 
 # Mount static files and templates
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.mount(
+    "/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static"
+)
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 templates.env.globals["git_commit"] = GIT_COMMIT
 
@@ -128,6 +137,7 @@ templates.env.globals["git_commit"] = GIT_COMMIT
 # --- Models ---
 class TxData(BaseModel):
     """Transaction data returned to frontend."""
+
     tx_id: str
     user_id: int
     wallet_address: str
@@ -139,6 +149,7 @@ class TxData(BaseModel):
 
 class SignRequest(BaseModel):
     """Request to submit signed transaction."""
+
     signed_xdr: str
 
 
@@ -173,14 +184,18 @@ async def get_transaction(
         if requester_id is None:
             raise HTTPException(status_code=401, detail="Invalid Telegram auth")
         if requester_id != tx_user_id:
-            logger.warning(f"User {requester_id} tried to access TX of user {tx_user_id}")
+            logger.warning(
+                f"User {requester_id} tried to access TX of user {tx_user_id}"
+            )
             raise HTTPException(status_code=403, detail="Access denied")
     elif BOT_TOKEN:
         # BOT_TOKEN set but no initData provided
         raise HTTPException(status_code=401, detail="Telegram auth required")
 
     summary_raw = tx_data.get(FIELD_SUB_INVOCATION_SUMMARY, "")
-    summary_lines = [line for line in summary_raw.split("\n") if line] if summary_raw else []
+    summary_lines = (
+        [line for line in summary_raw.split("\n") if line] if summary_raw else []
+    )
 
     return TxData(
         tx_id=tx_id,
@@ -228,10 +243,13 @@ async def submit_signed_transaction(
         raise HTTPException(status_code=401, detail="Telegram auth required")
 
     # Update TX with signed XDR
-    await redis_client.hset(tx_key, mapping={
-        FIELD_SIGNED_XDR: request.signed_xdr,
-        FIELD_STATUS: STATUS_SIGNED,
-    })
+    await redis_client.hset(
+        tx_key,
+        mapping={
+            FIELD_SIGNED_XDR: request.signed_xdr,
+            FIELD_STATUS: STATUS_SIGNED,
+        },
+    )
 
     # Push to queue for bot to process
     message = TxSignedMessage(tx_id=tx_id, user_id=tx_user_id)
@@ -313,40 +331,83 @@ async def complete_sealedbox(
     return {"success": True}
 
 
+@app.post("/api/sealedbox/{token}/relay")
+async def relay_sealedbox(
+    token: str,
+    plaintext: bytes = Body(..., media_type="application/octet-stream"),
+    x_telegram_init_data: str = Header(default=""),
+) -> dict[str, bool]:
+    """Queue an explicitly approved plaintext relay to the Telegram owner."""
+    import base64
+
+    request_key, data = await _owned_sealedbox_request(token, x_telegram_init_data)
+    if data.get(FIELD_STATUS) != STATUS_PENDING:
+        raise HTTPException(status_code=409, detail="Request already completed")
+    if not plaintext:
+        raise HTTPException(status_code=400, detail="File is empty")
+    if len(plaintext) > SEALEDBOX_MAX_PLAINTEXT_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large")
+    user_id = int(data[FIELD_USER_ID])
+    assert redis_client is not None
+    await redis_client.hset(
+        request_key,
+        mapping={
+            FIELD_SEALEDBOX_PLAINTEXT: base64.b64encode(plaintext).decode("ascii"),
+            FIELD_STATUS: STATUS_RELAY_PENDING,
+        },
+    )
+    event = SealedBoxRelayMessage(token=token, user_id=user_id)
+    await redis_client.lpush(QUEUE_SEALEDBOX_RELAY, event.model_dump_json())
+    logger.info("Sealed-box Telegram relay accepted for user {}", user_id)
+    return {"success": True}
+
+
 # --- HTML Pages ---
 @app.get("/sign", response_class=HTMLResponse)
 async def sign_page(request: Request, tx: str | None = None):
     """Render transaction signing page."""
-    return templates.TemplateResponse("sign.html", {
-        "request": request,
-        "tx_id": tx,
-    })
+    return templates.TemplateResponse(
+        "sign.html",
+        {
+            "request": request,
+            "tx_id": tx,
+        },
+    )
 
 
 @app.get("/decode", response_class=HTMLResponse)
 async def decode_page(request: Request, tx: str | None = None):
     """Render transaction decode page."""
-    return templates.TemplateResponse("decode.html", {
-        "request": request,
-        "tx_id": tx,
-    })
+    return templates.TemplateResponse(
+        "decode.html",
+        {
+            "request": request,
+            "tx_id": tx,
+        },
+    )
 
 
 @app.get("/import", response_class=HTMLResponse)
 async def import_page(request: Request, address: str | None = None):
     """Render key import page."""
-    return templates.TemplateResponse("import.html", {
-        "request": request,
-        "wallet_address": address,
-    })
+    return templates.TemplateResponse(
+        "import.html",
+        {
+            "request": request,
+            "wallet_address": address,
+        },
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     """Render key management settings page."""
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
-    })
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+        },
+    )
 
 
 @app.get("/sealedbox", response_class=HTMLResponse)

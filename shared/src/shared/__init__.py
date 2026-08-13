@@ -1,9 +1,15 @@
 """Shared schemas and constants for MMWB bot and webapp."""
 
-from shared.schemas import PendingTxMessage, SealedBoxCompletedMessage, TxSignedMessage
+from shared.schemas import (
+    PendingTxMessage,
+    SealedBoxCompletedMessage,
+    SealedBoxRelayMessage,
+    TxSignedMessage,
+)
 from shared.constants import (
     QUEUE_TX_SIGNED,
     QUEUE_SEALEDBOX_COMPLETED,
+    QUEUE_SEALEDBOX_RELAY,
     REDIS_TX_PREFIX,
     REDIS_TX_TTL,
     REDIS_SEALEDBOX_PREFIX,
@@ -19,19 +25,24 @@ from shared.constants import (
     FIELD_ERROR,
     FIELD_SEALEDBOX_CIPHERTEXT,
     FIELD_SEALEDBOX_OUTPUT_FILENAME,
+    FIELD_SEALEDBOX_PLAINTEXT,
     STATUS_PENDING,
     STATUS_SIGNED,
     STATUS_EXPIRED,
     STATUS_ERROR,
     STATUS_COMPLETED,
+    STATUS_RELAY_PENDING,
+    SEALEDBOX_MAX_PLAINTEXT_BYTES,
 )
 
 __all__ = [
     "PendingTxMessage",
     "TxSignedMessage",
     "SealedBoxCompletedMessage",
+    "SealedBoxRelayMessage",
     "QUEUE_TX_SIGNED",
     "QUEUE_SEALEDBOX_COMPLETED",
+    "QUEUE_SEALEDBOX_RELAY",
     "REDIS_TX_PREFIX",
     "REDIS_TX_TTL",
     "REDIS_SEALEDBOX_PREFIX",
@@ -47,9 +58,12 @@ __all__ = [
     "FIELD_ERROR",
     "FIELD_SEALEDBOX_CIPHERTEXT",
     "FIELD_SEALEDBOX_OUTPUT_FILENAME",
+    "FIELD_SEALEDBOX_PLAINTEXT",
     "STATUS_PENDING",
     "STATUS_SIGNED",
     "STATUS_EXPIRED",
     "STATUS_ERROR",
     "STATUS_COMPLETED",
+    "STATUS_RELAY_PENDING",
+    "SEALEDBOX_MAX_PLAINTEXT_BYTES",
 ]

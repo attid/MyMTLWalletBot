@@ -170,6 +170,10 @@ async def set_commands(bot: Bot):
             description="Send tokens",
         ),
         BotCommand(
+            command="crypto",
+            description="Encrypt or decrypt",
+        ),
+        BotCommand(
             command="create_cheque",
             description="Create cheque",
         ),
@@ -212,9 +216,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     await start_broker(app_context)
     await set_commands(bot)
     with suppress(TelegramBadRequest):
-        await bot.send_message(
-            chat_id=config.admins[0], text=get_startup_message()
-        )
+        await bot.send_message(chat_id=config.admins[0], text=get_startup_message())
     # Start Notification Service (Webhook Server)
     if app_context.notification_service:
         await app_context.notification_service.start_server()
