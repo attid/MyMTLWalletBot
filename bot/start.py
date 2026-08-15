@@ -197,7 +197,7 @@ async def set_commands(bot: Bot):
             description="change horizon",
         ),
         BotCommand(
-            command="horizon_rx",
+            command="horizon_rw",
             description="change horizon_rw",
         ),
     ]
