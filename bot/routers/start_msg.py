@@ -393,7 +393,11 @@ async def cmd_info_message(
         return
 
     if send_file:
-        photo = types.FSInputFile(send_file)
+        photo = (
+            send_file
+            if isinstance(send_file, types.InputFile)
+            else types.FSInputFile(send_file)
+        )
         add_buttons = [
             types.InlineKeyboardButton(
                 text=my_gettext(
