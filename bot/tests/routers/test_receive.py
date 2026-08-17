@@ -1,5 +1,6 @@
 import pytest
-import os
+from io import BytesIO
+from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 
 from routers.receive import router as receive_router, create_beautiful_code
@@ -45,7 +46,11 @@ def setup_receive_mocks(router_app_context):
 
 @pytest.mark.asyncio
 async def test_cmd_receive_callback(
-    mock_telegram, router_app_context, setup_receive_mocks
+    mock_telegram,
+    router_app_context,
+    setup_receive_mocks,
+    monkeypatch,
+    tmp_path,
 ):
     """
     Test Receive callback: should show QR code and address info.
@@ -57,10 +62,8 @@ async def test_cmd_receive_callback(
 
     user_id = 123
     test_address = setup_receive_mocks.wallet.public_key
-    qr_path = f"qr/{test_address}.png"
-
-    # Ensure qr directory exists
-    os.makedirs("qr", exist_ok=True)
+    monkeypatch.chdir(tmp_path)
+    qr_path = Path("qr") / f"{test_address}.png"
 
     update = create_callback_update(user_id=user_id, callback_data="Receive")
 
@@ -69,8 +72,8 @@ async def test_cmd_receive_callback(
         bot=router_app_context.bot, update=update, app_context=router_app_context
     )
 
-    # 1. Verify QR was created
-    assert os.path.exists(qr_path)
+    # 1. Verify delivery does not depend on a runtime QR directory.
+    assert not qr_path.exists()
 
     # 2. Verify answerCallbackQuery was called
     req_answer = get_telegram_request(mock_telegram, "answerCallbackQuery")
@@ -83,30 +86,19 @@ async def test_cmd_receive_callback(
     # caption can be multipart or urlencoded depending on bot version, mock_server captures it
     assert "my_address" in str(req_photo["data"].get("caption", ""))
 
-    # Cleanup
-    if os.path.exists(qr_path):
-        os.remove(qr_path)
-
-
 def test_create_beautiful_code():
     """Unit test for QR code generation."""
     from PIL import Image
 
     test_address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
-    qr_path = "tests/test_qr_gen.png"
+    qr_buffer = BytesIO()
 
-    os.makedirs("tests", exist_ok=True)
+    create_beautiful_code(qr_buffer, test_address)
 
-    try:
-        create_beautiful_code(qr_path, test_address)
-        assert os.path.exists(qr_path)
-
-        with Image.open(qr_path) as img:
-            assert img.mode == "RGB"
-            assert img.size[0] > 100
-    finally:
-        if os.path.exists(qr_path):
-            os.remove(qr_path)
+    with Image.open(qr_buffer) as img:
+        assert img.format == "PNG"
+        assert img.mode == "RGB"
+        assert img.size[0] > 100
 
 
 def test_create_qr_logic_components():

@@ -1,6 +1,9 @@
+from io import BytesIO
+
 import qrcode
 from PIL import ImageDraw, Image, ImageFont
 from aiogram import Router, types, F
+from aiogram.types import BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,8 +34,11 @@ async def cmd_receive(
 
     account_id = wallet.public_key
     msg = my_gettext(callback, "my_address", (account_id,), app_context=app_context)
-    send_file = f"qr/{account_id}.png"
-    create_beautiful_code(send_file, account_id)
+    qr_buffer = BytesIO()
+    create_beautiful_code(qr_buffer, account_id)
+    send_file = BufferedInputFile(
+        qr_buffer.getvalue(), filename=f"{account_id}.png"
+    )
 
     await cmd_info_message(
         session, callback, msg, send_file=send_file, app_context=app_context
@@ -94,7 +100,7 @@ def decode_color(color):
 def create_beautiful_code(file_name, address):
     logo_img = create_image_with_text(f"{address[:4]}..{address[-4:]}")
     qr_with_logo_img = create_qr_with_logo(address, logo_img)
-    qr_with_logo_img.save(file_name)
+    qr_with_logo_img.save(file_name, format="PNG")
 
 
 if __name__ == "__main__":
