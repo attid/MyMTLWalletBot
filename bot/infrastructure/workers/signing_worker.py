@@ -5,7 +5,7 @@ import inspect
 import redis.asyncio as aioredis
 from loguru import logger
 
-from middleware.notification_activity import complete_notification_flow
+from middleware.notification_activity import complete_current_notification_flow
 from other.config_reader import config
 from other import faststream_tools
 from other.faststream_tools import broker
@@ -160,7 +160,7 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                                 f"TX {tx_id}: error in fsm_after_send: {e}"
                             )
                     if successful:
-                        await complete_notification_flow(app_context, user_id)
+                        await complete_current_notification_flow(app_context, user_id)
 
                     # Clear state to prevent interference with subsequent commands
                     from infrastructure.utils.telegram_utils import clear_state

@@ -182,6 +182,56 @@ async def test_poll_once_logs_one_user_failure_and_continues_with_remaining_user
 
 
 @pytest.mark.asyncio
+async def test_stuck_user_does_not_block_other_due_users_or_later_polls():
+    store = create_autospec(NotificationDueStore, instance=True, spec_set=True)
+    store.due_users = AsyncMock(side_effect=[[1, 2], [1, 3]])
+    coordinator_mock = MagicMock()
+    stuck_started = asyncio.Event()
+    stuck_finished = asyncio.Event()
+    release_stuck = asyncio.Event()
+    flushed_users: list[int] = []
+
+    async def flush(user_id: int, *, reason: str) -> None:
+        assert reason == "hold_expired"
+        flushed_users.append(user_id)
+        if user_id != 1:
+            return
+        stuck_started.set()
+        try:
+            while not release_stuck.is_set():
+                try:
+                    await release_stuck.wait()
+                except asyncio.CancelledError:
+                    continue
+        finally:
+            stuck_finished.set()
+
+    coordinator_mock.flush = AsyncMock(side_effect=flush)
+    subject = NotificationDeliveryWorker(
+        store=store,
+        coordinator=coordinator_mock,
+        poll_interval_seconds=0.01,
+        batch_size=2,
+        clock=lambda: 1_000,
+    )
+
+    try:
+        await subject.poll_once()
+        await asyncio.wait_for(stuck_started.wait(), timeout=0.1)
+        assert flushed_users == [1, 2]
+
+        await subject.poll_once()
+
+        assert flushed_users == [1, 2, 3]
+        store.due_users.assert_has_awaits(
+            [call(now=1_000, limit=2), call(now=1_000, limit=3)]
+        )
+    finally:
+        release_stuck.set()
+        await asyncio.wait_for(stuck_finished.wait(), timeout=0.1)
+
+
+@pytest.mark.asyncio
 async def test_run_can_be_cancelled_while_waiting_for_next_poll():
     store = create_autospec(NotificationDueStore, instance=True, spec_set=True)
     store.due_users = AsyncMock(return_value=[])
@@ -199,6 +249,41 @@ async def test_run_can_be_cancelled_while_waiting_for_next_poll():
 
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_run_cancels_active_user_flushes_during_shutdown():
+    store = create_autospec(NotificationDueStore, instance=True, spec_set=True)
+    store.due_users = AsyncMock(return_value=[42])
+    coordinator_mock = MagicMock()
+    flush_started = asyncio.Event()
+    flush_cancelled = asyncio.Event()
+
+    async def flush(_: int, *, reason: str) -> None:
+        assert reason == "hold_expired"
+        flush_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            flush_cancelled.set()
+            raise
+
+    coordinator_mock.flush = AsyncMock(side_effect=flush)
+    subject = NotificationDeliveryWorker(
+        store=store,
+        coordinator=coordinator_mock,
+        poll_interval_seconds=60,
+        batch_size=1,
+        clock=lambda: 1_000,
+    )
+    task = asyncio.create_task(subject.run())
+    await asyncio.wait_for(flush_started.wait(), timeout=0.1)
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.wait_for(flush_cancelled.wait(), timeout=0.1)
 
 
 def test_worker_options_and_hold_default_are_configurable():

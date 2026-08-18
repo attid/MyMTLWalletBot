@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+import time
 from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 import pytest
@@ -117,12 +118,12 @@ def test_coordinator_rejects_non_positive_or_non_finite_lifecycle_timeouts(
 async def test_touch_delegates_to_the_store_with_the_coordinator_clock(
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
-    store.touch.return_value = 1_120
+    store.touch_with_generation.return_value = (1_120, 7)
 
     hold_until = await coordinator(store, sender, badge_refresher).touch(42)
 
     assert hold_until == 1_120
-    store.touch.assert_awaited_once_with(42, now=1_000)
+    store.touch_with_generation.assert_awaited_once_with(42, now=1_000)
 
 
 @pytest.mark.asyncio
@@ -385,6 +386,95 @@ async def test_flush_cancels_a_stuck_store_call_and_releases_its_lock(
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_stops_renewing_after_ownership_deadline_when_flush_is_stuck(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    first_renewal = asyncio.Event()
+
+    async def renew_lock(_: int, __: str) -> bool:
+        first_renewal.set()
+        return True
+
+    store.renew_lock.side_effect = renew_lock
+    subject = coordinator(
+        store,
+        sender,
+        badge_refresher,
+        heartbeat_interval=0.01,
+        delivery_timeout_seconds=0.01,
+        lock_lifetime_seconds=0.03,
+    )
+    lease_lost = asyncio.Event()
+    heartbeat = asyncio.create_task(
+        subject._heartbeat_lock(  # noqa: SLF001 - focused lifecycle regression
+            42,
+            "flush-token",
+            lease_lost,
+            ownership_deadline=time.monotonic() + 0.03,
+        )
+    )
+
+    await asyncio.wait_for(first_renewal.wait(), timeout=0.1)
+    await asyncio.wait_for(heartbeat, timeout=0.1)
+    renewals_after_deadline = store.renew_lock.await_count
+    await asyncio.sleep(0.02)
+
+    assert renewals_after_deadline >= 1
+    assert lease_lost.is_set()
+    assert store.renew_lock.await_count == renewals_after_deadline
+
+
+@pytest.mark.asyncio
+async def test_late_success_is_acknowledged_with_still_owned_original_lease() -> None:
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=1)
+    event = notification("late", "Late success")
+    sender = create_autospec(NotificationSender, instance=True, spec_set=True)
+    badge_refresher = create_autospec(
+        NotificationBadgeRefresher, instance=True, spec_set=True
+    )
+    send_started = asyncio.Event()
+    release_send = asyncio.Event()
+    deliveries: list[BlockchainNotification] = []
+
+    async def cancellation_resistant_send(item: BlockchainNotification) -> None:
+        deliveries.append(item)
+        send_started.set()
+        while not release_send.is_set():
+            try:
+                await release_send.wait()
+            except asyncio.CancelledError:
+                continue
+
+    sender.send_notification.side_effect = cancellation_resistant_send
+    tokens = iter(("original-token", "recovery-token"))
+    subject = NotificationCoordinator(
+        store=store,
+        sender=sender,
+        badge_refresher=badge_refresher,
+        clock=lambda: 1_000,
+        token_factory=lambda: next(tokens),
+        lock_ttl_seconds=1,
+        heartbeat_interval=0.01,
+        delivery_timeout_seconds=0.01,
+        lock_lifetime_seconds=0.03,
+    )
+    try:
+        assert await store.claim_accept(42, event, now=1_000) == "direct"
+        flush_task = asyncio.create_task(subject.flush(42, reason="worker"))
+        await send_started.wait()
+        await asyncio.sleep(0.06)
+        release_send.set()
+        await asyncio.wait_for(flush_task, timeout=0.2)
+
+        assert deliveries == [event]
+        assert await store.pending_count(42) == 0
+    finally:
+        release_send.set()
+        await redis.aclose()
+
+
+@pytest.mark.asyncio
 async def test_successful_flush_does_not_log_each_stage_or_badge_start(
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
@@ -520,44 +610,42 @@ async def test_badge_refresh_failure_does_not_stop_fifo_flush(
 
 
 @pytest.mark.asyncio
-async def test_complete_flow_releases_hold_and_flushes_immediately(
+async def test_complete_flow_releases_hold_for_worker_without_inline_delivery(
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
     subject = coordinator(store, sender, badge_refresher)
-    store.hold_until.return_value = 1_120
-    store.release_hold_if_unchanged.return_value = True
-    subject._flush_owned = AsyncMock()  # type: ignore[method-assign]
+    store.hold_snapshot.return_value = (1_120, 7)
+    store.release_hold_generation_if_unchanged.return_value = True
+    await subject.capture_flow_generation(42)
 
     await subject.complete_flow(42)
 
-    store.acquire_lock.assert_awaited_once_with(42, "flush-token")
-    store.release_hold_if_unchanged.assert_awaited_once_with(42, 1_120, now=1_000)
-    flush_call = subject._flush_owned.await_args
-    assert flush_call is not None
-    assert flush_call.args == (42, "flush-token")
-    assert flush_call.kwargs["reason"] == "flow_completed"
-    assert isinstance(flush_call.kwargs["lease_lost"], asyncio.Event)
+    store.release_hold_generation_if_unchanged.assert_awaited_once_with(
+        42, 7, now=1_000
+    )
+    store.acquire_lock.assert_not_awaited()
+    store.release_lock.assert_not_awaited()
+    sender.send_notification.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_complete_flow_retries_a_busy_lock_and_releases_its_observed_generation(
+async def test_complete_flow_does_not_wait_for_a_busy_delivery_lock(
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
-    """A terminal callback must hand off to an in-flight flush instead of dropping it."""
     subject = coordinator(store, sender, badge_refresher)
-    store.hold_until.return_value = 1_120
-    store.acquire_lock.side_effect = [False, True]
-    store.release_hold_if_unchanged.return_value = True
-    subject._flush_owned = AsyncMock()  # type: ignore[method-assign]
+    store.hold_snapshot.return_value = (1_120, 7)
+    store.acquire_lock.return_value = False
+    store.release_hold_generation_if_unchanged.return_value = True
+    await subject.capture_flow_generation(42)
 
     await subject.complete_flow(42)
 
-    store.hold_until.assert_awaited_once_with(42)
-    store.acquire_lock.assert_has_awaits(
-        [call(42, "flush-token"), call(42, "flush-token")]
+    store.hold_snapshot.assert_awaited_once_with(42)
+    store.release_hold_generation_if_unchanged.assert_awaited_once_with(
+        42, 7, now=1_000
     )
-    store.release_hold_if_unchanged.assert_awaited_once_with(42, 1_120, now=1_000)
-    subject._flush_owned.assert_awaited_once()
+    store.acquire_lock.assert_not_awaited()
+    sender.send_notification.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -565,29 +653,78 @@ async def test_complete_flow_does_not_flush_when_a_new_touch_replaces_its_genera
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
     subject = coordinator(store, sender, badge_refresher)
-    store.hold_until.return_value = 1_120
-    store.release_hold_if_unchanged.return_value = False
-    subject._flush_owned = AsyncMock()  # type: ignore[method-assign]
+    store.hold_snapshot.return_value = (1_120, 7)
+    store.release_hold_generation_if_unchanged.return_value = False
+    await subject.capture_flow_generation(42)
 
     await subject.complete_flow(42)
 
-    subject._flush_owned.assert_not_awaited()
-    store.release_lock.assert_awaited_once_with(42, "flush-token")
+    store.acquire_lock.assert_not_awaited()
+    store.release_lock.assert_not_awaited()
+    sender.send_notification.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_complete_flow_does_not_send_when_touch_arrives_after_its_release(
+async def test_worker_does_not_send_when_touch_arrives_after_flow_release(
     store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
 ) -> None:
     event = notification("first", "First payment")
-    store.hold_until.side_effect = [1_120, 1_240]
-    store.release_hold_if_unchanged.return_value = True
+    store.hold_snapshot.return_value = (1_120, 7)
+    store.release_hold_generation_if_unchanged.return_value = True
+    store.hold_until.return_value = 1_240
     store.peek.return_value = event
+    subject = coordinator(store, sender, badge_refresher)
+    await subject.capture_flow_generation(42)
 
-    await coordinator(store, sender, badge_refresher).complete_flow(42)
+    await subject.complete_flow(42)
+    await subject.flush(42, reason="worker")
 
     sender.send_notification.assert_not_awaited()
     store.acknowledge_if_lock_owned.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_old_update_cannot_release_a_generation_touched_before_completion(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    subject = coordinator(store, sender, badge_refresher)
+    store.hold_snapshot.return_value = (1_120, 7)
+    store.touch_with_generation.return_value = (1_120, 8)
+    store.release_hold_generation_if_unchanged.return_value = False
+    old_update_captured = asyncio.Event()
+    new_update_touched = asyncio.Event()
+
+    async def old_terminal_update() -> None:
+        await subject.capture_flow_generation(42)
+        old_update_captured.set()
+        await new_update_touched.wait()
+        await subject.complete_flow(42)
+
+    async def new_interactive_update() -> None:
+        await old_update_captured.wait()
+        await subject.touch(42)
+        new_update_touched.set()
+
+    await asyncio.gather(old_terminal_update(), new_interactive_update())
+
+    store.release_hold_generation_if_unchanged.assert_awaited_once_with(
+        42, 7, now=1_000
+    )
+
+
+@pytest.mark.asyncio
+async def test_background_completion_explicitly_releases_current_generation(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    subject = coordinator(store, sender, badge_refresher)
+    store.hold_snapshot.return_value = (1_120, 8)
+    store.release_hold_generation_if_unchanged.return_value = True
+
+    await subject.complete_current_flow(42)
+
+    store.release_hold_generation_if_unchanged.assert_awaited_once_with(
+        42, 8, now=1_000
+    )
 
 
 @pytest.mark.asyncio
@@ -746,14 +883,10 @@ async def test_flush_stops_after_heartbeat_loses_lock_while_a_send_is_blocked(
     await flush_task
 
     sender.send_notification.assert_awaited_once_with(first)
-    store.acquire_lock.assert_has_awaits(
-        [call(42, "flush-token"), call(42, "flush-token")]
-    )
+    store.acquire_lock.assert_awaited_once_with(42, "flush-token")
     store.acknowledge_if_lock_owned.assert_awaited_once_with(42, first, "flush-token")
     badge_refresher.refresh.assert_awaited_once_with(42)
-    store.release_lock.assert_has_awaits(
-        [call(42, "flush-token"), call(42, "flush-token")]
-    )
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
 
 
 @pytest.mark.asyncio
@@ -767,6 +900,7 @@ async def test_flush_acknowledges_a_successful_send_after_reacquiring_lost_lease
     store.peek.return_value = event
     store.renew_lock.return_value = True
     store.acquire_lock.return_value = True
+    store.acknowledge_if_lock_owned.side_effect = [False, True]
 
     async def send_then_lose_lease(_: BlockchainNotification) -> None:
         lease_lost.set()
@@ -787,10 +921,10 @@ async def test_flush_acknowledges_a_successful_send_after_reacquiring_lost_lease
     )
 
     sender.send_notification.assert_awaited_once_with(event)
-    store.acquire_lock.assert_awaited_once_with(42, "recovery-token")
-    store.acknowledge_if_lock_owned.assert_awaited_once_with(
-        42, event, "recovery-token"
+    store.acknowledge_if_lock_owned.assert_has_awaits(
+        [call(42, event, "flush-token"), call(42, event, "recovery-token")]
     )
+    store.acquire_lock.assert_awaited_once_with(42, "recovery-token")
 
 
 @pytest.mark.asyncio

@@ -122,7 +122,7 @@ async def test_completion_worker_clears_fsm_and_releases_notifications() -> None
             ),
             patch.object(sealedbox_worker, "clear_state", AsyncMock()) as clear,
             patch.object(
-                sealedbox_worker, "complete_notification_flow", AsyncMock()
+                sealedbox_worker, "complete_current_notification_flow", AsyncMock()
             ) as complete,
         ):
             await sealedbox_worker.handle_sealedbox_completed(
@@ -170,7 +170,7 @@ async def test_relay_worker_sends_plaintext_and_clears_request() -> None:
             patch.object(sealedbox_worker.aioredis, "from_url", return_value=redis),
             patch.object(sealedbox_worker, "clear_state", AsyncMock()) as clear,
             patch.object(
-                sealedbox_worker, "complete_notification_flow", AsyncMock()
+                sealedbox_worker, "complete_current_notification_flow", AsyncMock()
             ) as complete,
         ):
             await sealedbox_worker.handle_sealedbox_relay(

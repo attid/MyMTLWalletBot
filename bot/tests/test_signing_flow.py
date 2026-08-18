@@ -75,13 +75,13 @@ class TestWalletConnectSigning:
         }
         coordinator = MagicMock(spec=NotificationCoordinator)
 
-        async def complete_flow(_: int) -> None:
+        async def complete_current_flow(_: int) -> None:
             WC_NOTIFICATION_COMPLETION_EVENTS.append("complete_flow")
 
         async def render_success(*args, **kwargs) -> None:
             WC_NOTIFICATION_COMPLETION_EVENTS.append("success_screen")
 
-        coordinator.complete_flow = AsyncMock(side_effect=complete_flow)
+        coordinator.complete_current_flow = AsyncMock(side_effect=complete_current_flow)
         app_context = MagicMock()
         app_context.notification_coordinator = coordinator
         original_context = faststream_tools.APP_CONTEXT
@@ -108,7 +108,7 @@ class TestWalletConnectSigning:
                 "success_screen",
                 "complete_flow",
             ]
-            coordinator.complete_flow.assert_awaited_once_with(7394698)
+            coordinator.complete_current_flow.assert_awaited_once_with(7394698)
         finally:
             faststream_tools.APP_CONTEXT = original_context
             faststream_tools.PENDING_SIGN_REQUESTS.clear()
@@ -717,10 +717,10 @@ class TestHandleTxSigned:
 
         coordinator = MagicMock(spec=NotificationCoordinator)
 
-        async def complete_flow(_user_id):
+        async def complete_current_flow(_user_id):
             WEBAPP_NOTIFICATION_COMPLETION_EVENTS.append("complete_flow")
 
-        coordinator.complete_flow = AsyncMock(side_effect=complete_flow)
+        coordinator.complete_current_flow = AsyncMock(side_effect=complete_current_flow)
         mock_app_context = MagicMock()
         mock_app_context.db_pool = mock_db_pool
         mock_app_context.dispatcher.fsm.get_context.return_value = mock_state
@@ -743,9 +743,9 @@ class TestHandleTxSigned:
 
             assert WEBAPP_NOTIFICATION_COMPLETION_EVENTS == expected_events
             if successful:
-                coordinator.complete_flow.assert_awaited_once_with(123)
+                coordinator.complete_current_flow.assert_awaited_once_with(123)
             else:
-                coordinator.complete_flow.assert_not_awaited()
+                coordinator.complete_current_flow.assert_not_awaited()
         finally:
             faststream_tools.APP_CONTEXT = original_context
             await fake_redis.aclose()

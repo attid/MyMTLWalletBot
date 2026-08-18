@@ -6,13 +6,13 @@ import math
 import time
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar, Token
 from typing import Protocol
 
 from loguru import logger
 
 from core.models.blockchain_notification import BlockchainNotification
 
-COMPLETION_LOCK_RETRY_ATTEMPTS = 3
 DEFAULT_DELIVERY_TIMEOUT_SECONDS = 30.0
 DEFAULT_LOCK_LIFETIME_SECONDS = 90.0
 DEFAULT_BADGE_TIMEOUT_SECONDS = 10.0
@@ -23,11 +23,21 @@ class NotificationStore(Protocol):
 
     async def touch(self, user_id: int, *, now: int) -> int: ...
 
+    async def touch_with_generation(
+        self, user_id: int, *, now: int
+    ) -> tuple[int, int]: ...
+
     async def release_hold_if_unchanged(
         self, user_id: int, expected_hold_until: int, *, now: int
     ) -> bool: ...
 
+    async def release_hold_generation_if_unchanged(
+        self, user_id: int, expected_generation: int, *, now: int
+    ) -> bool: ...
+
     async def hold_until(self, user_id: int) -> int | None: ...
+
+    async def hold_snapshot(self, user_id: int) -> tuple[int, int] | None: ...
 
     async def enqueue(
         self, user_id: int, notification: BlockchainNotification
@@ -110,14 +120,34 @@ class NotificationCoordinator:
         self._delivery_timeout_seconds = delivery_timeout_seconds
         self._lock_lifetime_seconds = lock_lifetime_seconds
         self._badge_timeout_seconds = badge_timeout_seconds
+        self._flow_generation_context: ContextVar[tuple[int, int | None] | None] = (
+            ContextVar(f"notification_flow_generation_{id(self)}", default=None)
+        )
 
     async def touch(self, user_id: int) -> int:
         """Start or extend the user's sliding activity hold."""
-        hold_until = await self._store.touch(user_id, now=self._clock())
+        hold_until, generation = await self._store.touch_with_generation(
+            user_id, now=self._clock()
+        )
+        self._flow_generation_context.set((user_id, generation))
         logger.bind(event="notification_hold_touched", user_id=user_id).info(
             "notification hold touched"
         )
         return hold_until
+
+    async def capture_flow_generation(
+        self, user_id: int
+    ) -> Token[tuple[int, int | None] | None]:
+        """Fence completion to the hold observed when this update began."""
+        snapshot = await self._store.hold_snapshot(user_id)
+        generation = None if snapshot is None else snapshot[1]
+        return self._flow_generation_context.set((user_id, generation))
+
+    def reset_flow_generation(
+        self, token: Token[tuple[int, int | None] | None]
+    ) -> None:
+        """Restore the task-local completion fence after an update finishes."""
+        self._flow_generation_context.reset(token)
 
     async def accept(self, notification: BlockchainNotification) -> None:
         """Atomically claim an event, retaining it before any Telegram send."""
@@ -254,13 +284,12 @@ class NotificationCoordinator:
                 ).exception("notification delivery failed; queue head retained")
                 return badge_refresh_needed
 
-            if lease_lost is not None and lease_lost.is_set():
-                await self._acknowledge_after_lease_loss(user_id, notification)
-                return badge_refresh_needed
             mark_stage("ack", notification.notification_id)
             if not await self._store.acknowledge_if_lock_owned(
                 user_id, notification, token
             ):
+                if await self._acknowledge_after_lease_loss(user_id, notification):
+                    return badge_refresh_needed
                 logger.bind(
                     event="notification_acknowledgement_lost",
                     user_id=user_id,
@@ -288,39 +317,37 @@ class NotificationCoordinator:
         return badge_refresh_needed
 
     async def complete_flow(self, user_id: int) -> None:
-        """Release and flush only the locked flow generation that completed."""
-        observed_hold_until = await self._store.hold_until(user_id)
-        if observed_hold_until is None:
+        """Release the update-entry flow generation for durable worker delivery."""
+        captured = self._flow_generation_context.get()
+        if captured is None or captured[0] != user_id or captured[1] is None:
             return
-        token = self._token_factory()
-        for attempt in range(COMPLETION_LOCK_RETRY_ATTEMPTS):
-            if await self._store.acquire_lock(user_id, token):
-                break
-            if attempt + 1 == COMPLETION_LOCK_RETRY_ATTEMPTS:
-                return
-            await asyncio.sleep(0)
-        release_lock = True
-        try:
-            if not await self._store.release_hold_if_unchanged(
-                user_id, observed_hold_until, now=self._clock()
-            ):
-                return
-            logger.bind(event="notification_hold_released", user_id=user_id).info(
-                "notification hold released for completed flow"
-            )
-            release_lock = False
-            await self._flush_with_owned_lock(user_id, token, reason="flow_completed")
-        finally:
-            if release_lock:
-                await self._store.release_lock(user_id, token)
+        await self._release_flow_generation(user_id, captured[1])
+
+    async def complete_current_flow(self, user_id: int) -> None:
+        """Release the current hold for background flows that own current FSM state."""
+        observed_hold = await self._store.hold_snapshot(user_id)
+        if observed_hold is None:
+            return
+        await self._release_flow_generation(user_id, observed_hold[1])
+
+    async def _release_flow_generation(
+        self, user_id: int, observed_generation: int
+    ) -> None:
+        if not await self._store.release_hold_generation_if_unchanged(
+            user_id, observed_generation, now=self._clock()
+        ):
+            return
+        logger.bind(event="notification_hold_released", user_id=user_id).info(
+            "notification hold released for worker delivery"
+        )
 
     async def _acknowledge_after_lease_loss(
         self, user_id: int, notification: BlockchainNotification
-    ) -> None:
+    ) -> bool:
         """Avoid a known successful Telegram send being retried when ownership changed."""
         token = self._token_factory()
         if not await self._store.acquire_lock(user_id, token):
-            return
+            return False
         acknowledged = False
         try:
             acknowledged = await self._store.acknowledge_if_lock_owned(
@@ -330,6 +357,7 @@ class NotificationCoordinator:
             await self._store.release_lock(user_id, token)
         if acknowledged:
             await self._refresh_badge(user_id)
+        return acknowledged
 
     async def _flush_with_owned_lock(
         self,
@@ -341,8 +369,11 @@ class NotificationCoordinator:
     ) -> None:
         """Keep an owned lease alive only for the duration of this flush."""
         lease_lost = asyncio.Event()
+        ownership_deadline = time.monotonic() + self._lock_lifetime_seconds
         heartbeat = asyncio.create_task(
-            self._heartbeat_lock(user_id, token, lease_lost),
+            self._heartbeat_lock(
+                user_id, token, lease_lost, ownership_deadline=ownership_deadline
+            ),
             name=f"notification-lock-heartbeat-{user_id}",
         )
         progress: dict[str, object] = {
@@ -399,12 +430,29 @@ class NotificationCoordinator:
             await self._refresh_badge(user_id)
 
     async def _heartbeat_lock(
-        self, user_id: int, token: str, lease_lost: asyncio.Event
+        self,
+        user_id: int,
+        token: str,
+        lease_lost: asyncio.Event,
+        *,
+        ownership_deadline: float,
     ) -> None:
         """Renew an owned lock until the bounded flush lifecycle ends."""
         try:
             while True:
-                await asyncio.sleep(self._heartbeat_interval)
+                remaining = ownership_deadline - time.monotonic()
+                if remaining <= 0:
+                    lease_lost.set()
+                    logger.bind(
+                        event="notification_flush_heartbeat_deadline_reached",
+                        user_id=user_id,
+                    ).warning(
+                        "notification lock heartbeat stopped at ownership deadline"
+                    )
+                    return
+                await asyncio.sleep(min(self._heartbeat_interval, remaining))
+                if time.monotonic() >= ownership_deadline:
+                    continue
                 if await self._store.renew_lock(user_id, token):
                     continue
                 lease_lost.set()

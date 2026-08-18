@@ -108,6 +108,27 @@ async def test_callback_in_interactive_flow_touches_coordinator():
 
 
 @pytest.mark.asyncio
+async def test_update_generation_fence_is_reset_when_handler_fails():
+    token = object()
+    coordinator = MagicMock(
+        capture_flow_generation=AsyncMock(return_value=token),
+        reset_flow_generation=MagicMock(),
+    )
+    middleware = NotificationActivityMiddleware()
+    handler = AsyncMock(side_effect=RuntimeError("handler failed"))
+
+    with pytest.raises(RuntimeError, match="handler failed"):
+        await middleware(
+            handler,
+            callback("Return"),
+            {"app_context": MagicMock(notification_coordinator=coordinator)},
+        )
+
+    coordinator.capture_flow_generation.assert_awaited_once_with(42)
+    coordinator.reset_flow_generation.assert_called_once_with(token)
+
+
+@pytest.mark.asyncio
 async def test_active_fsm_message_touches_coordinator():
     storage = MemoryStorage()
     key = StorageKey(bot_id=1, chat_id=42, user_id=42)

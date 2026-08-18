@@ -59,8 +59,9 @@ See `bot/tests/README.md` for required fixtures and router test rules.
 Blockchain-originated wallet events use a delivery path separate from UI
 screens. Redis stores the absolute sliding hold deadline, ordered per-user
 pending queue, idempotency metadata, due-user schedule, and token-owned flush
-locks. A polling worker processes expired deadlines; it does not create a task
-or inactivity timer per user.
+locks. A polling worker processes expired deadlines in tracked per-user flush
+tasks bounded by its batch size. One stuck flush therefore cannot block later
+polls while the worker keeps task ownership and exception handling explicit.
 
 `NotificationCoordinator` is the orchestration boundary for activity touches,
 durable event acceptance, ordered flushes, and logical flow completion.
@@ -71,8 +72,10 @@ notifications use the settings/Return keyboard and replace the tracked
 `last_message_id` like other legacy notification screens. The pending badge is
 derived from a base inline keyboard stored outside FSM and is best-effort only.
 
-See `adr/0001-delayed-blockchain-notification-delivery.md` for Redis keys,
-concurrency guarantees, and the at-least-once delivery trade-off.
+See `adr/0001-delayed-blockchain-notification-delivery.md` for the base Redis
+queue and at-least-once delivery trade-off. See
+`adr/0002-worker-owned-notification-flow-completion.md` for hold-generation
+keys, update-entry fencing, bounded worker tasks, and heartbeat ownership.
 
 ## Decision Record Policy
 
