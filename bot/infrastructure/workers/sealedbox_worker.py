@@ -12,7 +12,7 @@ from infrastructure.utils.telegram_utils import (
     clear_state,
     send_ui_document,
 )
-from middleware.notification_activity import complete_notification_flow
+from middleware.notification_activity import complete_current_notification_flow
 from other import faststream_tools
 from other.config_reader import config
 from other.faststream_tools import broker, clear_pending_sealedbox
@@ -65,7 +65,7 @@ async def handle_sealedbox_completed(message: SealedBoxCompletedMessage) -> None
             app_context.bot, message.user_id, message.user_id
         )
         await clear_state(state)
-        await complete_notification_flow(app_context, message.user_id)
+        await complete_current_notification_flow(app_context, message.user_id)
         await clear_pending_sealedbox(message.user_id, redis_client=redis)
         logger.info("Sealed-box flow completed for user {}", message.user_id)
     finally:
@@ -127,7 +127,7 @@ async def handle_sealedbox_relay(message: SealedBoxRelayMessage) -> None:
             app_context.bot, message.user_id, message.user_id
         )
         await clear_state(state)
-        await complete_notification_flow(app_context, message.user_id)
+        await complete_current_notification_flow(app_context, message.user_id)
         user_key = f"{REDIS_SEALEDBOX_USER_PREFIX}{message.user_id}"
         active_token = await redis.get(user_key)
         if isinstance(active_token, bytes):

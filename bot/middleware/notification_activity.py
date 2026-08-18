@@ -105,29 +105,36 @@ class NotificationActivityMiddleware(BaseMiddleware):
         coordinator = _notification_coordinator(data.get("app_context"))
         user = getattr(event, "from_user", None)
         fsm_active = False
+        flow_generation_token = None
         if coordinator is not None and user is not None:
-            fsm_active = await _has_active_state(data.get("state"))
+            flow_generation_token = await _capture_flow_generation(coordinator, user.id)
+        try:
+            if coordinator is not None and user is not None:
+                fsm_active = await _has_active_state(data.get("state"))
+                if (
+                    isinstance(event, Message)
+                    and fsm_active
+                    and not _is_start_command(event)
+                ):
+                    await coordinator.touch(user.id)
+                elif isinstance(event, CallbackQuery) and should_touch_callback(
+                    event.data, fsm_active=fsm_active
+                ):
+                    await coordinator.touch(user.id)
+            result = await handler(event, data)
             if (
-                isinstance(event, Message)
-                and fsm_active
-                and not _is_start_command(event)
+                coordinator is not None
+                and user is not None
+                and isinstance(event, Message)
+                and not fsm_active
+                and not _is_plain_start_command(event)
+                and await _has_active_state(data.get("state"))
             ):
                 await coordinator.touch(user.id)
-            elif isinstance(event, CallbackQuery) and should_touch_callback(
-                event.data, fsm_active=fsm_active
-            ):
-                await coordinator.touch(user.id)
-        result = await handler(event, data)
-        if (
-            coordinator is not None
-            and user is not None
-            and isinstance(event, Message)
-            and not fsm_active
-            and not _is_plain_start_command(event)
-            and await _has_active_state(data.get("state"))
-        ):
-            await coordinator.touch(user.id)
-        return result
+            return result
+        finally:
+            if coordinator is not None and flow_generation_token is not None:
+                _reset_flow_generation(coordinator, flow_generation_token)
 
 
 async def _has_active_state(state: FSMContext | None) -> bool:
@@ -144,7 +151,10 @@ def _is_start_command(message: Message) -> bool:
 
 def _is_plain_start_command(message: Message) -> bool:
     """Keep the terminal `/start` route completion-only after its handler runs."""
-    return _is_start_command(message) and len(message.text.split()) == 1
+    text = message.text
+    if not text:
+        return False
+    return _is_start_command(message) and len(text.split()) == 1
 
 
 async def complete_notification_flow(app_context: Any, user_id: int) -> None:
@@ -155,6 +165,33 @@ async def complete_notification_flow(app_context: Any, user_id: int) -> None:
     completion = coordinator.complete_flow(user_id)
     if inspect.isawaitable(completion):
         await completion
+
+
+async def complete_current_notification_flow(app_context: Any, user_id: int) -> None:
+    """Release the current hold for a background result that owns current FSM."""
+    coordinator = _notification_coordinator(app_context)
+    if coordinator is None:
+        return
+    completion = coordinator.complete_current_flow(user_id)
+    if inspect.isawaitable(completion):
+        await completion
+
+
+async def _capture_flow_generation(coordinator: Any, user_id: int) -> Any | None:
+    """Capture an update-local completion fence when the coordinator supports it."""
+    capture = getattr(coordinator, "capture_flow_generation", None)
+    if capture is None:
+        return None
+    result = capture(user_id)
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
+def _reset_flow_generation(coordinator: Any, token: Any) -> None:
+    reset = getattr(coordinator, "reset_flow_generation", None)
+    if reset is not None:
+        reset(token)
 
 
 def _notification_coordinator(app_context: Any) -> Any | None:

@@ -14,7 +14,9 @@ if existing and tonumber(existing) > requested then
 end
 redis.call('SET', KEYS[1], requested, 'EX', ARGV[2])
 redis.call('ZADD', KEYS[2], requested, ARGV[3])
-return requested
+local generation = redis.call('INCR', KEYS[4])
+redis.call('SET', KEYS[3], generation, 'EX', ARGV[2])
+return {requested, generation}
 """
 
 _RELEASE_DUE_HOLD_IF_UNCHANGED = """
@@ -22,6 +24,21 @@ if redis.call('GET', KEYS[1]) ~= ARGV[1] then
     return 0
 end
 redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[4])
+if redis.call('LLEN', KEYS[3]) > 0 then
+    redis.call('ZADD', KEYS[2], ARGV[3], ARGV[2])
+else
+    redis.call('ZREM', KEYS[2], ARGV[2])
+end
+return 1
+"""
+
+_RELEASE_HOLD_GENERATION_IF_UNCHANGED = """
+if redis.call('GET', KEYS[4]) ~= ARGV[1] then
+    return 0
+end
+redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[4])
 if redis.call('LLEN', KEYS[3]) > 0 then
     redis.call('ZADD', KEYS[2], ARGV[3], ARGV[2])
 else
@@ -189,13 +206,20 @@ class NotificationRedisStore:
 
     async def touch(self, user_id: int, *, now: int) -> int:
         """Create or extend a user's absolute hold and reschedule its deadline."""
+        hold_until, _ = await self.touch_with_generation(user_id, now=now)
+        return hold_until
+
+    async def touch_with_generation(self, user_id: int, *, now: int) -> tuple[int, int]:
+        """Touch a hold and return its deadline and unique flow generation."""
         hold_until = now + self._hold_seconds
         try:
             result = await self._redis.eval(
                 _TOUCH_HOLD,
-                2,
+                4,
                 self._hold_key(user_id),
                 self._due_key(),
+                self._hold_generation_key(user_id),
+                self._hold_generation_sequence_key(),
                 hold_until,
                 self._hold_seconds,
                 str(user_id),
@@ -204,7 +228,7 @@ class NotificationRedisStore:
             if not self._is_unsupported_eval(error):
                 raise
             result = await self._touch_without_lua(user_id, hold_until)
-        return int(result)
+        return int(result[0]), int(result[1])
 
     async def release(self, user_id: int) -> None:
         """Explicitly release a completed flow's hold and due schedule.
@@ -214,6 +238,7 @@ class NotificationRedisStore:
         """
         async with self._redis.pipeline(transaction=True) as pipeline:
             pipeline.delete(self._hold_key(user_id))
+            pipeline.delete(self._hold_generation_key(user_id))
             pipeline.zrem(self._due_key(), str(user_id))
             await pipeline.execute()
 
@@ -230,10 +255,11 @@ class NotificationRedisStore:
         try:
             result = await self._redis.eval(
                 _RELEASE_DUE_HOLD_IF_UNCHANGED,
-                3,
+                4,
                 self._hold_key(user_id),
                 self._due_key(),
                 self._pending_key(user_id),
+                self._hold_generation_key(user_id),
                 expected_hold_until,
                 str(user_id),
                 now,
@@ -254,9 +280,42 @@ class NotificationRedisStore:
             user_id, expected_hold_until, now=now
         )
 
+    async def release_hold_generation_if_unchanged(
+        self, user_id: int, expected_generation: int, *, now: int
+    ) -> bool:
+        """Release one exact flow generation and schedule pending work now."""
+        try:
+            result = await self._redis.eval(
+                _RELEASE_HOLD_GENERATION_IF_UNCHANGED,
+                4,
+                self._hold_key(user_id),
+                self._due_key(),
+                self._pending_key(user_id),
+                self._hold_generation_key(user_id),
+                expected_generation,
+                str(user_id),
+                now,
+            )
+        except ResponseError as error:
+            if not self._is_unsupported_eval(error):
+                raise
+            return await self._release_hold_generation_if_unchanged_without_lua(
+                user_id, expected_generation, now
+            )
+        return bool(result)
+
     async def hold_until(self, user_id: int) -> int | None:
         value = await self._redis.get(self._hold_key(user_id))
         return None if value is None else int(self._as_str(value))
+
+    async def hold_snapshot(self, user_id: int) -> tuple[int, int] | None:
+        """Return the current deadline and unique flow generation atomically."""
+        hold_until, generation = await self._redis.mget(
+            self._hold_key(user_id), self._hold_generation_key(user_id)
+        )
+        if hold_until is None or generation is None:
+            return None
+        return int(self._as_str(hold_until)), int(self._as_str(generation))
 
     async def enqueue(self, user_id: int, notification: BlockchainNotification) -> bool:
         """Atomically deduplicate and append a notification to the FIFO queue."""
@@ -451,22 +510,62 @@ class NotificationRedisStore:
             return await self._renew_lock_without_lua(user_id, token)
         return bool(result)
 
-    async def _touch_without_lua(self, user_id: int, hold_until: int) -> int:
+    async def _touch_without_lua(
+        self, user_id: int, hold_until: int
+    ) -> tuple[int, int]:
         hold_key = self._hold_key(user_id)
+        generation_key = self._hold_generation_key(user_id)
+        sequence_key = self._hold_generation_sequence_key()
         while True:
             try:
                 async with self._redis.pipeline() as pipeline:
-                    await pipeline.watch(hold_key)
+                    await pipeline.watch(hold_key, sequence_key)
                     existing = await pipeline.get(hold_key)
+                    sequence = await pipeline.get(sequence_key)
                     actual_hold = max(
                         hold_until,
                         int(self._as_str(existing)) if existing is not None else 0,
                     )
+                    generation = (
+                        int(self._as_str(sequence)) + 1 if sequence is not None else 1
+                    )
                     pipeline.multi()
                     pipeline.set(hold_key, actual_hold, ex=self._hold_seconds)
+                    pipeline.set(generation_key, generation, ex=self._hold_seconds)
+                    pipeline.set(sequence_key, generation)
                     pipeline.zadd(self._due_key(), {str(user_id): actual_hold})
                     await pipeline.execute()
-                    return actual_hold
+                    return actual_hold, generation
+            except WatchError:
+                continue
+
+    async def _release_hold_generation_if_unchanged_without_lua(
+        self, user_id: int, expected_generation: int, now: int
+    ) -> bool:
+        hold_key = self._hold_key(user_id)
+        generation_key = self._hold_generation_key(user_id)
+        due_key = self._due_key()
+        pending_key = self._pending_key(user_id)
+        while True:
+            try:
+                async with self._redis.pipeline() as pipeline:
+                    await pipeline.watch(hold_key, generation_key, due_key, pending_key)
+                    generation = await pipeline.get(generation_key)
+                    if (
+                        generation is None
+                        or int(self._as_str(generation)) != expected_generation
+                    ):
+                        return False
+                    pending_count = await pipeline.llen(pending_key)
+                    pipeline.multi()
+                    pipeline.delete(hold_key)
+                    pipeline.delete(generation_key)
+                    if pending_count:
+                        pipeline.zadd(due_key, {str(user_id): now})
+                    else:
+                        pipeline.zrem(due_key, str(user_id))
+                    await pipeline.execute()
+                    return True
             except WatchError:
                 continue
 
@@ -474,12 +573,13 @@ class NotificationRedisStore:
         self, user_id: int, expected_hold_until: int, now: int
     ) -> bool:
         hold_key = self._hold_key(user_id)
+        generation_key = self._hold_generation_key(user_id)
         due_key = self._due_key()
         pending_key = self._pending_key(user_id)
         while True:
             try:
                 async with self._redis.pipeline() as pipeline:
-                    await pipeline.watch(hold_key, due_key, pending_key)
+                    await pipeline.watch(hold_key, generation_key, due_key, pending_key)
                     hold_until = await pipeline.get(hold_key)
                     if (
                         hold_until is None
@@ -489,6 +589,7 @@ class NotificationRedisStore:
                     pending_count = await pipeline.llen(pending_key)
                     pipeline.multi()
                     pipeline.delete(hold_key)
+                    pipeline.delete(generation_key)
                     if pending_count:
                         pipeline.zadd(due_key, {str(user_id): now})
                     else:
@@ -732,6 +833,12 @@ class NotificationRedisStore:
 
     def _hold_key(self, user_id: int) -> str:
         return f"{self._hold_key_prefix()}{user_id}"
+
+    def _hold_generation_key(self, user_id: int) -> str:
+        return f"{self._key_prefix}notification:hold_generation:{user_id}"
+
+    def _hold_generation_sequence_key(self) -> str:
+        return f"{self._key_prefix}notification:hold_generation_sequence"
 
     def _pending_key(self, user_id: int) -> str:
         return f"{self._pending_key_prefix()}{user_id}"

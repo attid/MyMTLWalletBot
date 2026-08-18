@@ -150,6 +150,28 @@ async def test_real_redis_lua_paths_preserve_due_and_pending_invariants(
 
 
 @pytest.mark.asyncio
+async def test_real_redis_same_second_touch_replaces_flow_generation(
+    redis_store: NotificationRedisStore,
+) -> None:
+    await redis_store.touch(42, now=1_000)
+    first_snapshot = await redis_store.hold_snapshot(42)
+    assert first_snapshot is not None
+
+    await redis_store.touch(42, now=1_000)
+
+    assert (
+        await redis_store.release_hold_generation_if_unchanged(
+            42, first_snapshot[1], now=1_000
+        )
+        is False
+    )
+    second_snapshot = await redis_store.hold_snapshot(42)
+    assert second_snapshot is not None
+    assert second_snapshot[0] == first_snapshot[0]
+    assert second_snapshot[1] > first_snapshot[1]
+
+
+@pytest.mark.asyncio
 async def test_real_redis_lua_due_scan_cleans_a_stale_prefix_without_starving_due_users(
     redis_store: NotificationRedisStore,
 ) -> None:

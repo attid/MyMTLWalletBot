@@ -32,6 +32,9 @@ from infrastructure.services.notification_coordinator import (
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
+from infrastructure.workers.notification_delivery_worker import (
+    NotificationDeliveryWorker,
+)
 from infrastructure.services.bot_health_service import (
     BotHealthReport,
     BotHealthService,
@@ -255,6 +258,17 @@ async def test_active_hold_queues_blockchain_event_until_the_legacy_sender_runs(
     assert get_telegram_request(mock_telegram, "sendMessage") is None
 
     await coordinator.complete_flow(12345)
+
+    assert get_telegram_request(mock_telegram, "sendMessage") is None
+
+    worker = NotificationDeliveryWorker(
+        store=store,
+        coordinator=coordinator,
+        poll_interval_seconds=5,
+        batch_size=10,
+        clock=lambda: 1_000,
+    )
+    await worker.poll_once()
 
     request = get_telegram_request(mock_telegram, "sendMessage")
     assert request is not None

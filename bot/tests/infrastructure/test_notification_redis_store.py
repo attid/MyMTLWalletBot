@@ -104,6 +104,65 @@ async def test_touch_creates_and_extends_absolute_hold(
 
 
 @pytest.mark.asyncio
+async def test_touch_with_generation_returns_one_atomic_hold_snapshot(
+    redis_store: NotificationRedisStore,
+):
+    touched = await redis_store.touch_with_generation(42, now=1_000)
+
+    assert touched == await redis_store.hold_snapshot(42)
+    assert touched[0] == 1_120
+    assert touched[1] > 0
+
+
+@pytest.mark.asyncio
+async def test_same_second_touch_has_a_distinct_flow_generation(
+    redis_store: NotificationRedisStore,
+):
+    await redis_store.touch(42, now=1_000)
+    first_snapshot = await redis_store.hold_snapshot(42)
+    assert first_snapshot is not None
+
+    await redis_store.touch(42, now=1_000)
+
+    assert (
+        await redis_store.release_hold_generation_if_unchanged(
+            42, first_snapshot[1], now=1_000
+        )
+        is False
+    )
+    assert await redis_store.hold_until(42) == 1_120
+
+
+@pytest.mark.asyncio
+async def test_same_second_generation_fencing_works_without_lua():
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    store = NotificationRedisStore(redis, hold_seconds=120, lock_ttl_seconds=30)
+    redis.eval = AsyncMock(side_effect=ResponseError("unknown command 'eval'"))
+    try:
+        await store.touch(42, now=1_000)
+        first_snapshot = await store.hold_snapshot(42)
+        assert first_snapshot is not None
+        await store.touch(42, now=1_000)
+        second_snapshot = await store.hold_snapshot(42)
+        assert second_snapshot is not None
+
+        assert (
+            await store.release_hold_generation_if_unchanged(
+                42, first_snapshot[1], now=1_000
+            )
+            is False
+        )
+        assert (
+            await store.release_hold_generation_if_unchanged(
+                42, second_snapshot[1], now=1_000
+            )
+            is True
+        )
+    finally:
+        await redis.aclose()
+
+
+@pytest.mark.asyncio
 async def test_release_removes_hold_and_due_schedule(
     redis_store: NotificationRedisStore,
 ):
