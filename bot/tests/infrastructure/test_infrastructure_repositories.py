@@ -122,6 +122,36 @@ async def test_wallet_repository(db_session):
 
 
 @pytest.mark.asyncio
+async def test_wallet_get_info_uses_newest_active_duplicate(db_session):
+    wallet_repo = SqlAlchemyWalletRepository(db_session)
+    user_id = 1010
+    public_key = "GDUPLICATEINFO123"
+
+    await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=user_id,
+            public_key=public_key,
+            is_default=False,
+            is_free=True,
+            use_pin=0,
+        )
+    )
+    await wallet_repo.create(
+        Wallet(
+            id=0,
+            user_id=user_id,
+            public_key=public_key,
+            is_default=False,
+            is_free=False,
+            use_pin=10,
+        )
+    )
+
+    assert await wallet_repo.get_info(user_id, public_key) == "(r/o)"
+
+
+@pytest.mark.asyncio
 async def test_wallet_repository_use_pin_read_only(db_session):
     """Test that read-only wallet (use_pin=10) is saved correctly."""
     user_repo = SqlAlchemyUserRepository(db_session)
