@@ -334,6 +334,8 @@ class SqlAlchemyWalletRepository(IWalletRepository):
             .where(MyMtlWalletBot.user_id == user_id)
             .where(MyMtlWalletBot.public_key == public_key)
             .where(MyMtlWalletBot.need_delete == 0)
+            .order_by(MyMtlWalletBot.id.desc())
+            .limit(1)
         )
         result = await self.session.execute(stmt)
         db_wallet = result.scalar_one_or_none()
