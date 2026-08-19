@@ -200,6 +200,167 @@ async def test_full_flow_sign_and_send_success(
 
 
 @pytest.mark.asyncio
+async def test_sep7_callback_http_error_shows_safe_destination_and_status(
+    mock_telegram, router_app_context
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    callback_url = (
+        "https://user:password@bsn.expert:8443/login/callback?token=secret#fragment"
+    )
+    await dp.storage.update_data(
+        state_key,
+        {
+            "callback_url": callback_url,
+            "xdr": "SIGNED_XDR",
+            "user_lang": "en",
+        },
+    )
+    response = MagicMock(status=500, data="private upstream response")
+
+    with patch(
+        "routers.sign.http_session_manager.get_web_request",
+        new=AsyncMock(return_value=response),
+    ):
+        await dp.feed_update(bot, create_callback_update(user_id, "SendTools"))
+
+    latest_request = [
+        request
+        for request in mock_telegram
+        if request["method"] in ("sendMessage", "editMessageText")
+    ][-1]
+    message = latest_request["data"]["text"]
+    assert "callback_http_error" in message
+    assert "https://bsn.expert:8443/login/callback" in message
+    assert "HTTP 500" in message
+    assert "user:password" not in message
+    assert "token=secret" not in message
+    assert "fragment" not in message
+    assert "private upstream response" not in message
+
+
+@pytest.mark.asyncio
+async def test_sep7_callback_accepts_any_successful_http_status(
+    mock_telegram, router_app_context
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.update_data(
+        state_key,
+        {
+            "callback_url": "https://bsn.expert/login/callback",
+            "return_url": "https://bsn.expert/dashboard",
+            "xdr": "SIGNED_XDR",
+            "user_lang": "en",
+        },
+    )
+    response = MagicMock(status=204, data="")
+
+    with patch(
+        "routers.sign.http_session_manager.get_web_request",
+        new=AsyncMock(return_value=response),
+    ):
+        await dp.feed_update(bot, create_callback_update(user_id, "SendTools"))
+
+    latest_request = [
+        request
+        for request in mock_telegram
+        if request["method"] in ("sendMessage", "editMessageText")
+    ][-1]
+    assert latest_request["data"]["text"] == "SUCCESS"
+    assert "https://bsn.expert/dashboard" in latest_request["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_sep7_callback_transport_error_shows_safe_destination_and_reason(
+    mock_telegram, router_app_context
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.update_data(
+        state_key,
+        {
+            "callback_url": "https://bsn.expert/login/callback?token=secret",
+            "xdr": "SIGNED_XDR",
+            "user_lang": "en",
+        },
+    )
+
+    with patch(
+        "routers.sign.http_session_manager.get_web_request",
+        new=AsyncMock(
+            side_effect=ConnectionError(
+                "connection refused for https://bsn.expert/login/callback?token=secret"
+            )
+        ),
+    ):
+        await dp.feed_update(bot, create_callback_update(user_id, "SendTools"))
+
+    latest_request = [
+        request
+        for request in mock_telegram
+        if request["method"] in ("sendMessage", "editMessageText")
+    ][-1]
+    message = latest_request["data"]["text"]
+    assert "callback_connection_error" in message
+    assert "callback_connection_reason" in message
+    assert "https://bsn.expert/login/callback" in message
+    assert "connection refused" not in message
+    assert "token=secret" not in message
+
+
+@pytest.mark.asyncio
+async def test_sep7_callback_response_handling_failure_is_not_transport_failure(
+    mock_telegram, router_app_context
+):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    user_id = 123
+    bot = router_app_context.bot
+    state_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+    await dp.storage.update_data(
+        state_key,
+        {
+            "callback_url": "https://bsn.expert/login/callback",
+            "xdr": "SIGNED_XDR",
+            "user_lang": "en",
+        },
+    )
+    response = MagicMock(status=500, data="upstream failure")
+
+    info_message = AsyncMock(side_effect=[RuntimeError("Telegram failed"), None])
+    with (
+        patch(
+            "routers.sign.http_session_manager.get_web_request",
+            new=AsyncMock(return_value=response),
+        ),
+        patch("routers.sign.cmd_info_message", new=info_message),
+    ):
+        await dp.feed_update(bot, create_callback_update(user_id, "SendTools"))
+
+    assert info_message.await_count == 2
+    recovery_message = info_message.await_args_list[1].args[2]
+    assert "callback_connection_error" not in recovery_message
+
+
+@pytest.mark.asyncio
 async def test_successful_biometric_sign_cancellation_completes_notification_flow(
     mock_telegram, router_app_context, setup_sign_mocks
 ):
