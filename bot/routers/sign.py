@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from html import escape
+from urllib.parse import urlsplit
 import jsonpickle  # type: ignore
 from aiogram import Router, types, F
 from aiogram.fsm.state import StatesGroup, State
@@ -38,6 +39,21 @@ from shared.constants import REDIS_TX_PREFIX
 from other import faststream_tools
 from other.faststream_tools import publish_pending_tx
 from keyboards.webapp import webapp_decode_button, webapp_sign_keyboard
+
+
+def safe_callback_destination(callback_url: str) -> str:
+    """Return a user-safe callback URL without credentials or secret parameters."""
+    try:
+        parsed = urlsplit(callback_url)
+        if not parsed.scheme or not parsed.hostname:
+            raise ValueError("callback URL must include scheme and host")
+        hostname = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        netloc = hostname
+        if parsed.port is not None:
+            netloc = f"{netloc}:{parsed.port}"
+        return f"{parsed.scheme}://{netloc}{parsed.path}"
+    except (TypeError, ValueError):
+        return "invalid callback URL"
 
 
 def format_horizon_send_error(ex: BaseHorizonError) -> str:
@@ -846,43 +862,81 @@ async def cmd_show_send_tr(
     try:
         if callback.data == "SendTools":
             if callback_url:
+                callback_destination = safe_callback_destination(callback_url)
                 try:
                     response = await http_session_manager.get_web_request(
                         "POST", url=callback_url, data={"xdr": xdr}
                     )
-
-                    logger.debug(f"Callback response: {response.data}")
-                    if response.status == 200:
-                        return_url = data.get("return_url")
-                        if return_url:
-                            # Если есть return_url, отправляем только SUCCESS с кнопкой возврата
-                            from keyboards.common_keyboards import get_kb_return_url
-
-                            await send_message(
-                                session,
-                                callback.from_user.id,
-                                "SUCCESS",
-                                reply_markup=get_kb_return_url(
-                                    callback.from_user.id,
-                                    return_url,
-                                    app_context=app_context,
-                                ),
-                                app_context=app_context,
-                            )
-                        else:
-                            await cmd_info_message(
-                                session, callback, "SUCCESS", app_context=app_context
-                            )
-                    else:
-                        await cmd_info_message(
-                            session, callback, "ERROR", app_context=app_context
-                        )
                 except Exception as ex:
-                    logger.info(["cmd_show_send_tr", callback, ex])
+                    logger.warning(
+                        "SEP-7 callback transport failure for {}: {}",
+                        callback_destination,
+                        type(ex).__name__,
+                    )
                     await cmd_info_message(
                         session,
                         callback,
-                        my_gettext(callback, "send_error", app_context=app_context),
+                        "\n".join(
+                            (
+                                my_gettext(
+                                    callback,
+                                    "callback_connection_error",
+                                    app_context=app_context,
+                                ),
+                                f"<code>{escape(callback_destination)}</code>",
+                                my_gettext(
+                                    callback,
+                                    "callback_connection_reason",
+                                    app_context=app_context,
+                                ),
+                            )
+                        ),
+                        app_context=app_context,
+                    )
+                    return
+
+                logger.debug(f"Callback response: {response.data}")
+                if 200 <= response.status < 300:
+                    return_url = data.get("return_url")
+                    if return_url:
+                        # Если есть return_url, отправляем только SUCCESS с кнопкой возврата
+                        from keyboards.common_keyboards import get_kb_return_url
+
+                        await send_message(
+                            session,
+                            callback.from_user.id,
+                            "SUCCESS",
+                            reply_markup=get_kb_return_url(
+                                callback.from_user.id,
+                                return_url,
+                                app_context=app_context,
+                            ),
+                            app_context=app_context,
+                        )
+                    else:
+                        await cmd_info_message(
+                            session, callback, "SUCCESS", app_context=app_context
+                        )
+                else:
+                    logger.warning(
+                        "SEP-7 callback failed with HTTP {} for {}",
+                        response.status,
+                        callback_destination,
+                    )
+                    await cmd_info_message(
+                        session,
+                        callback,
+                        "\n".join(
+                            (
+                                my_gettext(
+                                    callback,
+                                    "callback_http_error",
+                                    app_context=app_context,
+                                ),
+                                f"<code>{escape(callback_destination)}</code>",
+                                f"HTTP {response.status}",
+                            )
+                        ),
                         app_context=app_context,
                     )
             elif wallet_connect:
