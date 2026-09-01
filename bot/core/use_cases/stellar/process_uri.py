@@ -67,14 +67,27 @@ class ProcessStellarUri:
                 # We need base_fee. Config? Constants?
                 base_fee = 10000
 
+                challenge_transaction = uri_object.transaction_envelope.transaction
                 transaction = TransactionBuilder(
                     source_account=source_account,
                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
                     base_fee=base_fee,
+                    v1=challenge_transaction.v1,
                 )
-                transaction.set_timeout(180)  # 3 mins
 
-                for operation in uri_object.transaction_envelope.transaction.operations:
+                preconditions = challenge_transaction.preconditions
+                transaction.time_bounds = preconditions.time_bounds
+                transaction.ledger_bounds = preconditions.ledger_bounds
+                transaction.min_sequence_number = preconditions.min_sequence_number
+                transaction.min_sequence_age = preconditions.min_sequence_age
+                transaction.min_sequence_ledger_gap = (
+                    preconditions.min_sequence_ledger_gap
+                )
+                transaction.extra_signers = list(preconditions.extra_signers)
+                transaction.memo = challenge_transaction.memo
+                transaction.soroban_data = challenge_transaction.soroban_data
+
+                for operation in challenge_transaction.operations:
                     transaction.append_operation(operation)
 
                 envelope = transaction.build()

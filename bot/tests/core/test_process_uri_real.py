@@ -1,10 +1,12 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from stellar_sdk import Network, TransactionEnvelope
+
 from core.use_cases.stellar.process_uri import ProcessStellarUri
 
 
 @pytest.mark.asyncio
-async def test_real_uri_execution_failure():
+async def test_sep7_rebuild_preserves_bsn_challenge_preconditions():
     # Setup Mocks
     mock_wallet_repo = AsyncMock()
     mock_wallet = MagicMock()
@@ -29,3 +31,20 @@ async def test_real_uri_execution_failure():
 
     # If success, verify XDR is present
     assert result.xdr is not None
+
+    challenge = use_case._parse_transaction_stellar_uri(uri_data)[
+        "uri_object"
+    ].transaction_envelope.transaction
+    rebuilt = TransactionEnvelope.from_xdr(
+        result.xdr, Network.PUBLIC_NETWORK_PASSPHRASE
+    ).transaction
+
+    assert challenge.preconditions.time_bounds.min_time == 1769795307
+    assert challenge.preconditions.time_bounds.max_time == 1769795607
+    assert rebuilt.preconditions == challenge.preconditions
+    assert rebuilt.memo == challenge.memo
+    assert rebuilt.operations == challenge.operations
+    assert rebuilt.soroban_data == challenge.soroban_data
+    assert rebuilt.source.account_id == mock_wallet.public_key
+    assert rebuilt.sequence == 12346
+    assert rebuilt.fee == 10000 * len(rebuilt.operations)
