@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     horizon_url_rw: str
     mongodb_url: Optional[str] = None
     grist_token: str
+    grist_base_url: str = "https://grist.eurmtl.me/api/docs"
     tonconsole_token: str
     ton_token: str
     wallet_cost: float

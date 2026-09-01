@@ -1,7 +1,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 from loguru import logger
 from other.config_reader import config
 from other.web_tools import HTTPSessionManager
@@ -11,41 +11,63 @@ from other.web_tools import HTTPSessionManager
 class GristTableConfig:
     access_id: str
     table_name: str
-    base_url: str = "https://montelibero.getgrist.com/api/docs"
+    # Set this only for a deliberately separate Grist host (for example RELY).
+    # Normal tables use the centralized Montelibero root from Settings.
+    base_url: Optional[str] = None
 
 
 # Enum для таблиц
 @dataclass
 class MTLGrist:
-    NOTIFY_ACCOUNTS = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Accounts")
-    NOTIFY_ASSETS = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Assets")
-    NOTIFY_TREASURY = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Treasury")
+    NOTIFY_ACCOUNTS = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Accounts")
+    NOTIFY_ASSETS = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Assets")
+    NOTIFY_TREASURY = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Treasury")
 
-    MTLA_CHATS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "MTLA_CHATS")
-    MTLA_COUNCILS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "MTLA_COUNCILS")
-    MTLA_USERS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "Users")
+    MTLA_CHATS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_CHATS")
+    MTLA_COUNCILS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_COUNCILS")
+    MTLA_USERS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "Users")
 
-    SP_USERS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "SP_USERS")
-    SP_CHATS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "SP_CHATS")
+    SP_USERS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_USERS")
+    SP_CHATS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_CHATS")
 
-    MAIN_CHAT_INCOME = GristTableConfig("gnXfashifjtdExQoeQeij6", "Main_chat_income")
-    MAIN_CHAT_OUTCOME = GristTableConfig("gnXfashifjtdExQoeQeij6", "Main_chat_outcome")
+    MAIN_CHAT_INCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_income")
+    MAIN_CHAT_OUTCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_outcome")
 
-    GRIST_access = GristTableConfig("rGD426DVBySAFMTLEqKp1d", "Access")
-    GRIST_use_log = GristTableConfig("rGD426DVBySAFMTLEqKp1d", "Use_log")
+    GRIST_access = GristTableConfig("1sd6z3cHUPVQSgvyy7iARy", "Access")
+    GRIST_use_log = GristTableConfig("1sd6z3cHUPVQSgvyy7iARy", "Use_log")
 
-    EURMTL_users = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Users")
-    EURMTL_accounts = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Accounts")
-    EURMTL_assets = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Assets")
+    EURMTL_users = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Users")
+    EURMTL_accounts = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Accounts")
+    EURMTL_assets = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Assets")
+
+    # Dormant audited Montelibero documents are kept explicit so a future
+    # caller cannot silently fall back to an old GetGrist document.
+    SHARE_HOLDERS = GristTableConfig("eNajcBuG4bFPzDvZfGC3JQ", "ShareHolders")
+    CONFIG = GristTableConfig("vpjoUZvH6WRcS7Es8n1UZv", "config")
+    MTL_AIRDROP_REGISTER = GristTableConfig(
+        "r4r5Lhy2QJ7bvNs4ut1ATV", "MTL_Airdrop_register"
+    )
+    MTL_ADMINS = GristTableConfig("ePz5LKsFPmhe5XCC4z7akA", "MTL admins")
 
 
 class GristAPI:
-    def __init__(self, session_manager: Optional[HTTPSessionManager] = None):
+    def __init__(
+        self,
+        session_manager: Optional[HTTPSessionManager] = None,
+        token: Optional[str] = None,
+    ):
         if not session_manager:
             self.session_manager = HTTPSessionManager()
         else:
             self.session_manager = session_manager
-        self.token = config.grist_token
+        # A separate token can be injected for an intentionally separate host
+        # (such as RELY); regular callers use the centralized runtime token.
+        self.token = token if token is not None else config.grist_token
+
+    @staticmethod
+    def _table_url(table: GristTableConfig) -> str:
+        base_url = (table.base_url or config.grist_base_url).rstrip("/")
+        return f"{base_url}/{table.access_id}/tables/{table.table_name}/records"
 
     async def fetch_data(
         self,
@@ -68,7 +90,7 @@ class GristAPI:
             "accept": "application/json",
             "Authorization": f"Bearer {self.token}",
         }
-        url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        url = self._table_url(table)
         params = []
 
         if sort:
@@ -107,7 +129,7 @@ class GristAPI:
             "accept": "application/json",
             "Authorization": f"Bearer {self.token}",
         }
-        url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        url = self._table_url(table)
         response = await self.session_manager.get_web_request(
             method="PUT", url=url, headers=headers, json=json_data
         )
@@ -132,7 +154,7 @@ class GristAPI:
             "accept": "application/json",
             "Authorization": f"Bearer {self.token}",
         }
-        url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        url = self._table_url(table)
         response = await self.session_manager.get_web_request(
             method="PATCH", url=url, headers=headers, json=json_data
         )
@@ -157,7 +179,7 @@ class GristAPI:
             "accept": "application/json",
             "Authorization": f"Bearer {self.token}",
         }
-        url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        url = self._table_url(table)
         response = await self.session_manager.get_web_request(
             method="POST", url=url, headers=headers, json=json_data
         )

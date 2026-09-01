@@ -46,6 +46,8 @@ services:
       - EURMTL_KEY=your_eurmtl_key
       # Grist Token (spreadsheets)
       - GRIST_TOKEN=your_grist_token
+      # Montelibero Grist API root (document IDs are configured in the bot)
+      - GRIST_BASE_URL=https://grist.eurmtl.me/api/docs
       # DeBank API Key (optional)
       - DEBANK=your_debank_key
       # Sentry DSN for error tracking
