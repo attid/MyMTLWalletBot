@@ -1,3 +1,5 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import List, Union
 
 import jsonpickle  # type: ignore
@@ -86,6 +88,13 @@ class SendAssetCallbackData(CallbackData, prefix="send_asset_"):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+async def _download_and_decode_qr(bot, photo):
+    with TemporaryDirectory(prefix="mmwb-qr-") as temp_dir:
+        qr_path = Path(temp_dir) / "qr.jpg"
+        await bot.download(photo, destination=qr_path)
+        return decode_qr_code(str(qr_path))
 
 
 def _get_balance_lookup_account(address: str) -> str:
@@ -1124,12 +1133,7 @@ async def handle_docs_photo(
     if message.photo:
         await message.reply("is being recognized")
         bot = app_context.bot
-        await bot.download(
-            message.photo[-1], destination=f"qr/{message.from_user.id}.jpg"
-        )
-
-        qr_data = decode_qr_code(f"qr/{message.from_user.id}.jpg")
-        # decode(Image.open(f"qr/{message.from_user.id}.jpg"))
+        qr_data = await _download_and_decode_qr(bot, message.photo[-1])
         if qr_data:
             logger.info(qr_data)
 

@@ -12,7 +12,10 @@ This file demonstrates the correct testing patterns:
 See tests/README.md for complete testing rules.
 """
 
+import asyncio
 import jsonpickle  # type: ignore
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typing import Optional
@@ -25,6 +28,7 @@ from routers.send import (
     router as send_router,
     StateSendToken,
     SendAssetCallbackData,
+    handle_docs_photo,
 )
 from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance, PaymentResult
@@ -44,6 +48,61 @@ from core.interfaces.repositories import (
 from core.use_cases.wallet.get_balance import GetWalletBalance
 from core.use_cases.payment.send_payment import SendPayment
 from core.domain.entities import User, Wallet
+
+
+@pytest.mark.asyncio
+async def test_handle_docs_photo_uses_isolated_temporary_files(
+    mock_telegram, monkeypatch, tmp_path
+):
+    work_dir = tmp_path / "fresh-workdir"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+
+    downloaded_paths = []
+    decoded_paths = []
+
+    async def download(_photo, destination):
+        path = Path(destination)
+        downloaded_paths.append(path)
+        path.write_bytes(b"qr")
+        await asyncio.sleep(0)
+        assert path.exists()
+
+    def decode_qr_code(path):
+        path = Path(path)
+        decoded_paths.append(path)
+        assert path.exists()
+        return None
+
+    monkeypatch.setattr("routers.send.decode_qr_code", decode_qr_code)
+    app_context = SimpleNamespace(bot=SimpleNamespace(download=download))
+    session = AsyncMock()
+
+    def make_message(user_id):
+        return SimpleNamespace(
+            from_user=SimpleNamespace(id=user_id),
+            photo=[object()],
+            reply=AsyncMock(),
+        )
+
+    await asyncio.gather(
+        *(
+            handle_docs_photo(
+                make_message(user_id),
+                AsyncMock(),
+                session,
+                app_context,
+            )
+            for user_id in (123, 123, 456)
+        )
+    )
+
+    assert len(downloaded_paths) == 3
+    assert len(decoded_paths) == 3
+    assert len({str(path) for path in downloaded_paths}) == 3
+    assert all(path.parent != work_dir / "qr" for path in downloaded_paths)
+    assert all(not path.exists() for path in downloaded_paths)
+    assert not (work_dir / "qr").exists()
 
 
 @pytest.fixture(autouse=True)
