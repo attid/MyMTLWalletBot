@@ -76,14 +76,15 @@ class ProcessStellarUri:
                 )
 
                 preconditions = challenge_transaction.preconditions
-                transaction.time_bounds = preconditions.time_bounds
-                transaction.ledger_bounds = preconditions.ledger_bounds
-                transaction.min_sequence_number = preconditions.min_sequence_number
-                transaction.min_sequence_age = preconditions.min_sequence_age
-                transaction.min_sequence_ledger_gap = (
-                    preconditions.min_sequence_ledger_gap
-                )
-                transaction.extra_signers = list(preconditions.extra_signers)
+                if preconditions is not None:
+                    transaction.time_bounds = preconditions.time_bounds
+                    transaction.ledger_bounds = preconditions.ledger_bounds
+                    transaction.min_sequence_number = preconditions.min_sequence_number
+                    transaction.min_sequence_age = preconditions.min_sequence_age
+                    transaction.min_sequence_ledger_gap = (
+                        preconditions.min_sequence_ledger_gap
+                    )
+                    transaction.extra_signers = list(preconditions.extra_signers)
                 transaction.memo = challenge_transaction.memo
                 transaction.soroban_data = challenge_transaction.soroban_data
 
