@@ -133,6 +133,7 @@ database.db
 qr
 .idea
 .antigravitycli/
+.claude/
 /.belief_map_cache.json
 /.belief_map.sexp
 belief_map.sexp
