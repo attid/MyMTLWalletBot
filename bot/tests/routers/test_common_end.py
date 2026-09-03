@@ -175,6 +175,40 @@ async def test_cmd_last_route_xdr_base64(
 
 
 @pytest.mark.asyncio
+async def test_cmd_last_route_malformed_xdr_shows_bad_xdr_diagnostic(
+    mock_telegram, router_app_context, setup_common_end_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
+    malformed_xdr = (
+        "AAAAAgAAAABwfbNxJBm7QcnGvFw6LdbJfGtFsE9c/5OfTYcXWkIB/AAABkACROpe"
+        "AAAE2gAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAwAAAAJFVVJNVEwA"
+        "AAAAAAAAAAAABKm3owZNa8bB1ZbPOeEZwMn6SWmWnL4MJkNI8TQwb6oAAAABTkVSTw"
+        "AAAABwfbNxJBm7QcnGvFw6LdbJfGtFsE9c/5OfTYcXWkIB/AAAAAAAmJaAAAAAGQAAA"
+        "BcAAAAAbptDwwAAAAAAAAADAAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854"
+        "RnAyfpJaZacvgwmQ0jxNDBvqgAAAAFOSVJPAAAAAJz93HeZD2fG89tk9747iI61q8Km"
+        "Ubl6NLGIBQx/2glOAAAAAAExLQAAAAABAAAAHwAAAABum0PFAAAAAAAAAAMAAAABTklS"
+        "TwAAAACc/dx3mQ9nxvPbZPe+O4iOtavCplG5ejSxiAUMf9oJTgAAAAJFVVJNVEwAAAAA"
+        "AAAAAAAABKm3owZNa8bB1ZacvgwmQ0jxNDBvqgAAAAAAvrwgAAAACEAAAABAAAAAG6bQ"
+        "8QAAAAAAAAAAwAAAAFORVJPAAAAAHB9s3EkGbtByca8XDot1sl8a0WwT1z/k59Nhxda"
+        "QgH8AAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jx"
+        "NDBvqgAAAAABMS0AAAAAZwAAAGQAAAAAbptDwgAAAAAAAAAA"
+    )
+    setup_common_end_mocks.m_check_xdr.return_value = None
+
+    await dp.feed_update(
+        router_app_context.bot,
+        create_custom_message_update(123, malformed_xdr),
+    )
+
+    req = get_latest_msg(mock_telegram)
+    assert req is not None
+    assert "bad_xdr" in req["data"]["text"]
+    assert not any(r["method"] == "deleteMessage" for r in mock_telegram)
+
+
+@pytest.mark.asyncio
 async def test_cmd_last_route_sign_link(
     mock_telegram, router_app_context, setup_common_end_mocks
 ):
