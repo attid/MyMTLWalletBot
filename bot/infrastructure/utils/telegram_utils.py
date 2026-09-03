@@ -126,6 +126,9 @@ async def _send_ui_message(
     badge_service=None,
     lease_lost=None,
 ):
+    if not isinstance(msg, str) or not msg:
+        raise ValueError("UI message text must be a non-empty string")
+
     fsm_storage_key = StorageKey(
         bot_id=current_bot.id, user_id=user_id, chat_id=user_id
     )

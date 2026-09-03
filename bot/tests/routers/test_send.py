@@ -21,7 +21,9 @@ import pytest
 from typing import Optional
 from unittest.mock import MagicMock, AsyncMock
 from aiogram import types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.storage.base import StorageKey
+from aiogram.methods import EditMessageText
 
 from routers.send import (
     FLOW_BACK_CALLBACK,
@@ -949,7 +951,6 @@ async def test_flow_back_from_send_confirmation_rerenders_amount_prompt(
             "success_msg": "Payment sent",
         },
     )
-
     await dp.feed_update(
         bot=router_app_context.bot,
         update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
@@ -975,6 +976,61 @@ async def test_flow_back_from_send_confirmation_rerenders_amount_prompt(
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req["data"]["text"] == "Enter XLM amount"
     assert FLOW_BACK_CALLBACK in req["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_flow_back_after_qr_confirmation_recovers_when_edit_fails_and_text_is_missing(
+    mock_telegram, router_app_context, dp
+):
+    user_id = 123
+    failed_edits = []
+
+    async def reject_edit(make_request, bot, method):
+        if isinstance(method, EditMessageText):
+            failed_edits.append(method)
+            raise TelegramBadRequest(method=method, message="message cannot be edited")
+        return await make_request(bot, method)
+
+    router_app_context.bot.session.middleware(reject_edit)
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.confirming)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "last_message_id": 987,
+            "flow_back_amount_msg": None,
+            "send_address": "GDEST",
+            "send_sum": 10,
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            PENDING_SIGNATURE_REQUEST_KEY: {"xdr": "AAAA_CONFIRMATION_XDR"},
+            "xdr": "AAAA_CONFIRMATION_XDR",
+            "operation": "Send 10 XLM",
+            "sign_msg": "Sign payment",
+            "success_msg": "Payment sent",
+        },
+    )
+    await router_app_context.dispatcher.storage.set_data(
+        key=storage_key, data={"last_message_id": 987}
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
+        app_context=router_app_context,
+    )
+
+    assert len(failed_edits) == 1
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_for
+    sent = get_telegram_request(mock_telegram, "sendMessage")
+    assert sent is not None
+    assert sent["data"]["text"]
+    assert "send_address" in sent["data"]["text"]
+    assert get_telegram_request(mock_telegram, "answerCallbackQuery") is not None
 
 
 @pytest.mark.asyncio

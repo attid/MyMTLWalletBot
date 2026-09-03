@@ -149,6 +149,28 @@ async def test_ui_sender_keeps_existing_behavior_without_badge_service() -> None
 
 
 @pytest.mark.asyncio
+async def test_ui_sender_rejects_missing_text_before_constructing_telegram_request() -> (
+    None
+):
+    bot = create_autospec(Bot, instance=True, spec_set=True)
+    bot.id = 1
+    dispatcher = Dispatcher(storage=MemoryStorage())
+    app_context = MagicMock(bot=bot, dispatcher=dispatcher)
+    app_context.notification_badge_service = None
+
+    with pytest.raises(ValueError, match="UI message text must be a non-empty string"):
+        await send_message(
+            None,
+            42,
+            None,  # type: ignore[arg-type]
+            app_context=app_context,
+        )
+
+    bot.edit_message_text.assert_not_called()
+    bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_document_ui_sender_tracks_new_message_and_deletes_previous() -> None:
     bot = create_autospec(Bot, instance=True, spec_set=True)
     bot.id = 1

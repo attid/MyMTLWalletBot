@@ -1016,27 +1016,61 @@ async def cq_send_back_to_amount(
     session: AsyncSession,
     app_context: AppContext,
 ):
-    data = await state.get_data()
-    for key in (
-        PENDING_SIGNATURE_REQUEST_KEY,
-        "xdr",
-        "operation",
-        "sign_msg",
-        "success_msg",
-    ):
-        data.pop(key, None)
-    await state.set_data(data)
-    await state.set_state(StateSendToken.sending_sum)
-    await send_message(
-        session,
-        callback,
-        data["flow_back_amount_msg"],
-        reply_markup=get_kb_offers_cancel(
-            callback.from_user.id, data, flow_back=True, app_context=app_context
-        ),
-        app_context=app_context,
-    )
-    await callback.answer()
+    try:
+        data = await state.get_data()
+        for key in (
+            PENDING_SIGNATURE_REQUEST_KEY,
+            "xdr",
+            "operation",
+            "sign_msg",
+            "success_msg",
+        ):
+            data.pop(key, None)
+
+        amount_prompt = data.get("flow_back_amount_msg")
+        if isinstance(amount_prompt, str) and amount_prompt.strip():
+            await state.set_data(data)
+            await state.set_state(StateSendToken.sending_sum)
+            await send_message(
+                session,
+                callback,
+                amount_prompt,
+                reply_markup=get_kb_offers_cancel(
+                    callback.from_user.id,
+                    data,
+                    flow_back=True,
+                    app_context=app_context,
+                ),
+                app_context=app_context,
+            )
+            return
+
+        # QR/deep-link payments can enter confirmation without rendering an amount
+        # screen. In that case there is no amount prompt to restore, so return to
+        # the nearest real screen instead of inventing text for a stale state.
+        for key in (
+            "flow_back_amount_msg",
+            "qr",
+            "memo",
+            "federal_memo",
+            "send_address",
+            "send_balance_address",
+            "mtlap_stars",
+            "send_sum",
+            "send_asset_code",
+            "send_asset_issuer",
+            "send_asset_max_sum",
+            "send_asset_blocked_sum",
+            "cancel_offers",
+            "msg",
+        ):
+            data.pop(key, None)
+        await state.set_data(data)
+        await _render_send_address_prompt(
+            callback.from_user.id, state, session, app_context=app_context
+        )
+    finally:
+        await callback.answer()
 
 
 @router.callback_query(StateSendToken.sending_memo, F.data == FLOW_BACK_CALLBACK)
