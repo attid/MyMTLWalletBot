@@ -21,6 +21,12 @@ from infrastructure.services.app_context import AppContext
 router = Router()
 router.message.filter(F.chat.type == "private")
 
+STELLAR_ENVELOPE_XDR_PREFIXES = ("AAAAAA", "AAAAAg", "AAAABQ")
+
+
+def _looks_like_stellar_envelope_xdr(text: str) -> bool:
+    return len(text) > 60 and text.startswith(STELLAR_ENVELOPE_XDR_PREFIXES)
+
 
 @router.message()
 async def cmd_last_route(
@@ -43,7 +49,9 @@ async def cmd_last_route(
         for entity in entities
         if entity.type == "url"
     )
-    if has_sign_tools_link or (len(text) > 60 and is_base64(text)):
+    if has_sign_tools_link or (
+        len(text) > 60 and (is_base64(text) or _looks_like_stellar_envelope_xdr(text))
+    ):
         if message.from_user is None:
             return
         await clear_state(state)
