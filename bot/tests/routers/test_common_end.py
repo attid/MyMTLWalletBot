@@ -2,6 +2,7 @@ import pytest
 import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram import types
+from aiogram.fsm.storage.base import StorageKey
 import datetime
 
 from routers.common_end import (
@@ -149,6 +150,94 @@ async def test_cmd_last_route_stellar_address(
     req = get_latest_msg(mock_telegram)
     assert req is not None
     assert "choose_token" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_direct_address_starts_without_previous_transaction_memo(
+    mock_telegram, router_app_context, setup_common_end_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
+    user_id = 123
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_data(
+        storage_key,
+        {"memo": "memo from previous payment", "federal_memo": True},
+    )
+
+    address = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
+    await dp.feed_update(
+        router_app_context.bot, create_custom_message_update(user_id, address)
+    )
+
+    data = await dp.storage.get_data(storage_key)
+    assert "memo" not in data
+    assert "federal_memo" not in data
+    assert data["send_address"] == "GVALID"
+
+
+@pytest.mark.asyncio
+async def test_direct_address_keeps_memo_from_new_destination(
+    mock_telegram, router_app_context, setup_common_end_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
+    user_id = 123
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_data(
+        storage_key,
+        {"memo": "old memo", "federal_memo": True},
+    )
+    setup_common_end_mocks.m_check_acc.return_value = MagicMock(
+        account_id="GVALID", memo="new destination memo"
+    )
+
+    address = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
+    await dp.feed_update(
+        router_app_context.bot, create_custom_message_update(user_id, address)
+    )
+
+    data = await dp.storage.get_data(storage_key)
+    assert data["memo"] == "new destination memo"
+    assert data["federal_memo"] is True
+
+
+@pytest.mark.asyncio
+async def test_direct_address_clears_previous_external_callback_routing(
+    mock_telegram, router_app_context, setup_common_end_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(end_router)
+    user_id = 123
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_data(
+        storage_key,
+        {
+            "callback_url": "https://eurmtl.me/callback",
+            "return_url": "https://eurmtl.me/return",
+            "tools": "https://eurmtl.me/sign_tools/old",
+            "xdr": "OLD_XDR",
+        },
+    )
+
+    address = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
+    await dp.feed_update(
+        router_app_context.bot, create_custom_message_update(user_id, address)
+    )
+
+    data = await dp.storage.get_data(storage_key)
+    for stale_key in ("callback_url", "return_url", "tools", "xdr"):
+        assert stale_key not in data
+    assert data["send_address"] == "GVALID"
 
 
 @pytest.mark.asyncio

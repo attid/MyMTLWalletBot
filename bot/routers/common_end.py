@@ -98,6 +98,12 @@ async def cmd_last_route(
         if public_key:
             my_account = await app_context.stellar_service.check_account(public_key)
             if my_account:
+                if message.from_user is None:
+                    return
+                await clear_state(state)
+                await clear_last_message_id(
+                    message.from_user.id, app_context=app_context
+                )
                 await state.update_data(send_address=my_account.account_id)
                 if my_account.memo:
                     await state.update_data(memo=my_account.memo, federal_memo=True)
