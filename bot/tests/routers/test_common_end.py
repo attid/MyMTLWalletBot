@@ -165,7 +165,11 @@ async def test_direct_address_starts_without_previous_transaction_memo(
     )
     await dp.storage.set_data(
         storage_key,
-        {"memo": "memo from previous payment", "federal_memo": True},
+        {
+            "memo": "memo from previous payment",
+            "federal_memo": True,
+            "last_message_id": 77,
+        },
     )
 
     address = "GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB"
@@ -177,6 +181,9 @@ async def test_direct_address_starts_without_previous_transaction_memo(
     assert "memo" not in data
     assert "federal_memo" not in data
     assert data["send_address"] == "GVALID"
+    assert data["last_message_id"] == 1
+    deleted = [r for r in mock_telegram if r["method"] == "deleteMessage"]
+    assert deleted[-1]["data"]["message_id"] == "77"
 
 
 @pytest.mark.asyncio
