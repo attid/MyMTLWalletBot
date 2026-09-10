@@ -841,12 +841,12 @@ class NotificationService:
                     o_id = int(op_data.get("created_offer_id", 0))
                 op.offer_id = o_id
 
-                # Buying Asset
-                if "buying_asset" in op_data:
-                    op.offer_buying_asset = op_data.get("buying_asset", {}).get(
-                        "asset_code", "XLM"
-                    )
-                    if op_data.get("buying_asset", {}).get("asset_type") in (
+                # The notifier uses asset/source_asset for both offer types.
+                # Keep the explicit names as fallbacks for older payload producers.
+                buying_asset = op_data.get("asset") or op_data.get("buying_asset")
+                if buying_asset:
+                    op.offer_buying_asset = buying_asset.get("asset_code", "XLM")
+                    if buying_asset.get("asset_type") in (
                         "native",
                         0,
                     ):
@@ -857,12 +857,12 @@ class NotificationService:
                 # Price per unit
                 op.offer_price = float(op_data.get("price", 0))
 
-                # Selling Asset
-                if "selling_asset" in op_data:
-                    op.offer_selling_asset = op_data.get("selling_asset", {}).get(
-                        "asset_code", "XLM"
-                    )
-                    if op_data.get("selling_asset", {}).get("asset_type") in (
+                selling_asset = op_data.get("source_asset") or op_data.get(
+                    "selling_asset"
+                )
+                if selling_asset:
+                    op.offer_selling_asset = selling_asset.get("asset_code", "XLM")
+                    if selling_asset.get("asset_type") in (
                         "native",
                         0,
                     ):

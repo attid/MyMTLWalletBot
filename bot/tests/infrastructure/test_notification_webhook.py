@@ -31,6 +31,7 @@ from infrastructure.services.notification_coordinator import (
     NotificationSender,
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
+from infrastructure.utils.notification_utils import decode_db_effect
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
 from infrastructure.workers.notification_delivery_worker import (
     NotificationDeliveryWorker,
@@ -602,6 +603,70 @@ async def test_notification_payload_mapping(notification_service):
         op_recv.path_received_amount == 50.0
     )  # Strict receive means we got exactly this
     assert op_recv.path_sent_amount == 55.5
+
+
+@pytest.mark.asyncio
+async def test_manage_buy_offer_payload_uses_canonical_assets(
+    notification_service,
+):
+    payload = {
+        "operation": {
+            "id": "276095959669526529",
+            "type_i": 12,
+            "type": "manage_buy_offer",
+            "account": "GA7I6SGUHQ26ARNCD376WXV5WSE7VJRX6OEFNFCEGRLFGZWQIV73LABR",
+            "amount": "6.6666666",
+            "price": "30.0000000",
+            "asset": {
+                "asset_type": 1,
+                "asset_code": "STAS",
+            },
+            "source_asset": {
+                "asset_type": 2,
+                "asset_code": "EURMTL",
+            },
+            "offerId": "0",
+        }
+    }
+
+    operation = notification_service._map_payload_to_operation(payload)
+
+    assert operation.operation == "manage_buy_offer"
+    assert operation.offer_amount == 6.6666666
+    assert operation.offer_price == 30.0
+    assert operation.offer_buying_asset == "STAS"
+    assert operation.offer_selling_asset == "EURMTL"
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "is buying 6.6666666 STAS for EURMTL. Price: 30" in text
+
+
+@pytest.mark.asyncio
+async def test_manage_sell_offer_type_i_remains_sell_offer(notification_service):
+    payload = {
+        "operation": {
+            "id": "sell-offer",
+            "type_i": 3,
+            "type": "manage_sell_offer",
+            "account": "GSELLER",
+            "amount": "10",
+            "price": "2",
+            "asset": {"asset_type": 1, "asset_code": "STAS"},
+            "source_asset": {"asset_type": 2, "asset_code": "EURMTL"},
+            "offerId": "0",
+        }
+    }
+
+    operation = notification_service._map_payload_to_operation(payload)
+
+    assert operation.operation == "manage_sell_offer"
+    assert operation.offer_amount == 10.0
+    assert operation.offer_buying_asset == "STAS"
+    assert operation.offer_selling_asset == "EURMTL"
 
 
 @pytest.mark.asyncio
