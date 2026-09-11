@@ -669,6 +669,173 @@ async def test_manage_sell_offer_type_i_remains_sell_offer(notification_service)
     assert operation.offer_selling_asset == "EURMTL"
 
 
+def maker_trade_operation(offer_id: int = 1853781281) -> NotificationOperation:
+    """Offer owner gave 100 TSTA and received 10 XLM (ClaimOfferAtom perspective)."""
+    seller = "GSELLER" + "S" * 50
+    return NotificationOperation(
+        id="1853781281_t0",
+        operation="trade",
+        dt=datetime.utcnow(),
+        for_account=seller,
+        from_account=seller,
+        trade_sold_amount=100.0,
+        trade_sold_asset="TSTA",
+        trade_bought_amount=10.0,
+        trade_bought_asset="XLM",
+        offer_id=offer_id,
+        transaction_hash="tx-maker-trade",
+    )
+
+
+@pytest.mark.asyncio
+async def test_trade_fill_notification_direction_and_offer_link(notification_service):
+    """Maker message must say 'sold given, received got' and link the executed offer."""
+    notification_service.localization_service.set_user_language(12345, "en")
+    notification_service.localization_service.set_user_language(54321, "ru")
+
+    operation = maker_trade_operation()
+    seller = operation.for_account
+
+    text_en = decode_db_effect(
+        operation,
+        decode_for=seller,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "sold 100 TSTA, received 10 XLM" in text_en
+    assert "sold 10 XLM" not in text_en
+    assert "was exchanged for" not in text_en
+    assert "https://viewer.eurmtl.me/offer/1853781281" in text_en
+    # offer link must come after the account link, not swallow it
+    assert text_en.index("viewer.eurmtl.me/account/") < text_en.index(
+        "viewer.eurmtl.me/offer/"
+    )
+    assert "(ID:" in text_en
+
+    text_ru = decode_db_effect(
+        operation,
+        decode_for=seller,
+        user_id=54321,
+        localization_service=notification_service.localization_service,
+    )
+    assert "исполнен ваш ордер" in text_ru
+    assert "продано 100 TSTA, получено 10 XLM" in text_ru
+    assert "продано 10 XLM" not in text_ru
+
+
+@pytest.mark.asyncio
+async def test_trade_fill_notification_without_offer_id(notification_service):
+    """Legacy payloads without offer_id degrade gracefully: no offer link in text."""
+    notification_service.localization_service.set_user_language(12345, "en")
+
+    operation = maker_trade_operation(offer_id=0)
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "sold 100 TSTA, received 10 XLM" in text
+    assert "viewer.eurmtl.me/offer/" not in text
+    assert "(ID:" not in text
+
+
+@pytest.mark.asyncio
+async def test_path_payment_trade_message_is_unchanged(notification_service):
+    """Own swaps keep the legacy info_trade wording with sent→received order."""
+    notification_service.localization_service.set_user_language(12345, "en")
+
+    operation = NotificationOperation(
+        id="124",
+        operation="path_payment_strict_send",
+        dt=datetime.utcnow(),
+        from_account="GFROM" + "A" * 51,
+        for_account="GTO" + "B" * 51,
+        path_sent_amount=10.0,
+        path_sent_asset="XLM",
+        path_received_amount=100.0,
+        path_received_asset="TSTA",
+        transaction_hash="tx-path",
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "10 XLM was exchanged for 100 TSTA" in text
+
+
+@pytest.mark.asyncio
+async def test_process_notification_propagates_offer_id_to_maker_trade(
+    notification_service,
+):
+    """Maker loop maps ClaimOfferAtom fields (offer_id, sold, bought) onto the op."""
+    seller_pk = "GSELLER" + "S" * 50
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.user_id = 12345
+    wallet.public_key = seller_pk
+    wallet.id = 1
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [wallet]
+    session = AsyncMock()
+    session.execute.return_value = result
+    notification_service.db_pool = TrackingDbPool(session)
+
+    sent_ops: list[NotificationOperation] = []
+
+    async def capture(_wallet, op, **_kwargs):
+        sent_ops.append(op)
+
+    notification_service._send_notification_to_user = capture
+
+    await notification_service.process_notification(
+        {
+            "id": "payload-maker-trade",
+            "operation": {
+                "id": "op-maker-trade",
+                "type": "manage_sell_offer",
+                "account": "GTAKER" + "T" * 50,
+                "amount": "10",
+                "price": "0.1",
+                "asset": {"asset_type": 0},
+                "source_asset": {
+                    "asset_type": 1,
+                    "asset_code": "TSTA",
+                    "asset_issuer": "G" + "I" * 55,
+                },
+                "trades": [
+                    {
+                        "type": "order_book",
+                        "seller_id": seller_pk,
+                        "offer_id": "1853781281",
+                        "asset_sold": {
+                            "asset_type": 1,
+                            "asset_code": "TSTA",
+                            "asset_issuer": "G" + "I" * 55,
+                        },
+                        "amount_sold": "100",
+                        "asset_bought": {"asset_type": 0},
+                        "amount_bought": "10",
+                    }
+                ],
+            },
+            "transaction": {"hash": "tx-maker-trade"},
+        }
+    )
+
+    trade_ops = [op for op in sent_ops if op.operation == "trade"]
+    assert len(trade_ops) == 1
+    op = trade_ops[0]
+    assert op.for_account == seller_pk
+    assert op.offer_id == 1853781281
+    assert op.trade_sold_amount == pytest.approx(100.0)
+    assert op.trade_sold_asset == "TSTA"
+    assert op.trade_bought_amount == pytest.approx(10.0)
+    assert op.trade_bought_asset == "XLM"
+
+
 @pytest.mark.asyncio
 async def test_process_notification_closes_lookup_session_before_sending(
     notification_service,

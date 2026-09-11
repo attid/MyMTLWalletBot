@@ -84,6 +84,7 @@
   "info_credit": "The account {} has been credited with {} {}. \n\n {}.",
   "info_debit": "From account {}, a withdrawal of {} {} was made. \n\n {}.",
   "info_trade": "A trade has been executed from the account {}: \n{} {} was exchanged for {} {}.\n\n {}.",
+  "info_trade_filled": "Your order on account {}{} has been filled: sold {} {}, received {} {}.\n\n {}.",
   "info_create_account": "Account {} was created with starting balance {} {}.\n\n {}",
   "info_data_set": "You added DATA on {} \n\n {} \n\n Data: \n\n {} \n {}",
   "info_data_removed": "You remove DATA: \n\n {} \n\n on {} \n\n {}",
