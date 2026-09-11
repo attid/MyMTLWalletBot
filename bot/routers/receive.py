@@ -36,9 +36,7 @@ async def cmd_receive(
     msg = my_gettext(callback, "my_address", (account_id,), app_context=app_context)
     qr_buffer = BytesIO()
     create_beautiful_code(qr_buffer, account_id)
-    send_file = BufferedInputFile(
-        qr_buffer.getvalue(), filename=f"{account_id}.png"
-    )
+    send_file = BufferedInputFile(qr_buffer.getvalue(), filename=f"{account_id}.png")
 
     await cmd_info_message(
         session, callback, msg, send_file=send_file, app_context=app_context

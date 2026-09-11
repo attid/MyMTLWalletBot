@@ -36,21 +36,29 @@ def decode_db_effect(
     op_id_clean = operation.id.split("_")[0] if operation.id else ""
     op_link = f'<a href="https://viewer.eurmtl.me/operation/{op_id_clean}">viewer</a>'
     if operation.operation == "trade":
-        # Trade: Bought (amount/asset_code), Sold (amount2/asset2_code)
-        amount_bought = float2str(operation.trade_bought_amount)
-        asset_bought = str(operation.trade_bought_asset)
+        # Maker notification: user's resting offer was executed by someone's trade.
+        # ClaimOfferAtom perspective: sold = what the offer owner GAVE,
+        # bought = what the offer owner RECEIVED.
         amount_sold = float2str(operation.trade_sold_amount)
         asset_sold = str(operation.trade_sold_asset)
+        amount_bought = float2str(operation.trade_bought_amount)
+        asset_bought = str(operation.trade_bought_asset)
+
+        offer_id_text = ""
+        if operation.offer_id and operation.offer_id > 0:
+            link = f"https://viewer.eurmtl.me/offer/{operation.offer_id}"
+            offer_id_text = f' (ID: <a href="{link}">{operation.offer_id}</a>)'
 
         return my_gettext(
             user_id,
-            "info_trade",
+            "info_trade_filled",
             (
                 account_link,
-                amount_bought,
-                asset_bought,
+                offer_id_text,
                 amount_sold,
                 asset_sold,
+                amount_bought,
+                asset_bought,
                 op_link,
             ),
             localization_service=loc_service,

@@ -86,6 +86,7 @@ async def test_cmd_receive_callback(
     # caption can be multipart or urlencoded depending on bot version, mock_server captures it
     assert "my_address" in str(req_photo["data"].get("caption", ""))
 
+
 def test_create_beautiful_code():
     """Unit test for QR code generation."""
     from PIL import Image

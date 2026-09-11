@@ -65,6 +65,7 @@
   "info_credit": "Счет {} был пополнен на {} {} \n\n {}.",
   "info_debit": "Со счета {} было списание на {} {} \n\n {}.",
   "info_trade": "Со счета {} выполнена операция обмена: \nбыло обменено {} {} на {} {}. \n\n {}.",
+  "info_trade_filled": "Na računu {} izvršen je vaš nalog{}: prodato {} {}, primljeno {} {}.\n\n {}.",
   "info_sell_offer": "{} je postavio nalog za prodaju {} {} u zamjenu za {} po cijeni {}{}\n\n{}",
   "info_buy_offer": "{} je kreirao nalog za kupovinu {} za {} {} po cijeni {}{}\n\n{}",
   "inline_cheque": "Чек на {} EURMTL, для {} получателя/получателей, \n\n {}",

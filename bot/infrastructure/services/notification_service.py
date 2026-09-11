@@ -630,6 +630,12 @@ class NotificationService:
                         )
                         op_trade.trade_bought_asset = get_trade_asset(trade, "bought")
 
+                        # Offer ID of the maker's executed offer (ClaimOfferAtom)
+                        try:
+                            op_trade.offer_id = int(trade.get("offer_id", 0) or 0)
+                        except (TypeError, ValueError):
+                            op_trade.offer_id = 0
+
                         await self._send_notification_to_user(
                             maker_wallet,
                             op_trade,
