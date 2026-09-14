@@ -24,7 +24,7 @@ from infrastructure.services.signing_facade import (
     SigningFacade,
 )
 from other.grist_tools import check_account_id_from_grist
-from other.web_tools import get_web_request
+from other.web_tools import get_web_decoded_xdr
 from other.stellar_tools import (
     stellar_get_data,
     cmd_gen_data_xdr,
@@ -867,16 +867,7 @@ async def cmd_tools_update_multi(
         # get xdr
         xdr = await stellar_get_multi_sign_xdr(account_id)
 
-        status, response_json = await get_web_request(
-            "POST", url="https://eurmtl.me/remote/decode", json={"xdr": xdr}
-        )
-        if status == 200:
-            msg = response_json["text"]
-        else:
-            msg = "Ошибка запроса"
-
-        msg = msg.replace("<br>", "\n")
-        msg = msg.replace("&nbsp;", "\u00a0")
+        msg = await get_web_decoded_xdr(xdr)
         await callback.message.answer(msg)
         await clear_last_message_id(callback.from_user.id, app_context=app_context)
         await cmd_check_xdr(

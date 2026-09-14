@@ -10,12 +10,50 @@ from loguru import logger
 from other.config_reader import config
 
 _SCVAL_TAG_RE = re.compile(r"</?sc[a-z][\w]*\b[^>]*>", re.IGNORECASE)
+_BR_TAG_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_ANCHOR_RE = re.compile(r"<a\s[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
+_HREF_RE = re.compile(r'href="([^"]*)"', re.IGNORECASE)
+_SPAN_OPEN_RE = re.compile(r"<span[^>]*>", re.IGNORECASE)
+_SPAN_CLOSE_RE = re.compile(r"</span>", re.IGNORECASE)
+_DIV_OPEN_RE = re.compile(r"<div[^>]*>", re.IGNORECASE)
+_DIV_CLOSE_RE = re.compile(r"</div>", re.IGNORECASE)
+# Any tag Telegram's HTML subset does not allow; its content stays in the text.
+_STRAY_TAG_RE = re.compile(
+    r"</?(?!a\b|b\b|i\b|u\b|s\b|code\b|pre\b|blockquote\b)[a-zA-Z][^>]*>",
+    re.IGNORECASE,
+)
 
 
 def _escape_scval_tags(text: str) -> str:
     return _SCVAL_TAG_RE.sub(
         lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"), text
     )
+
+
+def _anchor_repl(match: re.Match) -> str:
+    href = _HREF_RE.search(match.group(0))
+    if not href:
+        return match.group(1)
+    return f'<a href="{href.group(1)}">{match.group(1)}</a>'
+
+
+def _sanitize_decode_html(text: str) -> str:
+    """Normalize eurmtl.me/remote/decode web HTML into Telegram-safe HTML.
+
+    Telegram's parse mode HTML rejects bare <span>/<div> and attributes other
+    than href on <a>. Line breaks become newlines, links keep only href,
+    warning containers (<span>/<div>) become <b> with content preserved, and
+    any other unknown tag is dropped while its content stays in the message.
+    """
+    text = _BR_TAG_RE.sub("\n", text)
+    text = _ANCHOR_RE.sub(_anchor_repl, text)
+    text = _SPAN_OPEN_RE.sub("<b>", text)
+    text = _SPAN_CLOSE_RE.sub("</b>", text)
+    text = _DIV_OPEN_RE.sub("<b>", text)
+    text = _DIV_CLOSE_RE.sub("</b>", text)
+    text = _STRAY_TAG_RE.sub("", text)
+    text = text.replace("&nbsp;", "\u00a0")
+    return text
 
 
 # Датакласс для ответа
@@ -213,7 +251,7 @@ async def get_web_decoded_xdr(xdr):
         "POST", url="https://eurmtl.me/remote/decode", json={"xdr": xdr}
     )
     if status == 200:
-        msg = _escape_scval_tags(response_json["text"])
+        msg = _sanitize_decode_html(_escape_scval_tags(response_json["text"]))
     else:
         msg = "Ошибка запроса"
     return msg

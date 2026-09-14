@@ -417,8 +417,8 @@ async def test_cmd_tools_update_multi(
             AsyncMock(return_value="XDR_MULTI"),
         ),
         patch(
-            "routers.mtltools.get_web_request",
-            AsyncMock(return_value=(200, {"text": "Decoded XDR Info"})),
+            "routers.mtltools.get_web_decoded_xdr",
+            AsyncMock(return_value="Decoded XDR Info"),
         ),
         patch("routers.mtltools.cmd_check_xdr", AsyncMock()) as mock_check,
     ):
