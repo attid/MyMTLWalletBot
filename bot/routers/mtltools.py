@@ -23,7 +23,7 @@ from infrastructure.services.signing_facade import (
     SignatureRequest,
     SigningFacade,
 )
-from db.mongo import check_account_id_from_grist
+from other.grist_tools import check_account_id_from_grist
 from other.web_tools import get_web_request
 from other.stellar_tools import (
     stellar_get_data,
