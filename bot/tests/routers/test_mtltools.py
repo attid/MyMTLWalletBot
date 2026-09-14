@@ -431,3 +431,18 @@ async def test_cmd_tools_update_multi(
     msgs = [r for r in mock_telegram if r["method"] == "sendMessage"]
     assert any("Decoded XDR Info" in m["data"]["text"] for m in msgs)
     mock_check.assert_called_once()
+
+
+def test_update_multi_registry_check_wired_to_grist():
+    """MTLToolsUpdateMulti must check the Grist registry, not the retired Mongo one.
+
+    Regression guard: the import once pointed at db.mongo, whose check silently
+    returned False (and logged nothing) when MONGODB_URL was absent.
+    """
+    from routers import mtltools
+    from other import grist_tools
+
+    assert (
+        mtltools.check_account_id_from_grist
+        is grist_tools.check_account_id_from_grist
+    )
