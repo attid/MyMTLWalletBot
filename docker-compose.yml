@@ -14,8 +14,6 @@ services:
       # === Database & Storage ===
       # Firebird Database URL (external server)
       - DB_URL=firebird+fdb://SYSDBA:password@firebird-server///path/to/mmwb.fdb
-      # MongoDB URL for document storage
-      - MONGODB_URL=mongodb://mongo:27017/mmwb
       # Redis URL (internal docker network)
       - REDIS_URL=redis://redis:6379/0
 
@@ -82,7 +80,6 @@ services:
       - ./data:/app/data
     depends_on:
       - redis
-      - mongo
 
   webapp:
     build:
@@ -106,12 +103,5 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
 
-  mongo:
-    image: mongo:latest
-    restart: always
-    volumes:
-      - mongo_data:/data/db
-
 volumes:
   redis_data:
-  mongo_data:
