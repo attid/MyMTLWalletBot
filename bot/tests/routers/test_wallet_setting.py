@@ -543,3 +543,119 @@ async def test_asset_visibility_reports_unexpected_ui_error(
         for call in answer.call_args_list
     )
     mock_session.commit.assert_awaited_once()
+
+
+def _setup_missing_default_wallet(mock_app_context, active_wallets=()):
+    """Repo returns no default wallet; balance use case mimics the prod raise."""
+    mock_repo = MagicMock(spec=IWalletRepository)
+    mock_repo.get_default_wallet = AsyncMock(return_value=None)
+    mock_repo.get_all_active = AsyncMock(return_value=list(active_wallets))
+    mock_app_context.repository_factory.get_wallet_repository.return_value = mock_repo
+    mock_balance_uc = MagicMock(spec=GetWalletBalance)
+    mock_balance_uc.execute = AsyncMock(
+        side_effect=ValueError("No default wallet found for user")
+    )
+    mock_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        mock_balance_uc
+    )
+    return mock_balance_uc
+
+
+@pytest.mark.asyncio
+async def test_add_asset_without_default_wallet_shows_hint(
+    mock_telegram, dp, mock_app_context
+):
+    """Regression: AddAsset without a default wallet answers the user with a
+    hint instead of raising ValueError('No default wallet found for user')."""
+    mock_balance_uc = _setup_missing_default_wallet(mock_app_context)
+
+    await dp.feed_update(
+        bot=mock_app_context.bot,
+        update=create_callback_update(12345, "AddAsset"),
+    )
+
+    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
+    assert len(sent) == 1
+    assert "no_wallet_found" in sent[0]["data"]["text"]
+    mock_balance_uc.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_asset_expert_without_default_wallet_shows_hint(
+    mock_telegram, dp, mock_app_context
+):
+    """Regression: AddAssetExpert without a default wallet answers the user
+    with a hint instead of raising ValueError."""
+    mock_balance_uc = _setup_missing_default_wallet(mock_app_context)
+
+    await dp.feed_update(
+        bot=mock_app_context.bot,
+        update=create_callback_update(12345, "AddAssetExpert"),
+    )
+
+    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
+    assert len(sent) == 1
+    assert "no_wallet_found" in sent[0]["data"]["text"]
+    mock_balance_uc.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_manage_assets_menu_without_default_wallet_shows_hint(
+    mock_telegram, dp, mock_app_context
+):
+    """Regression: ManageAssetsMenu must not render AddAsset buttons when the
+    user has no default wallet."""
+    _setup_missing_default_wallet(mock_app_context)
+
+    await dp.feed_update(
+        bot=mock_app_context.bot,
+        update=create_callback_update(12345, "ManageAssetsMenu"),
+    )
+
+    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
+    assert len(sent) == 1
+    assert "no_wallet_found" in sent[0]["data"]["text"]
+    assert "AddAsset" not in sent[0]["data"]["reply_markup"]
+
+
+@pytest.mark.asyncio
+async def test_add_asset_active_wallets_without_default_points_to_settings(
+    mock_telegram, dp, mock_app_context
+):
+    """Default wallet deleted but active wallets remain: the hint must point
+    to setting a default wallet, not to /start (which creates nothing for
+    existing users)."""
+    _setup_missing_default_wallet(
+        mock_app_context, active_wallets=[MagicMock(spec=Wallet)]
+    )
+
+    await dp.feed_update(
+        bot=mock_app_context.bot,
+        update=create_callback_update(12345, "AddAsset"),
+    )
+
+    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
+    assert len(sent) == 1
+    assert "default_wallet_not_found" in sent[0]["data"]["text"]
+    assert "no_wallet_found" not in sent[0]["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_manage_assets_menu_active_wallets_without_default_points_to_settings(
+    mock_telegram, dp, mock_app_context
+):
+    """Default wallet deleted but active wallets remain: the menu must not
+    render AddAsset buttons and must point to setting a default wallet."""
+    _setup_missing_default_wallet(
+        mock_app_context, active_wallets=[MagicMock(spec=Wallet)]
+    )
+
+    await dp.feed_update(
+        bot=mock_app_context.bot,
+        update=create_callback_update(12345, "ManageAssetsMenu"),
+    )
+
+    sent = [r for r in mock_telegram if r["method"] == "sendMessage"]
+    assert len(sent) == 1
+    assert "default_wallet_not_found" in sent[0]["data"]["text"]
+    assert "AddAsset" not in sent[0]["data"]["reply_markup"]
