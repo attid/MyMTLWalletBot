@@ -239,6 +239,27 @@ async def cmd_wallet_setting(
     )
 
 
+async def _send_no_wallet_reply(
+    session: AsyncSession, user_id: int, app_context: AppContext
+) -> None:
+    """Answer a user whose default wallet is missing.
+
+    /start does not re-register existing users, so the reply points to the
+    Change wallet screen: users with active (non-default) wallets can set one
+    as default there; users without any wallet can add a new one.
+    """
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    has_active_wallets = bool(await repo.get_all_active(user_id))
+    key = "default_wallet_not_found" if has_active_wallets else "no_wallet_found"
+    await send_message(
+        session,
+        user_id,
+        my_gettext(user_id, key, app_context=app_context),
+        reply_markup=get_kb_return(user_id, app_context=app_context),
+        app_context=app_context,
+    )
+
+
 @router.callback_query(F.data == "ManageAssetsMenu")
 async def cmd_manage_assets(
     callback: types.CallbackQuery,
@@ -246,6 +267,17 @@ async def cmd_manage_assets(
     session: AsyncSession,
     app_context: AppContext,
 ):
+    if callback.from_user is None:
+        return
+    user_id = callback.from_user.id
+    repo = app_context.repository_factory.get_wallet_repository(session)
+    if not await repo.get_default_wallet(user_id):
+        logger.warning(
+            "ManageAssetsMenu skipped: no default wallet for user {}", user_id
+        )
+        await callback.answer()
+        await _send_no_wallet_reply(session, user_id, app_context)
+        return
     msg = my_gettext(callback, "manage_assets_msg", app_context=app_context)
     buttons = [
         [
@@ -807,7 +839,11 @@ async def cmd_add_asset_add(
     balance_use_case = use_case_factory.create_get_wallet_balance(session)
 
     wallet = await repo.get_default_wallet(user_id)
-    is_free = wallet.is_free if wallet else False
+    if wallet is None:
+        logger.warning("AddAsset skipped: no default wallet for user {}", user_id)
+        await _send_no_wallet_reply(session, user_id, app_context)
+        return
+    is_free = wallet.is_free
 
     balances = await balance_use_case.execute(user_id=user_id)
 
@@ -911,11 +947,14 @@ async def cmd_add_asset_expert(
     app_context: AppContext,
 ):
     user_id = callback.from_user.id
-    user_id = callback.from_user.id
     repo = app_context.repository_factory.get_wallet_repository(session)
     balance_use_case = app_context.use_case_factory.create_get_wallet_balance(session)
     wallet = await repo.get_default_wallet(user_id)
-    is_free = wallet.is_free if wallet else False
+    if wallet is None:
+        logger.warning("AddAssetExpert skipped: no default wallet for user {}", user_id)
+        await _send_no_wallet_reply(session, user_id, app_context)
+        return
+    is_free = wallet.is_free
 
     balances = await balance_use_case.execute(user_id=user_id)
 

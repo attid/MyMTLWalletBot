@@ -256,6 +256,7 @@
   "wc_pairing_initiated": "Connecting to the dApp... You can return to the application to continue.",
   "wc_pairing_error": "An error occurred while trying to connect. Please try again.",
   "default_wallet_not_found": "Default wallet not found. Please set a default wallet in the settings.",
+  "no_wallet_found": "No wallet found. Add a wallet via the 'Change wallet' menu.",
   "wc_sign_success": "Transaction signed successfully and sent to the application.",
   "kb_hide_similar_messages": "Hide similar messages",
   "kb_notification_settings_button": "⚙️",
