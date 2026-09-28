@@ -284,7 +284,7 @@ async def cmd_trade_cancel(
     msg = my_gettext(
         message,
         "delete_sale",
-        (amount, selling_code, amount * price, buying_code),
+        (float2str(amount), selling_code, float2str(amount * price), buying_code),
         app_context=app_context,
     )
     await send_message(
@@ -849,14 +849,14 @@ async def cmd_xdr_order(
         msg = my_gettext(
             message,
             "delete_sale",
-            (send_sum, send_asset, receive_sum, receive_asset),
+            (float2str(send_sum), send_asset, float2str(receive_sum), receive_asset),
             app_context=app_context,
         )
     else:
         msg = my_gettext(
             message,
             "confirm_sale",
-            (send_sum, send_asset, receive_sum, receive_asset),
+            (float2str(send_sum), send_asset, float2str(receive_sum), receive_asset),
             app_context=app_context,
         )
     await store_pending_trade_signature(
@@ -911,8 +911,8 @@ async def cmd_show_orders(
         kb_tmp.append(
             [
                 types.InlineKeyboardButton(
-                    text=f"{amount} {selling_code} -> ({price}) "
-                    f"-> {amount * price} {buying_code}",
+                    text=f"{float2str(amount)} {selling_code} -> ({float2str(price)}) "
+                    f"-> {float2str(amount * price)} {buying_code}",
                     callback_data=EditOrderCallbackData(answer=offer.id or 0).pack(),
                 )
             ]
@@ -952,7 +952,7 @@ async def cb_edit_order(
         buying_code = o.buying.asset_code if o.buying else "Unknown"
         amount = float(o.amount or 0)
         price = float(o.price or 0)
-        msg = f"{amount} {selling_code} -> ({price}) -> {amount * price} {buying_code}"
+        msg = f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}"
 
         # Add viewer link
         if o.selling and o.buying and o.selling.asset_code and o.buying.asset_code:
@@ -1030,7 +1030,7 @@ async def cmd_edit_order_amount(
         amount = float(o.amount or 0)
         price = float(o.price or 0)
         msg = (
-            f"{amount} {selling_code} -> ({price}) -> {amount * price} {buying_code}\n"
+            f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}\n"
         )
 
         await state.set_state(StateSaleToken.editing_amount)
@@ -1152,7 +1152,7 @@ async def cmd_edit_order_price(
         amount = float(o.amount or 0)
         price = float(o.price or 0)
         msg = (
-            f"{amount} {selling_code} -> ({price}) -> {amount * price} {buying_code}\n"
+            f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}\n"
         )
 
         await state.set_state(StateSaleToken.editing_price)

@@ -33,7 +33,7 @@ class ManageOffer:
                 source_account_id=source_wallet.public_key,
                 selling=selling,
                 buying=buying,
-                amount=str(amount),
+                amount=f"{amount:.7f}",
                 price=str(price),
                 offer_id=offer_id,
             )

@@ -31,7 +31,7 @@ class CreateCheque:
                 destination_account_id=CHEQUE_PUBLIC_KEY,
                 asset_code=EURMTL_ASSET.code,
                 asset_issuer=EURMTL_ASSET.issuer,
-                amount=str(total_amount),
+                amount=f"{total_amount:.7f}",
                 memo=memo,
             )
             return PaymentResult(success=True, xdr=xdr)
