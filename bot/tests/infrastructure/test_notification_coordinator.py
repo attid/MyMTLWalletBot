@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, call, create_autospec
 
 import pytest
 import fakeredis.aioredis
+from aiogram.exceptions import TelegramBadRequest
 from loguru import logger
 from core.models.blockchain_notification import BlockchainNotification
 from infrastructure.services.notification_coordinator import (
@@ -1019,6 +1020,50 @@ async def test_flush_acknowledges_deliveries_in_fifo_order_and_stops_on_failure(
     store.release_lock.assert_has_awaits(
         [call(42, "flush-token"), call(42, "flush-token")]
     )
+
+
+@pytest.mark.asyncio
+async def test_flush_drops_queue_head_when_telegram_rejects_payload(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    """TelegramBadRequest is deterministic: drop the poisoned head and continue."""
+    poisoned = notification("poisoned", "Broken <b>html")
+    healthy = notification("healthy", "Healthy payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [poisoned, healthy, None]
+    sender.send_notification.side_effect = [
+        TelegramBadRequest(method=MagicMock(), message="can't parse entities"),
+        None,
+    ]
+    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+
+    assert sender.send_notification.await_args_list[0].args == (poisoned,)
+    assert sender.send_notification.await_args_list[1].args == (healthy,)
+    store.acknowledge_if_lock_owned.assert_has_awaits(
+        [call(42, poisoned, "flush-token"), call(42, healthy, "flush-token")]
+    )
+    badge_refresher.refresh.assert_awaited_once_with(42)
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
+
+
+@pytest.mark.asyncio
+async def test_flush_retains_rejected_head_when_acknowledgement_fails(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    """Losing the queue head between reject and ack must keep at-least-once."""
+    poisoned = notification("poisoned", "Broken <b>html")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [poisoned, None]
+    sender.send_notification.side_effect = [
+        TelegramBadRequest(method=MagicMock(), message="can't parse entities"),
+    ]
+    store.acknowledge_if_lock_owned.return_value = False
+    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+
+    sender.send_notification.assert_awaited_once_with(poisoned)
+    store.acknowledge_if_lock_owned.assert_awaited_once_with(42, poisoned, "flush-token")
+    badge_refresher.refresh.assert_not_awaited()
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
 
 
 @pytest.mark.asyncio
