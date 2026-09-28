@@ -4,9 +4,16 @@ from unittest.mock import MagicMock, AsyncMock
 from aiogram.fsm.storage.base import StorageKey
 
 from routers.admin import router as admin_router, ExitState
+from cryptocode import encrypt
+from stellar_sdk import Keypair
+
+from core.constants import CHEQUE_PUBLIC_KEY
+from infrastructure.services.encryption_service import EncryptionService
 from other.config_reader import config
+from routers.admin import PAYOUT_CB_APPROVE, PAYOUT_CB_CANCEL, _pending_payouts
 from tests.conftest import (
     RouterTestMiddleware,
+    create_callback_update,
     create_message_update,
     get_telegram_request,
 )
@@ -22,8 +29,11 @@ def cleanup_router():
     # Set test admins for filtering
     config.admins.clear()
     config.admins.append(123)
+    _pending_payouts.clear()
 
     yield
+
+    _pending_payouts.clear()
 
     # Restore original config
     config.admins.clear()
@@ -401,3 +411,294 @@ async def test_cmd_test(mock_telegram, router_app_context):
         app_context=router_app_context,
     )
     assert any(r["method"] == "sendMessage" for r in mock_telegram)
+
+
+# --- /chequepay and /withdraw ---
+
+TEST_DEST = Keypair.random().public_key
+
+
+def _last_ui_text(mock_telegram):
+    """Text of the last sendMessage or editMessageText request."""
+    for req in reversed(mock_telegram):
+        if req["method"] in ("sendMessage", "editMessageText"):
+            return req["data"].get("text", "")
+    return ""
+
+
+@pytest.mark.asyncio
+async def test_chequepay_shows_confirmation_with_buttons(mock_telegram, router_app_context):
+    """/chequepay must not send money directly: it asks for confirmation."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, f"/chequepay {TEST_DEST} 3"),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Подтвердите перевод" in req["data"]["text"]
+    assert "чековый счёт" in req["data"]["text"]
+    assert "EURMTL" in req["data"]["text"]
+    # amount normalized to 7 decimals
+    assert "3.0000000" in req["data"]["text"]
+    markup = req["data"].get("reply_markup", "")
+    assert PAYOUT_CB_APPROVE in markup
+    assert PAYOUT_CB_CANCEL in markup
+
+
+@pytest.mark.asyncio
+async def test_chequepay_bad_usage_sends_usage_text(mock_telegram, router_app_context):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/chequepay"),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Использование: /chequepay" in req["data"]["text"]
+    assert len(mock_telegram) == 1
+
+
+@pytest.mark.asyncio
+async def test_chequepay_bad_address_rejected(mock_telegram, router_app_context):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/chequepay notastellaraddress 3"),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Некорректный Stellar-адрес" in req["data"]["text"]
+    assert len(mock_telegram) == 1
+
+
+@pytest.mark.asyncio
+async def test_chequepay_approve_executes_payout(
+    mock_telegram, router_app_context, mock_horizon
+):
+    """Approve callback: full sign+submit flow against mock horizon."""
+    mock_horizon.set_account(CHEQUE_PUBLIC_KEY)
+    master_kp = Keypair.random()
+    master_secret = master_kp.secret
+    mock_wallet = MagicMock(
+        public_key=master_kp.public_key,
+        secret_key=encrypt(master_secret, "0"),
+        wallet_crypto_v2=None,
+    )
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        mock_wallet_repo
+    )
+    # Real decrypt of master secret with key "0" gives the secret back
+    router_app_context.encryption_service = EncryptionService()
+    # Sign with master secret; encrypt with same passphrase → decrypt returns it
+    router_app_context.encryption_service.decrypt = MagicMock(
+        side_effect=lambda enc, key: master_secret if enc == mock_wallet.secret_key else None
+    )
+    mock_horizon.set_account(master_kp.public_key)
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    # 1) create pending payout via command
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, f"/chequepay {TEST_DEST} 3"),
+        app_context=router_app_context,
+    )
+    assert _pending_payouts, "payout must be staged"
+
+    # 2) grab token from keyboard markup
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    markup = req["data"].get("reply_markup", "")
+    token = markup.split(PAYOUT_CB_APPROVE)[1].split('"')[0]
+
+    # 3) approve via callback
+    mock_telegram.clear()
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(123, PAYOUT_CB_APPROVE + token, update_id=2),
+        app_context=router_app_context,
+    )
+
+    # The real StellarService built/sign/submitted via mock horizon
+    submits = mock_horizon.get_requests("transactions")
+    assert len(submits) == 1
+    text = _last_ui_text(mock_telegram)
+    assert "✅ Перевод отправлен" in text
+    assert _pending_payouts == {}
+
+
+@pytest.mark.asyncio
+async def test_chequepay_approve_non_admin_rejected(mock_telegram, router_app_context):
+    """Callback from non-admin chat id must not execute payout."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    _pending_payouts["tok123"] = {
+        "admin_id": 123,
+        "source": "cheque",
+        "address": TEST_DEST,
+        "amount": "3.0000000",
+        "asset": "EURMTL",
+        "memo": None,
+    }
+    submit_mock = AsyncMock(return_value={"successful": True, "hash": "h"})
+    router_app_context.stellar_service.submit_transaction = submit_mock
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(777, PAYOUT_CB_APPROVE + "tok123", update_id=3),
+        app_context=router_app_context,
+    )
+
+    assert submit_mock.call_count == 0
+    assert _pending_payouts.get("tok123") is not None  # not consumed
+    req = get_telegram_request(mock_telegram, "answerCallbackQuery")
+    assert req is not None
+    assert "Только для админов" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_chequepay_cancel(mock_telegram, router_app_context):
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    _pending_payouts["tokC"] = {
+        "admin_id": 123,
+        "source": "cheque",
+        "address": TEST_DEST,
+        "amount": "3.0000000",
+        "asset": "EURMTL",
+        "memo": None,
+    }
+    submit_mock = AsyncMock(return_value={"successful": True, "hash": "h"})
+    router_app_context.stellar_service.submit_transaction = submit_mock
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(123, PAYOUT_CB_CANCEL + "tokC", update_id=4),
+        app_context=router_app_context,
+    )
+
+    assert submit_mock.call_count == 0
+    assert _pending_payouts == {}
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Отменено" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_chequepay_approve_horizon_rejection_shows_error(
+    mock_telegram, router_app_context
+):
+    """If Horizon rejects, admin sees error, not success."""
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    _pending_payouts["tokR"] = {
+        "admin_id": 123,
+        "source": "cheque",
+        "address": TEST_DEST,
+        "amount": "3.0000000",
+        "asset": "EURMTL",
+        "memo": None,
+    }
+    master_kp = Keypair.random()
+    mock_wallet = MagicMock(
+        public_key=master_kp.public_key,
+        secret_key=encrypt(master_kp.secret, "0"),
+        wallet_crypto_v2=None,
+    )
+    mock_wallet_repo = MagicMock()
+    mock_wallet_repo.get_default_wallet = AsyncMock(return_value=mock_wallet)
+    router_app_context.repository_factory.get_wallet_repository.return_value = (
+        mock_wallet_repo
+    )
+    router_app_context.encryption_service = EncryptionService()
+    router_app_context.encryption_service.decrypt = MagicMock(
+        side_effect=lambda enc, key: master_kp.secret if enc == mock_wallet.secret_key else None
+    )
+    router_app_context.stellar_service.submit_transaction = AsyncMock(
+        return_value={"successful": False, "hash": None, "error": "op_underfunded"}
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_callback_update(123, PAYOUT_CB_APPROVE + "tokR", update_id=5),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "❌ Ошибка перевода" in req["data"]["text"]
+    assert "op_underfunded" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_withdraw_usage_and_bad_asset(mock_telegram, router_app_context):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    # missing asset arg
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, f"/withdraw {TEST_DEST} 5", update_id=10),
+        app_context=router_app_context,
+    )
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Использование: /withdraw" in req["data"]["text"]
+    assert "Ассеты:" in req["data"]["text"]
+
+    # bad asset
+    mock_telegram.clear()
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(
+            123, f"/withdraw {TEST_DEST} 5 RUB", update_id=11
+        ),
+        app_context=router_app_context,
+    )
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert "Неизвестный ассет" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_withdraw_confirm_flow_stages_payout(mock_telegram, router_app_context):
+    """/withdraw with asset EURMTL stages confirmation from master source."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(
+            123, f"/withdraw {TEST_DEST} 5 EURMTL", update_id=20
+        ),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    text = req["data"]["text"]
+    assert "Подтвердите перевод" in text
+    assert "основной счёт (мастер)" in text
+    assert "5.0000000 EURMTL" in text
+    markup = req["data"].get("reply_markup", "")
+    assert PAYOUT_CB_APPROVE in markup

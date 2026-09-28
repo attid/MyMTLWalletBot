@@ -1,14 +1,32 @@
+import html
+import math
 import os
+import secrets
 from contextlib import suppress
 from datetime import datetime, timedelta
+
+from loguru import logger
 
 from aiogram import Router, types, Bot, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from stellar_sdk import Keypair
+from stellar_sdk.exceptions import BaseHorizonError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.constants import (
+    CHEQUE_PUBLIC_KEY,
+    EURMTL_ASSET,
+    MTL_ASSET,
+    SATSMTL_ASSET,
+    USDM_ASSET,
+    USDC_ASSET,
+    BTCMTL_ASSET,
+    XLM_ASSET,
+)
 
 from db.models import (
     MyMtlWalletBotUsers,
@@ -22,6 +40,7 @@ from other.config_reader import config, horizont_urls
 # from other.global_data import global_data
 from other.stellar_tools import async_stellar_check_fee
 from infrastructure.services.app_context import AppContext
+from infrastructure.utils.telegram_utils import send_message
 from routers.inout import get_usdt_balance
 
 
@@ -32,6 +51,312 @@ class ExitState(StatesGroup):
 router = Router()
 router.message.filter(F.chat.type == "private")
 router.message.filter(F.chat.id.in_(config.admins))
+
+
+# --- Admin payout commands (/chequepay, /withdraw) ---
+
+PAYOUT_CB_PREFIX = "AdminPayout:"
+PAYOUT_CB_APPROVE = PAYOUT_CB_PREFIX + "go:"
+PAYOUT_CB_CANCEL = PAYOUT_CB_PREFIX + "no:"
+
+PAYOUT_SOURCE_MASTER = "master"
+PAYOUT_SOURCE_CHEQUE = "cheque"
+
+WITHDRAW_ASSETS = {
+    asset.code: asset
+    for asset in (
+        EURMTL_ASSET,
+        MTL_ASSET,
+        SATSMTL_ASSET,
+        USDM_ASSET,
+        USDC_ASSET,
+        BTCMTL_ASSET,
+    )
+}
+
+# Pending payout confirmations keyed by one-time token (admin-only flow).
+# Lost on bot restart: stale buttons answer "истекло" and no payment runs.
+_pending_payouts: dict[str, dict] = {}
+
+PAYOUT_CB_APPROVE_LEN = len(PAYOUT_CB_APPROVE)
+PAYOUT_CB_CANCEL_LEN = len(PAYOUT_CB_CANCEL)
+
+
+def _payout_amount_str(amount_part: str) -> str | None:
+    """Normalize a user-entered amount to a 7-decimal Stellar string."""
+    try:
+        value = float(amount_part)
+    except ValueError:
+        return None
+    if not math.isfinite(value) or value <= 0:
+        return None
+    return f"{value:.7f}"
+
+
+def _validate_payout_address(address: str) -> bool:
+    try:
+        Keypair.from_public_key(address)
+    except Exception:
+        return False
+    return True
+
+
+def _payout_source_label(source: str) -> str:
+    if source == PAYOUT_SOURCE_CHEQUE:
+        return f"чековый счёт <code>{CHEQUE_PUBLIC_KEY}</code>"
+    return "основной счёт (мастер)"
+
+
+def _payout_summary_text(
+    source: str, address: str, amount_str: str, asset_code: str, memo: str | None
+) -> str:
+    lines = [
+        "<b>Подтвердите перевод</b>",
+        f"Откуда: {_payout_source_label(source)}",
+        f"Куда: <code>{html.escape(address)}</code>",
+        f"Сумма: <b>{amount_str} {asset_code}</b>",
+    ]
+    if memo:
+        lines.append(f"Memo: {html.escape(memo)}")
+    return "\n".join(lines)
+
+
+def _build_payout_confirm_keyboard(token: str) -> types.InlineKeyboardMarkup:
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(
+                    text="✅ Отправить", callback_data=PAYOUT_CB_APPROVE + token
+                ),
+                types.InlineKeyboardButton(
+                    text="❌ Отмена", callback_data=PAYOUT_CB_CANCEL + token
+                ),
+            ]
+        ]
+    )
+
+
+def _payout_asset_issuer(asset_code: str) -> str | None:
+    if asset_code == XLM_ASSET.code:
+        return None
+    asset = WITHDRAW_ASSETS.get(asset_code)
+    return asset.issuer if asset else None
+
+
+async def _decrypt_master_secret(wallet, app_context: AppContext) -> str | None:
+    """Decrypt master secret: crypto_v2 free-mode first, legacy fallback."""
+    secret: str | None = None
+    if getattr(wallet, "wallet_crypto_v2", None):
+        secret = app_context.encryption_service.decrypt_wallet_secret(
+            wallet.wallet_crypto_v2, pin=None
+        )
+    if secret is None and getattr(wallet, "secret_key", None):
+        secret = app_context.encryption_service.decrypt(wallet.secret_key, "0")
+    return secret
+
+
+async def _execute_admin_payout(
+    session: AsyncSession,
+    app_context: AppContext,
+    source: str,
+    address: str,
+    amount_str: str,
+    asset_code: str,
+    memo: str | None,
+) -> tuple[bool, str]:
+    """Sign and submit the payout. Returns (success, tx_hash_or_error)."""
+    wallet_repo = app_context.repository_factory.get_wallet_repository(session)
+    master_wallet = await wallet_repo.get_default_wallet(0)
+    if not master_wallet:
+        return False, "Master wallet not found"
+
+    secret = await _decrypt_master_secret(master_wallet, app_context)
+    if not secret:
+        return False, "Failed to decrypt master secret"
+
+    source_pk = (
+        CHEQUE_PUBLIC_KEY if source == PAYOUT_SOURCE_CHEQUE else master_wallet.public_key
+    )
+    asset_issuer = _payout_asset_issuer(asset_code)
+    if asset_code != XLM_ASSET.code and asset_issuer is None:
+        return False, f"Unsupported asset: {asset_code}"
+
+    xdr = await app_context.stellar_service.build_payment_transaction(
+        source_account_id=source_pk,
+        destination_account_id=address,
+        asset_code=asset_code,
+        asset_issuer=asset_issuer,
+        amount=amount_str,
+        memo=memo,
+    )
+    signed_xdr = await app_context.stellar_service.sign_xdr(xdr, secret)
+
+    try:
+        submit_result = await app_context.stellar_service.submit_transaction(signed_xdr)
+    except BaseHorizonError as ex:
+        from routers.sign import format_horizon_send_error
+
+        return False, format_horizon_send_error(ex)
+
+    if not submit_result.get("successful", False):
+        error_detail = submit_result.get("error") or "Horizon rejected the transaction"
+        logger.warning(
+            f"Admin payout rejected: {asset_code} {amount_str}: {error_detail}"
+        )
+        return False, error_detail
+    return True, submit_result.get("hash") or ""
+
+
+async def _handle_payout_command(
+    message: types.Message,
+    session: AsyncSession,
+    app_context: AppContext,
+    *,
+    source: str,
+    memo_allowed: bool,
+) -> None:
+    if not message.text or message.from_user is None:
+        return
+    args = message.text.split()
+    if memo_allowed:
+        usage = (
+            "Использование: /withdraw <адрес> <сумма> <ассет> [memo]\n"
+            "Ассеты: " + ", ".join([*WITHDRAW_ASSETS, XLM_ASSET.code])
+        )
+        min_args = 4
+    else:
+        usage = "Использование: /chequepay <адрес> <сумма>"
+        min_args = 3
+    if len(args) < min_args:
+        await message.answer(usage)
+        return
+
+    address = args[1]
+    if not _validate_payout_address(address):
+        await message.answer("Некорректный Stellar-адрес")
+        return
+
+    amount_str = _payout_amount_str(args[2])
+    if amount_str is None:
+        await message.answer("Некорректная сумма")
+        return
+
+    memo: str | None = None
+    if memo_allowed:
+        asset_code = args[3].upper()
+        if asset_code != XLM_ASSET.code and asset_code not in WITHDRAW_ASSETS:
+            await message.answer(
+                "Неизвестный ассет. Доступны: "
+                + ", ".join([*WITHDRAW_ASSETS, XLM_ASSET.code])
+            )
+            return
+        if len(args) > 4:
+            memo = " ".join(args[4:])
+            if len(memo.encode()) > 28:
+                await message.answer("Memo слишком длинное (максимум 28 байт)")
+                return
+    else:
+        asset_code = EURMTL_ASSET.code
+
+    token = secrets.token_hex(4)
+    _pending_payouts[token] = {
+        "admin_id": message.from_user.id,
+        "source": source,
+        "address": address,
+        "amount": amount_str,
+        "asset": asset_code,
+        "memo": memo,
+    }
+
+    await send_message(
+        session,
+        message.from_user.id,
+        _payout_summary_text(source, address, amount_str, asset_code, memo),
+        reply_markup=_build_payout_confirm_keyboard(token),
+        need_new_msg=True,
+        app_context=app_context,
+    )
+
+
+async def _admin_payout_guard(callback: types.CallbackQuery) -> bool:
+    if not callback.from_user or callback.from_user.id not in config.admins:
+        await callback.answer("Только для админов", show_alert=True)
+        return False
+    return True
+
+
+def _pop_pending_payout(data: str, prefix_len: int):
+    return _pending_payouts.pop(data[prefix_len:], None)
+
+
+@router.callback_query(F.data.startswith(PAYOUT_CB_APPROVE))
+async def cb_admin_payout_approve(
+    callback: types.CallbackQuery,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    if not await _admin_payout_guard(callback):
+        return
+    payout = _pop_pending_payout(callback.data or "", PAYOUT_CB_APPROVE_LEN)
+    if not payout or payout.get("admin_id") != callback.from_user.id:
+        await callback.answer(
+            "Подтверждение истекло, создайте выплату заново", show_alert=True
+        )
+        return
+    await callback.answer()
+    success, detail = await _execute_admin_payout(
+        session,
+        app_context,
+        payout["source"],
+        payout["address"],
+        payout["amount"],
+        payout["asset"],
+        payout["memo"],
+    )
+    if success:
+        text = (
+            "✅ Перевод отправлен\n"
+            f"Сумма: {payout['amount']} {payout['asset']}\n"
+            f"Куда: <code>{html.escape(payout['address'])}</code>\n"
+            f"Hash: <code>{detail}</code>"
+        )
+    else:
+        text = f"❌ Ошибка перевода\n{html.escape(detail)}"
+    await send_message(session, callback.from_user.id, text, app_context=app_context)
+
+
+@router.callback_query(F.data.startswith(PAYOUT_CB_CANCEL))
+async def cb_admin_payout_cancel(
+    callback: types.CallbackQuery,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    if not await _admin_payout_guard(callback):
+        return
+    payout = _pop_pending_payout(callback.data or "", PAYOUT_CB_CANCEL_LEN)
+    if not payout or payout.get("admin_id") != callback.from_user.id:
+        await callback.answer("Подтверждение истекло", show_alert=True)
+        return
+    await callback.answer()
+    await send_message(session, callback.from_user.id, "❌ Отменено", app_context=app_context)
+
+
+@router.message(Command(commands=["chequepay"]))
+async def cmd_chequepay(
+    message: types.Message, session: AsyncSession, app_context: AppContext
+):
+    await _handle_payout_command(
+        message, session, app_context, source=PAYOUT_SOURCE_CHEQUE, memo_allowed=False
+    )
+
+
+@router.message(Command(commands=["withdraw"]))
+async def cmd_withdraw(
+    message: types.Message, session: AsyncSession, app_context: AppContext
+):
+    await _handle_payout_command(
+        message, session, app_context, source=PAYOUT_SOURCE_MASTER, memo_allowed=True
+    )
 
 
 def _pin_label(use_pin: int) -> str:
@@ -498,6 +823,8 @@ async def cmd_help(message: types.Message):
         "/usdt1 — автовывод первого в очереди\n"
         "/check_usdt @user — сверка баланса БД и блокчейна\n"
         "/set_usdt @user amount — установка баланса БД\n"
+        "/chequepay <адрес> <сумма> — выплата EURMTL с чекового счёта\n"
+        "/withdraw <адрес> <сумма> <ассет> [memo] — перевод с основного счёта\n"
         "/crypto_migration_status — прогресс миграции wallet_crypto_v2\n"
         "/balance — проверить баланс"
     )
