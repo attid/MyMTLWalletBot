@@ -18,8 +18,9 @@ _SPAN_CLOSE_RE = re.compile(r"</span>", re.IGNORECASE)
 _DIV_OPEN_RE = re.compile(r"<div[^>]*>", re.IGNORECASE)
 _DIV_CLOSE_RE = re.compile(r"</div>", re.IGNORECASE)
 # Any tag Telegram's HTML subset does not allow; its content stays in the text.
+# <br> is kept (sulguk renders it as a newline), so it is excluded here.
 _STRAY_TAG_RE = re.compile(
-    r"</?(?!a\b|b\b|i\b|u\b|s\b|code\b|pre\b|blockquote\b)[a-zA-Z][^>]*>",
+    r"</?(?!a\b|b\b|i\b|u\b|s\b|code\b|pre\b|blockquote\b|br\b)[a-zA-Z][^>]*>",
     re.IGNORECASE,
 )
 
@@ -45,7 +46,10 @@ def _sanitize_decode_html(text: str) -> str:
     warning containers (<span>/<div>) become <b> with content preserved, and
     any other unknown tag is dropped while its content stays in the message.
     """
-    text = _BR_TAG_RE.sub("\n", text)
+    # Keep <br> as tags: the message is rendered with SULGUK_PARSE_MODE, and
+    # sulguk turns <br> into a newline while bare "\n" in text nodes renders
+    # as a space (browser whitespace rules).
+    text = _BR_TAG_RE.sub("<br>", text)
     text = _ANCHOR_RE.sub(_anchor_repl, text)
     text = _SPAN_OPEN_RE.sub("<b>", text)
     text = _SPAN_CLOSE_RE.sub("</b>", text)
