@@ -64,7 +64,7 @@ class SendPayment:
                 destination_account_id=destination_address,
                 asset_code=asset.code,
                 asset_issuer=asset.issuer,
-                amount=str(amount),
+                amount=f"{amount:.7f}",
                 memo=memo,
                 cancel_offers=cancel_offers,
                 create_account=create_account,

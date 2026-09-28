@@ -11,6 +11,7 @@ from aiogram.types import Message, CallbackQuery
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset
+from stellar_sdk.exceptions import BaseHorizonError
 
 from db.models import ChequeStatus
 from keyboards.common_keyboards import (
@@ -152,7 +153,7 @@ async def cmd_cheque_show(
     msg = my_gettext(
         message,
         "send_cheque",
-        (float2str(send_sum), send_count, float(send_sum) * send_count, send_comment),
+        (float2str(send_sum), send_count, float2str(float(send_sum) * send_count), send_comment),
         app_context=app_context,
     )
 
@@ -429,7 +430,7 @@ async def cheque_after_send(
                     send_uuid,
                     float2str(cheque.amount),
                     cheque.count,
-                    float(cheque.amount) * cheque.count,
+                    float2str(float(cheque.amount) * cheque.count),
                     cheque.comment,
                     link,
                 ),
@@ -531,7 +532,27 @@ async def cmd_cancel_cheque(
         my_gettext(user_id, "try_send2", app_context=app_context),
         app_context=app_context,
     )
-    await app_context.stellar_service.submit_transaction(result.xdr)
+    try:
+        submit_result = await app_context.stellar_service.submit_transaction(result.xdr)
+    except BaseHorizonError as ex:
+        from routers.sign import format_horizon_send_error
+
+        submit_result = {"successful": False, "error": format_horizon_send_error(ex)}
+    if not submit_result.get("successful", False):
+        error_detail = submit_result.get("error") or ""
+        logger.warning(
+            f"Cancel cheque {cheque_uuid}: Horizon rejected: {error_detail}"
+        )
+        await cmd_info_message(
+            session,
+            user_id,
+            (
+                f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n"
+                f"{error_detail}"
+            ).rstrip(),
+            app_context=app_context,
+        )
+        return
 
     await cmd_info_message(
         session,
@@ -745,7 +766,32 @@ async def cmd_send_money_from_cheque(
 
     # Send transaction
     if result.xdr:
-        await app_context.stellar_service.submit_transaction(result.xdr)
+        try:
+            submit_result = await app_context.stellar_service.submit_transaction(
+                result.xdr
+            )
+        except BaseHorizonError as ex:
+            from routers.sign import format_horizon_send_error
+
+            submit_result = {
+                "successful": False,
+                "error": format_horizon_send_error(ex),
+            }
+        if not submit_result.get("successful", False):
+            error_detail = submit_result.get("error") or ""
+            logger.warning(
+                f"Claim cheque {cheque_uuid}: Horizon rejected: {error_detail}"
+            )
+            await cmd_info_message(
+                session,
+                user_id,
+                (
+                    f"{my_gettext(user_id, 'send_error', app_context=app_context)}\n"
+                    f"{error_detail}"
+                ).rstrip(),
+                app_context=app_context,
+            )
+            return
 
     await cmd_info_message(
         session,

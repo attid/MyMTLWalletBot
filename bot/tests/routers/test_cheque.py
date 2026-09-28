@@ -273,3 +273,179 @@ async def test_inline_query_cheques(mock_telegram, router_app_context, dp):
     results = json.loads(results_str)
     assert len(results) == 1
     assert "uuid-inline" == results[0]["id"]
+
+
+def _all_bot_texts(mock_telegram) -> list[str]:
+    """Collect user-visible text from send + edit message requests."""
+    texts = []
+    for r in mock_telegram:
+        if r["method"] in ("sendMessage", "editMessageText"):
+            texts.append(r["data"].get("text", ""))
+    return texts
+
+
+def _make_dirty_amount_cheque() -> MagicMock:
+    """Cheque entity whose display product produces float garbage."""
+    mock_cheque = MagicMock(spec=Cheque)
+    mock_cheque.uuid = "696f8b2c97634d6fa8bbdfd439dbbe00"
+    mock_cheque.status = ChequeStatus.CHEQUE.value
+    mock_cheque.amount = "0.486"
+    mock_cheque.count = 5
+    mock_cheque.comment = "Первый на боевом"
+    mock_cheque.asset = "EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    return mock_cheque
+
+
+def _install_cheque_repo(app_context, cheque) -> MagicMock:
+    mock_repo = MagicMock(spec=IChequeRepository)
+    mock_repo.get_by_uuid = AsyncMock(return_value=cheque)
+    mock_repo.get_receive_count = AsyncMock(return_value=0)
+    mock_repo.get_available = AsyncMock(return_value=[cheque])
+    app_context.repository_factory.get_cheque_repository.return_value = mock_repo
+    return mock_repo
+
+
+def _render_params(user_id, key, params=(), **kwargs):
+    """Localization mock that keeps params visible for assertions."""
+    return f"{key}|" + "|".join(str(p) for p in params)
+
+
+@pytest.mark.asyncio
+async def test_cheques_display_formats_total_without_float_garbage(
+    mock_telegram, router_app_context, dp
+):
+    """Regression: /cheques showed '2.4299999999999997' (float product of
+    0.486 * 5). Total must be rendered via float2str → '2.43'."""
+    user_id = 123
+
+    dp.message.middleware(ChequeTestMiddleware(router_app_context))
+    dp.include_router(cheque_router)
+
+    cheque = _make_dirty_amount_cheque()
+    _install_cheque_repo(router_app_context, cheque)
+
+    mock_me = MagicMock()
+    mock_me.username = "testbot"
+    with patch.object(router_app_context.bot, "me", AsyncMock(return_value=mock_me)):
+        # Autouse fixture mocks my_gettext -> "text {key}" and drops params;
+        # cheque.py imports it directly, so patch the module-local reference
+        # to keep param values (the formatted total) visible.
+        with patch("routers.cheque.my_gettext", side_effect=_render_params):
+            update = create_message_update(user_id, "/cheques", update_id=1)
+            await dp.feed_update(
+                bot=router_app_context.bot,
+                update=update,
+                app_context=router_app_context,
+            )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    assert req is not None
+    text = req["data"]["text"]
+    assert "2.43" in text
+    assert "2.4299999999999997" not in text
+
+
+@pytest.mark.asyncio
+async def test_cancel_cheque_sends_error_when_horizon_rejects(
+    mock_telegram, router_app_context
+):
+    """Regression: cmd_cancel_cheque ignored submit_transaction() result and
+    showed 'send_good_cheque' even when Horizon rejected the refund."""
+    from routers.cheque import cmd_cancel_cheque
+    from core.use_cases.cheque.cancel_cheque import CancelResult
+
+    user_id = 123
+    cheque_uuid = "696f8b2c97634d6fa8bbdfd439dbbe00"
+
+    session = MagicMock()
+    session.execute = AsyncMock()
+
+    mock_use_case = AsyncMock()
+    mock_use_case.execute = AsyncMock(
+        return_value=CancelResult(success=True, xdr="AAAA")
+    )
+    router_app_context.use_case_factory.create_cancel_cheque.return_value = mock_use_case
+    router_app_context.stellar_service.submit_transaction = AsyncMock(
+        return_value={"successful": False, "hash": None, "error": "op_underfunded"}
+    )
+
+    await cmd_cancel_cheque(
+        session, user_id, cheque_uuid, AsyncMock(), router_app_context
+    )
+
+    texts = _all_bot_texts(mock_telegram)
+    assert any("send_error" in t for t in texts), texts
+    assert not any("send_good_cheque" in t for t in texts), texts
+
+
+@pytest.mark.asyncio
+async def test_cancel_cheque_success_still_shows_good_message(
+    mock_telegram, router_app_context
+):
+    """Happy path keeps 'send_good_cheque' after result check."""
+    from routers.cheque import cmd_cancel_cheque
+    from core.use_cases.cheque.cancel_cheque import CancelResult
+
+    user_id = 123
+    cheque_uuid = "696f8b2c97634d6fa8bbdfd439dbbe00"
+
+    session = MagicMock()
+    session.execute = AsyncMock()
+
+    mock_use_case = AsyncMock()
+    mock_use_case.execute = AsyncMock(
+        return_value=CancelResult(success=True, xdr="AAAA")
+    )
+    router_app_context.use_case_factory.create_cancel_cheque.return_value = mock_use_case
+    router_app_context.stellar_service.submit_transaction = AsyncMock(
+        return_value={"successful": True, "hash": "abc", "error": None}
+    )
+
+    await cmd_cancel_cheque(
+        session, user_id, cheque_uuid, AsyncMock(), router_app_context
+    )
+
+    texts = _all_bot_texts(mock_telegram)
+    assert any("send_good_cheque" in t for t in texts), texts
+
+
+@pytest.mark.asyncio
+async def test_claim_cheque_sends_error_when_horizon_rejects(
+    mock_telegram, router_app_context
+):
+    """Regression: cmd_send_money_from_cheque ignored submit_transaction()
+    result and showed 'send_good_cheque' even when Horizon rejected."""
+    from routers.cheque import cmd_send_money_from_cheque
+    from core.use_cases.cheque.claim_cheque import ClaimResult
+
+    user_id = 123
+    cheque_uuid = "696f8b2c97634d6fa8bbdfd439dbbe00"
+
+    session = MagicMock()
+    session.execute = AsyncMock()
+    session.commit = AsyncMock()
+
+    mock_use_case = AsyncMock()
+    mock_use_case.execute = AsyncMock(
+        return_value=ClaimResult(success=True, xdr="AAAA")
+    )
+    router_app_context.use_case_factory.create_claim_cheque.return_value = mock_use_case
+    router_app_context.stellar_service.submit_transaction = AsyncMock(
+        return_value={"successful": False, "hash": None, "error": "op_underfunded"}
+    )
+
+    state = AsyncMock()
+    state.get_data = AsyncMock(return_value={})
+
+    await cmd_send_money_from_cheque(
+        session,
+        user_id,
+        state,
+        cheque_uuid=cheque_uuid,
+        username="u",
+        app_context=router_app_context,
+    )
+
+    texts = _all_bot_texts(mock_telegram)
+    assert any("send_error" in t for t in texts), texts
+    assert not any("send_good_cheque" in t for t in texts), texts

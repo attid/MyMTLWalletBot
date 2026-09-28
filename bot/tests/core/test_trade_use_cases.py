@@ -107,3 +107,44 @@ async def test_manage_offer_success(mock_horizon, horizon_server_config):
     assert result.success is True
     assert result.xdr is not None
     assert "AAAA" in result.xdr
+
+
+@pytest.mark.asyncio
+async def test_manage_offer_formats_float_amount_to_7_decimals(
+    mock_horizon, horizon_server_config
+):
+    """Regression: raw str(float) amount could carry 17-significant-digit
+    garbage into the manage sell offer op; must be normalized to 7 decimals."""
+    from stellar_sdk import TransactionEnvelope, Network
+
+    mock_wallet_repo = AsyncMock(spec=IWalletRepository)
+    stellar_service = StellarService(horizon_url=horizon_server_config["url"])
+
+    public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    wallet = Wallet(
+        id=1, user_id=123, public_key=public_key, is_default=True, is_free=True
+    )
+    mock_wallet_repo.get_default_wallet.return_value = wallet
+
+    mock_horizon.set_account(public_key)
+
+    VALID_ISSUER = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    amount = 0.1 * 7  # 0.7000000000000001 as raw str
+    use_case = ManageOffer(mock_wallet_repo, stellar_service)
+    result = await use_case.execute(
+        user_id=123,
+        selling=Asset(code="XLM"),
+        buying=Asset(code="EURMTL", issuer=VALID_ISSUER),
+        amount=amount,
+        price=2.0,
+    )
+
+    assert result.success is True
+    envelope = TransactionEnvelope.from_xdr(
+        result.xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+    )
+    offer_op = envelope.transaction.operations[0]
+    # stellar_sdk normalizes stroops back to string without trailing zeros
+    assert offer_op.amount == "0.7"
+    assert offer_op.amount != str(amount)
+    assert offer_op.price.n == 2 and offer_op.price.d == 1

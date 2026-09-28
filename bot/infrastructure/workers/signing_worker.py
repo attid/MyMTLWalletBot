@@ -151,7 +151,17 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                             fsm_after_send = jsonpickle.loads(fsm_after_send_pickled)
                             logger.info(f"TX {tx_id}: calling fsm_after_send callback")
 
-                            await fsm_after_send(session, user_id, state)
+                            # Универсальный механизм: передаём app_context всем
+                            # колбэкам, которые его принимают (как в SEP-10 ветке).
+                            kwargs = {}
+                            sig = inspect.signature(fsm_after_send)
+                            if "app_context" in sig.parameters or any(
+                                p.kind == p.VAR_KEYWORD
+                                for p in sig.parameters.values()
+                            ):
+                                kwargs["app_context"] = app_context
+
+                            await fsm_after_send(session, user_id, state, **kwargs)
                             logger.info(
                                 f"TX {tx_id}: fsm_after_send callback completed"
                             )
