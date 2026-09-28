@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from html import escape as _html_escape
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
 from core.models.notification import NotificationOperation
@@ -130,7 +131,7 @@ def decode_db_effect(
                 user_id,
                 "info_data_removed",
                 (
-                    str(operation.data_name),
+                    _html_escape(str(operation.data_name)),
                     account_link,
                     op_link,
                 ),
@@ -145,13 +146,18 @@ def decode_db_effect(
             return my_gettext(
                 user_id,
                 "info_data_mention",
-                (account_link, decode_for_link, op_link, str(operation.data_name)),
+                (
+                    account_link,
+                    decode_for_link,
+                    op_link,
+                    _html_escape(str(operation.data_name)),
+                ),
                 localization_service=loc_service,
             )
         else:
             # Data Set / Updated
-            data_name = str(operation.data_name)
-            data_value = str(operation.data_value)
+            data_name = _html_escape(str(operation.data_name))
+            data_value = _html_escape(str(operation.data_value))
             return my_gettext(
                 user_id,
                 "info_data_set",
@@ -162,7 +168,7 @@ def decode_db_effect(
         # Handle payment operations specifically
         memo_text = ""
         if operation.memo:
-            memo_text = f"\nMemo: {operation.memo}"
+            memo_text = f"\nMemo: {_html_escape(operation.memo)}"
 
         is_incoming = decode_for == operation.for_account
         if force_perspective == "debit":

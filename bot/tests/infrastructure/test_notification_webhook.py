@@ -11,7 +11,9 @@ with bot/dispatcher but WITHOUT app_context, which caused the bug:
 
 import os
 import asyncio
+import base64
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 import pytest
@@ -32,6 +34,7 @@ from infrastructure.services.notification_coordinator import (
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
 from infrastructure.utils.notification_utils import decode_db_effect
+from infrastructure.utils.notification_utils import _html_escape
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
 from infrastructure.workers.notification_delivery_worker import (
     NotificationDeliveryWorker,
@@ -738,6 +741,102 @@ async def test_trade_fill_notification_without_offer_id(notification_service):
     assert "sold 100 TSTA, received 10 XLM" in text
     assert "viewer.eurmtl.me/offer/" not in text
     assert "(ID:" not in text
+
+
+@pytest.mark.asyncio
+async def test_manage_data_notification_escapes_blockchain_fields(notification_service):
+    """Binary manage_data values must render as escaped text, not broken HTML.
+
+    Regression: onym-audit data entries carry non-utf-8 binary values that
+    lossily decode into strings containing '<'. The manage_data template
+    previously inserted them raw, and Telegram rejected the whole message with
+    "can't parse entities: Unclosed start tag at byte offset 289", leaving the
+    queue head stuck forever.
+    """
+    notification_service.localization_service.set_user_language(12345, "en")
+
+    # Lossy-decoded binary value that contains a raw '<' (as in the incident).
+    auditor_value = "U8p29mtuIliCojwYGv25rBngnpGo6Yr9XWGDcG+HVFE=\n<"
+    payload = {
+        "operation": {
+            "id": "manage-data-1",
+            "type_i": 10,
+            "type": "manage_data",
+            "account": "GDQZEHM7LTLPVK4VOGVWU76WPT3TD2QT67IRES4JF3QQMNDCUZUSLUTX",
+            "name": "onym-audit-auditor",
+            "value": base64.b64encode(auditor_value.encode("utf-8")).decode("ascii"),
+        }
+    }
+
+    operation = notification_service._map_payload_to_operation(payload)
+    assert operation.operation == "manage_data"
+    assert operation.data_name == "onym-audit-auditor"
+
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+
+    # The raw '<' must be escaped, not passed through as a start tag.
+    assert "&lt;" in text
+    assert "<" + auditor_value not in text
+    assert "onym-audit-auditor" in text
+
+    # Rendered text must be parseable HTML: no unclosed start tags remain.
+    assert not re.search(r"<(?![a/])", text)
+
+
+@pytest.mark.asyncio
+async def test_manage_data_removal_escapes_data_name(notification_service):
+    """Data removal messages must escape the attacker-controlled data name."""
+    notification_service.localization_service.set_user_language(12345, "en")
+
+    operation = NotificationOperation(
+        id="manage-data-2",
+        operation="manage_data",
+        dt=datetime.utcnow(),
+        for_account="GDQZEHM7LTLPVK4VOGVWU76WPT3TD2QT67IRES4JF3QQMNDCUZUSLUTX",
+        data_name="evil<name>",
+        data_value=None,
+        transaction_hash="tx-manage-data-2",
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "evil&lt;name&gt;" in text
+    assert "evil<name>" not in text
+
+
+@pytest.mark.asyncio
+async def test_payment_memo_is_escaped_in_notification_text(notification_service):
+    """Arbitrary memo text must not be able to inject HTML into notifications."""
+    notification_service.localization_service.set_user_language(12345, "en")
+
+    memo = 'Text: "<b>bold</b> & <i>italic</i>"'
+    operation = NotificationOperation(
+        id="memo-op",
+        operation="payment",
+        dt=datetime.utcnow(),
+        from_account="GFROM" + "A" * 51,
+        for_account="GTO" + "B" * 51,
+        payment_amount=10.0,
+        payment_asset="XLM",
+        memo=memo,
+        transaction_hash="tx-memo",
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert f"Memo: {_html_escape(memo)}" in text
+    assert "<b>bold</b>" not in text
 
 
 @pytest.mark.asyncio

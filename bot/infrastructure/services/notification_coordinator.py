@@ -9,6 +9,7 @@ from collections.abc import Callable
 from contextvars import ContextVar, Token
 from typing import Protocol
 
+from aiogram.exceptions import TelegramBadRequest
 from loguru import logger
 
 from core.models.blockchain_notification import BlockchainNotification
@@ -260,6 +261,37 @@ class NotificationCoordinator:
                 mark_stage("send", notification.notification_id)
                 async with asyncio.timeout(self._delivery_timeout_seconds):
                     await self._sender.send_notification(notification)
+            except TelegramBadRequest as error:
+                # Telegram rejects the payload itself (e.g. broken parse-mode
+                # HTML). Retrying can never succeed and would leave this
+                # notification blocking the user's FIFO queue forever, so drop
+                # the poisoned head and keep delivering the rest.
+                logger.bind(
+                    event="notification_delivery_rejected",
+                    user_id=user_id,
+                    notification_id=notification.notification_id,
+                    reason=reason,
+                ).warning(
+                    f"notification rejected by Telegram; dropping poisoned "
+                    f"queue head: user_id={user_id} "
+                    f"notification_id={notification.notification_id} "
+                    f"reason={reason} error={error}"
+                )
+                mark_stage("drop", notification.notification_id)
+                if await self._store.acknowledge_if_lock_owned(
+                    user_id, notification, token
+                ):
+                    continue
+                logger.bind(
+                    event="notification_rejection_acknowledgement_lost",
+                    user_id=user_id,
+                    notification_id=notification.notification_id,
+                    reason=reason,
+                ).warning(
+                    "notification rejection was not acknowledged; "
+                    "queue head retained for retry"
+                )
+                return badge_refresh_needed
             except TimeoutError:
                 logger.bind(
                     event="notification_delivery_timed_out",
