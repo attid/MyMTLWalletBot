@@ -29,7 +29,9 @@ def test_no_telegram_forbidden_tags(sanitized_real):
     assert "target=" not in sanitized_real
     assert "<span" not in sanitized_real
     assert "<div" not in sanitized_real
-    assert "<br" not in sanitized_real
+    # <br> is intentionally kept: sulguk parse mode renders <br> as a newline,
+    # while bare "\n" in text nodes would render as a space.
+    assert "<br>" in sanitized_real
 
 
 def test_span_warning_kept_and_bold(sanitized_real):
@@ -41,12 +43,16 @@ def test_div_warning_kept_and_bold(sanitized_real):
 
 
 def test_links_keep_only_href(sanitized_real):
-    assert '<a href="https://viewer.eurmtl.me/account/GCVTXUMIUAENJH2XY4AOVGTJKPSCOXW3746PUH7QFGPBDOPPHYLIGORA">' in sanitized_real
+    assert (
+        '<a href="https://viewer.eurmtl.me/account/GCVTXUMIUAENJH2XY4AOVGTJKPSCOXW3746PUH7QFGPBDOPPHYLIGORA">'
+        in sanitized_real
+    )
     assert ">GCVT..GORA</a>" in sanitized_real
 
 
 def test_line_breaks_and_nbsp(sanitized_real):
-    assert "\n" in sanitized_real
+    # <br> stays in HTML (sulguk renders it as newline); no bare \n injected.
+    assert "\n" not in sanitized_real
     assert "&nbsp;" not in sanitized_real
     assert "No memo" in sanitized_real
 
@@ -58,7 +64,7 @@ def test_scval_tags_escaped_as_text(sanitized_real):
 
 
 def test_plain_telegram_tags_untouched():
-    src = "<b>bold</b> <i>it</i> <u>u</u> <s>s</s> <code>c</code> <a href=\"https://x.example\">l</a>"
+    src = '<b>bold</b> <i>it</i> <u>u</u> <s>s</s> <code>c</code> <a href="https://x.example">l</a>'
     assert _sanitize_decode_html(src) == src
 
 
@@ -73,4 +79,19 @@ def test_link_without_href_dropped_but_text_kept():
 
 
 def test_br_variants():
-    assert _sanitize_decode_html("a<br>b<br/>c<br />d") == "a\nb\nc\nd"
+    assert _sanitize_decode_html("a<br>b<br/>c<br />d") == "a<br>b<br>c<br>d"
+
+
+def test_sulguk_render_keeps_line_breaks(sanitized_real):
+    """End-to-end: sanitized decode HTML rendered via sulguk must contain
+    newlines between lines. Regression for c29fc2e which replaced <br> with
+    bare "\n" that sulguk collapses to a space."""
+    from sulguk import transform_html
+
+    rendered = transform_html(sanitized_real).text
+    # Real fragment: sequence line, fee/warning, link line, memo, signer line
+    assert "\n" in rendered
+    assert "Sequence Number 233839245322616848" in rendered
+    assert "Операции с аккаунта" in rendered
+    # Lines must not be glued into one blob: the fragment has 5+ <br> sources.
+    assert rendered.count("\n") >= 5
