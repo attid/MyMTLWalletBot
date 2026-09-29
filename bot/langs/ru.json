@@ -283,5 +283,11 @@
   "kb_delete_all_filters": "🗑 Удалить все фильтры",
   "all_filters_deleted": "Все фильтры уведомлений были удалены.",
   "filter_already_exists": "Фильтр с такими же параметрами уже существует.",
-  "notification_settings_error": "Произошла ошибка. Данные не найдены."
+  "notification_settings_error": "Произошла ошибка. Данные не найдены.",
+  "receive_invoice_btn": "Выставить счёт",
+  "receive_invoice_amount_msg": "Пришлите сумму счёта сообщением\n\nили выберите из недавно использованных:",
+  "receive_invoice_msg": "Счёт: <b>{}</b> {}\n\nАдрес: <code>{}</code>\n\nДля оплаты отсканируйте QR-код кошельком с поддержкой SEP-7 (web+stellar:pay).",
+  "receive_change_amount": "Изменить сумму",
+  "receive_change_asset": "Изменить ассет",
+  "receive_invoice_asset_msg": "Выберите ассет:"
 }
