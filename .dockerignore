@@ -17,6 +17,8 @@ coverage.xml
 *.cover
 *.log
 .git
+.env
+**/.env
 .mypy_cache
 .pytest_cache
 .hypotheses
