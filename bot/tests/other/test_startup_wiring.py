@@ -78,7 +78,6 @@ async def test_set_commands_registers_complete_private_and_admin_menus() -> None
         ("change_wallet", "Switch to another address"),
         ("send", "Send tokens"),
         ("crypto", "Encrypt or decrypt"),
-        ("create_cheque", "Create cheque"),
     ]
     assert isinstance(calls[1].kwargs["scope"], BotCommandScopeAllPrivateChats)
 
@@ -88,7 +87,6 @@ async def test_set_commands_registers_complete_private_and_admin_menus() -> None
         ("change_wallet", "Switch to another address"),
         ("send", "Send tokens"),
         ("crypto", "Encrypt or decrypt"),
-        ("create_cheque", "Create cheque"),
         ("restart", "ReStart bot"),
         ("fee", "check fee"),
         ("horizon", "change horizon"),

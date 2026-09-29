@@ -173,10 +173,6 @@ async def set_commands(bot: Bot):
             command="crypto",
             description="Encrypt or decrypt",
         ),
-        BotCommand(
-            command="create_cheque",
-            description="Create cheque",
-        ),
     ]
     # if 'test' in sys.argv:
     #     commands_private.append(BotCommand(
