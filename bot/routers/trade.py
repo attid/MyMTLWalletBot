@@ -1029,9 +1029,7 @@ async def cmd_edit_order_amount(
         buying_code = o.buying.asset_code if o.buying else "Unknown"
         amount = float(o.amount or 0)
         price = float(o.price or 0)
-        msg = (
-            f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}\n"
-        )
+        msg = f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}\n"
 
         await state.set_state(StateSaleToken.editing_amount)
         await state.update_data(
@@ -1151,9 +1149,7 @@ async def cmd_edit_order_price(
         buying_code = o.buying.asset_code if o.buying else "Unknown"
         amount = float(o.amount or 0)
         price = float(o.price or 0)
-        msg = (
-            f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}\n"
-        )
+        msg = f"{float2str(amount)} {selling_code} -> ({float2str(price)}) -> {float2str(amount * price)} {buying_code}\n"
 
         await state.set_state(StateSaleToken.editing_price)
         await state.update_data(

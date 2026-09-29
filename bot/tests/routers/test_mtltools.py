@@ -443,6 +443,5 @@ def test_update_multi_registry_check_wired_to_grist():
     from other import grist_tools
 
     assert (
-        mtltools.check_account_id_from_grist
-        is grist_tools.check_account_id_from_grist
+        mtltools.check_account_id_from_grist is grist_tools.check_account_id_from_grist
     )

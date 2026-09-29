@@ -427,7 +427,9 @@ def _last_ui_text(mock_telegram):
 
 
 @pytest.mark.asyncio
-async def test_chequepay_shows_confirmation_with_buttons(mock_telegram, router_app_context):
+async def test_chequepay_shows_confirmation_with_buttons(
+    mock_telegram, router_app_context
+):
     """/chequepay must not send money directly: it asks for confirmation."""
     dp = router_app_context.dispatcher
     dp.message.middleware(RouterTestMiddleware(router_app_context))
@@ -506,7 +508,9 @@ async def test_chequepay_approve_executes_payout(
     router_app_context.encryption_service = EncryptionService()
     # Sign with master secret; encrypt with same passphrase → decrypt returns it
     router_app_context.encryption_service.decrypt = MagicMock(
-        side_effect=lambda enc, key: master_secret if enc == mock_wallet.secret_key else None
+        side_effect=lambda enc, key: (
+            master_secret if enc == mock_wallet.secret_key else None
+        )
     )
     mock_horizon.set_account(master_kp.public_key)
 
@@ -634,7 +638,9 @@ async def test_chequepay_approve_horizon_rejection_shows_error(
     )
     router_app_context.encryption_service = EncryptionService()
     router_app_context.encryption_service.decrypt = MagicMock(
-        side_effect=lambda enc, key: master_kp.secret if enc == mock_wallet.secret_key else None
+        side_effect=lambda enc, key: (
+            master_kp.secret if enc == mock_wallet.secret_key else None
+        )
     )
     router_app_context.stellar_service.submit_transaction = AsyncMock(
         return_value={"successful": False, "hash": None, "error": "op_underfunded"}
@@ -671,9 +677,7 @@ async def test_withdraw_usage_and_bad_asset(mock_telegram, router_app_context):
     mock_telegram.clear()
     await dp.feed_update(
         bot=router_app_context.bot,
-        update=create_message_update(
-            123, f"/withdraw {TEST_DEST} 5 RUB", update_id=11
-        ),
+        update=create_message_update(123, f"/withdraw {TEST_DEST} 5 RUB", update_id=11),
         app_context=router_app_context,
     )
     req = get_telegram_request(mock_telegram, "sendMessage")

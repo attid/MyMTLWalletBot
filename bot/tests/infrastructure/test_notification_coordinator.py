@@ -1061,7 +1061,9 @@ async def test_flush_retains_rejected_head_when_acknowledgement_fails(
     await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
 
     sender.send_notification.assert_awaited_once_with(poisoned)
-    store.acknowledge_if_lock_owned.assert_awaited_once_with(42, poisoned, "flush-token")
+    store.acknowledge_if_lock_owned.assert_awaited_once_with(
+        42, poisoned, "flush-token"
+    )
     badge_refresher.refresh.assert_not_awaited()
     store.release_lock.assert_awaited_once_with(42, "flush-token")
 

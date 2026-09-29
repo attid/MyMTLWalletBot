@@ -60,9 +60,7 @@ APP_CONTEXT_CALLBACK_CALLS = []
 
 async def app_context_test_callback(session, user_id: int, state, *, app_context=None):
     """Mimics cheque_after_send signature: requires app_context kwarg."""
-    APP_CONTEXT_CALLBACK_CALLS.append(
-        {"user_id": user_id, "app_context": app_context}
-    )
+    APP_CONTEXT_CALLBACK_CALLS.append({"user_id": user_id, "app_context": app_context})
 
 
 class TestWalletConnectSigning:
@@ -818,12 +816,15 @@ class TestHandleTxSigned:
         original_context = faststream_tools.APP_CONTEXT
         faststream_tools.APP_CONTEXT = mock_app_context
         try:
-            with patch(
-                "infrastructure.workers.signing_worker.aioredis.from_url",
-                return_value=fake_redis,
-            ), patch(
-                "routers.sign.submit_signed_xdr", new_callable=AsyncMock
-            ) as mock_submit:
+            with (
+                patch(
+                    "infrastructure.workers.signing_worker.aioredis.from_url",
+                    return_value=fake_redis,
+                ),
+                patch(
+                    "routers.sign.submit_signed_xdr", new_callable=AsyncMock
+                ) as mock_submit,
+            ):
                 mock_submit.return_value = {"successful": True, "hash": "tx"}
                 await handle_tx_signed(TxSignedMessage(tx_id=tx_id, user_id=123))
 
@@ -859,9 +860,7 @@ class TestHandleTxSigned:
                 FIELD_MEMO: "Plain",
                 FIELD_STATUS: STATUS_SIGNED,
                 FIELD_CREATED_AT: "2026-09-28T00:00:00Z",
-                FIELD_FSM_AFTER_SEND: jsonpickle.dumps(
-                    webapp_after_send_test_callback
-                ),
+                FIELD_FSM_AFTER_SEND: jsonpickle.dumps(webapp_after_send_test_callback),
             },
         )
 
@@ -880,12 +879,15 @@ class TestHandleTxSigned:
         original_context = faststream_tools.APP_CONTEXT
         faststream_tools.APP_CONTEXT = mock_app_context
         try:
-            with patch(
-                "infrastructure.workers.signing_worker.aioredis.from_url",
-                return_value=fake_redis,
-            ), patch(
-                "routers.sign.submit_signed_xdr", new_callable=AsyncMock
-            ) as mock_submit:
+            with (
+                patch(
+                    "infrastructure.workers.signing_worker.aioredis.from_url",
+                    return_value=fake_redis,
+                ),
+                patch(
+                    "routers.sign.submit_signed_xdr", new_callable=AsyncMock
+                ) as mock_submit,
+            ):
                 mock_submit.return_value = {"successful": True, "hash": "tx"}
                 await handle_tx_signed(TxSignedMessage(tx_id=tx_id, user_id=123))
 
