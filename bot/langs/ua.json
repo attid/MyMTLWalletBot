@@ -234,5 +234,11 @@
   "kb_delete_all_filters": "🗑 Видалити всі фільтри",
   "all_filters_deleted": "Всі фільтри сповіщень було видалено.",
   "filter_already_exists": "Фільтр з такими ж параметрами вже існує.",
-  "notification_settings_error": "Сталася помилка. Дані не знайдено."
+  "notification_settings_error": "Сталася помилка. Дані не знайдено.",
+  "receive_invoice_btn": "Виставити рахунок",
+  "receive_invoice_amount_msg": "Надішліть суму рахунку повідомленням\n\nабо виберіть з нещодавно використаних:",
+  "receive_invoice_msg": "Рахунок: <b>{}</b> {}\n\nАдреса: <code>{}</code>\n\nДля оплати відскануйте QR-код гаманцем із підтримкою SEP-7 (web+stellar:pay).",
+  "receive_change_amount": "Змінити суму",
+  "receive_change_asset": "Змінити асет",
+  "receive_invoice_asset_msg": "Виберіть асет:"
 }

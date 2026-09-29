@@ -234,5 +234,11 @@
   "all_filters_deleted": "Svi filteri obavještenja su obrisani.",
   "filter_already_exists": "Filter sa istim parametrima već postoji.",
   "notification_settings_error": "Došlo je do greške. Podaci nisu pronađeni.",
-  "kb_delete_and_return": "Izbrišite i nazad"
+  "kb_delete_and_return": "Izbrišite i nazad",
+  "receive_invoice_btn": "Izdati račun",
+  "receive_invoice_amount_msg": "Pošaljite iznos računa porukom\n\nili izaberite iz nedavno korišćenih:",
+  "receive_invoice_msg": "Račun: <b>{}</b> {}\n\nAdresa: <code>{}</code>\n\nZa plaćanje skenirajte QR kod novčanikom koji podržava SEP-7 (web+stellar:pay).",
+  "receive_change_amount": "Promijeni iznos",
+  "receive_change_asset": "Promijeni sredstvo",
+  "receive_invoice_asset_msg": "Izaberite sredstvo:"
 }

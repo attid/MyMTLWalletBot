@@ -211,5 +211,11 @@
   "select_operation_for_filter": "Select operation:",
   "no_recent_operations": "No recent operations",
   "filters_page": "Page {} of {}",
-  "notification_settings_error": "ስህተት ተከስቷል። ውሂብ አልተገኘም።"
+  "notification_settings_error": "ስህተት ተከስቷል። ውሂብ አልተገኘም።",
+  "receive_invoice_btn": "Send an invoice",
+  "receive_invoice_amount_msg": "Send the invoice amount as a message\n\nor select from recently used:",
+  "receive_invoice_msg": "Invoice: <b>{}</b> {}\n\nAddress: <code>{}</code>\n\nTo pay, scan the QR code with a wallet that supports SEP-7 (web+stellar:pay).",
+  "receive_change_amount": "Change amount",
+  "receive_change_asset": "Change asset",
+  "receive_invoice_asset_msg": "Select the asset:"
 }

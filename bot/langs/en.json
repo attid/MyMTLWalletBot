@@ -283,5 +283,11 @@
   "kb_delete_all_filters": "🗑 Delete all filters",
   "all_filters_deleted": "All notification filters have been deleted.",
   "filter_already_exists": "A filter with the same parameters already exists.",
-  "notification_settings_error": "An error occurred. Data not found."
+  "notification_settings_error": "An error occurred. Data not found.",
+  "receive_invoice_btn": "Send an invoice",
+  "receive_invoice_amount_msg": "Send the invoice amount as a message\n\nor select from recently used:",
+  "receive_invoice_msg": "Invoice: <b>{}</b> {}\n\nAddress: <code>{}</code>\n\nTo pay, scan the QR code with a wallet that supports SEP-7 (web+stellar:pay).",
+  "receive_change_amount": "Change amount",
+  "receive_change_asset": "Change asset",
+  "receive_invoice_asset_msg": "Select the asset:"
 }
