@@ -69,7 +69,9 @@ class ReceiveHistoryStore:
     def _key(self, user_id: int) -> str:
         return f"{self._key_prefix}{user_id}"
 
-    async def add(self, user_id: int, entry: HistoryAmount, *, now: Optional[float] = None) -> None:
+    async def add(
+        self, user_id: int, entry: HistoryAmount, *, now: Optional[float] = None
+    ) -> None:
         """Record one (amount, asset) pair, keeping only the newest entries."""
         if not entry.amount or not entry.asset_code:
             return

@@ -87,20 +87,18 @@ async def cmd_receive(
     await callback.answer()
 
 
-def _build_receive_keyboard(user_id, *, app_context: AppContext) -> types.InlineKeyboardMarkup:
+def _build_receive_keyboard(
+    user_id, *, app_context: AppContext
+) -> types.InlineKeyboardMarkup:
     invoice_button = [
         InlineKeyboardButton(
-            text=my_gettext(
-                user_id, "receive_invoice_btn", app_context=app_context
-            ),
+            text=my_gettext(user_id, "receive_invoice_btn", app_context=app_context),
             callback_data=RECEIVE_INVOICE_CALLBACK,
         )
     ]
     manage_assets_button = [
         InlineKeyboardButton(
-            text=my_gettext(
-                user_id, "manage_assets_msg", app_context=app_context
-            ),
+            text=my_gettext(user_id, "manage_assets_msg", app_context=app_context),
             callback_data="ManageAssetsMenu",
         )
     ]
@@ -129,9 +127,7 @@ async def _send_receive_photo(
     (fresh buttons are not validated against the photo message).
     """
     current_bot = app_context.bot
-    storage_key = StorageKey(
-        bot_id=current_bot.id, user_id=user_id, chat_id=user_id
-    )
+    storage_key = StorageKey(bot_id=current_bot.id, user_id=user_id, chat_id=user_id)
     data = await app_context.dispatcher.storage.get_data(key=storage_key)
     previous_message_id = int(data.get("last_message_id", 0))
     await current_bot.send_photo(
@@ -202,7 +198,9 @@ async def _cmd_enter_amount(
     return True
 
 
-def _build_pay_uri(destination: str, amount_str: str, code: str, issuer: str | None) -> str:
+def _build_pay_uri(
+    destination: str, amount_str: str, code: str, issuer: str | None
+) -> str:
     params = [
         f"destination={destination}",
         f"amount={amount_str}",
@@ -229,7 +227,10 @@ async def _show_invoice(
     photo = BufferedInputFile(qr_buffer.getvalue(), filename="invoice.png")
 
     msg = my_gettext(
-        user_id, "receive_invoice_msg", (amount_str, code, account_id), app_context=app_context
+        user_id,
+        "receive_invoice_msg",
+        (amount_str, code, account_id),
+        app_context=app_context,
     )
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
@@ -251,9 +252,7 @@ async def _show_invoice(
         ]
     )
     await state.set_state(None)
-    await _send_receive_photo(
-        user_id, msg, photo, keyboard, app_context=app_context
-    )
+    await _send_receive_photo(user_id, msg, photo, keyboard, app_context=app_context)
 
     store = _get_history_store()
     if store:
@@ -471,7 +470,9 @@ def create_invoice_qr(file_name, uri, badge_text):
     Badge is narrow (2 digits + asset code) so version stays small and
     error correction keeps working around the logo hole.
     """
-    badge_img = create_image_with_text(f" {badge_text} ", font_size=30, image_size=(190, 46))
+    badge_img = create_image_with_text(
+        f" {badge_text} ", font_size=30, image_size=(190, 46)
+    )
     qr_with_logo_img = create_qr_with_logo(uri, badge_img)
     qr_with_logo_img.save(file_name, format="PNG")
 

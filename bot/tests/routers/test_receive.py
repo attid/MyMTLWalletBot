@@ -240,7 +240,9 @@ async def test_receive_invoice_shows_amount_screen(
     dp.include_router(receive_router)
 
     user_id = 123
-    update = create_callback_update(user_id=user_id, callback_data=RECEIVE_INVOICE_CALLBACK)
+    update = create_callback_update(
+        user_id=user_id, callback_data=RECEIVE_INVOICE_CALLBACK
+    )
     await dp.feed_update(
         bot=router_app_context.bot, update=update, app_context=router_app_context
     )
@@ -296,7 +298,7 @@ async def test_receive_amount_input_bad_sum(
     )
 
     req = get_telegram_request(mock_telegram, "sendMessage")
-    assert(req is not None)
+    assert req is not None
     assert "bad_sum" in str(req["data"]["text"])
     # Остались в состоянии ввода суммы
     assert await dp.storage.get_state(state_key) == ReceiveInvoiceStates.entering_amount
@@ -388,7 +390,9 @@ async def test_receive_history_roundtrip(
     await store.add(user_id, HistoryAmount("50", "USDT", "GUSDTISS"), now=2_000)
     photos = _capture_invoice_photos(router_app_context, monkeypatch)
 
-    update = create_callback_update(user_id=user_id, callback_data=RECEIVE_INVOICE_CALLBACK)
+    update = create_callback_update(
+        user_id=user_id, callback_data=RECEIVE_INVOICE_CALLBACK
+    )
     await dp.feed_update(
         bot=router_app_context.bot, update=update, app_context=router_app_context
     )
@@ -396,7 +400,9 @@ async def test_receive_history_roundtrip(
     req = get_telegram_request(mock_telegram, "sendMessage")
     markup = str(req["data"]["reply_markup"])
     assert "10 EURMTL" in markup and "50 USDT" in markup
-    assert f"{RECEIVE_HIST_CALLBACK}0" in markup and f"{RECEIVE_HIST_CALLBACK}1" in markup
+    assert (
+        f"{RECEIVE_HIST_CALLBACK}0" in markup and f"{RECEIVE_HIST_CALLBACK}1" in markup
+    )
 
     # Новейшая пара (50 USDT, индекс 0) -> готовый экран
     update = create_callback_update(

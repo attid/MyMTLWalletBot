@@ -153,7 +153,12 @@ async def cmd_cheque_show(
     msg = my_gettext(
         message,
         "send_cheque",
-        (float2str(send_sum), send_count, float2str(float(send_sum) * send_count), send_comment),
+        (
+            float2str(send_sum),
+            send_count,
+            float2str(float(send_sum) * send_count),
+            send_comment,
+        ),
         app_context=app_context,
     )
 
@@ -540,9 +545,7 @@ async def cmd_cancel_cheque(
         submit_result = {"successful": False, "error": format_horizon_send_error(ex)}
     if not submit_result.get("successful", False):
         error_detail = submit_result.get("error") or ""
-        logger.warning(
-            f"Cancel cheque {cheque_uuid}: Horizon rejected: {error_detail}"
-        )
+        logger.warning(f"Cancel cheque {cheque_uuid}: Horizon rejected: {error_detail}")
         await cmd_info_message(
             session,
             user_id,

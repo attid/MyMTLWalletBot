@@ -175,7 +175,9 @@ async def _execute_admin_payout(
         return False, "Failed to decrypt master secret"
 
     source_pk = (
-        CHEQUE_PUBLIC_KEY if source == PAYOUT_SOURCE_CHEQUE else master_wallet.public_key
+        CHEQUE_PUBLIC_KEY
+        if source == PAYOUT_SOURCE_CHEQUE
+        else master_wallet.public_key
     )
     asset_issuer = _payout_asset_issuer(asset_code)
     if asset_code != XLM_ASSET.code and asset_issuer is None:
@@ -338,7 +340,9 @@ async def cb_admin_payout_cancel(
         await callback.answer("Подтверждение истекло", show_alert=True)
         return
     await callback.answer()
-    await send_message(session, callback.from_user.id, "❌ Отменено", app_context=app_context)
+    await send_message(
+        session, callback.from_user.id, "❌ Отменено", app_context=app_context
+    )
 
 
 @router.message(Command(commands=["chequepay"]))

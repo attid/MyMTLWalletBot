@@ -156,8 +156,7 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                             kwargs = {}
                             sig = inspect.signature(fsm_after_send)
                             if "app_context" in sig.parameters or any(
-                                p.kind == p.VAR_KEYWORD
-                                for p in sig.parameters.values()
+                                p.kind == p.VAR_KEYWORD for p in sig.parameters.values()
                             ):
                                 kwargs["app_context"] = app_context
 

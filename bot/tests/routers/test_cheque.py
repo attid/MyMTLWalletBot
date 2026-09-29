@@ -292,7 +292,9 @@ def _make_dirty_amount_cheque() -> MagicMock:
     mock_cheque.amount = "0.486"
     mock_cheque.count = 5
     mock_cheque.comment = "Первый на боевом"
-    mock_cheque.asset = "EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    mock_cheque.asset = (
+        "EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    )
     return mock_cheque
 
 
@@ -364,7 +366,9 @@ async def test_cancel_cheque_sends_error_when_horizon_rejects(
     mock_use_case.execute = AsyncMock(
         return_value=CancelResult(success=True, xdr="AAAA")
     )
-    router_app_context.use_case_factory.create_cancel_cheque.return_value = mock_use_case
+    router_app_context.use_case_factory.create_cancel_cheque.return_value = (
+        mock_use_case
+    )
     router_app_context.stellar_service.submit_transaction = AsyncMock(
         return_value={"successful": False, "hash": None, "error": "op_underfunded"}
     )
@@ -396,7 +400,9 @@ async def test_cancel_cheque_success_still_shows_good_message(
     mock_use_case.execute = AsyncMock(
         return_value=CancelResult(success=True, xdr="AAAA")
     )
-    router_app_context.use_case_factory.create_cancel_cheque.return_value = mock_use_case
+    router_app_context.use_case_factory.create_cancel_cheque.return_value = (
+        mock_use_case
+    )
     router_app_context.stellar_service.submit_transaction = AsyncMock(
         return_value={"successful": True, "hash": "abc", "error": None}
     )
