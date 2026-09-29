@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk import Asset, MuxedAccount
 from stellar_sdk.sep.federation import resolve_stellar_address
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.dename_service import DeNameResolutionError, ResolvedDeName
 from infrastructure.services.signing_facade import (
     PENDING_SIGNATURE_REQUEST_KEY,
     SignatureMode,
@@ -60,6 +61,28 @@ from infrastructure.utils.stellar_utils import (
 from other.stellar_tools import stellar_check_account, get_first_balance_from_list
 
 MAX_TELEGRAM_USERNAME_LENGTH = 32
+
+
+def _is_dename_input(value: str) -> bool:
+    return "." in value and "*" not in value and "@" not in value
+
+
+async def _resolve_dename(value: str, app_context: AppContext) -> ResolvedDeName:
+    if app_context.dename_service is None:
+        raise DeNameResolutionError("unavailable")
+    return await app_context.dename_service.resolve(value)
+
+
+def _dename_error_text(user: types.Message | types.CallbackQuery, reason: str, app_context: AppContext) -> str:
+    key = {
+        "unknown": "dename_unknown",
+        "invalid": "dename_invalid",
+        "inactive": "dename_inactive",
+        "unresolved": "dename_unresolved",
+        "stale": "dename_stale",
+        "changed": "dename_changed",
+    }.get(reason, "dename_unavailable")
+    return my_gettext(user, key, app_context=app_context)
 
 
 def _is_username_search_query(query: str) -> bool:
@@ -487,6 +510,20 @@ async def cmd_send_for(
     else:
         public_key = data.get("qr", message.text)
         logger.info(f"StateSendFor: address used directly: {public_key}")
+        if isinstance(public_key, str) and _is_dename_input(public_key):
+            try:
+                resolved = await _resolve_dename(public_key, app_context)
+            except DeNameResolutionError as exc:
+                await send_message(
+                    session,
+                    message,
+                    _dename_error_text(message, exc.reason, app_context),
+                    reply_markup=get_kb_return(message, app_context=app_context),
+                    app_context=app_context,
+                )
+                return
+            public_key = resolved.address
+            await state.update_data(dename_name=resolved.name)
     if public_key is None:
         return
     my_account = await stellar_check_account(public_key)
@@ -500,6 +537,16 @@ async def cmd_send_for(
 
         await cmd_send_choose_token(message, state, session, app_context=app_context)
     else:
+        if data.get("dename_name") or _is_dename_input(str(data.get("qr", message.text))):
+            await state.update_data(dename_name=None)
+            await send_message(
+                session,
+                message,
+                _dename_error_text(message, "unresolved", app_context),
+                reply_markup=get_kb_return(message, app_context=app_context),
+                app_context=app_context,
+            )
+            return
         wallet_repo = app_context.repository_factory.get_wallet_repository(session)
         wallet = await wallet_repo.get_default_wallet(message.from_user.id)
         free_wallet = wallet.is_free if wallet else False
@@ -802,6 +849,28 @@ async def cmd_send_04(
 
     if send_address is None:
         return
+    dename_name = data.get("dename_name")
+    if isinstance(dename_name, str):
+        try:
+            current = await _resolve_dename(dename_name, app_context)
+            if current.address != send_address:
+                raise DeNameResolutionError("changed")
+        except DeNameResolutionError as exc:
+            await clear_state(state)
+            await state.set_state(StateSendToken.sending_for)
+            await send_message(
+                session,
+                message,
+                _dename_error_text(message, exc.reason, app_context),
+                reply_markup=get_kb_return(message, app_context=app_context),
+                app_context=app_context,
+            )
+            return
+    destination_label = (
+        f"<b>DeName:</b> {dename_name}\n{send_address} {mtlap_stars}"
+        if isinstance(dename_name, str)
+        else send_address + " " + mtlap_stars
+    )
     if send_memo is None:
         send_memo_str = ""
     else:
@@ -814,7 +883,7 @@ async def cmd_send_04(
         (
             float2str(send_sum),
             send_asset_name,
-            send_address + " " + mtlap_stars,
+            destination_label,
             send_memo_str,
         ),
         app_context=app_context,
@@ -878,7 +947,7 @@ async def cmd_send_04(
         (
             float2str(send_sum),
             send_asset_name,
-            send_address + " " + mtlap_stars,
+            destination_label,
             send_memo_str,
         ),
         app_context=app_context,
@@ -980,6 +1049,7 @@ async def cq_send_back_to_address(
         "memo",
         "federal_memo",
         "send_address",
+        "dename_name",
         "send_balance_address",
         "mtlap_stars",
         "send_sum",
@@ -1054,6 +1124,7 @@ async def cq_send_back_to_amount(
             "memo",
             "federal_memo",
             "send_address",
+            "dename_name",
             "send_balance_address",
             "mtlap_stars",
             "send_sum",

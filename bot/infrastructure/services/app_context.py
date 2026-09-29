@@ -13,6 +13,7 @@ from infrastructure.factories.use_case_factory import IUseCaseFactory
 from db.db_pool import DatabasePool
 
 if TYPE_CHECKING:
+    from infrastructure.services.dename_service import DeNameService
     from infrastructure.services.notification_coordinator import NotificationCoordinator
     from infrastructure.services.notification_redis_store import NotificationRedisStore
     from infrastructure.services.notification_badge_service import (
@@ -58,6 +59,7 @@ class AppContext:
         notification_badge_service: Optional["NotificationBadgeService"] = None,
         bot_health_service: Optional["BotHealthService"] = None,
         stellar_sealedbox_service: Optional[IStellarSealedBoxService] = None,
+        dename_service: Optional["DeNameService"] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -80,3 +82,4 @@ class AppContext:
         self.notification_badge_service = notification_badge_service
         self.bot_health_service = bot_health_service
         self.stellar_sealedbox_service = stellar_sealedbox_service
+        self.dename_service = dename_service

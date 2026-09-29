@@ -330,6 +330,7 @@ async def main():
         SqlAlchemyRepositoryFactory,
     )
     from infrastructure.services.stellar_service import StellarService
+    from infrastructure.services.dename_service import DeNameService
 
     from infrastructure.services.encryption_service import EncryptionService
     from infrastructure.services.stellar_sealedbox_service import (
@@ -354,6 +355,7 @@ async def main():
 
     repository_factory = SqlAlchemyRepositoryFactory()
     stellar_service = StellarService(horizon_url=config.horizon_url)
+    dename_service = DeNameService(config.dename_api_base_url)
     encryption_service = EncryptionService()
     stellar_sealedbox_service = StellarSealedBoxService()
     ton_service = TonService()
@@ -426,6 +428,7 @@ async def main():
         notification_badge_service=notification_badge_service,
         bot_health_service=bot_health_service,
         stellar_sealedbox_service=stellar_sealedbox_service,
+        dename_service=dename_service,
     )
 
     dp["app_context"] = app_context
