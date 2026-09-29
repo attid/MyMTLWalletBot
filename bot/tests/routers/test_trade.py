@@ -244,7 +244,7 @@ async def test_cmd_show_orders(
 
     req = get_latest_msg(mock_telegram)
     assert "Choose order" in req["data"]["text"]
-    assert "100.0 XLM" in req["data"]["reply_markup"]
+    assert "100 XLM -> (0.5) -> 50 EURMTL" in req["data"]["reply_markup"]
 
 
 @pytest.mark.asyncio
