@@ -539,8 +539,13 @@ async def cb_set_limit(
     user_repo = app_context.repository_factory.get_user_repository(session)
     db_user = await user_repo.get_by_id(callback.from_user.id)
     if callback.data == "OffLimits" and db_user:
-        db_user.can_5000 = 1 if db_user.can_5000 == 0 else 0
-        # Note: IUserRepository does not have a general update method
+        update_profile = app_context.use_case_factory.create_update_user_profile(
+            session
+        )
+        db_user = await update_profile.execute(
+            user_id=callback.from_user.id,
+            can_5000=1 if db_user.can_5000 == 0 else 0,
+        )
 
     msg = my_gettext(callback, "limits", app_context=app_context)
     await send_message(
