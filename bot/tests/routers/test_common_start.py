@@ -6,6 +6,7 @@ from routers.common_start import (
     router as start_router,
     SettingState,
 )
+from core.use_cases.user.update_profile import UpdateUserProfile
 from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance
 from tests.conftest import (
@@ -34,6 +35,11 @@ def setup_common_start_mocks(router_app_context):
             self.ctx = ctx
             self._setup_defaults()
 
+        def _persist_user_update(self, user):
+            """Emulate repository update(): the next get_by_id() must see it."""
+            self.user_repo.update.return_value = user
+            return user
+
         def _setup_defaults(self):
             # User Repo
             self.user = MagicMock()
@@ -43,10 +49,7 @@ def setup_common_start_mocks(router_app_context):
             self.user.default_address = None
             self.user_repo = MagicMock()
             self.user_repo.get_by_id = AsyncMock(return_value=self.user)
-            self.user_repo.update = AsyncMock()
-            self.ctx.repository_factory.get_user_repository.return_value = (
-                self.user_repo
-            )
+            self.user_repo.update = AsyncMock(side_effect=self._persist_user_update)
 
             # Wallet Repo
             self.wallet = MagicMock()
@@ -64,11 +67,18 @@ def setup_common_start_mocks(router_app_context):
             # Capture session to verify commit
             self.captured_session = None
 
-            def get_repo(session):
+            def get_wallet_repo(session):
                 self.captured_session = session
                 return self.wallet_repo
 
-            self.ctx.repository_factory.get_wallet_repository.side_effect = get_repo
+            self.ctx.repository_factory.get_wallet_repository.side_effect = (
+                get_wallet_repo
+            )
+
+            def get_user_repo(session):
+                return self.user_repo
+
+            self.ctx.repository_factory.get_user_repository.side_effect = get_user_repo
 
             # Secret Service
             self.secret_service = AsyncMock()
@@ -343,26 +353,50 @@ async def test_cmd_donate_start(
 async def test_cb_set_limit_toggle(
     mock_telegram, router_app_context, setup_common_start_mocks
 ):
-    """Test toggling limits via OffLimits callback."""
+    """OffLimits callback must persist can_5000 through UpdateUserProfile.
+
+    The mock repo keeps the state on the helper object: update() applies and
+    get_by_id() re-reads it, mimicking a second DB read after the toggle.
+    """
     dp = router_app_context.dispatcher
     dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
     dp.include_router(start_router)
 
+    mocks = setup_common_start_mocks
     user_id = 123
-    setup_common_start_mocks.user.can_5000 = 0
+    mocks.user.can_5000 = 0
 
-    # 1. Toggle ON
+    mocks.update_profile_uc.execute = AsyncMock(
+        side_effect=UpdateUserProfile(mocks.user_repo).execute
+    )
+
+    # 1. Toggle ON: use case writes through the repo
     await dp.feed_update(
         router_app_context.bot, create_callback_update(user_id, "OffLimits")
     )
-    assert setup_common_start_mocks.user.can_5000 == 1
+    assert mocks.user.can_5000 == 1
+    sent = get_latest_msg(mock_telegram)["data"]["reply_markup"]
+    assert '"callback_data": "OffLimits"' in sent
+    assert '"callback_data": "Return"' in sent
 
-    # 2. Toggle OFF
+    # 2. Fresh read still shows the persisted value (limit disabled)
     await dp.feed_update(
         router_app_context.bot,
-        create_callback_update(user_id, "OffLimits", update_id=2),
+        create_callback_update(user_id, "SetLimit", update_id=2),
     )
-    assert setup_common_start_mocks.user.can_5000 == 0
+    assert get_latest_msg(mock_telegram)["data"]["text"] == "limits"
+
+    # 3. Toggle OFF
+    await dp.feed_update(
+        router_app_context.bot,
+        create_callback_update(user_id, "OffLimits", update_id=3),
+    )
+    assert mocks.user.can_5000 == 0
+    sent = get_latest_msg(mock_telegram)["data"]["reply_markup"]
+    assert '"callback_data": "OffLimits"' in sent
+
+    # 4. Use case wrote through the repository exactly once per toggle
+    assert mocks.user_repo.update.await_count == 2
 
 
 @pytest.mark.asyncio
