@@ -35,6 +35,11 @@ from routers.send import (
 from middleware.notification_activity import NotificationActivityMiddleware
 from core.domain.value_objects import Balance, PaymentResult
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
+from infrastructure.services.dename_service import (
+    DeNameResolutionError,
+    DeNameService,
+    ResolvedDeName,
+)
 from keyboards.common_keyboards import get_kb_return, get_kb_yesno_send_xdr
 from tests.conftest import (
     RouterTestMiddleware,
@@ -396,6 +401,131 @@ async def test_cmd_send_for_invalid_address(
     req = get_telegram_request(mock_telegram, "sendMessage")
     assert req is not None
     assert "send_error2" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_send_dename_shows_name_and_full_address_before_signing(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    mock_horizon.set_account(
+        address, balances=[{"asset_type": "native", "balance": "100.0"}]
+    )
+    dename = MagicMock(spec=DeNameService)
+    dename.resolve = AsyncMock(return_value=ResolvedDeName("alice.ns", address))
+    router_app_context.dename_service = dename
+    def localized_text(_user, key, params=()):
+        if key == "confirm_send":
+            return "Send {} {} to {} memo {}".format(*params)
+        return key
+
+    router_app_context.localization_service.get_text.side_effect = localized_text
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_for)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "Alice.NS"),
+        app_context=router_app_context,
+    )
+    data = await dp.storage.get_data(storage_key)
+    assert data["dename_name"] == "alice.ns"
+    assert data["send_address"] == address
+
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_sum)
+    await dp.storage.update_data(
+        key=storage_key,
+        data={
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            "send_asset_max_sum": "100.0",
+            "msg": "Enter sum",
+        },
+    )
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "10.5", update_id=2),
+        app_context=router_app_context,
+    )
+
+    text = get_telegram_request(mock_telegram, "editMessageText")["data"]["text"]
+    assert "alice.ns" in text
+    assert address in text
+    assert dename.resolve.await_count == 2
+    assert (await dp.storage.get_data(storage_key))["xdr"] == "XDR_PAYMENT"
+
+
+@pytest.mark.asyncio
+async def test_send_dename_changed_address_stops_before_payment_build(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    address = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    changed = "GCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYLQDJ"
+    dename = MagicMock(spec=DeNameService)
+    dename.resolve = AsyncMock(return_value=ResolvedDeName("alice.ns", changed))
+    router_app_context.dename_service = dename
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_sum)
+    await dp.storage.set_data(
+        key=storage_key,
+        data={
+            "dename_name": "alice.ns",
+            "send_address": address,
+            "send_asset_code": "XLM",
+            "send_asset_issuer": None,
+            "send_asset_max_sum": "100.0",
+            "msg": "Enter sum",
+        },
+    )
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "10.5"),
+        app_context=router_app_context,
+    )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_for
+    assert "xdr" not in await dp.storage.get_data(storage_key)
+    router_app_context.use_case_factory.create_send_payment.assert_not_called()
+    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    assert "dename_changed" in text
+
+
+@pytest.mark.asyncio
+async def test_unknown_dename_does_not_enter_payment_flow(
+    mock_telegram, mock_horizon, router_app_context, dp, setup_send_mocks
+):
+    user_id = 123
+    dename = MagicMock(spec=DeNameService)
+    dename.resolve = AsyncMock(side_effect=DeNameResolutionError("unknown"))
+    router_app_context.dename_service = dename
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(send_router)
+    storage_key = StorageKey(
+        bot_id=router_app_context.bot.id, chat_id=user_id, user_id=user_id
+    )
+    await dp.storage.set_state(key=storage_key, state=StateSendToken.sending_for)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(user_id, "missing.ns"),
+        app_context=router_app_context,
+    )
+
+    assert await dp.storage.get_state(storage_key) == StateSendToken.sending_for
+    assert "send_address" not in await dp.storage.get_data(storage_key)
+    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    assert "dename_unknown" in text
 
 
 @pytest.mark.asyncio
@@ -849,6 +979,7 @@ async def test_flow_back_from_send_token_clears_recipient_data_and_preserves_unr
             "memo": "recipient memo",
             "federal_memo": True,
             "send_address": "GDEST",
+            "dename_name": "alice.ns",
             "send_balance_address": "GBALANCEDEST",
             "mtlap_stars": "⭐⭐",
             "unrelated_flow_data": "keep me",
@@ -868,6 +999,7 @@ async def test_flow_back_from_send_token_clears_recipient_data_and_preserves_unr
         "memo",
         "federal_memo",
         "send_address",
+        "dename_name",
         "send_balance_address",
         "mtlap_stars",
     ):
@@ -1066,6 +1198,7 @@ async def test_flow_back_from_confirmation_to_address_clears_stale_send_and_sign
             "memo": "recipient memo",
             "federal_memo": True,
             "send_address": "GDEST",
+            "dename_name": "alice.ns",
             "send_balance_address": "GBALANCEDEST",
             "mtlap_stars": "⭐⭐",
             "send_sum": 10,
@@ -1100,6 +1233,7 @@ async def test_flow_back_from_confirmation_to_address_clears_stale_send_and_sign
         "memo",
         "federal_memo",
         "send_address",
+        "dename_name",
         "send_balance_address",
         "mtlap_stars",
         "send_sum",

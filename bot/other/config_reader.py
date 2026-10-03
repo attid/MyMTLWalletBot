@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     sentry_dsn: str
     horizon_url: str
     horizon_url_rw: str
+    dename_api_base_url: Optional[str] = None
     grist_token: str
     grist_base_url: str = "https://grist.eurmtl.me/api/docs"
     tonconsole_token: str

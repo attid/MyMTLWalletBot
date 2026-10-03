@@ -23,6 +23,27 @@ core -> infrastructure -> routers/interface
 - `bot/routers/`: aiogram handlers and user-facing flows.
 - `bot/services/` and `bot/other/`: integrations/utilities used by routers and infrastructure.
 
+## DeName payment resolution
+
+`DeNameService` in `bot/infrastructure/services/` reads the public-network
+`dens-api` through `AppContext`. Set `DENAME_API_BASE_URL` to a trusted HTTPS
+mainnet endpoint ending in `/api/v1`; the bot rejects the `/testnet/api/v1`
+path. Leaving it unset disables name payments while keeping other recipient
+formats available. The API hostname and its Stellar network must be checked
+during deployment; the read API does not expose a network identity endpoint.
+
+The Send router accepts `<name>.<tld>`, uses the indexed `records.forward`
+account rather than `owner`, and requires an active, unexpired record. It also
+checks the root-registry and matching TLD indexer stream: each must be idle
+and updated within 120 seconds, and the TLD stream must have processed the
+name's last event ledger. The HTTP client uses a four-second timeout per request and
+at most one retry for network or server failure. A missing, malformed, inactive,
+unresolved, or stale result stops the payment. It resolves the name again before
+building the payment XDR and stops if the destination changed. The confirmation
+shows both the full name and account ID. Indexing is eventually consistent;
+this check is a freshness policy, not atomic on-chain resolution. Users must
+review the displayed account ID before signing.
+
 ## Boundary Rules (Mechanically Checked)
 
 Checked by `.linters/check_import_boundaries.py`:
