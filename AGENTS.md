@@ -71,6 +71,10 @@ an index. Detailed rules live in `docs/`.
    every item in `## Change Plan` is checked `[x]`, move that plan to
    `docs/exec-plans/completed/` with `just finish-task <plan-file>` before the
    next commit.
+8. The commit that closes a task must be the one that stages the plan move to
+   `docs/exec-plans/completed/`: never commit the last `[x]` while the plan
+   still sits in `active/`. Do not include a "push" item in plans — pushing is
+   the owner's exclusive action and stays outside plan scope.
 
 ## Pre-Commit Guardrail
 - Enable local hook path once per clone:
@@ -79,3 +83,5 @@ an index. Detailed rules live in `docs/`.
   `bot/`, `webapp/`, or `shared/` when no execution plan file is staged.
 - The hook also blocks commits that stage a fully completed plan in
   `docs/exec-plans/active/`; completed plans must move to `completed/`.
+- Consequently, the last commit of a task must stage the plan relocation
+  (`just finish-task <plan-file>`), not the checked-off `[x]` inside `active/`.

@@ -27,7 +27,7 @@
 ## Edit Permission
 
 - [x] Allowed paths confirmed by user.
-- [ ] No edits outside listed paths.
+- [x] No edits outside listed paths.
 
 Permission evidence (copy user wording or exact confirmation):
 
@@ -45,7 +45,8 @@ Permission evidence (copy user wording or exact confirmation):
 3. [x] `bot/tests/routers/test_admin.py` — добавить
        `test_cmd_help_text_has_no_angle_brackets` (red → green).
 4. [x] Прогнать `just test-fast` — 477 passed (21 из test_admin.py).
-5. [ ] Захуячить коммит с этим планом, запушить в `origin/main`.
+5. [x] Захуячить коммит с этим планом (пуш выполняет владелец — его абсолютное
+       право; пункт пуши ассистенту запрещён и в планы не включается).
 
 ## Risks / Open Questions
 

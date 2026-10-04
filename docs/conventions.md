@@ -36,6 +36,10 @@ call `await session.commit()` in the same `async with` block.
 - Keep diffs minimal and mechanical.
 - Add/adjust docs whenever behavior or contracts change.
 - For non-trivial tasks, create an execution plan in `docs/exec-plans/active/`.
+- The last commit of a task must include the plan move to
+  `docs/exec-plans/completed/` (`just finish-task <plan-file>`); do not commit
+  a plan with all-Change-Plan items checked while it still sits in `active/`,
+  and never add a "push" item to a plan (pushing is the owner's action).
 
 ## Static Analysis Scope
 

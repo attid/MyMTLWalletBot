@@ -41,6 +41,7 @@ from other.config_reader import config, horizont_urls
 from other.stellar_tools import async_stellar_check_fee
 from infrastructure.services.app_context import AppContext
 from infrastructure.utils.telegram_utils import send_message
+from routers import inout
 from routers.inout import get_usdt_balance
 
 
@@ -827,6 +828,7 @@ async def cmd_help(message: types.Message):
         "/usdt1 — автовывод первого в очереди\n"
         "/check_usdt @user — сверка баланса БД и блокчейна\n"
         "/set_usdt @user amount — установка баланса БД\n"
+        "/usdt_limit [amount] — временный лимит USDT (до рестарта)\n"
         "/chequepay [адрес] [сумма] — выплата EURMTL с чекового счёта\n"
         "/withdraw [адрес] [сумма] [ассет] [memo] — перевод с основного счёта\n"
         "/crypto_migration_status — прогресс миграции wallet_crypto_v2\n"
@@ -874,6 +876,34 @@ async def cmd_help(message: types.Message):
 #         await message.answer(str(len(select)))
 #         await stellar_update_credit(select)
 #         await message.answer(f'done 90')
+
+
+# --- Runtime USDT limit (reset on restart) ---
+
+@router.message(Command(commands=["usdt_limit"]))
+async def cmd_usdt_limit(message: types.Message):
+    """View or temporarily override max_usdt_sum; resets on restart."""
+    if not message.from_user or message.from_user.id not in config.admins:
+        return
+
+    if not message.text:
+        return
+    args = message.text.split()
+    if len(args) == 1:
+        await message.answer(
+            f"Текущий лимит USDT: {inout.max_usdt_sum} (до рестарта)"
+        )
+        return
+    try:
+        new_limit = int(args[1])
+    except (IndexError, ValueError):
+        await message.answer("Использование: /usdt_limit [amount]")
+        return
+    if new_limit <= 0:
+        await message.answer("Сумма должна быть положительной")
+        return
+    inout.max_usdt_sum = new_limit
+    await message.answer(f"Лимит USDT установлен: {new_limit} (до рестарта)")
 
 
 @router.message(Command(commands=["test"]))

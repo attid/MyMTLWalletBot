@@ -415,6 +415,75 @@ async def test_cmd_help_text_has_no_angle_brackets(mock_telegram, router_app_con
 
 
 @pytest.mark.asyncio
+async def test_cmd_usdt_limit_view(mock_telegram, router_app_context):
+    """No args → shows current limit, does not change it."""
+    from routers import inout
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+    default_limit = inout.max_usdt_sum
+
+    try:
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(123, "/usdt_limit", username="itolstov"),
+            app_context=router_app_context,
+        )
+        req = get_telegram_request(mock_telegram, "sendMessage")
+        assert str(default_limit) in req["data"]["text"]
+        assert inout.max_usdt_sum == default_limit
+    finally:
+        inout.max_usdt_sum = default_limit
+
+
+@pytest.mark.asyncio
+async def test_cmd_usdt_limit_set(mock_telegram, router_app_context):
+    """With arg → sets runtime override."""
+    from routers import inout
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+    default_limit = inout.max_usdt_sum
+
+    try:
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(
+                123, "/usdt_limit 1000", username="itolstov"
+            ),
+            app_context=router_app_context,
+        )
+        req = get_telegram_request(mock_telegram, "sendMessage")
+        assert "1000" in req["data"]["text"]
+        assert inout.max_usdt_sum == 1000
+    finally:
+        inout.max_usdt_sum = default_limit
+
+
+@pytest.mark.asyncio
+async def test_cmd_usdt_limit_rejects_bad_input(mock_telegram, router_app_context):
+    """Negative/non-numeric → error, limit unchanged."""
+    from routers import inout
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+    default_limit = inout.max_usdt_sum
+
+    for bad in ("/usdt_limit -5", "/usdt_limit abc"):
+        await dp.feed_update(
+            bot=router_app_context.bot,
+            update=create_message_update(123, bad, username="itolstov"),
+            app_context=router_app_context,
+        )
+        msgs = get_telegram_request(mock_telegram, "sendMessage", last=False)
+        assert any("положительной" in m["data"]["text"] or "Использование" in m["data"]["text"] for m in msgs)
+        assert inout.max_usdt_sum == default_limit
+
+
+@pytest.mark.asyncio
 async def test_cmd_test(mock_telegram, router_app_context):
     """Test /test command functionality."""
     dp = router_app_context.dispatcher
