@@ -395,6 +395,26 @@ async def test_cmd_help(mock_telegram, router_app_context):
 
 
 @pytest.mark.asyncio
+async def test_cmd_help_text_has_no_angle_brackets(mock_telegram, router_app_context):
+    """< and > are invalid in HTML parse mode and make Telegram reject the message."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(admin_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/help"),
+        app_context=router_app_context,
+    )
+
+    req = get_telegram_request(mock_telegram, "sendMessage")
+    text = req["data"]["text"]
+    assert "<" not in text and ">" not in text, (
+        f"/help текст содержит < или > — Telegram с parse_mode=HTML его не примет: {text!r}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_cmd_test(mock_telegram, router_app_context):
     """Test /test command functionality."""
     dp = router_app_context.dispatcher

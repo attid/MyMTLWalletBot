@@ -222,12 +222,12 @@ async def _handle_payout_command(
     args = message.text.split()
     if memo_allowed:
         usage = (
-            "Использование: /withdraw <адрес> <сумма> <ассет> [memo]\n"
+            "Использование: /withdraw [адрес] [сумма] [ассет] [memo]\n"
             "Ассеты: " + ", ".join([*WITHDRAW_ASSETS, XLM_ASSET.code])
         )
         min_args = 4
     else:
-        usage = "Использование: /chequepay <адрес> <сумма>"
+        usage = "Использование: /chequepay [адрес] [сумма]"
         min_args = 3
     if len(args) < min_args:
         await message.answer(usage)
@@ -827,8 +827,8 @@ async def cmd_help(message: types.Message):
         "/usdt1 — автовывод первого в очереди\n"
         "/check_usdt @user — сверка баланса БД и блокчейна\n"
         "/set_usdt @user amount — установка баланса БД\n"
-        "/chequepay <адрес> <сумма> — выплата EURMTL с чекового счёта\n"
-        "/withdraw <адрес> <сумма> <ассет> [memo] — перевод с основного счёта\n"
+        "/chequepay [адрес] [сумма] — выплата EURMTL с чекового счёта\n"
+        "/withdraw [адрес] [сумма] [ассет] [memo] — перевод с основного счёта\n"
         "/crypto_migration_status — прогресс миграции wallet_crypto_v2\n"
         "/balance — проверить баланс"
     )
