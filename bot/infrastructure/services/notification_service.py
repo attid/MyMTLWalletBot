@@ -791,8 +791,6 @@ class NotificationService:
                 op.for_account = op_data.get("account")
                 # Amount to sell
                 op.offer_amount = float(op_data.get("amount", 0))
-                # Amount to sell
-                op.offer_amount = float(op_data.get("amount", 0))
 
                 # Check offer_id, fallback to created_offer_id if 0
                 o_id = int(op_data.get("offer_id", 0))

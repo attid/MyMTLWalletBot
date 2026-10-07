@@ -218,6 +218,21 @@ def decode_db_effect(
     elif operation.operation == "manage_sell_offer":
         # Handle sell offer operations
         # Format: account_link is creating/updating sell offer of amount(1) code1 for code2 at price amount2
+        # Stellar semantics: amount == 0 with an existing offer_id means the offer is deleted.
+        if operation.offer_amount == 0 and operation.offer_id > 0:
+            selling_asset = str(operation.offer_selling_asset)
+            buying_asset = str(operation.offer_buying_asset)
+            return my_gettext(
+                user_id,
+                "info_sell_offer_cancelled",
+                (
+                    account_link,
+                    selling_asset,
+                    buying_asset,
+                    op_link,
+                ),
+                localization_service=loc_service,
+            )
         offer_id_text = ""
         if operation.offer_id and operation.offer_id > 0:
             link = f"https://viewer.eurmtl.me/offer/{operation.offer_id}"
@@ -265,6 +280,21 @@ def decode_db_effect(
         )
     elif operation.operation == "manage_buy_offer":
         # Handle buy offer operations
+        # Stellar semantics: amount == 0 with an existing offer_id means the offer is deleted.
+        if operation.offer_amount == 0 and operation.offer_id > 0:
+            buying_asset = str(operation.offer_buying_asset)
+            selling_asset = str(operation.offer_selling_asset)
+            return my_gettext(
+                user_id,
+                "info_buy_offer_cancelled",
+                (
+                    account_link,
+                    buying_asset,
+                    selling_asset,
+                    op_link,
+                ),
+                localization_service=loc_service,
+            )
         offer_id_text = ""
         if operation.offer_id and operation.offer_id > 0:
             link = f"https://viewer.eurmtl.me/offer/{operation.offer_id}"

@@ -492,6 +492,91 @@ async def test_send_message_works_with_bot_parameter(router_bot):
 
 
 @pytest.mark.asyncio
+async def test_manage_sell_offer_cancel_notification(notification_service):
+    """Stellar semantics: manage_sell_offer with amount=0 and offer_id>0 deletes the offer.
+
+    The notification must say the offer was cancelled, not "is selling 0 USDM".
+    Real-world case: horizon operation 278387238822731777 (USDM->EURMTL, price 1).
+    """
+    operation = NotificationOperation(
+        id="278387238822731777",
+        operation="manage_sell_offer",
+        dt=datetime.utcnow(),
+        offer_amount=0.0,
+        offer_price=1.0,
+        offer_selling_asset="USDM",
+        offer_buying_asset="EURMTL",
+        offer_id=1822268137,
+        transaction_hash="txhash123",
+        from_account="GSELLER" + "A" * 50,
+        for_account="GSELLER" + "A" * 50,
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "cancel" in text.lower(), f"Cancel text expected, got: {text}"
+    assert "is selling" not in text
+    assert "0 USDM" not in text
+
+
+@pytest.mark.asyncio
+async def test_manage_buy_offer_cancel_notification(notification_service):
+    """manage_buy_offer with amount=0 and offer_id>0 also deletes the offer."""
+    operation = NotificationOperation(
+        id="276095959669526530",
+        operation="manage_buy_offer",
+        dt=datetime.utcnow(),
+        offer_amount=0.0,
+        offer_price=30.0,
+        offer_selling_asset="EURMTL",
+        offer_buying_asset="STAS",
+        offer_id=1822268138,
+        transaction_hash="txhash124",
+        from_account="GBUYER" + "B" * 50,
+        for_account="GBUYER" + "B" * 50,
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "cancel" in text.lower(), f"Cancel text expected, got: {text}"
+    assert "is buying" not in text
+
+
+@pytest.mark.asyncio
+async def test_manage_sell_offer_zero_amount_zero_offer_id_not_cancel(
+    notification_service,
+):
+    """amount=0 with offer_id=0 is not a cancel (nothing to delete): keep normal branch."""
+    operation = NotificationOperation(
+        id="zero-zero",
+        operation="manage_sell_offer",
+        dt=datetime.utcnow(),
+        offer_amount=0.0,
+        offer_price=1.0,
+        offer_selling_asset="USDM",
+        offer_buying_asset="EURMTL",
+        offer_id=0,
+        transaction_hash="txhash125",
+        from_account="GSELLER" + "C" * 50,
+        for_account="GSELLER" + "C" * 50,
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "is selling" in text, f"Normal branch expected, got: {text}"
+    assert "cancel" not in text.lower()
+
+
+@pytest.mark.asyncio
 async def test_notification_sell_offer_link(
     notification_service, mock_telegram, mock_db_pool
 ):
