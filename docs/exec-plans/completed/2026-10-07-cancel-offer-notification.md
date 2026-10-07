@@ -65,6 +65,10 @@ Permission evidence (copy user wording or exact confirmation):
        amount=0 и offer_id=0 (теоретически невозможен, но пусть падает в
        обычную ветку, а не в отмену).
 5. [x] `just test-fast` + `just lint` зелёные.
+6. [x] Ревью agy (2 круга, `docs/drafts/agy_cancel_offer_review*.md`):
+       guard `(offer_id or 0) > 0`, симметричный buy-тест, сквозной
+       парсинг прод-payload'а, снят лишний `async` с синхронных
+       decode-тестов.
 
 ## Risks / Open Questions
 

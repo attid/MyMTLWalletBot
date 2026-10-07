@@ -491,8 +491,7 @@ async def test_send_message_works_with_bot_parameter(router_bot):
     )
 
 
-@pytest.mark.asyncio
-async def test_manage_sell_offer_cancel_notification(notification_service):
+def test_manage_sell_offer_cancel_notification(notification_service):
     """Stellar semantics: manage_sell_offer with amount=0 and offer_id>0 deletes the offer.
 
     The notification must say the offer was cancelled, not "is selling 0 USDM".
@@ -522,8 +521,7 @@ async def test_manage_sell_offer_cancel_notification(notification_service):
     assert "0 USDM" not in text
 
 
-@pytest.mark.asyncio
-async def test_manage_buy_offer_cancel_notification(notification_service):
+def test_manage_buy_offer_cancel_notification(notification_service):
     """manage_buy_offer with amount=0 and offer_id>0 also deletes the offer."""
     operation = NotificationOperation(
         id="276095959669526530",
@@ -548,8 +546,7 @@ async def test_manage_buy_offer_cancel_notification(notification_service):
     assert "is buying" not in text
 
 
-@pytest.mark.asyncio
-async def test_manage_sell_offer_zero_amount_zero_offer_id_not_cancel(
+def test_manage_sell_offer_zero_amount_zero_offer_id_not_cancel(
     notification_service,
 ):
     """amount=0 with offer_id=0 is not a cancel (nothing to delete): keep normal branch."""
@@ -576,8 +573,7 @@ async def test_manage_sell_offer_zero_amount_zero_offer_id_not_cancel(
     assert "cancel" not in text.lower()
 
 
-@pytest.mark.asyncio
-async def test_manage_buy_offer_zero_amount_zero_offer_id_not_cancel(
+def test_manage_buy_offer_zero_amount_zero_offer_id_not_cancel(
     notification_service,
 ):
     """Symmetric to sell: amount=0 with offer_id=0 (buy) keeps the normal branch."""
