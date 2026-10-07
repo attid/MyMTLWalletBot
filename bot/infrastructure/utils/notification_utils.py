@@ -219,7 +219,7 @@ def decode_db_effect(
         # Handle sell offer operations
         # Format: account_link is creating/updating sell offer of amount(1) code1 for code2 at price amount2
         # Stellar semantics: amount == 0 with an existing offer_id means the offer is deleted.
-        if operation.offer_amount == 0 and operation.offer_id > 0:
+        if operation.offer_amount == 0 and (operation.offer_id or 0) > 0:
             selling_asset = str(operation.offer_selling_asset)
             buying_asset = str(operation.offer_buying_asset)
             return my_gettext(
@@ -281,7 +281,7 @@ def decode_db_effect(
     elif operation.operation == "manage_buy_offer":
         # Handle buy offer operations
         # Stellar semantics: amount == 0 with an existing offer_id means the offer is deleted.
-        if operation.offer_amount == 0 and operation.offer_id > 0:
+        if operation.offer_amount == 0 and (operation.offer_id or 0) > 0:
             buying_asset = str(operation.offer_buying_asset)
             selling_asset = str(operation.offer_selling_asset)
             return my_gettext(

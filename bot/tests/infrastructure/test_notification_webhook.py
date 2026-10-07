@@ -577,6 +577,70 @@ async def test_manage_sell_offer_zero_amount_zero_offer_id_not_cancel(
 
 
 @pytest.mark.asyncio
+async def test_manage_buy_offer_zero_amount_zero_offer_id_not_cancel(
+    notification_service,
+):
+    """Symmetric to sell: amount=0 with offer_id=0 (buy) keeps the normal branch."""
+    operation = NotificationOperation(
+        id="zero-zero-buy",
+        operation="manage_buy_offer",
+        dt=datetime.utcnow(),
+        offer_amount=0.0,
+        offer_price=1.0,
+        offer_selling_asset="EURMTL",
+        offer_buying_asset="STAS",
+        offer_id=0,
+        transaction_hash="txhash126",
+        from_account="GBUYER" + "D" * 50,
+        for_account="GBUYER" + "D" * 50,
+    )
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "is buying" in text, f"Normal branch expected, got: {text}"
+    assert "cancel" not in text.lower()
+
+
+def test_manage_sell_offer_cancel_payload_from_horizon(notification_service):
+    """End-to-end: real prod Horizon payload (op 278387238822731777, amount="0" as string)
+    maps to a cancel notification, not "is selling 0 USDM"."""
+    payload = {
+        "operation": {
+            "id": "278387238822731777",
+            "type": "manage_sell_offer",
+            "account": "GCPOWDQQDVSAQGJXZW3EWPPJ5JCF4KTTHBYNB4U54AKQVDLZXLLYMXY7",
+            "amount": "0.0000000",
+            "price": "1.0000000",
+            "offer_id": "1822268137",
+            "asset": {
+                "asset_type": "credit_alphanum12",
+                "asset_code": "EURMTL",
+                "asset_issuer": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+            },
+            "source_asset": {
+                "asset_type": "credit_alphanum4",
+                "asset_code": "USDM",
+                "asset_issuer": "GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM",
+            },
+        }
+    }
+    operation = notification_service._map_payload_to_operation(payload)
+    assert operation.offer_amount == 0.0
+    assert operation.offer_id == 1822268137
+    text = decode_db_effect(
+        operation,
+        decode_for=operation.for_account,
+        user_id=12345,
+        localization_service=notification_service.localization_service,
+    )
+    assert "cancel" in text.lower(), f"Cancel text expected, got: {text}"
+    assert "is selling" not in text
+
+
+@pytest.mark.asyncio
 async def test_notification_sell_offer_link(
     notification_service, mock_telegram, mock_db_pool
 ):

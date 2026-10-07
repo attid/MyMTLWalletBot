@@ -52,19 +52,19 @@ Permission evidence (copy user wording or exact confirmation):
 
 ## Change Plan
 
-1. [ ] `notification_utils.py` — в ветках `manage_sell_offer` и
+1. [x] `notification_utils.py` — в ветках `manage_sell_offer` и
        `manage_buy_offer`: если `offer_amount == 0 and offer_id > 0`,
        рендерить новый ключ отмены (с account_link, selling/buying asset
        и op_link), иначе прежний текст.
-2. [ ] `notification_service.py:792-795` — убрать дубль присваивания
+2. [x] `notification_service.py:792-795` — убрать дубль присваивания
        `op.offer_amount`.
-3. [ ] 6 локалей — добавить `info_sell_offer_cancelled` /
+3. [x] 6 локалей — добавить `info_sell_offer_cancelled` /
        `info_buy_offer_cancelled` рядом с существующими ключами.
-4. [ ] Тесты: red→green — отмена sell и buy (amount=0, offer_id>0) даёт
+4. [x] Тесты: red→green — отмена sell и buy (amount=0, offer_id>0) даёт
        текст отмены; обычные ордера (amount>0) не меняются; ордер с
        amount=0 и offer_id=0 (теоретически невозможен, но пусть падает в
        обычную ветку, а не в отмену).
-5. [ ] `just test-fast` + `just lint` зелёные.
+5. [x] `just test-fast` + `just lint` зелёные.
 
 ## Risks / Open Questions
 
