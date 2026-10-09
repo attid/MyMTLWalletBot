@@ -450,9 +450,7 @@ async def test_cmd_usdt_limit_set(mock_telegram, router_app_context):
     try:
         await dp.feed_update(
             bot=router_app_context.bot,
-            update=create_message_update(
-                123, "/usdt_limit 1000", username="itolstov"
-            ),
+            update=create_message_update(123, "/usdt_limit 1000", username="itolstov"),
             app_context=router_app_context,
         )
         req = get_telegram_request(mock_telegram, "sendMessage")
@@ -479,7 +477,10 @@ async def test_cmd_usdt_limit_rejects_bad_input(mock_telegram, router_app_contex
             app_context=router_app_context,
         )
         msgs = get_telegram_request(mock_telegram, "sendMessage", last=False)
-        assert any("положительной" in m["data"]["text"] or "Использование" in m["data"]["text"] for m in msgs)
+        assert any(
+            "положительной" in m["data"]["text"] or "Использование" in m["data"]["text"]
+            for m in msgs
+        )
         assert inout.max_usdt_sum == default_limit
 
 

@@ -880,6 +880,7 @@ async def cmd_help(message: types.Message):
 
 # --- Runtime USDT limit (reset on restart) ---
 
+
 @router.message(Command(commands=["usdt_limit"]))
 async def cmd_usdt_limit(message: types.Message):
     """View or temporarily override max_usdt_sum; resets on restart."""
@@ -890,9 +891,7 @@ async def cmd_usdt_limit(message: types.Message):
         return
     args = message.text.split()
     if len(args) == 1:
-        await message.answer(
-            f"Текущий лимит USDT: {inout.max_usdt_sum} (до рестарта)"
-        )
+        await message.answer(f"Текущий лимит USDT: {inout.max_usdt_sum} (до рестарта)")
         return
     try:
         new_limit = int(args[1])
