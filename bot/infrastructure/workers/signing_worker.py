@@ -115,6 +115,7 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                 from other.lang_tools import my_gettext
                 from other.tx_render import render_classic_ops
 
+                data = await state.get_data()
                 preview_lines = render_classic_ops(signed_xdr)
                 # Preview goes BEFORE the locale template so the XDR stays
                 # inside its <code> block.
@@ -125,6 +126,11 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
                     (signed_xdr,),
                     app_context=app_context,
                 )
+                # sign_tools: description fetched at check_xdr (FSM `operation`)
+                # should lead the post-signing message too.
+                operation = data.get("operation") or ""
+                if operation and operation != "sign_tools":
+                    msg = f"<b>{operation}</b>\n\n{msg}"
                 async with db_pool.get_session() as session:
                     await cmd_show_sign(
                         session,

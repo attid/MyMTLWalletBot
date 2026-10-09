@@ -7,6 +7,7 @@ Soroban sub-invocations are summarized by other.soroban_render.
 
 from __future__ import annotations
 
+from html import escape
 from typing import Optional
 
 from loguru import logger
@@ -22,9 +23,9 @@ from stellar_sdk.operation.set_options import SetOptions
 def _short_key(key: Optional[str]) -> str:
     if not key:
         return "?"
-    if len(key) <= 56:
+    if len(key) <= 12:
         return key
-    return f"{key[:4]}…{key[-4:]}"
+    return f"{key[:4]}..{key[-4:]}"
 
 
 def _account_str(account) -> str:
@@ -40,7 +41,11 @@ def _account_str(account) -> str:
 def _asset_str(asset) -> str:
     if asset.is_native():
         return "XLM"
-    return f"{asset.code}"
+    code = getattr(asset, "code", None)
+    if code is not None:
+        return code
+    # LiquidityPoolAsset has no .code — render pool shares compactly.
+    return "LP-пул"
 
 
 def _signer_key_str(signer_key) -> Optional[str]:
@@ -52,7 +57,11 @@ def _signer_key_str(signer_key) -> Optional[str]:
 
 
 def _render_op(op) -> Optional[str]:
-    """Render one classic operation to a single human-readable line."""
+    """Render one classic operation to a single human-readable line.
+
+    All externally-controlled strings (names, domains) are HTML-escaped:
+    rendered lines are inserted into parse_mode="HTML" Telegram messages.
+    """
     if isinstance(op, Payment):
         asset = _asset_str(op.asset)
         return f"Payment: {op.amount} {asset} → {_account_str(op.destination)}"
@@ -69,7 +78,7 @@ def _render_op(op) -> Optional[str]:
         if op.master_weight is not None:
             return f"SetOptions: master weight {op.master_weight}"
         if op.home_domain is not None:
-            return f"SetOptions: home domain {op.home_domain}"
+            return f"SetOptions: home domain {escape(op.home_domain)}"
         if op.inflation_dest is not None:
             return f"SetOptions: inflation dest {_account_str(op.inflation_dest)}"
         if op.set_flags is not None or op.clear_flags is not None:
@@ -77,11 +86,11 @@ def _render_op(op) -> Optional[str]:
         return "SetOptions"
     if isinstance(op, ChangeTrust):
         if op.limit == "0":
-            return f"ChangeTrust: удалить trustline {op.asset.code}"
-        return f"ChangeTrust: {op.asset.code} (limit {op.limit})"
+            return f"ChangeTrust: удалить trustline {_asset_str(op.asset)}"
+        return f"ChangeTrust: {_asset_str(op.asset)} (limit {op.limit})"
     if isinstance(op, ManageData):
-        suffix = "" if op.data_value else " (удаление)"
-        return f"ManageData: {op.data_name}{suffix}"
+        suffix = "" if op.data_value is not None else " (удаление)"
+        return f"ManageData: {escape(op.data_name)}{suffix}"
     if isinstance(op, AccountMerge):
         return f"AccountMerge → {_account_str(op.destination)}"
     return None
@@ -103,7 +112,12 @@ def render_classic_ops(xdr: str) -> list[str]:
 
     lines: list[str] = []
     for op in envelope.transaction.operations:
-        line = _render_op(op)
+        try:
+            line = _render_op(op)
+        except Exception as exc:
+            # One exotic operation must not break the whole preview.
+            logger.debug(f"render_classic_ops: op render failed: {exc}")
+            line = None
         if line:
             lines.append(line)
     return lines

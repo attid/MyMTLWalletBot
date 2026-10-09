@@ -37,7 +37,7 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
             self.ctx.stellar_service = StellarService(
                 horizon_url=horizon_server_config["url"]
             )
-            self.public_key = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+            self.public_key = "GDLT..AYXI"
             mock_horizon.set_account(self.public_key)
 
             self.p_is_free = patch(
@@ -99,7 +99,7 @@ SET_OPTIONS_XDR = (
     .read_text()
     .strip()
 )
-SIGNER = "GDZXMBXSDFOVQ5PKXCJRC5CEUDWBLSSPVQMOLE4EAKLDHUBYKIIMECHO"
+SIGNER = "GDZX..ECHO"
 
 
 def _fake_update_data(mock_state, **kwargs):

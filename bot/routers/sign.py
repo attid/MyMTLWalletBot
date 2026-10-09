@@ -248,6 +248,17 @@ async def cmd_ask_pin(
     soroban_preview = data.get("soroban_preview") or ""
     sign_msg = data.get("sign_msg")
     sign_context = f"<b>{escape(str(sign_msg))}</b>\n\n" if sign_msg else ""
+    # For sign_tools transactions the human description (FSM `operation`)
+    # takes priority over the technical render lines: the approved fallback
+    # chain is API description → local render → slug. The render lines still
+    # follow as the preview body.
+    operation = data.get("operation") or ""
+    if operation and operation != "sign_tools":
+        preview_body = f"<b>{operation}</b>"
+        if soroban_preview:
+            preview_body += f"\n\n{soroban_preview}"
+    else:
+        preview_body = soroban_preview
     # When a Soroban transfer preview is available, use the
     # "Подтвердите транзакцию:\n\n{}" template as the header across all
     # branches so the preview reads as the transaction summary, and skip the
@@ -256,10 +267,10 @@ async def cmd_ask_pin(
         my_gettext(
             chat_id,
             "biometric_sign_prompt",
-            (soroban_preview,),
+            (preview_body,),
             app_context=app_context,
         )
-        if soroban_preview
+        if preview_body
         else ""
     )
     if msg is None:
@@ -830,12 +841,14 @@ async def cmd_check_xdr(
             preview_lines = await render_soroban_sub_invocations(xdr)
             if check_xdr.find("eurmtl.me/sign_tools") > -1:
                 # Human description from eurmtl.me, fallback: local classic-ops
-                # render. Both webapp memo and chat prompt read `operation`.
+                # render. WebApp memo and chat prompt both read `operation`.
                 _xdr, description = await get_eurmtl_xdr(check_xdr)
                 if not description or not description.strip():
                     op_lines = render_classic_ops(xdr)
                     description = "; ".join(op_lines[:3]) if op_lines else None
-                operation = description.strip()[:100] if description else "sign_tools"
+                    if not preview_lines:
+                        preview_lines = op_lines
+                operation = escape(description.strip()[:100]) if description else "sign_tools"
                 if not preview_lines:
                     preview_lines = render_classic_ops(xdr)
                 await state.update_data(
@@ -844,8 +857,12 @@ async def cmd_check_xdr(
                     soroban_preview="\n".join(preview_lines) if preview_lines else "",
                 )
             else:
+                # Raw XDR: clear stale sign_tools fields so the worker does
+                # not treat the raw flow as sign_tools.
                 await state.update_data(
-                    soroban_preview="\n".join(preview_lines) if preview_lines else ""
+                    tools="",
+                    operation="",
+                    soroban_preview="\n".join(preview_lines) if preview_lines else "",
                 )
             await state.set_state(PinState.sign)
             await cmd_ask_pin(session, user_id, state, app_context=app_context)
