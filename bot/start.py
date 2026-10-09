@@ -247,11 +247,41 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
             )
         )
 
+    # Persist before anything below can fail: on_startup aborting mid-way
+    # triggers shutdown, which must still be able to cancel running workers.
     dispatcher["task_list"] = task_list
+
+    # Internal read-only API (username -> address) for trusted local services.
+    internal_api_token = config.internal_api_token
+    token_value = (
+        internal_api_token.get_secret_value().strip()
+        if internal_api_token is not None
+        else ""
+    )
+    if token_value:
+        from infrastructure.services.internal_api import InternalApi
+
+        # Start synchronously: a bind failure must abort startup, not rot in a
+        # background task until shutdown.
+        internal_api = InternalApi(token_value)
+        await internal_api.start(config.internal_api_host, config.internal_api_port)
+        dispatcher["internal_api"] = internal_api
+    else:
+        logger.warning("INTERNAL_API_TOKEN not set, internal API disabled")
 
 
 async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
     app_context: AppContext = dispatcher["app_context"]
+
+    # Stop internal API first: refuse new HTTP requests before tearing down
+    # DB sessions, Redis and background workers it may still be serving.
+    # Its failure must not abort the rest of the shutdown sequence.
+    internal_api = dispatcher.get("internal_api")
+    if internal_api is not None:
+        try:
+            await internal_api.stop()
+        except Exception as e:
+            logger.opt(exception=e).error("Error while stopping internal API")
 
     # Stop notification producers before cancelling consumers and closing their Redis.
     if app_context.notification_service:

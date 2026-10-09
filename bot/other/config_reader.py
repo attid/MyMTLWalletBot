@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # Web App for biometric signing
     webapp_url: str = "https://webapp.example.com"
 
+    # Internal read-only API (username -> address) for trusted local services.
+    internal_api_host: str = "127.0.0.1"
+    internal_api_port: int = 8082
+    internal_api_token: Optional[SecretStr] = None
+
     # horizon_url_id: Optional[int] = 0
 
     model_config = SettingsConfigDict(

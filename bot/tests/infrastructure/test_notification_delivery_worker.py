@@ -374,6 +374,10 @@ async def test_shutdown_stops_notification_producers_and_awaits_worker_before_re
     monkeypatch.setattr(start, "set_commands", AsyncMock())
     monkeypatch.setattr(start.config, "test_mode", True)
     monkeypatch.setattr(start.config, "admins", [42])
+    # Isolate from the developer's .env: this lifecycle test must not bind
+    # the real internal API port (conflicts with a running bot / parallel
+    # test workers).
+    monkeypatch.setattr(start.config, "internal_api_token", None)
 
     await on_startup(bot, dispatcher)  # type: ignore[arg-type]
     await started.wait()
