@@ -221,19 +221,25 @@ def stellar_sign(xdr: str, private_key: str):
     return transaction.to_xdr()
 
 
-async def get_eurmtl_xdr(url):
+async def get_eurmtl_xdr(url) -> tuple[str, str | None]:
+    """Fetch stored XDR for a eurmtl.me sign_tools link.
+
+    Returns (xdr, description); description is None when eurmtl.me does not
+    provide one (old API or missing description).
+    """
     try:
         url = "https://eurmtl.me/remote/get_xdr/" + url.split("/")[-1]
         status, response_json = await get_web_request("GET", url=url)
 
         if "xdr" in response_json:
-            return response_json["xdr"]
+            description = response_json.get("description") or None
+            return response_json["xdr"], description
         else:
-            return 'Invalid response format: missing "xdr" field.'
+            return 'Invalid response format: missing "xdr" field.', None
 
     except Exception as ex:
         logger.info(["get_eurmtl_xdr", ex])
-        return "An error occurred during the request."
+        return "An error occurred during the request.", None
 
 
 async def stellar_check_xdr(xdr: str, for_free_account=False):
@@ -251,7 +257,7 @@ async def stellar_check_xdr(xdr: str, for_free_account=False):
 
     try:
         if xdr.find("eurmtl.me/sign_tools") > -1:
-            xdr = await get_eurmtl_xdr(xdr)
+            xdr, _description = await get_eurmtl_xdr(xdr)
 
         envelope = TransactionEnvelope.from_xdr(
             xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE

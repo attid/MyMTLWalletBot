@@ -28,6 +28,8 @@ from infrastructure.utils.telegram_utils import (
 )
 from other.web_tools import get_web_decoded_xdr
 from other.soroban_render import render_soroban_sub_invocations
+from other.tx_render import render_classic_ops
+from other.stellar_tools import get_eurmtl_xdr
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
@@ -825,12 +827,26 @@ async def cmd_check_xdr(
         )
         if xdr:
             await state.update_data(xdr=xdr)
-            if check_xdr.find("eurmtl.me/sign_tools") > -1:
-                await state.update_data(tools=check_xdr, operation="sign_tools")
             preview_lines = await render_soroban_sub_invocations(xdr)
-            await state.update_data(
-                soroban_preview="\n".join(preview_lines) if preview_lines else ""
-            )
+            if check_xdr.find("eurmtl.me/sign_tools") > -1:
+                # Human description from eurmtl.me, fallback: local classic-ops
+                # render. Both webapp memo and chat prompt read `operation`.
+                _xdr, description = await get_eurmtl_xdr(check_xdr)
+                if not description or not description.strip():
+                    op_lines = render_classic_ops(xdr)
+                    description = "; ".join(op_lines[:3]) if op_lines else None
+                operation = description.strip()[:100] if description else "sign_tools"
+                if not preview_lines:
+                    preview_lines = render_classic_ops(xdr)
+                await state.update_data(
+                    tools=check_xdr,
+                    operation=operation,
+                    soroban_preview="\n".join(preview_lines) if preview_lines else "",
+                )
+            else:
+                await state.update_data(
+                    soroban_preview="\n".join(preview_lines) if preview_lines else ""
+                )
             await state.set_state(PinState.sign)
             await cmd_ask_pin(session, user_id, state, app_context=app_context)
         else:

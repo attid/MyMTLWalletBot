@@ -113,9 +113,17 @@ async def handle_tx_signed(msg: TxSignedMessage) -> None:
 
                 from infrastructure.utils.telegram_utils import cmd_show_sign
                 from other.lang_tools import my_gettext
+                from other.tx_render import render_classic_ops
 
-                msg = my_gettext(
-                    user_id, "your_xdr_sign", (signed_xdr,), app_context=app_context
+                preview_lines = render_classic_ops(signed_xdr)
+                # Preview goes BEFORE the locale template so the XDR stays
+                # inside its <code> block.
+                prefix = "\n".join(preview_lines) + "\n\n" if preview_lines else ""
+                msg = prefix + my_gettext(
+                    user_id,
+                    "your_xdr_sign",
+                    (signed_xdr,),
+                    app_context=app_context,
                 )
                 async with db_pool.get_session() as session:
                     await cmd_show_sign(
