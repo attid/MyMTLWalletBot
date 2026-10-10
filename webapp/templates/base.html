@@ -19,6 +19,19 @@
     <div class="version">{{ git_commit }}</div>
 
     <script src="/static/js/crypto-storage.js?v={{ git_commit }}"></script>
+    <script>
+        // "Настройки" item in the mini app three-dots menu (Bot API 7.0+).
+        // Opens the saved-keys management page, preserving the lang param.
+        (function () {
+            const sb = Telegram.WebApp.SettingsButton;
+            sb.isVisible = true;
+            sb.onClick(function () {
+                const params = new URLSearchParams(window.location.search);
+                const lang = params.get("lang");
+                window.location.href = "/settings" + (lang ? "?lang=" + lang : "");
+            });
+        })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

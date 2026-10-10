@@ -27,6 +27,9 @@
 const tg = Telegram.WebApp;
 tg.ready();
 tg.expand();
+// Already on /settings — hide the menu item added in base.html.
+tg.SettingsButton.hide();
+tg.SettingsButton.offClick(function () {});
 
 // Apply Telegram theme
 document.body.style.backgroundColor = tg.themeParams.bg_color || '#fff';
