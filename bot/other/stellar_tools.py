@@ -232,7 +232,9 @@ async def get_eurmtl_xdr(url) -> tuple[str, str | None]:
         # Trailing slashes, query strings and fragments must not leak into
         # the hash passed to the API.
         tx_hash = url.split("?")[0].split("#")[0].rstrip("/").split("/")[-1]
-        if not re.fullmatch(r"[0-9a-fA-F]{64}", tx_hash):
+        # sign_tools links carry either the 64-char stellar tx hash or a
+        # 32-char uuid hex (transactions created via rely deals).
+        if not re.fullmatch(r"(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{32})", tx_hash):
             logger.info(["get_eurmtl_xdr", f"bad sign_tools hash: {tx_hash!r}"])
             return "Invalid sign_tools URL.", None
         url = "https://eurmtl.me/remote/get_xdr/" + tx_hash

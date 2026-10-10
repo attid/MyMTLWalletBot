@@ -183,6 +183,50 @@ async def test_stellar_delete_all_deleted_passes_correct_address():
         assert call_args[1]["master_source_address"] == G_MASTER
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tx_id",
+    ["a" * 64, "7bc7d48c16e34b129821eb8f85563b88"],
+    ids=["stellar_hash_64", "rely_uuid_32"],
+)
+async def test_get_eurmtl_xdr_accepts_hash_and_uuid_links(tx_id):
+    """sign_tools links carry either the 64-char stellar tx hash or a
+    32-char uuid hex (transactions created via rely deals)."""
+    from other.stellar_tools import get_eurmtl_xdr
+
+    xdr_body = "AAAAAgAAAAA="
+    requested_url = {}
+
+    async def fake_get_web_request(method, url, **kw):
+        requested_url["value"] = url
+        return 200, {"xdr": xdr_body, "description": "deal tx"}
+
+    with patch("other.stellar_tools.get_web_request", fake_get_web_request):
+        result, description = await get_eurmtl_xdr(
+            f"https://eurmtl.me/sign_tools/{tx_id}"
+        )
+
+    assert requested_url["value"] == "https://eurmtl.me/remote/get_xdr/" + tx_id
+    assert result == xdr_body
+    assert description == "deal tx"
+
+
+@pytest.mark.asyncio
+async def test_get_eurmtl_xdr_rejects_non_hex_id():
+    from other.stellar_tools import get_eurmtl_xdr
+
+    async def fail_get_web_request(method, url, **kw):
+        raise AssertionError("API must not be called for a malformed id")
+
+    with patch("other.stellar_tools.get_web_request", fail_get_web_request):
+        result, description = await get_eurmtl_xdr(
+            "https://eurmtl.me/sign_tools/not-a-valid-id"
+        )
+
+    assert result == "Invalid sign_tools URL."
+    assert description is None
+
+
 class TestStellarCheckXdrFreeAccountSoroban:
     """Free-wallet whitelist for InvokeHostFunction operations."""
 
