@@ -44,7 +44,10 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
                 "other.stellar_tools.stellar_is_free_wallet", return_value=False
             )
             self.p_check_xdr = patch(
-                "other.stellar_tools.stellar_check_xdr", side_effect=lambda x, f: x
+                "other.stellar_tools.stellar_check_xdr",
+                side_effect=lambda x, for_free_account=False, free_wallet_public_key=None: (
+                    x
+                ),
             )
             self.p_get_acc = patch("other.stellar_tools.stellar_get_user_account")
             self.p_get_kp = patch("other.stellar_tools.stellar_get_user_keypair")
@@ -128,8 +131,10 @@ async def _run_check_xdr(
     await dp.storage.update_data(state_key, {"user_lang": "en"})
     # stellar_check_xdr is stubbed in setup_sign_mocks as identity; make it
     # return the resolved XDR when given a sign_tools URL.
-    setup_sign_mocks.m_check_xdr.side_effect = lambda x, f=False: (
-        resolved_xdr if "eurmtl.me/sign_tools" in x else x
+    setup_sign_mocks.m_check_xdr.side_effect = (
+        lambda x, for_free_account=False, free_wallet_public_key=None: (
+            resolved_xdr if "eurmtl.me/sign_tools" in x else x
+        )
     )
     # sending_xdr state so cmd_send_xdr → cmd_check_xdr fires
     from infrastructure.states import StateSign

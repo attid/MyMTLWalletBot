@@ -15,8 +15,13 @@ from stellar_sdk import Network, TransactionEnvelope
 from stellar_sdk.operation.account_merge import AccountMerge
 from stellar_sdk.operation.change_trust import ChangeTrust
 from stellar_sdk.operation.create_account import CreateAccount
+from stellar_sdk.operation.create_claimable_balance import CreateClaimableBalance
 from stellar_sdk.operation.manage_data import ManageData
 from stellar_sdk.operation.payment import Payment
+from stellar_sdk.operation.path_payment_strict_receive import (
+    PathPaymentStrictReceive,
+)
+from stellar_sdk.operation.path_payment_strict_send import PathPaymentStrictSend
 from stellar_sdk.operation.set_options import SetOptions
 
 
@@ -91,6 +96,25 @@ def _render_op(op) -> Optional[str]:
     if isinstance(op, ManageData):
         suffix = "" if op.data_value is not None else " (удаление)"
         return f"ManageData: {escape(op.data_name)}{suffix}"
+    if isinstance(op, PathPaymentStrictSend):
+        return (
+            f"PathPaymentStrictSend: {op.send_amount} {_asset_str(op.send_asset)}"
+            f" → min {op.dest_min} {_asset_str(op.dest_asset)}"
+            f" → {_account_str(op.destination)}"
+        )
+    if isinstance(op, PathPaymentStrictReceive):
+        return (
+            f"PathPaymentStrictReceive: max {op.send_max}"
+            f" {_asset_str(op.send_asset)}"
+            f" → {op.dest_amount} {_asset_str(op.dest_asset)}"
+            f" → {_account_str(op.destination)}"
+        )
+    if isinstance(op, CreateClaimableBalance):
+        claimants = op.claimants or []
+        return (
+            f"CreateClaimableBalance: {op.amount} {_asset_str(op.asset)}"
+            f" ({len(claimants)} получателей)"
+        )
     if isinstance(op, AccountMerge):
         return f"AccountMerge → {_account_str(op.destination)}"
     return None

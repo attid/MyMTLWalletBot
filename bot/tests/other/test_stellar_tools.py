@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from stellar_sdk import Keypair
 from other.stellar_tools import (
+    FreeWalletPolicyError,
     stellar_check_xdr,
     stellar_delete_account,
     stellar_delete_all_deleted,
@@ -245,20 +246,32 @@ class TestStellarCheckXdrFreeAccountSoroban:
     @pytest.mark.asyncio
     async def test_deny_xlm_soroban_contract_in_sub(self):
         xdr = _read_fixture("tx2_deny_xlm_soroban.xdr")
-        result = await stellar_check_xdr(xdr, for_free_account=True)
-        assert result is None
+        with pytest.raises(FreeWalletPolicyError):
+            await stellar_check_xdr(
+                xdr,
+                for_free_account=True,
+                free_wallet_public_key=G_DELETE,
+            )
 
     @pytest.mark.asyncio
     async def test_deny_no_sub_invocations(self):
         xdr = _read_fixture("tx4_deny_no_subs.xdr")
-        result = await stellar_check_xdr(xdr, for_free_account=True)
-        assert result is None
+        with pytest.raises(FreeWalletPolicyError):
+            await stellar_check_xdr(
+                xdr,
+                for_free_account=True,
+                free_wallet_public_key=G_DELETE,
+            )
 
     @pytest.mark.asyncio
     async def test_deny_non_transfer_function_in_sub(self):
         xdr = _read_fixture("tx7_deny_non_transfer_burn.xdr")
-        result = await stellar_check_xdr(xdr, for_free_account=True)
-        assert result is None
+        with pytest.raises(FreeWalletPolicyError):
+            await stellar_check_xdr(
+                xdr,
+                for_free_account=True,
+                free_wallet_public_key=G_DELETE,
+            )
 
     @pytest.mark.asyncio
     async def test_paid_account_allows_all(self):

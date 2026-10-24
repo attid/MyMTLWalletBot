@@ -176,8 +176,13 @@ class IStellarService(ABC):
         pass
 
     @abstractmethod
-    async def check_xdr(self, xdr: str, for_free_account: bool = False) -> str | None:
-        """Check XDR validity."""
+    async def check_xdr(
+        self,
+        xdr: str,
+        for_free_account: bool = False,
+        free_wallet_public_key: str | None = None,
+    ) -> str | None:
+        """Check XDR validity and the free-wallet native-XLM policy."""
         pass
 
     @abstractmethod

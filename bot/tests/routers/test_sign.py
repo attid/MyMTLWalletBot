@@ -20,6 +20,7 @@ from infrastructure.services.signing_facade import (
     SignatureRequest,
 )
 from other import faststream_tools
+from other.stellar_tools import FreeWalletPolicyError
 from tests.conftest import (
     RouterTestMiddleware,
     create_callback_update,
@@ -65,7 +66,10 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
                 "other.stellar_tools.stellar_is_free_wallet", return_value=False
             )
             self.p_check_xdr = patch(
-                "other.stellar_tools.stellar_check_xdr", side_effect=lambda x, f: x
+                "other.stellar_tools.stellar_check_xdr",
+                side_effect=lambda x, for_free_account=False, free_wallet_public_key=None: (
+                    x
+                ),
             )
             self.p_get_acc = patch("other.stellar_tools.stellar_get_user_account")
             self.p_get_kp = patch("other.stellar_tools.stellar_get_user_keypair")
@@ -109,6 +113,35 @@ def setup_sign_mocks(router_app_context, mock_horizon, horizon_server_config):
     helper = SignMockHelper(router_app_context)
     yield helper
     helper.stop()
+
+
+@pytest.mark.asyncio
+async def test_free_wallet_policy_rejection_shows_specific_message(
+    mock_telegram, router_app_context, setup_sign_mocks
+):
+    """Free-wallet policy failures must not fall back to raw-XDR bad_xdr."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(sign_router)
+
+    setup_sign_mocks.m_is_free.return_value = True
+    setup_sign_mocks.m_check_xdr.side_effect = FreeWalletPolicyError(
+        "PathPaymentStrictSend", "free wallet would spend its own native XLM"
+    )
+    raw_xdr = "freewallet-blocked-xdr-payload"
+
+    state_key = StorageKey(bot_id=router_app_context.bot.id, chat_id=123, user_id=123)
+    await dp.storage.set_state(state_key, StateSign.sending_xdr)
+    await dp.feed_update(router_app_context.bot, create_message_update(123, raw_xdr))
+
+    messages = [
+        r["data"]["text"]
+        for r in mock_telegram
+        if r["method"] in ("sendMessage", "editMessageText")
+    ]
+    assert messages
+    assert "bad_xdr_free_wallet" in messages[-1]
+    assert raw_xdr not in messages[-1]
 
 
 @pytest.mark.asyncio

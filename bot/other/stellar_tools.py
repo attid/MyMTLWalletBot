@@ -14,8 +14,13 @@ from stellar_sdk import (
     Asset,
     Account,
     Keypair,
+    MuxedAccount,
     Price,
     TransactionEnvelope,
+)
+from stellar_sdk.xdr import (
+    EnvelopeType,
+    TransactionEnvelope as XdrTransactionEnvelope,
 )
 from stellar_sdk.exceptions import BadRequestError, NotFoundError
 from stellar_sdk.sep.federation import resolve_stellar_address
@@ -252,51 +257,187 @@ async def get_eurmtl_xdr(url) -> tuple[str, str | None]:
         return "An error occurred during the request.", None
 
 
-async def stellar_check_xdr(xdr: str, for_free_account=False):
+class FreeWalletPolicyError(ValueError):
+    """XDR rejected by the free-wallet native-XLM spending policy.
+
+    Kept separate from other validation errors so the router can show a clear
+    user-facing explanation instead of the generic ``bad_xdr`` message.
+    """
+
+    def __init__(self, operation_type: str, detail: str):
+        self.operation_type = operation_type
+        self.detail = detail
+        super().__init__(f"{operation_type}: {detail}")
+
+
+_FREE_WALLET_ALLOWED_OPERATIONS = {
+    "ManageData",
+    "Payment",
+    "ChangeTrust",
+    "Clawback",
+    "SetTrustLineFlags",
+    "PathPaymentStrictSend",
+    "PathPaymentStrictReceive",
+    "CreateClaimableBalance",
+}
+
+# Operations whose spent asset must be checked against the effective source.
+_FREE_WALLET_SPEND_ASSET_OPERATIONS = {
+    "PathPaymentStrictSend",
+    "PathPaymentStrictReceive",
+    "CreateClaimableBalance",
+}
+
+
+def _account_public_key(account) -> Optional[str]:
+    """Return the G... address for a str/MuxedAccount source, or None.
+
+    Muxed sources (M...) are compared by their underlying G account so that a
+    free wallet remains the same account regardless of muxing.
+    """
+    if account is None:
+        return None
+    if isinstance(account, str):
+        try:
+            return MuxedAccount.from_account(account).account_id
+        except Exception:
+            return None
+    account_id = getattr(account, "account_id", None)
+    if isinstance(account_id, str) and account_id:
+        return account_id
+    return None
+
+
+def _effective_operation_source(operation, transaction) -> Optional[str]:
+    """Return operation.source when set, otherwise transaction.source.
+
+    A signature is not a source: this only resolves the account whose assets
+    the operation actually spends.
+    """
+    if operation.source is not None:
+        return _account_public_key(operation.source)
+    return _account_public_key(transaction.source)
+
+
+def _is_native_asset(asset) -> Optional[bool]:
+    """Return whether the asset is native XLM; None when it cannot be read."""
+    try:
+        return bool(asset.is_native())
+    except Exception:
+        return None
+
+
+def _validate_free_wallet_operation(
+    operation, transaction, free_wallet_public_key: Optional[str]
+) -> None:
+    """Fail closed when a free wallet would spend its own native XLM."""
     from core.constants import XLM_SOROBAN_CONTRACT
     from other.soroban_render import is_invoke_host_safe_for_free
 
+    operation_type = type(operation).__name__
+
+    if operation_type == "InvokeHostFunction":
+        if not is_invoke_host_safe_for_free(operation, XLM_SOROBAN_CONTRACT):
+            raise FreeWalletPolicyError(
+                operation_type, "unsafe Soroban invocation for a free wallet"
+            )
+        return
+
+    if operation_type not in _FREE_WALLET_ALLOWED_OPERATIONS:
+        raise FreeWalletPolicyError(
+            operation_type, "operation is not allowed for a free wallet"
+        )
+
+    # Existing guard: a free wallet never sends native XLM with Payment, even
+    # when the payment names another operation source.
+    if operation_type == "Payment":
+        if _is_native_asset(getattr(operation, "asset", None)) is not False:
+            raise FreeWalletPolicyError(
+                operation_type, "payment of native XLM is not allowed"
+            )
+        return
+
+    if operation_type not in _FREE_WALLET_SPEND_ASSET_OPERATIONS:
+        return
+
+    if operation_type == "CreateClaimableBalance":
+        spent_asset = getattr(operation, "asset", None)
+    else:
+        # PathPaymentStrictSend/Receive spend send_asset, not dest_asset/path.
+        spent_asset = getattr(operation, "send_asset", None)
+
+    is_native = _is_native_asset(spent_asset)
+    if is_native is None:
+        raise FreeWalletPolicyError(operation_type, "cannot determine the spent asset")
+    if not is_native:
+        return
+
+    free_wallet_key = _account_public_key(free_wallet_public_key)
+    if free_wallet_key is None:
+        raise FreeWalletPolicyError(
+            operation_type, "cannot determine the free wallet address"
+        )
+
+    effective_source = _effective_operation_source(operation, transaction)
+    if effective_source is None:
+        raise FreeWalletPolicyError(
+            operation_type, "cannot determine the effective operation source"
+        )
+
+    if effective_source == free_wallet_key:
+        raise FreeWalletPolicyError(
+            operation_type, "free wallet would spend its own native XLM"
+        )
+
+
+def _is_fee_bump_xdr(xdr: str) -> bool:
+    """Detect a fee-bump envelope before the classic-envelope parser rejects it."""
+    try:
+        envelope = XdrTransactionEnvelope.from_xdr(xdr)
+    except Exception:
+        return False
+    return envelope.type.value == EnvelopeType.ENVELOPE_TYPE_TX_FEE_BUMP.value
+
+
+async def stellar_check_xdr(
+    xdr: str,
+    for_free_account: bool = False,
+    free_wallet_public_key: Optional[str] = None,
+):
+    """Validate XDR and enforce the free-wallet native-XLM spending policy.
+
+    Raises ``FreeWalletPolicyError`` when the free-wallet policy rejects the
+    transaction. All other validation failures still return ``None`` so the
+    caller keeps the generic ``bad_xdr`` behavior.
+    """
     result = None
-    allowed_operations = [
-        "ManageData",
-        "Payment",
-        "ChangeTrust",
-        "Clawback",
-        "SetTrustLineFlags",
-    ]
 
     try:
         if xdr.find("eurmtl.me/sign_tools") > -1:
             xdr, _description = await get_eurmtl_xdr(xdr)
+
+        if _is_fee_bump_xdr(xdr):
+            if for_free_account:
+                raise FreeWalletPolicyError(
+                    "FeeBumpTransaction", "fee-bump is not allowed for a free wallet"
+                )
+            raise ValueError("fee-bump transactions are not supported")
 
         envelope = TransactionEnvelope.from_xdr(
             xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
         )
 
         if for_free_account:
-            all_operations_allowed = True
-
             for operation in envelope.transaction.operations:
-                type_name = type(operation).__name__
-                if type_name == "InvokeHostFunction":
-                    if not is_invoke_host_safe_for_free(
-                        operation, XLM_SOROBAN_CONTRACT
-                    ):
-                        all_operations_allowed = False
-                        break
-                    continue
-                if type_name not in allowed_operations:
-                    all_operations_allowed = False
-                    break
-                if type_name == "Payment" and operation.asset.code == "XLM":
-                    all_operations_allowed = False
-                    break
-
-            if not all_operations_allowed and for_free_account:
-                raise ValueError("Not all operations are allowed for free accounts.")
+                _validate_free_wallet_operation(
+                    operation, envelope.transaction, free_wallet_public_key
+                )
 
         result = envelope.to_xdr()
 
+    except FreeWalletPolicyError as ex:
+        logger.info(["stellar_check_xdr", "free wallet policy", str(ex)])
+        raise
     except Exception as ex:
         logger.info(["stellar_check_xdr", xdr, ex])
 

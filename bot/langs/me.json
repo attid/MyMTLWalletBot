@@ -10,6 +10,7 @@
   "bad_passwords": "Lozinke se ne podudaraju, pokušajte ponovo",
   "bad_sum": "Nije moguće prepoznati iznos",
   "bad_xdr": "Nije moguće učitati transakciju \n \n {} \n ",
+  "bad_xdr_free_wallet": "Transakcija je odbijena pravilima besplatnog novčanika. Besplatni novčanik ne može trošiti sopstvene XLM ili koristiti ovu operaciju.",
   "big_xdr": "xdr se ne uklapa u poruku. možete samo poslati",
   "bsn_address_part": "Na adresi {} biće izmijenjeni sljedeći tagovi:\n",
   "bsn_empty_message": "Režim dodavanja BSN tagova\nPošaljite tagove i vrijednosti (jedan po liniji) u formatu:\n`&lt;tag&gt; &lt;vrijednost&gt;`\n\n",

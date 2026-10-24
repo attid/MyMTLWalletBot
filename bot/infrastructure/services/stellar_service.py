@@ -474,11 +474,18 @@ class StellarService(IStellarService):
     # Wrappers for other.stellar_tools functions to enable DI in routers/sign.py
 
     async def check_xdr(
-        self, xdr: str, for_free_account: bool = False
+        self,
+        xdr: str,
+        for_free_account: bool = False,
+        free_wallet_public_key: str | None = None,
     ) -> Optional[str]:
         from other.stellar_tools import stellar_check_xdr
 
-        return await stellar_check_xdr(xdr, for_free_account)
+        return await stellar_check_xdr(
+            xdr,
+            for_free_account,
+            free_wallet_public_key=free_wallet_public_key,
+        )
 
     async def user_sign(self, session, xdr: str, user_id: int, pin: str) -> str:
         from other.stellar_tools import stellar_user_sign

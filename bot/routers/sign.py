@@ -29,7 +29,7 @@ from infrastructure.utils.telegram_utils import (
 from other.web_tools import get_web_decoded_xdr
 from other.soroban_render import render_soroban_sub_invocations
 from other.tx_render import render_classic_ops
-from other.stellar_tools import get_eurmtl_xdr
+from other.stellar_tools import FreeWalletPolicyError, get_eurmtl_xdr
 from keyboards.common_keyboards import get_kb_return, get_return_button
 from infrastructure.states import StateSign
 from infrastructure.log_models import LogQuery
@@ -833,8 +833,24 @@ async def cmd_check_xdr(
         ####
         # Use DI
         is_free = await app_context.stellar_service.is_free_wallet(session, user_id)
+        free_wallet_public_key = None
+        if is_free:
+            try:
+                wallet_repo = app_context.repository_factory.get_wallet_repository(
+                    session
+                )
+                wallet = await wallet_repo.get_default_wallet(user_id)
+                free_wallet_public_key = getattr(wallet, "public_key", None)
+            except Exception as ex:
+                # A failed lookup must not hide a safe non-XLM operation; the
+                # XDR check fails closed for native XLM without this address.
+                logger.warning(
+                    f"cmd_check_xdr: free wallet lookup failed for {user_id}: {ex}"
+                )
         xdr = await app_context.stellar_service.check_xdr(
-            check_xdr, for_free_account=is_free
+            check_xdr,
+            for_free_account=is_free,
+            free_wallet_public_key=free_wallet_public_key,
         )
         if xdr:
             await state.update_data(xdr=xdr)
@@ -848,7 +864,9 @@ async def cmd_check_xdr(
                     description = "; ".join(op_lines[:3]) if op_lines else None
                     if not preview_lines:
                         preview_lines = op_lines
-                operation = escape(description.strip()[:100]) if description else "sign_tools"
+                operation = (
+                    escape(description.strip()[:100]) if description else "sign_tools"
+                )
                 if not preview_lines:
                     preview_lines = render_classic_ops(xdr)
                 await state.update_data(
@@ -868,6 +886,15 @@ async def cmd_check_xdr(
             await cmd_ask_pin(session, user_id, state, app_context=app_context)
         else:
             raise Exception("Bad xdr")
+    except FreeWalletPolicyError as ex:
+        logger.info(["my_state == MyState.StateSign", "free wallet policy", str(ex)])
+        await cmd_show_sign(
+            session,
+            user_id,
+            state,
+            my_gettext(user_id, "bad_xdr_free_wallet", app_context=app_context),
+            app_context=app_context,
+        )
     except Exception as ex:
         logger.info(["my_state == MyState.StateSign", ex])
         await cmd_show_sign(
