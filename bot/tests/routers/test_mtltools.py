@@ -433,6 +433,85 @@ async def test_cmd_tools_update_multi(
     mock_check.assert_called_once()
 
 
+# Sanitized shape of a real https://eurmtl.me/remote/decode response: the
+# sanitizer keeps <br> on purpose so sulguk can turn it into a line break.
+DECODED_XDR_HTML_WITH_BR = (
+    "Sequence Number 151245301938660241 (свободно 654.4403053 XLM)<br>"
+    "Fee 18181818<br><b>MaxTime ! 27.10.2026 14:01:56 UTC</b><br>"
+)
+
+
+def test_decoded_xdr_fixture_matches_sentry_br_offset():
+    """The fixture mirrors the production prefix byte-for-byte.
+
+    Sentry MMWB-1RR reported ``Unsupported start tag "br" at byte offset 69``;
+    the prefix of this fixture is the exact string from that event, so the first
+    ``<br>`` must land on the same offset. This keeps the regression test tied to
+    the real incident instead of an invented sample.
+    """
+    assert DECODED_XDR_HTML_WITH_BR.encode().find(b"<br>") == 69
+
+
+@pytest.mark.asyncio
+async def test_cmd_tools_update_multi_renders_decoded_xdr_with_sulguk(
+    mock_telegram, router_app_context, setup_mtltools_mocks
+):
+    """Decoded XDR preview must go through sulguk, not the HTML default.
+
+    Regression for Sentry MMWB-1RR (GlitchTip #3165):
+    ``callback.message.answer(msg)`` inherited ``parse_mode="HTML"`` while
+    ``get_web_decoded_xdr`` keeps ``<br>`` for sulguk, so Telegram answered
+    ``Unsupported start tag "br"`` and the handler never reached
+    ``cmd_check_xdr``. The mock Telegram server rejects ``<br>`` under
+    ``parse_mode="HTML"`` the same way the Bot API does.
+    """
+    from sulguk import AiogramSulgukMiddleware
+
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(mtltools_router)
+    # The production bot installs this in start.py; register it here so the test
+    # observes the final wire payload instead of trusting parse_mode alone.
+    router_app_context.bot.session.middleware(AiogramSulgukMiddleware())
+
+    with (
+        patch(
+            "routers.mtltools.stellar_get_user_account",
+            AsyncMock(return_value=setup_mtltools_mocks.mock_acc),
+        ),
+        patch(
+            "routers.mtltools.check_account_id_from_grist", AsyncMock(return_value=True)
+        ),
+        patch(
+            "routers.mtltools.stellar_get_multi_sign_xdr",
+            AsyncMock(return_value="XDR_MULTI"),
+        ),
+        patch(
+            "routers.mtltools.get_web_decoded_xdr",
+            AsyncMock(return_value=DECODED_XDR_HTML_WITH_BR),
+        ),
+        patch("routers.mtltools.cmd_check_xdr", AsyncMock()) as mock_check,
+    ):
+        await dp.feed_update(
+            router_app_context.bot,
+            create_callback_update(123, "MTLToolsUpdateMulti"),
+        )
+
+    decoded_msgs = [
+        r
+        for r in mock_telegram
+        if r["method"] == "sendMessage"
+        and "Sequence Number 151245301938660241" in r["data"]["text"]
+    ]
+    assert len(decoded_msgs) == 1
+    data = decoded_msgs[0]["data"]
+    assert "<br>" not in data["text"]
+    assert "\n" in data["text"]
+    # sulguk builds entities and clears parse_mode, so Telegram never parses tags.
+    assert data.get("parse_mode") is None
+    mock_check.assert_called_once()
+
+
 def test_update_multi_registry_check_wired_to_grist():
     """MTLToolsUpdateMulti must check the Grist registry, not the retired Mongo one.
 

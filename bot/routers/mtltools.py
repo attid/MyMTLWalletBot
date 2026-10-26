@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from sqlalchemy.ext.asyncio import AsyncSession
 from stellar_sdk.exceptions import NotFoundError
+from sulguk import SULGUK_PARSE_MODE  # type: ignore[import-untyped]
 from keyboards.common_keyboards import (
     get_return_button,
     get_kb_yesno_send_xdr,
@@ -868,7 +869,9 @@ async def cmd_tools_update_multi(
         xdr = await stellar_get_multi_sign_xdr(account_id)
 
         msg = await get_web_decoded_xdr(xdr)
-        await callback.message.answer(msg)
+        # Decode HTML keeps <br> for sulguk; without this explicit mode the bot
+        # default (HTML) makes Telegram reject the raw <br> tag.
+        await callback.message.answer(msg, parse_mode=SULGUK_PARSE_MODE)
         await clear_last_message_id(callback.from_user.id, app_context=app_context)
         await cmd_check_xdr(
             session, xdr, callback.from_user.id, state, app_context=app_context
