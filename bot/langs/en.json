@@ -292,5 +292,9 @@
   "receive_invoice_msg": "Invoice: <b>{}</b> {}\n\nAddress: <code>{}</code>\n\nTo pay, scan the QR code with a wallet that supports SEP-7 (web+stellar:pay).",
   "receive_change_amount": "Change amount",
   "receive_change_asset": "Change asset",
-  "receive_invoice_asset_msg": "Select the asset:"
+  "receive_invoice_asset_msg": "Select the asset:",
+  "info_trade_bundle_header": "On account {} your offers were filled {} times in one transaction.\nTransaction: {}",
+  "info_trade_bundle_line": "• sold {} {}, received {} {}{}",
+  "info_trade_bundle_more": "…and {} more.",
+  "kb_add_trade_filter": "🛠 Trade filter"
 }

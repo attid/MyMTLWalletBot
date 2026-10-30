@@ -425,6 +425,8 @@ async def main():
         store=notification_store,
         sender=notification_service,
         badge_refresher=notification_badge_service,
+        min_send_interval_seconds=config.notification_chat_min_interval_seconds,
+        cooldown_max_seconds=config.notification_chat_cooldown_max_seconds,
     )
     notification_service.set_notification_coordinator(notification_coordinator)
     notification_delivery_worker = NotificationDeliveryWorker(

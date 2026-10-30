@@ -25,7 +25,11 @@ from core.models.notification import NotificationOperation
 from aiogram.exceptions import TelegramForbiddenError
 from routers.start_msg import cmd_info_message
 from infrastructure.utils.telegram_utils import clear_last_message_id
-from infrastructure.utils.notification_utils import decode_db_effect
+from infrastructure.utils.notification_utils import (
+    DEFAULT_TRADE_BUNDLE_MAX_LINES,
+    build_trade_bundle_text,
+    decode_db_effect,
+)
 from stellar_sdk import Keypair
 import time
 import json
@@ -86,6 +90,12 @@ class NotificationService:
         self._notification_silence_threshold = 60 * 60
         self._notification_watchdog_interval = 5 * 60
         self._webhook_processing_semaphore = asyncio.Semaphore(10)
+        configured_bundle_lines = getattr(config, "notification_bundle_max_lines", None)
+        self._trade_bundle_max_lines = (
+            configured_bundle_lines
+            if isinstance(configured_bundle_lines, int) and configured_bundle_lines > 0
+            else DEFAULT_TRADE_BUNDLE_MAX_LINES
+        )
 
         # Log initialization
         if not self.bot:
@@ -579,6 +589,7 @@ class NotificationService:
                     # Prepare common data
                     tx_hash = payload.get("transaction", {}).get("hash")
                     op_info = payload.get("operation", {})  # Helper to create trade op
+            bundled: dict[int, list[NotificationOperation]] = {}
             for i, trade in enumerate(trades):
                 if trade.get("type") == "order_book":
                     seller = trade.get("seller_id")
@@ -636,16 +647,109 @@ class NotificationService:
                         except (TypeError, ValueError):
                             op_trade.offer_id = 0
 
-                        await self._send_notification_to_user(
-                            maker_wallet,
+                        if not self._filter_allows(
                             op_trade,
-                            user_filters=maker_filters_by_user.get(
-                                maker_wallet.user_id, []
-                            ),
-                            event_index=self._event_index_from_payload(
-                                payload, offset=i + 1
-                            ),
-                        )
+                            maker_wallet.public_key,
+                            maker_filters_by_user.get(maker_wallet.user_id, []),
+                        ):
+                            continue
+
+                        bundled.setdefault(maker_wallet.user_id, []).append(op_trade)
+
+            await self._send_trade_bundles(
+                maker_wallets=maker_wallets,
+                bundled=bundled,
+                transaction_hash=str(payload.get("transaction", {}).get("hash") or ""),
+            )
+
+    async def _send_trade_bundles(
+        self,
+        *,
+        maker_wallets: list["NotificationWallet"],
+        bundled: dict[int, list[NotificationOperation]],
+        transaction_hash: str,
+    ) -> None:
+        """Deliver one message per maker and transaction instead of one per fill."""
+        if not bundled:
+            return
+        wallets_by_user = {wallet.user_id: wallet for wallet in maker_wallets}
+        for user_id, operations in bundled.items():
+            wallet = wallets_by_user.get(user_id)
+            if wallet is None:
+                continue
+            await self._accept_trade_bundle(
+                wallet,
+                operations,
+                transaction_hash=transaction_hash,
+            )
+
+    async def _accept_trade_bundle(
+        self,
+        wallet: "NotificationWallet",
+        operations: list[NotificationOperation],
+        *,
+        transaction_hash: str,
+    ) -> None:
+        if wallet.user_id is None or not operations:
+            return
+        user_id = int(wallet.user_id)
+        if not transaction_hash:
+            logger.warning("Skipping trade bundle without transaction hash")
+            return
+        if not self.notification_coordinator:
+            logger.warning(
+                f"Notification coordinator not initialized, cannot accept event for {user_id}"
+            )
+            return
+
+        first = operations[0]
+        if len(operations) == 1:
+            text = decode_db_effect(
+                first,
+                str(wallet.public_key),
+                user_id,
+                localization_service=self.localization_service,
+            )
+            if not text:
+                return
+        else:
+            text = build_trade_bundle_text(
+                operations,
+                account=str(wallet.public_key),
+                user_id=user_id,
+                transaction_hash=transaction_hash,
+                max_lines=self._trade_bundle_max_lines,
+                localization_service=self.localization_service,
+            )
+        if not text:
+            return
+
+        event_index = 0
+        notification_id = f"{transaction_hash}:trade_bundle:{event_index}:{user_id}"
+        try:
+            await self.notification_coordinator.accept(
+                BlockchainNotification(
+                    notification_id=notification_id,
+                    user_id=user_id,
+                    event_type="trade",
+                    text=text,
+                    created_at=int(first.dt.timestamp()),
+                    transaction_hash=transaction_hash,
+                    event_index=event_index,
+                    data={
+                        "wallet_id": int(wallet.id) if wallet.id else 0,
+                        "public_key": str(wallet.public_key),
+                        "operation_id": str(first.id).split("_")[0],
+                        "operation_type": "trade",
+                        "asset_code": first.display_asset_code,
+                        "amount": str(first.display_amount_value),
+                        "bundle_count": len(operations),
+                    },
+                )
+            )
+        except Exception as error:
+            logger.exception(f"Failed to durably accept trade bundle for {user_id}")
+            raise DurableNotificationAcceptError(user_id) from error
 
     def _snapshot_wallet(self, wallet: MyMtlWalletBot) -> NotificationWallet:
         if wallet.id is None or wallet.user_id is None or wallet.public_key is None:
@@ -929,6 +1033,55 @@ class NotificationService:
             logger.error(f"Mapping error: {e}")
             return None
 
+    @staticmethod
+    def _filterable_sides(operation: NotificationOperation) -> list[tuple[str, float]]:
+        """Amount/asset pairs a filter may match.
+
+        A trade records both what the maker gave and what it received. Matching
+        only the received side made ``EURMTL >= 0.1`` filters silently dead for
+        a maker who sells EURMTL for USDC, so both sides are offered.
+        """
+        if operation.operation == "trade":
+            return [
+                (
+                    str(operation.trade_bought_asset),
+                    float(operation.trade_bought_amount or 0.0),
+                ),
+                (
+                    str(operation.trade_sold_asset),
+                    float(operation.trade_sold_amount or 0.0),
+                ),
+            ]
+        return [
+            (operation.display_asset_code, float(operation.display_amount_value or 0.0))
+        ]
+
+    @classmethod
+    def _filter_allows(
+        cls,
+        operation: NotificationOperation,
+        wallet_public_key: str,
+        user_filters: list[NotificationFilter],
+    ) -> bool:
+        """Apply the user's notification filters to one operation."""
+        sides = cls._filterable_sides(operation)
+        for notification_filter in user_filters:
+            if notification_filter.operation_type != operation.operation or (
+                notification_filter.public_key is not None
+                and notification_filter.public_key != wallet_public_key
+            ):
+                continue
+            threshold = notification_filter.min_amount or 0.0
+            for asset_code, amount in sides:
+                if (
+                    notification_filter.asset_code is not None
+                    and notification_filter.asset_code != asset_code
+                ):
+                    continue
+                if threshold > amount:
+                    return False
+        return True
+
     async def _send_notification_to_user(
         self,
         wallet: MyMtlWalletBot | NotificationWallet,
@@ -961,23 +1114,7 @@ class NotificationService:
                     result_filter = await session.execute(stmt_filter)
                     user_filters = list(result_filter.scalars().all())
 
-            should_send = True
-            msg_amount = float(operation.display_amount_value or 0.0)
-
-            for f in user_filters:
-                if (
-                    (f.public_key is None or f.public_key == wallet.public_key)
-                    and (
-                        f.asset_code is None
-                        or f.asset_code == operation.display_asset_code
-                    )
-                    and (f.min_amount or 0.0) > msg_amount
-                    and f.operation_type == operation.operation
-                ):
-                    should_send = False
-                    break
-
-            if not should_send:
+            if not self._filter_allows(operation, wallet.public_key, user_filters):
                 return
 
             if not self.notification_coordinator:

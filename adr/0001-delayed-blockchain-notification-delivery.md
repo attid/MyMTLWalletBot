@@ -63,6 +63,39 @@ an active FSM state, excluding the badge, `/start`, back/cancel, and terminal
 callbacks. Logical flow endpoints call `complete_flow()`, which releases the
 hold and flushes immediately.
 
+## Amendment 2026-10-30: outbound chat speed
+
+An incident on 2026-10-30 showed that durability and ordering were solved but
+the outbound side was not: 3 246 maker fills of dust size produced one message
+per fill (up to 93 fills per transaction), 273 messages reached one chat in four
+minutes, Telegram answered with per-chat flood limits that escalated from 3 s to
+2 430 s, and the inline retry middleware slept inside the delivery lock, so the
+wait was both unbounded and forgotten after `delivery_timeout` cancelled it.
+
+Decision, binding for this pipeline:
+
+1. **One owner of outbound speed.** `NotificationCoordinator` owns it. The
+   Telegram retry middleware must not sleep for this pipeline: it raises
+   `ChatRateLimitedError` when the coordinator disables inline sleeping, and the
+   coordinator persists `notification:cooldown:{user_id}` from `retry_after`
+   (capped by configuration) and reschedules the user's due time.
+2. **Pacing belongs to the same owner.** `notification:pace:{user_id}` allows at
+   most one send per configured interval; pacing and cooldown are checked
+   atomically by `reserve_send_slot` before every send.
+3. **Badge edits share the chat budget.** A rate limit raised while refreshing
+   the badge parks the chat exactly like a notification send does.
+4. **Volume is bounded before delivery.** All maker fills of one transaction
+   become one message: the first N fills plus the remaining count and a single
+   `viewer.eurmtl.me/transaction/{hash}` link. The text budget is measured in
+   visible characters (markup stripped), because Telegram counts rendered text.
+5. **Filtering happens before bundling, and a trade filter may match either side
+   of the fill** — the sold or the received asset — with the amount taken from
+   the matched side.
+
+Nothing is dropped to compensate for a slow chat: a parked chat keeps its queue
+and delivers later. The compensating control is alerting on queue depth and head
+age, not a drop policy.
+
 ## Consequences
 
 - Positive: immediate and queued notifications have identical legacy UI
@@ -71,6 +104,9 @@ hold and flushes immediately.
 - Positive: ordered per-user delivery and distributed exclusion are explicit.
 - Positive: the signing/WalletConnect FastStream path stays independent.
 - Negative: Redis scripts and lock ownership add implementation complexity.
+- Negative: an unbounded Telegram wait now becomes bounded delivery latency, so
+  a parked chat may receive its backlog minutes later. This is preferred over
+  silent loss or an escalating flood limit.
 - Negative: Telegram cannot provide exactly-once delivery across a crash after
   send but before Redis acknowledgement, or a completed send whose recovery
   cannot reacquire the lock; rare duplicate delivery remains possible in those

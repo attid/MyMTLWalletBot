@@ -292,5 +292,9 @@
   "receive_invoice_msg": "Счёт: <b>{}</b> {}\n\nАдрес: <code>{}</code>\n\nДля оплаты отсканируйте QR-код кошельком с поддержкой SEP-7 (web+stellar:pay).",
   "receive_change_amount": "Изменить сумму",
   "receive_change_asset": "Изменить ассет",
-  "receive_invoice_asset_msg": "Выберите ассет:"
+  "receive_invoice_asset_msg": "Выберите ассет:",
+  "info_trade_bundle_header": "На счете {} в одной транзакции исполнено ваших ордеров: {}.\nТранзакция: {}",
+  "info_trade_bundle_line": "• продано {} {}, получено {} {}{}",
+  "info_trade_bundle_more": "…и ещё {}.",
+  "kb_add_trade_filter": "🛠 Фильтр по трейдам"
 }

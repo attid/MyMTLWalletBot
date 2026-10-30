@@ -35,6 +35,7 @@ from infrastructure.services.notification_coordinator import (
 from infrastructure.services.notification_redis_store import NotificationRedisStore
 from infrastructure.utils.notification_utils import decode_db_effect
 from infrastructure.utils.notification_utils import _html_escape
+from infrastructure.utils.notification_utils import visible_text_length
 from infrastructure.services.notification_coordinator import NotificationBadgeRefresher
 from infrastructure.workers.notification_delivery_worker import (
     NotificationDeliveryWorker,
@@ -45,7 +46,7 @@ from infrastructure.services.bot_health_service import (
 )
 from core.models.blockchain_notification import BlockchainNotification
 from core.models.notification import NotificationOperation
-from db.models import MyMtlWalletBot
+from db.models import MyMtlWalletBot, NotificationFilter
 from tests.conftest import get_telegram_request
 
 
@@ -1023,8 +1024,10 @@ async def test_process_notification_propagates_offer_id_to_maker_trade(
 
     result = MagicMock()
     result.scalars.return_value.all.return_value = [wallet]
+    no_filters = MagicMock()
+    no_filters.scalars.return_value.all.return_value = []
     session = AsyncMock()
-    session.execute.return_value = result
+    session.execute.side_effect = [result, no_filters, result, no_filters]
     notification_service.db_pool = TrackingDbPool(session)
 
     sent_ops: list[NotificationOperation] = []
@@ -1032,7 +1035,11 @@ async def test_process_notification_propagates_offer_id_to_maker_trade(
     async def capture(_wallet, op, **_kwargs):
         sent_ops.append(op)
 
+    async def capture_bundle(_wallet, operations, **kwargs):
+        sent_ops.extend(operations)
+
     notification_service._send_notification_to_user = capture
+    notification_service._accept_trade_bundle = capture_bundle
 
     await notification_service.process_notification(
         {
@@ -1269,3 +1276,242 @@ async def test_watchdog_alert_resets_timer_and_does_not_repeat_before_next_hour(
 
     assert sent_chat_ids.count(1001) == 1
     assert sent_chat_ids.count(1002) == 1
+
+
+SELLER_PK = "GSELLER" + "S" * 50
+
+
+def maker_wallets_result() -> MagicMock:
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.user_id = 12345
+    wallet.public_key = SELLER_PK
+    wallet.id = 1
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [wallet]
+    return result
+
+
+def empty_result() -> MagicMock:
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    return result
+
+
+def dust_trade(amount: str, offer_id: int) -> dict:
+    return {
+        "type": "order_book",
+        "seller_id": SELLER_PK,
+        "offer_id": str(offer_id),
+        "asset_sold": {"asset_type": 1, "asset_code": "EURMTL"},
+        "amount_sold": amount,
+        "asset_bought": {"asset_type": 0},
+        "amount_bought": amount,
+    }
+
+
+def maker_trades_payload(trades: list[dict], tx_hash: str = "tx-bundle") -> dict:
+    return {
+        "operation": {
+            "id": "op-bundle",
+            "type": "manage_sell_offer",
+            "account": "GTAKER" + "T" * 50,
+            "amount": "10",
+            "price": "0.1",
+            "asset": {"asset_type": 0},
+            "source_asset": {"asset_type": 0},
+            "trades": trades,
+        },
+        "transaction": {"hash": tx_hash},
+    }
+
+
+class CoordinatorCapture:
+    def __init__(self) -> None:
+        self.accepted: list[BlockchainNotification] = []
+
+    async def accept(self, notification: BlockchainNotification) -> None:
+        self.accepted.append(notification)
+
+
+@pytest.mark.asyncio
+async def test_93_fills_of_one_transaction_become_a_single_message(
+    notification_service,
+) -> None:
+    """The incident shape: 93 dust fills in one tx must not be 93 messages."""
+    session = AsyncMock()
+    session.execute.side_effect = [
+        empty_result(),
+        maker_wallets_result(),
+        empty_result(),
+    ]
+    notification_service.db_pool = TrackingDbPool(session)
+    capture = CoordinatorCapture()
+    notification_service.notification_coordinator = capture
+
+    trades = [dust_trade("0.0004", 1_000 + index) for index in range(93)]
+    await notification_service.process_notification(maker_trades_payload(trades))
+
+    assert len(capture.accepted) == 1
+    notification = capture.accepted[0]
+    assert notification.data["bundle_count"] == 93
+    assert notification.event_type == "trade"
+    assert notification.notification_id == "tx-bundle:trade_bundle:0:12345"
+    assert "tx-bundle" in notification.text
+    assert notification.text.count("•") == 15
+    assert "78" in notification.text
+    assert len(notification.text) <= 4096
+
+
+@pytest.mark.asyncio
+async def test_trade_bundle_contains_only_operations_that_pass_filters(
+    notification_service,
+) -> None:
+    """Filtering runs before bundling, so suppressed fills never reach the text."""
+    filters_result = MagicMock()
+    filters_result.scalars.return_value.all.return_value = [
+        NotificationFilter(
+            user_id=12345,
+            public_key=None,
+            asset_code=None,
+            min_amount=0.01,
+            operation_type="trade",
+        )
+    ]
+    session = AsyncMock()
+    session.execute.side_effect = [
+        empty_result(),
+        maker_wallets_result(),
+        filters_result,
+    ]
+    notification_service.db_pool = TrackingDbPool(session)
+    capture = CoordinatorCapture()
+    notification_service.notification_coordinator = capture
+
+    trades = [
+        dust_trade("0.0004", 1),
+        dust_trade("5.0", 2),
+        dust_trade("0.0001", 3),
+    ]
+    await notification_service.process_notification(maker_trades_payload(trades))
+
+    assert len(capture.accepted) == 1
+    notification = capture.accepted[0]
+    assert notification.data["bundle_count"] == 1
+    assert notification.text.count("•") == 0
+    assert "5" in notification.text
+
+
+@pytest.mark.asyncio
+async def test_single_fill_keeps_the_legacy_single_trade_message(
+    notification_service,
+) -> None:
+    session = AsyncMock()
+    session.execute.side_effect = [
+        empty_result(),
+        maker_wallets_result(),
+        empty_result(),
+    ]
+    notification_service.db_pool = TrackingDbPool(session)
+    capture = CoordinatorCapture()
+    notification_service.notification_coordinator = capture
+
+    await notification_service.process_notification(
+        maker_trades_payload([dust_trade("1.5", 7)])
+    )
+
+    assert len(capture.accepted) == 1
+    notification = capture.accepted[0]
+    assert notification.data["bundle_count"] == 1
+    assert notification.text.count("•") == 0
+    assert "viewer.eurmtl.me/offer/7" in notification.text
+
+
+@pytest.mark.asyncio
+async def test_trade_bundle_never_exceeds_telegrams_visible_text_limit(
+    notification_service,
+) -> None:
+    session = AsyncMock()
+    session.execute.side_effect = [
+        empty_result(),
+        maker_wallets_result(),
+        empty_result(),
+    ]
+    notification_service.db_pool = TrackingDbPool(session)
+    notification_service._trade_bundle_max_lines = 500
+    capture = CoordinatorCapture()
+    notification_service.notification_coordinator = capture
+
+    trades = [
+        {
+            "type": "order_book",
+            "seller_id": SELLER_PK,
+            "offer_id": "1853781281",
+            "asset_sold": {
+                "asset_type": 1,
+                "asset_code": "EURMTLLONGNAME" + "X" * 40,
+            },
+            "amount_sold": "12345.6789",
+            "asset_bought": {"asset_type": 1, "asset_code": "USDC" + "Y" * 40},
+            "amount_bought": "98765.4321",
+        }
+        for _ in range(400)
+    ]
+    await notification_service.process_notification(maker_trades_payload(trades))
+
+    assert len(capture.accepted) == 1
+    assert visible_text_length(capture.accepted[0].text) <= 4096
+
+
+@pytest.mark.asyncio
+async def test_trade_filter_matches_the_sold_side_of_a_maker_fill(
+    notification_service,
+) -> None:
+    """A filter on the asset the maker gives must work, not only on the received one."""
+    filters_result = MagicMock()
+    filters_result.scalars.return_value.all.return_value = [
+        NotificationFilter(
+            user_id=12345,
+            public_key=None,
+            asset_code="EURMTL",
+            min_amount=0.01,
+            operation_type="trade",
+        )
+    ]
+    session = AsyncMock()
+    session.execute.side_effect = [
+        empty_result(),
+        maker_wallets_result(),
+        filters_result,
+    ]
+    notification_service.db_pool = TrackingDbPool(session)
+    capture = CoordinatorCapture()
+    notification_service.notification_coordinator = capture
+
+    trades = [dust_trade("0.0004", 1), dust_trade("5.0", 2)]
+    await notification_service.process_notification(maker_trades_payload(trades))
+
+    assert len(capture.accepted) == 1
+    assert capture.accepted[0].data["bundle_count"] == 1
+
+
+def test_payment_filter_still_matches_only_its_own_side() -> None:
+    """Non-trade operations keep their single display side."""
+    from infrastructure.services.notification_service import NotificationService
+
+    payment = NotificationOperation(
+        id="op-1",
+        operation="payment",
+        dt=datetime.utcnow(),
+        payment_amount=0.05,
+        payment_asset="XLM",
+    )
+    strict = NotificationFilter(
+        user_id=12345,
+        public_key=None,
+        asset_code="XLM",
+        min_amount=0.1,
+        operation_type="payment",
+    )
+
+    assert NotificationService._filter_allows(payment, "GKEY", [strict]) is False
+    assert NotificationService._filter_allows(payment, "GKEY", []) is True

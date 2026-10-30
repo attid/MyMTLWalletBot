@@ -24,6 +24,17 @@ class NotificationMenuAction(CallbackData, prefix="notif_menu"):
     page: int = 0
 
 
+def _latest_history_record(app_context: AppContext, user_id: int, operation_type: str):
+    """Most recent history record of one operation type, when history exists."""
+    history = app_context.notification_history
+    if not history:
+        return None
+    for record in history.get_recent(user_id, limit=20):
+        if record.operation_type == operation_type:
+            return record
+    return None
+
+
 async def send_notification_settings_menu(
     callback: types.CallbackQuery,
     state: FSMContext,
@@ -353,12 +364,22 @@ async def notification_settings_callback(
             )
         buttons.append(pagination_row)
 
-    # Add filter button
+    # Add filter buttons: from history, or a ready-made trade filter
     buttons.append(
         [
             types.InlineKeyboardButton(
                 text=my_gettext(user_id, "kb_add_filter", app_context=app_context),
                 callback_data="add_filter_menu",
+            )
+        ]
+    )
+    buttons.append(
+        [
+            types.InlineKeyboardButton(
+                text=my_gettext(
+                    user_id, "kb_add_trade_filter", app_context=app_context
+                ),
+                callback_data="add_trade_filter",
             )
         ]
     )
@@ -494,6 +515,36 @@ async def handle_filter_action(
             app_context=app_context,
         )
         await callback.answer()
+
+
+@router.callback_query(F.data == "add_trade_filter")
+async def add_trade_filter_callback(
+    callback: types.CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    """Start a trade filter without needing a trade in the short history.
+
+    Maker fills are the highest-volume notification source, yet a filter for
+    them used to be creatable only from a matching history record, which the
+    flood itself evicts. Seeding the state here makes the filter reachable.
+    """
+    user_id = callback.from_user.id
+    latest_trade = _latest_history_record(app_context, user_id, "trade")
+    await state.update_data(
+        public_key=None,
+        asset_code=None,
+        cached_asset_code=latest_trade.asset_code if latest_trade else None,
+        min_amount=(
+            float(latest_trade.amount) if latest_trade and latest_trade.amount else 0
+        ),
+        operation_type="trade",
+        for_all_wallets=True,
+    )
+    await send_notification_settings_menu(
+        callback, state, session, app_context=app_context
+    )
 
 
 @router.callback_query(F.data == "add_filter_menu")

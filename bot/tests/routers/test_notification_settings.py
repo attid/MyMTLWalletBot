@@ -406,3 +406,51 @@ async def test_create_filter_from_history(
     data = await dp.storage.get_data(state_key)
     assert data["asset_code"] == "EURMTL"
     assert data["operation_type"] == "payment"
+
+
+@pytest.mark.asyncio
+async def test_add_trade_filter_needs_no_history_record(
+    mock_telegram, router_app_context, setup_notification_mocks
+):
+    """A trade filter must be reachable even with an empty notification history."""
+    from infrastructure.services.notification_history_service import (
+        NotificationHistoryService,
+    )
+
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+    router_app_context.notification_history = NotificationHistoryService()
+
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(123, "add_trade_filter")
+    )
+
+    req = get_latest_msg(mock_telegram)
+    assert "notification_settings_menu" in req["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_add_trade_filter_saves_a_trade_filter_without_history(
+    mock_telegram, router_app_context, setup_notification_mocks
+):
+    from infrastructure.services.notification_history_service import (
+        NotificationHistoryService,
+    )
+
+    dp = router_app_context.dispatcher
+    dp.callback_query.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(notification_router)
+    router_app_context.notification_history = NotificationHistoryService()
+
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(123, "add_trade_filter")
+    )
+    await dp.feed_update(
+        router_app_context.bot, create_callback_update(123, "save_filter")
+    )
+
+    setup_notification_mocks.notif_repo.create.assert_awaited_once()
+    kwargs = setup_notification_mocks.notif_repo.create.await_args.kwargs
+    assert kwargs["operation_type"] == "trade"
+    assert kwargs["public_key"] is None

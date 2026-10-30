@@ -684,3 +684,78 @@ async def test_store_supports_default_binary_redis_responses():
         assert await store.release_lock(42, "owner-token") is True
     finally:
         await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_park_chat_extends_the_cooldown_and_reschedules_the_user(
+    redis_store: NotificationRedisStore,
+) -> None:
+    event = notification("tx-1", "First payment")
+    await redis_store.enqueue(42, event)
+
+    assert await redis_store.park_chat(42, until=1_279.0, now=1_000.0) is True
+    assert await redis_store.cooldown_until(42) == pytest.approx(1_279.0, abs=0.01)
+    assert await redis_store.due_users(now=1_100.0, limit=10) == []
+    assert await redis_store.due_users(now=1_300.0, limit=10) == [42]
+
+    # A shorter later cooldown must never shorten the active one.
+    assert await redis_store.park_chat(42, until=1_050.0, now=1_010.0) is True
+    assert await redis_store.cooldown_until(42) == pytest.approx(1_279.0, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_park_chat_ignores_a_deadline_in_the_past(
+    redis_store: NotificationRedisStore,
+) -> None:
+    assert await redis_store.park_chat(42, until=900.0, now=1_000.0) is False
+    assert await redis_store.cooldown_until(42) is None
+
+
+@pytest.mark.asyncio
+async def test_reserve_send_slot_reports_the_whole_remaining_cooldown(
+    redis_store: NotificationRedisStore,
+) -> None:
+    await redis_store.park_chat(42, until=1_279.0, now=1_000.0)
+
+    wait_seconds = await redis_store.reserve_send_slot(
+        42, now=1_009.0, min_interval_seconds=1.0
+    )
+
+    assert wait_seconds == pytest.approx(270.0, abs=1.0)
+
+
+@pytest.mark.asyncio
+async def test_reserve_send_slot_enforces_one_send_per_interval(
+    redis_store: NotificationRedisStore,
+) -> None:
+    assert (
+        await redis_store.reserve_send_slot(42, now=1_000.0, min_interval_seconds=1.0)
+        == 0.0
+    )
+    blocked = await redis_store.reserve_send_slot(
+        42, now=1_000.0, min_interval_seconds=1.0
+    )
+    assert 0 < blocked <= 1.0
+
+    await asyncio.sleep(1.05)
+
+    assert (
+        await redis_store.reserve_send_slot(42, now=1_001.1, min_interval_seconds=1.0)
+        == 0.0
+    )
+
+
+@pytest.mark.asyncio
+async def test_park_chat_keeps_a_later_hold_schedule(
+    redis_store: NotificationRedisStore,
+) -> None:
+    event = notification("tx-1", "First payment")
+    await redis_store.enqueue(42, event)
+    await redis_store.touch(42, now=1_000)
+    hold_until = await redis_store.hold_until(42)
+
+    assert hold_until == 1_120
+    await redis_store.park_chat(42, until=1_060.0, now=1_000.0)
+
+    assert await redis_store.due_users(now=1_100.0, limit=10) == []
+    assert await redis_store.due_users(now=1_125.0, limit=10) == [42]

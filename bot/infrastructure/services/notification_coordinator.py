@@ -13,10 +13,13 @@ from aiogram.exceptions import TelegramBadRequest
 from loguru import logger
 
 from core.models.blockchain_notification import BlockchainNotification
+from middleware.retry import ChatRateLimitedError, no_inline_rate_limit_sleep
 
 DEFAULT_DELIVERY_TIMEOUT_SECONDS = 30.0
 DEFAULT_LOCK_LIFETIME_SECONDS = 90.0
 DEFAULT_BADGE_TIMEOUT_SECONDS = 10.0
+DEFAULT_MIN_SEND_INTERVAL_SECONDS = 1.0
+DEFAULT_COOLDOWN_MAX_SECONDS = 3600.0
 
 
 class NotificationStore(Protocol):
@@ -47,6 +50,12 @@ class NotificationStore(Protocol):
     async def claim_accept(
         self, user_id: int, notification: BlockchainNotification, *, now: int
     ) -> str: ...
+
+    async def park_chat(self, user_id: int, *, until: float, now: float) -> bool: ...
+
+    async def reserve_send_slot(
+        self, user_id: int, *, now: float, min_interval_seconds: float
+    ) -> float: ...
 
     async def peek(self, user_id: int) -> BlockchainNotification | None: ...
 
@@ -93,6 +102,8 @@ class NotificationCoordinator:
         delivery_timeout_seconds: float = DEFAULT_DELIVERY_TIMEOUT_SECONDS,
         lock_lifetime_seconds: float = DEFAULT_LOCK_LIFETIME_SECONDS,
         badge_timeout_seconds: float = DEFAULT_BADGE_TIMEOUT_SECONDS,
+        min_send_interval_seconds: float = DEFAULT_MIN_SEND_INTERVAL_SECONDS,
+        cooldown_max_seconds: float = DEFAULT_COOLDOWN_MAX_SECONDS,
     ) -> None:
         if lock_ttl_seconds <= 0:
             raise ValueError("lock_ttl_seconds must be positive")
@@ -112,6 +123,13 @@ class NotificationCoordinator:
             raise ValueError("lock_lifetime_seconds must be finite and positive")
         if not math.isfinite(badge_timeout_seconds) or badge_timeout_seconds <= 0:
             raise ValueError("badge_timeout_seconds must be finite and positive")
+        if (
+            not math.isfinite(min_send_interval_seconds)
+            or min_send_interval_seconds <= 0
+        ):
+            raise ValueError("min_send_interval_seconds must be finite and positive")
+        if not math.isfinite(cooldown_max_seconds) or cooldown_max_seconds <= 0:
+            raise ValueError("cooldown_max_seconds must be finite and positive")
         self._store = store
         self._sender = sender
         self._badge_refresher = badge_refresher
@@ -121,6 +139,8 @@ class NotificationCoordinator:
         self._delivery_timeout_seconds = delivery_timeout_seconds
         self._lock_lifetime_seconds = lock_lifetime_seconds
         self._badge_timeout_seconds = badge_timeout_seconds
+        self._min_send_interval_seconds = min_send_interval_seconds
+        self._cooldown_max_seconds = cooldown_max_seconds
         self._flow_generation_context: ContextVar[tuple[int, int | None] | None] = (
             ContextVar(f"notification_flow_generation_{id(self)}", default=None)
         )
@@ -257,10 +277,22 @@ class NotificationCoordinator:
             if lease_lost is not None and lease_lost.is_set():
                 return badge_refresh_needed
 
+            if not await self._claim_chat_send_slot(
+                user_id, reason=reason, notification_id=notification.notification_id
+            ):
+                return badge_refresh_needed
+
+            if lease_lost is not None and lease_lost.is_set():
+                return badge_refresh_needed
+
             try:
                 mark_stage("send", notification.notification_id)
-                async with asyncio.timeout(self._delivery_timeout_seconds):
-                    await self._sender.send_notification(notification)
+                with no_inline_rate_limit_sleep():
+                    async with asyncio.timeout(self._delivery_timeout_seconds):
+                        await self._sender.send_notification(notification)
+            except ChatRateLimitedError as error:
+                await self._park_chat_after_rate_limit(user_id, error, reason=reason)
+                return badge_refresh_needed
             except TelegramBadRequest as error:
                 # Telegram rejects the payload itself (e.g. broken parse-mode
                 # HTML). Retrying can never succeed and would leave this
@@ -502,8 +534,13 @@ class NotificationCoordinator:
 
     async def _refresh_badge(self, user_id: int) -> None:
         try:
-            async with asyncio.timeout(self._badge_timeout_seconds):
-                await self._badge_refresher.refresh(user_id)
+            with no_inline_rate_limit_sleep():
+                async with asyncio.timeout(self._badge_timeout_seconds):
+                    await self._badge_refresher.refresh(user_id)
+        except ChatRateLimitedError as error:
+            await self._park_chat_after_rate_limit(
+                user_id, error, reason="badge_refresh"
+            )
         except TimeoutError:
             logger.bind(
                 event="notification_badge_refresh_timed_out",
@@ -515,6 +552,60 @@ class NotificationCoordinator:
             logger.bind(
                 event="notification_badge_refresh_failed", user_id=user_id
             ).exception("notification badge refresh failed")
+
+    async def _claim_chat_send_slot(
+        self, user_id: int, *, reason: str, notification_id: str
+    ) -> bool:
+        """Return True when the queue head may be sent to this chat now.
+
+        The store owns both limits: the persisted cooldown that Telegram asked
+        for, and the minimum interval between two sends to one chat. A short
+        wait is taken here; the whole remaining cooldown defers the flush so no
+        delivery lock is held while the chat is parked.
+        """
+        for _ in range(2):
+            wait_seconds = await self._store.reserve_send_slot(
+                user_id,
+                now=self._clock(),
+                min_interval_seconds=self._min_send_interval_seconds,
+            )
+            if wait_seconds <= 0:
+                return True
+            if wait_seconds > self._min_send_interval_seconds:
+                logger.bind(
+                    event="notification_chat_parked",
+                    user_id=user_id,
+                    reason=reason,
+                    notification_id=notification_id,
+                    wait_seconds=wait_seconds,
+                ).warning(
+                    f"notification delivery deferred by chat cooldown: "
+                    f"user_id={user_id} wait_seconds={wait_seconds:g} "
+                    f"reason={reason} notification_id={notification_id}"
+                )
+                return False
+            await asyncio.sleep(wait_seconds)
+        return True
+
+    async def _park_chat_after_rate_limit(
+        self, user_id: int, error: ChatRateLimitedError, *, reason: str
+    ) -> None:
+        """Persist Telegram's retry hint so later flushes stop hammering the chat."""
+        now = self._clock()
+        cooldown_seconds = min(error.retry_after, self._cooldown_max_seconds)
+        until = now + cooldown_seconds
+        await self._store.park_chat(user_id, until=until, now=now)
+        logger.bind(
+            event="notification_chat_cooldown_started",
+            user_id=user_id,
+            reason=reason,
+            retry_after=error.retry_after,
+            cooldown_seconds=cooldown_seconds,
+        ).warning(
+            f"Telegram rate limit parked chat: user_id={user_id} "
+            f"retry_after={error.retry_after:g} cooldown_seconds={cooldown_seconds:g} "
+            f"reason={reason}"
+        )
 
     async def _hold_allows_flush(self, user_id: int) -> tuple[bool, int | None]:
         """Return whether delivery may proceed and an expired deadline to clean."""

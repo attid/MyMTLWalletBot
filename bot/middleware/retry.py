@@ -1,5 +1,8 @@
 import asyncio
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Final
 
 from aiogram import Bot
@@ -20,6 +23,42 @@ from aiogram.utils.backoff import Backoff, BackoffConfig
 
 logger: logging.Logger = logging.getLogger(__name__)
 DEFAULT_MAX_RETRIES: Final[int] = 7
+
+
+INLINE_RETRY_DISABLED: ContextVar[bool] = ContextVar(
+    "telegram_inline_retry_disabled", default=False
+)
+
+
+class ChatRateLimitedError(Exception):
+    """Telegram asked one chat to slow down; the caller owns the waiting policy.
+
+    Raising instead of sleeping keeps the wait outside any per-chat delivery
+    lock and lets the caller persist a cooldown that survives retries.
+    """
+
+    def __init__(self, *, retry_after: float, chat_id: int | None) -> None:
+        super().__init__(
+            f"Telegram rate limit for chat {chat_id}: retry after {retry_after:g}s"
+        )
+        self.retry_after = retry_after
+        self.chat_id = chat_id
+
+
+@contextmanager
+def no_inline_rate_limit_sleep() -> Iterator[None]:
+    """Turn Telegram rate limits into :class:`ChatRateLimitedError` for the caller."""
+    token = INLINE_RETRY_DISABLED.set(True)
+    try:
+        yield
+    finally:
+        INLINE_RETRY_DISABLED.reset(token)
+
+
+def request_chat_id(method: TelegramMethod[TelegramType]) -> int | None:
+    """Best-effort chat id of an outgoing request, when the method has one."""
+    chat_id = getattr(method, "chat_id", None)
+    return chat_id if isinstance(chat_id, int) else None
 
 
 class RetryRequestMiddleware(BaseRequestMiddleware):
@@ -52,6 +91,11 @@ class RetryRequestMiddleware(BaseRequestMiddleware):
             except TelegramRetryAfter as e:
                 if isinstance(method, AnswerCallbackQuery):
                     raise
+                if INLINE_RETRY_DISABLED.get():
+                    raise ChatRateLimitedError(
+                        retry_after=float(e.retry_after),
+                        chat_id=request_chat_id(method),
+                    ) from e
                 if retries == self.max_retries:
                     raise
                 logger.error(

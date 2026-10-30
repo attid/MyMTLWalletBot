@@ -173,6 +173,41 @@ redis.call('EXPIRE', KEYS[1], ARGV[2])
 return 1
 """
 
+_RESERVE_SEND_SLOT = """
+local cooldown = redis.call('GET', KEYS[1])
+if cooldown and tonumber(cooldown) > tonumber(ARGV[1]) then
+    return tonumber(cooldown) - tonumber(ARGV[1])
+end
+local reserved = redis.call('SET', KEYS[2], ARGV[1], 'PX', ARGV[3], 'NX')
+if not reserved then
+    local ttl = redis.call('PTTL', KEYS[2])
+    if ttl and ttl > 0 then
+        return ttl / 1000.0
+    end
+    return tonumber(ARGV[2])
+end
+return 0
+"""
+
+_PARK_CHAT = """
+local now = tonumber(ARGV[2])
+local until_ts = tonumber(ARGV[1])
+local existing = redis.call('GET', KEYS[1])
+if existing and tonumber(existing) > until_ts then
+    until_ts = tonumber(existing)
+end
+local ttl = math.floor((until_ts - now) * 1000)
+if ttl < 1 then
+    return 0
+end
+redis.call('SET', KEYS[1], until_ts, 'PX', ttl)
+local hold_until = redis.call('GET', KEYS[3])
+if not hold_until or tonumber(hold_until) < until_ts then
+    redis.call('ZADD', KEYS[2], until_ts, ARGV[3])
+end
+return 1
+"""
+
 DEFAULT_DEDUPE_TTL_SECONDS = 30 * 24 * 60 * 60
 MAX_DUE_SCAN_PAGES = 10
 
@@ -316,6 +351,96 @@ class NotificationRedisStore:
         if hold_until is None or generation is None:
             return None
         return int(self._as_str(hold_until)), int(self._as_str(generation))
+
+    async def cooldown_until(self, user_id: int) -> float | None:
+        """Absolute Unix deadline until which Telegram asked this chat to wait."""
+        value = await self._redis.get(self._cooldown_key(user_id))
+        return None if value is None else float(self._as_str(value))
+
+    async def park_chat(self, user_id: int, *, until: float, now: float) -> bool:
+        """Extend a chat cooldown and reschedule its due time.
+
+        Existing cooldowns are never shortened: a later 429 from another
+        worker wins. A hold already scheduled later is left untouched.
+        """
+        try:
+            result = await self._redis.eval(
+                _PARK_CHAT,
+                3,
+                self._cooldown_key(user_id),
+                self._due_key(),
+                self._hold_key(user_id),
+                until,
+                now,
+                str(user_id),
+            )
+        except ResponseError as error:
+            if not self._is_unsupported_eval(error):
+                raise
+            return await self._park_chat_without_lua(user_id, until=until, now=now)
+        return bool(result)
+
+    async def reserve_send_slot(
+        self, user_id: int, *, now: float, min_interval_seconds: float
+    ) -> float:
+        """Reserve the right to send one message to this chat.
+
+        Returns zero when the caller may send now, otherwise the number of
+        seconds to wait. A parked chat reports its whole remaining cooldown.
+        """
+        if min_interval_seconds <= 0:
+            raise ValueError("min_interval_seconds must be positive")
+        interval_ms = max(1, int(round(min_interval_seconds * 1000)))
+        try:
+            result = await self._redis.eval(
+                _RESERVE_SEND_SLOT,
+                2,
+                self._cooldown_key(user_id),
+                self._pace_key(user_id),
+                now,
+                min_interval_seconds,
+                interval_ms,
+            )
+        except ResponseError as error:
+            if not self._is_unsupported_eval(error):
+                raise
+            return await self._reserve_send_slot_without_lua(
+                user_id, now=now, min_interval_seconds=min_interval_seconds
+            )
+        return float(result)
+
+    async def _park_chat_without_lua(
+        self, user_id: int, *, until: float, now: float
+    ) -> bool:
+        existing = await self.cooldown_until(user_id)
+        effective = until if existing is None else max(existing, until)
+        ttl_ms = int(round((effective - now) * 1000))
+        if ttl_ms < 1:
+            return False
+        async with self._redis.pipeline(transaction=False) as pipeline:
+            pipeline.set(self._cooldown_key(user_id), effective, px=ttl_ms)
+            hold_until = await self._redis.get(self._hold_key(user_id))
+            if hold_until is None or float(self._as_str(hold_until)) < effective:
+                pipeline.zadd(self._due_key(), {str(user_id): effective})
+            await pipeline.execute()
+        return True
+
+    async def _reserve_send_slot_without_lua(
+        self, user_id: int, *, now: float, min_interval_seconds: float
+    ) -> float:
+        cooldown = await self.cooldown_until(user_id)
+        if cooldown is not None and cooldown > now:
+            return cooldown - now
+        interval_ms = max(1, int(round(min_interval_seconds * 1000)))
+        reserved = await self._redis.set(
+            self._pace_key(user_id), now, px=interval_ms, nx=True
+        )
+        if reserved:
+            return 0.0
+        ttl_ms = await self._redis.pttl(self._pace_key(user_id))
+        if ttl_ms and ttl_ms > 0:
+            return ttl_ms / 1000.0
+        return min_interval_seconds
 
     async def enqueue(self, user_id: int, notification: BlockchainNotification) -> bool:
         """Atomically deduplicate and append a notification to the FIFO queue."""
@@ -860,3 +985,9 @@ class NotificationRedisStore:
 
     def _hold_key_prefix(self) -> str:
         return f"{self._key_prefix}notification:hold:"
+
+    def _cooldown_key(self, user_id: int) -> str:
+        return f"{self._key_prefix}notification:cooldown:{user_id}"
+
+    def _pace_key(self, user_id: int) -> str:
+        return f"{self._key_prefix}notification:pace:{user_id}"

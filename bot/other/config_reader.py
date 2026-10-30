@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     notification_hold_seconds: int = 120
     notification_delivery_poll_interval_seconds: float = 5.0
     notification_delivery_batch_size: int = 100
+    # Outbound chat pacing: Telegram per-chat flood limits are the bottleneck.
+    notification_chat_min_interval_seconds: float = 1.0
+    notification_chat_cooldown_max_seconds: float = 3600.0
+    # One message per transaction: keep the first N fills and the remaining count.
+    notification_bundle_max_lines: int = 15
 
     @field_validator("notification_delivery_poll_interval_seconds")
     @classmethod
@@ -66,6 +71,24 @@ class Settings(BaseSettings):
         if not math.isfinite(value) or value <= 0:
             raise ValueError(
                 "notification_delivery_poll_interval_seconds must be finite and positive"
+            )
+        return value
+
+    @field_validator("notification_chat_min_interval_seconds")
+    @classmethod
+    def validate_notification_chat_min_interval(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(
+                "notification_chat_min_interval_seconds must be finite and positive"
+            )
+        return value
+
+    @field_validator("notification_chat_cooldown_max_seconds")
+    @classmethod
+    def validate_notification_chat_cooldown_max(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(
+                "notification_chat_cooldown_max_seconds must be finite and positive"
             )
         return value
 

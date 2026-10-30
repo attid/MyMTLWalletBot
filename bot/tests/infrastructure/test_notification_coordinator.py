@@ -17,6 +17,7 @@ from infrastructure.services.notification_coordinator import (
     NotificationStore,
 )
 from infrastructure.services.notification_redis_store import NotificationRedisStore
+from middleware.retry import ChatRateLimitedError
 
 
 def notification(notification_id: str, text: str) -> BlockchainNotification:
@@ -37,6 +38,8 @@ def store() -> MagicMock:
     mock.acquire_lock.return_value = True
     mock.acknowledge_if_lock_owned.return_value = True
     mock.release_lock.return_value = True
+    mock.park_chat.return_value = True
+    mock.reserve_send_slot.return_value = 0.0
     return mock
 
 
@@ -215,6 +218,7 @@ async def test_flush_cleans_an_expired_due_schedule_only_after_queue_is_empty(
         call.peek(42),
         call.renew_lock(42, "flush-token"),
         call.hold_until(42),
+        call.reserve_send_slot(42, now=1_000, min_interval_seconds=1.0),
         call.acknowledge_if_lock_owned(42, event, "flush-token"),
         call.peek(42),
         call.release_hold_if_unchanged(42, 1_000, now=1_000),
@@ -1090,3 +1094,102 @@ async def test_flush_does_not_enter_when_another_owner_has_the_lock(
     )
     assert "user_id=42" in contention_record["message"]
     assert "reason=worker" in contention_record["message"]
+
+
+@pytest.mark.asyncio
+async def test_flush_parks_the_chat_when_telegram_reports_a_rate_limit(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    """A 429 must persist a cooldown instead of sleeping under the delivery lock."""
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    sender.send_notification.side_effect = ChatRateLimitedError(
+        retry_after=279, chat_id=42
+    )
+    records = []
+    sink_id = logger.add(
+        lambda message: records.append(message.record), level="WARNING"
+    )
+    try:
+        await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+    finally:
+        logger.remove(sink_id)
+
+    store.park_chat.assert_awaited_once_with(42, until=1_279, now=1_000)
+    store.acknowledge_if_lock_owned.assert_not_awaited()
+    badge_refresher.refresh.assert_not_awaited()
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
+    parked = next(
+        record
+        for record in records
+        if record["extra"].get("event") == "notification_chat_cooldown_started"
+    )
+    assert parked["extra"]["retry_after"] == 279
+    assert "user_id=42" in parked["message"]
+
+
+@pytest.mark.asyncio
+async def test_flush_caps_an_absurd_rate_limit_cooldown(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    await_flushes = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [await_flushes, None]
+    sender.send_notification.side_effect = ChatRateLimitedError(
+        retry_after=86_400, chat_id=42
+    )
+
+    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+
+    store.park_chat.assert_awaited_once_with(42, until=1_000 + 3_600, now=1_000)
+
+
+@pytest.mark.asyncio
+async def test_flush_defers_while_the_chat_cooldown_is_active(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    store.reserve_send_slot.return_value = 279.0
+
+    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+
+    sender.send_notification.assert_not_awaited()
+    store.park_chat.assert_not_awaited()
+    store.acknowledge_if_lock_owned.assert_not_awaited()
+    store.release_lock.assert_awaited_once_with(42, "flush-token")
+
+
+@pytest.mark.asyncio
+async def test_flush_waits_out_a_short_chat_pacing_interval(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    store.reserve_send_slot.side_effect = [0.01, 0.0]
+
+    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+
+    assert store.reserve_send_slot.await_count == 2
+    sender.send_notification.assert_awaited_once_with(event)
+    store.acknowledge_if_lock_owned.assert_awaited_once_with(42, event, "flush-token")
+
+
+@pytest.mark.asyncio
+async def test_badge_refresh_parks_the_chat_on_a_rate_limit(
+    store: MagicMock, sender: MagicMock, badge_refresher: MagicMock
+) -> None:
+    """Badge edits compete for the same per-chat limit, so they park too."""
+    event = notification("first", "First payment")
+    store.hold_until.return_value = None
+    store.peek.side_effect = [event, None]
+    badge_refresher.refresh.side_effect = ChatRateLimitedError(
+        retry_after=30, chat_id=42
+    )
+
+    await coordinator(store, sender, badge_refresher).flush(42, reason="worker")
+
+    store.park_chat.assert_awaited_once_with(42, until=1_030, now=1_000)

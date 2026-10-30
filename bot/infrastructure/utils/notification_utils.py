@@ -1,5 +1,6 @@
+import re
+from html import escape as _html_escape, unescape
 from typing import Any, Optional
-from html import escape as _html_escape
 from other.lang_tools import my_gettext
 from infrastructure.utils.common_utils import float2str
 from core.models.notification import NotificationOperation
@@ -326,3 +327,118 @@ def decode_db_effect(
         )
     else:
         return f"new operation for {account_link} \n\n{op_link}"
+
+
+TELEGRAM_MESSAGE_TEXT_LIMIT = 4096
+TRADE_BUNDLE_TEXT_RESERVE = 256
+DEFAULT_TRADE_BUNDLE_MAX_LINES = 15
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def visible_text_length(text: str) -> int:
+    """Length Telegram counts: rendered characters, not markup or entity targets.
+
+    A link like `<a href="https://…">GCVV..F4H</a>` costs the visible anchor
+    text only, so cutting raw HTML by 4096 would both over- and under-estimate.
+    """
+    return len(unescape(_HTML_TAG_RE.sub("", text)))
+
+
+def _viewer_account_link(account: str) -> str:
+    simple_account = account[:4] + ".." + account[-4:]
+    return f'<a href="https://viewer.eurmtl.me/account/{account}">{simple_account}</a>'
+
+
+def _viewer_transaction_link(transaction_hash: str) -> str:
+    if len(transaction_hash) <= 12:
+        return _html_escape(transaction_hash)
+    short = transaction_hash[:8] + ".." + transaction_hash[-4:]
+    return (
+        f'<a href="https://viewer.eurmtl.me/transaction/{transaction_hash}">{short}</a>'
+    )
+
+
+def _trade_bundle_line(operation: NotificationOperation, *, user_id: int, loc_service):
+    offer_id_text = ""
+    if operation.offer_id and operation.offer_id > 0:
+        link = f"https://viewer.eurmtl.me/offer/{operation.offer_id}"
+        offer_id_text = f' (ID: <a href="{link}">{operation.offer_id}</a>)'
+    return my_gettext(
+        user_id,
+        "info_trade_bundle_line",
+        (
+            float2str(operation.trade_sold_amount),
+            str(operation.trade_sold_asset),
+            float2str(operation.trade_bought_amount),
+            str(operation.trade_bought_asset),
+            offer_id_text,
+        ),
+        localization_service=loc_service,
+    )
+
+
+def build_trade_bundle_text(
+    operations: list[NotificationOperation],
+    *,
+    account: str,
+    user_id: int,
+    transaction_hash: str,
+    max_lines: int = DEFAULT_TRADE_BUNDLE_MAX_LINES,
+    localization_service: Any = None,
+) -> str:
+    """Render several maker fills of one transaction as a single message.
+
+    Keeps the first ``max_lines`` fills and the remaining count, and never
+    exceeds Telegram's visible-text limit. The transaction link carries the
+    full history, so no per-line viewer link is needed.
+    """
+    if not operations:
+        raise ValueError("trade bundle needs at least one operation")
+    if max_lines <= 0:
+        raise ValueError("max_lines must be positive")
+
+    header = my_gettext(
+        user_id,
+        "info_trade_bundle_header",
+        (
+            _viewer_account_link(account),
+            len(operations),
+            _viewer_transaction_link(transaction_hash),
+        ),
+        localization_service=localization_service,
+    )
+
+    rendered: list[str] = []
+    budget = TELEGRAM_MESSAGE_TEXT_LIMIT - TRADE_BUNDLE_TEXT_RESERVE
+    for operation in operations[:max_lines]:
+        line = _trade_bundle_line(
+            operation, user_id=user_id, loc_service=localization_service
+        )
+        remaining = len(operations) - len(rendered) - 1
+        candidate = [header, *rendered, line]
+        if remaining > 0:
+            candidate.append(
+                my_gettext(
+                    user_id,
+                    "info_trade_bundle_more",
+                    (remaining,),
+                    localization_service=localization_service,
+                )
+            )
+        if visible_text_length("\n".join(candidate)) > budget:
+            break
+        rendered.append(line)
+
+    rest = len(operations) - len(rendered)
+    message = [header, *rendered]
+    if rest > 0:
+        message.append(
+            my_gettext(
+                user_id,
+                "info_trade_bundle_more",
+                (rest,),
+                localization_service=localization_service,
+            )
+        )
+    return "\n".join(message)
