@@ -26,6 +26,9 @@ class SepOperationSupport:
 class SepProtocolSupport:
     protocol: SepProtocol
     transfer_server: str
+    # Asset code spelling advertised by the anchor (codes are case-sensitive,
+    # e.g. `yXLM`), used verbatim in protocol requests.
+    asset_code: str | None = None
     deposit: SepOperationSupport | None = None
     withdraw: SepOperationSupport | None = None
     transactions_enabled: bool = False
@@ -40,6 +43,8 @@ class AnchorAssetSupport:
     asset: Asset
     anchor_domain: str
     web_auth_endpoint: str | None
+    # SEP-1 `SIGNING_KEY`; without it the SEP-10 challenge cannot be verified.
+    signing_key: str | None = None
     sep6: SepProtocolSupport | None = None
     sep24: SepProtocolSupport | None = None
     checked_at: datetime = datetime.now(UTC)
@@ -62,6 +67,13 @@ class AnchorAssetSupport:
             (self.sep6 and self.sep6.transactions_enabled)
             or (self.sep24 and self.sep24.transactions_enabled)
         )
+
+    def asset_code_for(self, protocol: SepProtocol) -> str:
+        """Return the asset code spelling used by this protocol."""
+        support = self.sep24 if protocol is SepProtocol.SEP24 else self.sep6
+        if support is not None and support.asset_code:
+            return support.asset_code
+        return self.asset.code
 
     @property
     def supported_protocols(self) -> list[SepProtocol]:

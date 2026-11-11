@@ -23,6 +23,9 @@ if TYPE_CHECKING:
     )
     from infrastructure.services.notification_service import NotificationService
     from infrastructure.services.bot_health_service import BotHealthService
+    from infrastructure.services.anchor_transaction_service import (
+        AnchorTransactionService,
+    )
     from infrastructure.workers.notification_delivery_worker import (
         NotificationDeliveryWorker,
     )
@@ -58,6 +61,7 @@ class AppContext:
         notification_badge_service: Optional["NotificationBadgeService"] = None,
         bot_health_service: Optional["BotHealthService"] = None,
         stellar_sealedbox_service: Optional[IStellarSealedBoxService] = None,
+        anchor_transaction_service: Optional["AnchorTransactionService"] = None,
     ):
         self.bot = bot
         self.db_pool = db_pool
@@ -80,3 +84,4 @@ class AppContext:
         self.notification_badge_service = notification_badge_service
         self.bot_health_service = bot_health_service
         self.stellar_sealedbox_service = stellar_sealedbox_service
+        self.anchor_transaction_service = anchor_transaction_service

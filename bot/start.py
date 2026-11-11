@@ -378,6 +378,10 @@ async def main():
         NotificationDeliveryWorker,
     )
     from infrastructure.services.bot_health_service import BotHealthService
+    from infrastructure.services.anchor_transaction_service import (
+        AnchorTransactionService,
+    )
+    from infrastructure.services.sep24.token_store import Sep10TokenStore
 
     localization_service = LocalizationService(db_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -435,6 +439,9 @@ async def main():
         poll_interval_seconds=config.notification_delivery_poll_interval_seconds,
         batch_size=config.notification_delivery_batch_size,
     )
+    anchor_transaction_service = AnchorTransactionService(
+        token_store=Sep10TokenStore(notification_redis)
+    )
 
     app_context = AppContext(
         bot=bot,
@@ -458,6 +465,7 @@ async def main():
         notification_badge_service=notification_badge_service,
         bot_health_service=bot_health_service,
         stellar_sealedbox_service=stellar_sealedbox_service,
+        anchor_transaction_service=anchor_transaction_service,
     )
 
     dp["app_context"] = app_context

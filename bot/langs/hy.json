@@ -220,5 +220,6 @@
   "receive_invoice_msg": "Invoice: <b>{}</b> {}\n\nAddress: <code>{}</code>\n\nTo pay, scan the QR code with a wallet that supports SEP-7 (web+stellar:pay).",
   "receive_change_amount": "Change amount",
   "receive_change_asset": "Change asset",
-  "receive_invoice_asset_msg": "Select the asset:"
+  "receive_invoice_asset_msg": "Select the asset:",
+  "sep_assets_disclaimer": "<i>These assets and operations are provided by third-party anchor services, not by this wallet. We do not operate the anchor and are not responsible for transfers, KYC, exchange rates, timing, or refunds. Always verify the address and amounts on the anchor page.</i>"
 }

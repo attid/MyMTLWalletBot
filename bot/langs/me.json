@@ -243,5 +243,6 @@
   "receive_invoice_msg": "Račun: <b>{}</b> {}\n\nAdresa: <code>{}</code>\n\nZa plaćanje skenirajte QR kod novčanikom koji podržava SEP-7 (web+stellar:pay).",
   "receive_change_amount": "Promijeni iznos",
   "receive_change_asset": "Promijeni sredstvo",
-  "receive_invoice_asset_msg": "Izaberite sredstvo:"
+  "receive_invoice_asset_msg": "Izaberite sredstvo:",
+  "sep_assets_disclaimer": "<i>These assets and operations are provided by third-party anchor services, not by this wallet. We do not operate the anchor and are not responsible for transfers, KYC, exchange rates, timing, or refunds. Always verify the address and amounts on the anchor page.</i>"
 }

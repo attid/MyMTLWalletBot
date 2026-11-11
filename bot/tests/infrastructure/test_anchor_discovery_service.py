@@ -258,3 +258,60 @@ async def test_discover_assets_starts_next_when_one_slot_frees():
 
     assert started[:3] == ["A0", "A1", "A2"]
     assert started[3] == "A3"
+
+
+class CaseSensitiveAnchorHttp(FakeAnchorHttp):
+    """Anchor advertises `yXLM` while the wallet holds `YXLM`."""
+
+    async def fetch_text(self, url: str):
+        self.calls[url] += 1
+        if url == "https://kbtrading.org/.well-known/stellar.toml":
+            return """
+                TRANSFER_SERVER_SEP0024="https://kbtrading.org/sep24"
+                WEB_AUTH_ENDPOINT="https://kbtrading.org/auth"
+                SIGNING_KEY="GSIGNINGKEY"
+            """
+        raise AssertionError(f"unexpected text URL: {url}")
+
+    async def fetch_json(self, url: str):
+        self.calls[url] += 1
+        if url.endswith(f"/accounts/{ISSUER}"):
+            return {"home_domain": "kbtrading.org"}
+        if url == "https://kbtrading.org/sep24/info":
+            return {"deposit": {"yXLM": {"enabled": True}}}
+        raise AssertionError(f"unexpected json URL: {url}")
+
+
+@pytest.mark.asyncio
+async def test_discovery_reads_signing_key_and_resolves_asset_case():
+    fake_http = CaseSensitiveAnchorHttp()
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+    )
+
+    support = await service.discover_asset(Asset("YXLM", ISSUER))
+
+    assert support is not None
+    assert support.signing_key == "GSIGNINGKEY"
+    assert support.sep24 is not None
+    # `/info` key spelling is echoed verbatim for protocol requests.
+    assert support.asset_code_for(SepProtocol.SEP24) == "yXLM"
+    assert support.sep24.asset_code == "yXLM"
+
+
+@pytest.mark.asyncio
+async def test_discovery_keeps_exact_case_when_it_matches():
+    fake_http = FakeAnchorHttp()
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+    )
+
+    support = await service.discover_asset(Asset("BTCLN", ISSUER))
+
+    assert support is not None
+    assert support.asset_code_for(SepProtocol.SEP24) == "BTCLN"
+    assert support.signing_key is None

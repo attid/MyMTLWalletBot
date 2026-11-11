@@ -116,6 +116,7 @@ class AnchorDiscoveryService:
             asset=asset,
             anchor_domain=issuer_info.home_domain,
             web_auth_endpoint=issuer_info.web_auth_endpoint,
+            signing_key=issuer_info.signing_key,
             sep6=sep6,
             sep24=sep24,
         )
@@ -166,6 +167,7 @@ class AnchorDiscoveryService:
             asset=asset,
             anchor_domain=issuer_info.home_domain,
             web_auth_endpoint=issuer_info.web_auth_endpoint,
+            signing_key=issuer_info.signing_key,
             sep6=sep6,
             sep24=sep24,
         )
@@ -208,10 +210,12 @@ class AnchorDiscoveryService:
             sep6_url = toml_data.get("TRANSFER_SERVER")
             sep24_url = toml_data.get("TRANSFER_SERVER_SEP0024")
             web_auth_endpoint = toml_data.get("WEB_AUTH_ENDPOINT")
+            signing_key = toml_data.get("SIGNING_KEY")
 
             return IssuerSepInfo(
                 home_domain=home_domain,
                 web_auth_endpoint=web_auth_endpoint,
+                signing_key=signing_key if isinstance(signing_key, str) else None,
                 sep6_url=sep6_url.rstrip("/") if sep6_url else None,
                 sep24_url=sep24_url.rstrip("/") if sep24_url else None,
             )
@@ -262,8 +266,15 @@ class AnchorDiscoveryService:
         if not transfer_server or info is None:
             return None
 
-        deposit = self._operation_support(info.get("deposit", {}).get(asset_code))
-        withdraw = self._operation_support(info.get("withdraw", {}).get(asset_code))
+        # Anchor asset codes are case-sensitive (`yXLM`), while the wallet knows
+        # the code as it appears on-chain. Resolve the anchor's spelling once
+        # and use it verbatim for `/info` lookups and protocol requests.
+        resolved_code = self._resolve_asset_code(info, asset_code)
+        if resolved_code is None:
+            return None
+
+        deposit = self._operation_support(info.get("deposit", {}).get(resolved_code))
+        withdraw = self._operation_support(info.get("withdraw", {}).get(resolved_code))
         transactions = info.get("transactions", {})
         transactions_enabled = bool(
             isinstance(transactions, dict) and transactions.get("enabled")
@@ -272,6 +283,7 @@ class AnchorDiscoveryService:
         protocol_support = SepProtocolSupport(
             protocol=protocol,
             transfer_server=transfer_server.rstrip("/"),
+            asset_code=resolved_code,
             deposit=deposit,
             withdraw=withdraw,
             transactions_enabled=transactions_enabled,
@@ -279,6 +291,21 @@ class AnchorDiscoveryService:
         if not protocol_support.has_user_actions:
             return None
         return protocol_support
+
+    @staticmethod
+    def _resolve_asset_code(info: dict[str, Any], asset_code: str) -> str | None:
+        """Return the anchor spelling of `asset_code` (exact match preferred)."""
+        keys: list[str] = []
+        for section in ("deposit", "withdraw"):
+            entries = info.get(section)
+            if isinstance(entries, dict):
+                keys.extend(key for key in entries if isinstance(key, str))
+        if asset_code in keys:
+            return asset_code
+        for key in keys:
+            if key.lower() == asset_code.lower():
+                return key
+        return None
 
     def _operation_support(self, raw: Any) -> SepOperationSupport | None:
         if not isinstance(raw, dict) or not raw.get("enabled"):
@@ -328,8 +355,10 @@ class IssuerSepInfo:
         web_auth_endpoint: str | None,
         sep6_url: str | None,
         sep24_url: str | None,
+        signing_key: str | None = None,
     ) -> None:
         self.home_domain = home_domain
         self.web_auth_endpoint = web_auth_endpoint
+        self.signing_key = signing_key
         self.sep6_url = sep6_url
         self.sep24_url = sep24_url
