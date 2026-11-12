@@ -811,3 +811,25 @@ async def test_cq_show_more_toggle(
     # Verify message was edited (editMessageText)
     req = get_latest_msg(mock_telegram)
     assert req["method"] == "editMessageText"
+
+
+@pytest.mark.asyncio
+async def test_delete_all_does_not_pretend_to_delete(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """Legacy /delete_all must be honest: it deletes nothing."""
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/delete_all"),
+        app_context=router_app_context,
+    )
+
+    texts = get_all_texts(mock_telegram)
+    assert "Nothing was deleted" in texts
+    assert "/start" in texts
+    # No registration/wallet side effects.
+    setup_common_start_mocks.register_uc.execute.assert_not_called()

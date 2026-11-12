@@ -59,6 +59,11 @@ class IUseCaseFactory(ABC):
         pass
 
     @abstractmethod
+    def create_delete_user(self, session: Any):
+        """Create DeleteUser use case."""
+        pass
+
+    @abstractmethod
     def create_wallet_secret_service(self, session: Any):
         """Create WalletSecretService."""
         pass
@@ -165,6 +170,18 @@ class UseCaseFactory(IUseCaseFactory):
 
         repo = self.repository_factory.get_user_repository(session)
         return AddDonation(repo)
+
+    def create_delete_user(self, session: Any):
+        from core.use_cases.user.manage_user import DeleteUser
+
+        return DeleteUser(
+            user_repo=self.repository_factory.get_user_repository(session),
+            wallet_repo=self.repository_factory.get_wallet_repository(session),
+            notification_repo=self.repository_factory.get_notification_repository(
+                session
+            ),
+            message_repo=self.repository_factory.get_message_repository(session),
+        )
 
     def create_wallet_secret_service(self, session: Any):
         from infrastructure.services.wallet_secret_service import (

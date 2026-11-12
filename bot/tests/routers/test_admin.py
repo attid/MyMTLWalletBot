@@ -378,6 +378,124 @@ async def test_cmd_delete_address(mock_telegram, router_app_context, setup_admin
 
 
 @pytest.mark.asyncio
+async def test_cmd_reset_user_by_username(
+    mock_telegram, router_app_context, setup_admin_mocks
+):
+    """/reset_user resolves @username and runs the reset use case."""
+    dp = router_app_context.dispatcher
+    dp.include_router(admin_router)
+
+    setup_admin_mocks.result_mock.scalar_one_or_none.return_value = MagicMock(
+        user_id=111
+    )
+    delete_user = MagicMock()
+    delete_user.execute = AsyncMock()
+    router_app_context.use_case_factory.create_delete_user.return_value = delete_user
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/reset_user @test"),
+        app_context=router_app_context,
+    )
+
+    delete_user.execute.assert_awaited_once_with(111)
+    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    assert "111" in text
+    assert "NEED_DELETE=1" in text
+    assert "/start" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_reset_user_by_numeric_id(
+    mock_telegram, router_app_context, setup_admin_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.include_router(admin_router)
+
+    setup_admin_mocks.result_mock.scalar_one_or_none.return_value = MagicMock(
+        user_id=222
+    )
+    delete_user = MagicMock()
+    delete_user.execute = AsyncMock()
+    router_app_context.use_case_factory.create_delete_user.return_value = delete_user
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/reset_user 222"),
+        app_context=router_app_context,
+    )
+
+    delete_user.execute.assert_awaited_once_with(222)
+
+
+@pytest.mark.asyncio
+async def test_cmd_reset_user_unknown_user(
+    mock_telegram, router_app_context, setup_admin_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.include_router(admin_router)
+
+    setup_admin_mocks.result_mock.scalar_one_or_none.return_value = None
+    delete_user = MagicMock()
+    delete_user.execute = AsyncMock()
+    router_app_context.use_case_factory.create_delete_user.return_value = delete_user
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/reset_user @nobody"),
+        app_context=router_app_context,
+    )
+
+    delete_user.execute.assert_not_awaited()
+    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    assert "не найден" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_reset_user_usage(
+    mock_telegram, router_app_context, setup_admin_mocks
+):
+    dp = router_app_context.dispatcher
+    dp.include_router(admin_router)
+
+    delete_user = MagicMock()
+    delete_user.execute = AsyncMock()
+    router_app_context.use_case_factory.create_delete_user.return_value = delete_user
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(123, "/reset_user"),
+        app_context=router_app_context,
+    )
+
+    delete_user.execute.assert_not_awaited()
+    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    assert "Использование" in text
+
+
+@pytest.mark.asyncio
+async def test_cmd_reset_user_ignored_for_non_admin(
+    mock_telegram, router_app_context, setup_admin_mocks
+):
+    """Admin router filter must drop the command from non-admin chats."""
+    dp = router_app_context.dispatcher
+    dp.include_router(admin_router)
+
+    delete_user = MagicMock()
+    delete_user.execute = AsyncMock()
+    router_app_context.use_case_factory.create_delete_user.return_value = delete_user
+
+    await dp.feed_update(
+        bot=router_app_context.bot,
+        update=create_message_update(999, "/reset_user @test"),
+        app_context=router_app_context,
+    )
+
+    delete_user.execute.assert_not_awaited()
+    assert get_telegram_request(mock_telegram, "sendMessage") is None
+
+
+@pytest.mark.asyncio
 async def test_cmd_help(mock_telegram, router_app_context):
     """Test /help command."""
     dp = router_app_context.dispatcher

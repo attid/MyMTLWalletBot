@@ -1,6 +1,11 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from core.interfaces.repositories import IUserRepository, IWalletRepository
+from core.interfaces.repositories import (
+    IMessageRepository,
+    INotificationRepository,
+    IUserRepository,
+    IWalletRepository,
+)
 from core.use_cases.wallet.add_wallet import AddWallet
 from core.use_cases.user.update_profile import UpdateUserProfile
 from core.use_cases.user.manage_user import DeleteUser, AddDonation
@@ -24,6 +29,20 @@ def mock_user_repo():
     repo.update = AsyncMock()
     repo.delete = AsyncMock()
     repo.update_donate_sum = AsyncMock()
+    return repo
+
+
+@pytest.fixture
+def mock_notification_repo():
+    repo = MagicMock(spec=INotificationRepository)
+    repo.delete_all_by_user = AsyncMock()
+    return repo
+
+
+@pytest.fixture
+def mock_message_repo():
+    repo = MagicMock(spec=IMessageRepository)
+    repo.delete_all_by_user = AsyncMock()
     return repo
 
 
@@ -103,13 +122,34 @@ async def test_update_user_profile_no_change(mock_user_repo):
 
 
 @pytest.mark.asyncio
-async def test_delete_user(mock_user_repo, mock_wallet_repo):
-    use_case = DeleteUser(mock_user_repo, mock_wallet_repo)
+async def test_delete_user(
+    mock_user_repo, mock_wallet_repo, mock_notification_repo, mock_message_repo
+):
+    use_case = DeleteUser(
+        mock_user_repo,
+        mock_wallet_repo,
+        mock_notification_repo,
+        mock_message_repo,
+    )
+
+    order: list[str] = []
+    mock_notification_repo.delete_all_by_user.side_effect = lambda _: order.append(
+        "filters"
+    )
+    mock_message_repo.delete_all_by_user.side_effect = lambda _: order.append(
+        "messages"
+    )
+    mock_wallet_repo.delete_all_by_user.side_effect = lambda _: order.append("wallets")
+    mock_user_repo.delete.side_effect = lambda _: order.append("user")
 
     await use_case.execute(user_id=123)
 
+    # Dependents are removed before the user row (FK order).
+    mock_notification_repo.delete_all_by_user.assert_called_once_with(123)
+    mock_message_repo.delete_all_by_user.assert_called_once_with(123)
     mock_wallet_repo.delete_all_by_user.assert_called_once_with(123)
     mock_user_repo.delete.assert_called_once_with(123)
+    assert order == ["filters", "messages", "wallets", "user"]
 
 
 @pytest.mark.asyncio

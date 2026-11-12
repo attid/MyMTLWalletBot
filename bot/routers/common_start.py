@@ -715,12 +715,14 @@ async def cmd_delete_all(
 ):
     if message.from_user is None:
         return
-    # Legacy delete all commented out
-    # If implemented, use DeleteUser use case
+    # The legacy implementation deleted the user row and soft-deleted wallets.
+    # It is admin-only now (/reset_user) and must not pretend to work here:
+    # a lying success message looks like a working command that loses access.
     await send_message(
         session,
         message.from_user.id,
-        "All was delete, restart please",
+        "Nothing was deleted: /delete_all is disabled. Your wallet is created "
+        "automatically on /start; account reset is done by an admin.",
         app_context=app_context,
     )
     await state.clear()

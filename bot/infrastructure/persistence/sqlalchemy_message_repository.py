@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from core.interfaces.repositories import IMessageRepository
 from db.models import MyMtlWalletBotMessages
 
@@ -47,6 +47,13 @@ class SqlAlchemyMessageRepository(IMessageRepository):
             update(MyMtlWalletBotMessages)
             .where(MyMtlWalletBotMessages.message_id == message_id)
             .values(was_send=2)
+        )
+        await self.session.execute(stmt)
+        await self.session.commit()
+
+    async def delete_all_by_user(self, user_id: int) -> None:
+        stmt = delete(MyMtlWalletBotMessages).where(
+            MyMtlWalletBotMessages.user_id == user_id
         )
         await self.session.execute(stmt)
         await self.session.commit()

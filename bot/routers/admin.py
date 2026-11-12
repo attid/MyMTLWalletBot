@@ -4,6 +4,7 @@ import os
 import secrets
 from contextlib import suppress
 from datetime import datetime, timedelta
+from typing import Optional
 
 from loguru import logger
 
@@ -40,7 +41,7 @@ from other.config_reader import config, horizont_urls
 # from other.global_data import global_data
 from other.stellar_tools import async_stellar_check_fee
 from infrastructure.services.app_context import AppContext
-from infrastructure.utils.telegram_utils import send_message
+from infrastructure.utils.telegram_utils import clear_last_message_id, send_message
 from routers import inout
 from routers.inout import get_usdt_balance
 
@@ -554,6 +555,74 @@ async def cmd_fee(message: types.Message):
     await message.answer("Комиссия (мин и мах) " + await async_stellar_check_fee())
 
 
+async def _resolve_user_id(session: AsyncSession, target: str) -> Optional[int]:
+    """Resolve a Telegram id or @username to an existing user_id."""
+    user_id: Optional[int] = None
+    with suppress(ValueError):
+        user_id = int(target)
+
+    if user_id is not None:
+        user = (
+            await session.execute(
+                select(MyMtlWalletBotUsers).filter(
+                    MyMtlWalletBotUsers.user_id == user_id
+                )
+            )
+        ).scalar_one_or_none()
+        return user.user_id if user else None
+
+    user_name = target.lstrip("@").lower()
+    user = (
+        await session.execute(
+            select(MyMtlWalletBotUsers).filter(
+                MyMtlWalletBotUsers.user_name == user_name
+            )
+        )
+    ).scalar_one_or_none()
+    return user.user_id if user else None
+
+
+@router.message(Command(commands=["reset_user"]))
+async def cmd_reset_user(
+    message: types.Message,
+    session: AsyncSession,
+    app_context: AppContext,
+):
+    """Admin reset: soft delete wallets and remove the user row.
+
+    Wallet rows (and their encrypted keys) stay in DB with NEED_DELETE=1, so
+    on-chain funds are not lost. The next /start registers the user again and
+    provisions a fresh wallet.
+    """
+    if message.from_user is None or not message.text:
+        return
+
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: /reset_user @username_or_id")
+        return
+
+    if app_context.use_case_factory is None:
+        await message.answer("Сброс недоступен: фабрика use case не инициализирована")
+        return
+
+    user_id = await _resolve_user_id(session, args[1])
+    if user_id is None:
+        await message.answer("Пользователь не найден")
+        return
+
+    delete_user = app_context.use_case_factory.create_delete_user(session)
+    await delete_user.execute(user_id)
+    await clear_last_message_id(user_id, app_context=app_context)
+
+    await message.answer(
+        f"Пользователь {user_id} сброшен.\n"
+        "Кошельки помечены удалёнными (NEED_DELETE=1), ключи и средства в БД "
+        "остаются. Фильтры уведомлений и очередь сообщений очищены.\n"
+        "Следующий /start создаст и активирует новый кошелёк."
+    )
+
+
 @router.message(Command(commands=["user_wallets"]))
 async def cmd_user_wallets(message: types.Message, session: AsyncSession):
     if not message.text:
@@ -822,6 +891,7 @@ async def cmd_help(message: types.Message):
         "/log | /err | /clear — логи/очистка\n"
         "/horizon | /horizon_rw — переключить horizon\n"
         "/user_wallets @user_or_id — кошельки пользователя\n"
+        "/reset_user @user_or_id — сброс пользователя (кошельки soft-delete)\n"
         "/address_info address — найти владельца адреса\n"
         "/delete_address address — пометить адрес удалённым\n"
         "/usdt id — принудительный вывод USDT\n"

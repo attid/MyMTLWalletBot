@@ -355,6 +355,11 @@ class IMessageRepository(ABC):
         """Mark a message as failed (or retry later)."""
         pass
 
+    @abstractmethod
+    async def delete_all_by_user(self, user_id: int) -> None:
+        """Delete all queued messages of a user (FK-safe user removal)."""
+        pass
+
 
 class IRepositoryFactory(ABC):
     """Abstract Factory for creating repositories."""
