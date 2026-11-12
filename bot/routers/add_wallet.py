@@ -15,6 +15,9 @@ from infrastructure.utils.stellar_utils import is_valid_stellar_address
 from other.locks import new_wallet_lock
 
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.free_wallet_provisioning import (
+    ensure_provisioned,
+)
 
 
 class StateAddWallet(StatesGroup):
@@ -24,63 +27,6 @@ class StateAddWallet(StatesGroup):
 
 router = Router()
 router.message.filter(F.chat.type == "private")
-
-
-async def _submit_create_account_with_retries(
-    *,
-    service,
-    user_id: int,
-    source_account_id: str,
-    destination_account_id: str,
-    master_secret: str,
-    attempts: int = 3,
-) -> None:
-    last_error: Exception | None = None
-    for attempt in range(1, attempts + 1):
-        try:
-            logger.info(
-                "wallet_stellar_account_create_attempt user_id={} public_key={} source_account={} attempt={}/{}",
-                user_id,
-                destination_account_id,
-                source_account_id,
-                attempt,
-                attempts,
-            )
-            xdr = await service.build_payment_transaction(
-                source_account_id=source_account_id,
-                destination_account_id=destination_account_id,
-                asset_code="XLM",
-                asset_issuer=None,
-                amount="5",
-                create_account=True,
-            )
-            signed_xdr = await service.sign_transaction(xdr, master_secret)
-            response = await service.submit_transaction(signed_xdr)
-            if response.get("successful", True) is False:
-                raise RuntimeError(f"Horizon rejected create_account: {response}")
-            logger.info(
-                "wallet_stellar_account_created user_id={} public_key={} source_account={} attempt={}",
-                user_id,
-                destination_account_id,
-                source_account_id,
-                attempt,
-            )
-            return
-        except Exception as e:
-            last_error = e
-            logger.warning(
-                "wallet_stellar_account_create_attempt_failed user_id={} public_key={} source_account={} attempt={}/{} error_type={} error={}",
-                user_id,
-                destination_account_id,
-                source_account_id,
-                attempt,
-                attempts,
-                type(e).__name__,
-                e,
-            )
-
-    assert last_error is not None
-    raise last_error
 
 
 @router.callback_query(F.data == "AddNew")
@@ -314,83 +260,17 @@ async def cq_add_new_key(
                 session, callback.message.chat.id, msg, app_context=app_context
             )
 
-            # Subscribe to notifications
-            if app_context.notification_service:
-                create_step = "notification_subscribe"
-                await app_context.notification_service.subscribe(kp.public_key)
-                logger.info(
-                    "wallet_notification_subscribed user_id={} public_key={}",
-                    callback.from_user.id,
-                    kp.public_key,
-                )
-
-            service = app_context.stellar_service
-            create_step = "load_master_wallet"
-            master_wallet = await wallet_repo.get_default_wallet(0)
-            if not master_wallet:
-                logger.error("No master wallet found!")
-                await send_message(
-                    session,
-                    callback,
-                    "Error: System wallet missing",
-                    app_context=app_context,
-                )
-                return
-
-            assert master_wallet.secret_key is not None, (
-                "master_wallet.secret_key must not be None"
-            )
-            create_step = "decrypt_master_secret"
-            master_secret = app_context.encryption_service.decrypt(
-                master_wallet.secret_key, "0"
-            )
-            assert master_secret is not None, "master_secret must not be None"
-
-            create_step = "submit_create_account_with_retries"
-            await _submit_create_account_with_retries(
-                service=service,
+            create_step = "provision_free_wallet"
+            await ensure_provisioned(
+                stellar_service=app_context.stellar_service,
+                encryption_service=app_context.encryption_service,
+                wallet_repository=wallet_repo,
+                notification_service=app_context.notification_service,
                 user_id=callback.from_user.id,
-                source_account_id=master_wallet.public_key,
-                destination_account_id=kp.public_key,
-                master_secret=master_secret,
-            )
-
-            from core.constants import (
-                MTL_ASSET,
-                EURMTL_ASSET,
-                SATSMTL_ASSET,
-                USDM_ASSET,
-            )
-
-            for asset in [MTL_ASSET, EURMTL_ASSET, SATSMTL_ASSET, USDM_ASSET]:
-                create_step = f"build_trustline_{asset.code}"
-                logger.info(
-                    "wallet_trustline_create_start user_id={} public_key={} asset_code={}",
-                    callback.from_user.id,
-                    kp.public_key,
-                    asset.code,
-                )
-                trust_xdr = await service.build_change_trust_transaction(
-                    source_account_id=kp.public_key,
-                    asset_code=asset.code,
-                    asset_issuer=asset.issuer,  # type: ignore[arg-type]
-                )
-                create_step = f"sign_trustline_{asset.code}"
-                signed_trust = await service.sign_transaction(trust_xdr, kp.secret)
-                create_step = f"submit_trustline_{asset.code}"
-                await service.submit_transaction(signed_trust)
-                logger.info(
-                    "wallet_trustline_created user_id={} public_key={} asset_code={}",
-                    callback.from_user.id,
-                    kp.public_key,
-                    asset.code,
-                )
-
-            logger.info(
-                "wallet_trustlines_created user_id={} public_key={} count={}",
-                callback.from_user.id,
-                kp.public_key,
-                4,
+                public_key=kp.public_key,
+                secret_key=kp.secret,
+                # Freshly generated keypair: it cannot exist on-chain yet.
+                account_exists=False,
             )
 
         create_step = "send_success_message"
@@ -421,7 +301,7 @@ async def cq_add_new_key(
             "wallet_create_failed user_id={} public_key={} step={} error_type={} error={}",
             callback.from_user.id,
             public_key,
-            create_step,
+            getattr(e, "step", create_step),
             type(e).__name__,
             e,
         )

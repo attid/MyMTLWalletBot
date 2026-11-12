@@ -176,6 +176,7 @@ async def test_cmd_start_new_user(
     with (
         patch("routers.common_start.check_user_lang", AsyncMock(return_value=None)),
         patch("routers.common_start.cmd_language", AsyncMock()) as mock_lang,
+        patch("routers.common_start.ensure_provisioned", AsyncMock()) as mock_provision,
     ):
         await dp.feed_update(
             router_app_context.bot, create_message_update(user_id, "/start")
@@ -185,8 +186,359 @@ async def test_cmd_start_new_user(
     setup_common_start_mocks.register_uc.execute.assert_called_once()
     # Verify encryption called (once for secret, once for seed)
     assert setup_common_start_mocks.ctx.encryption_service.encrypt.call_count == 2
+    # Verify the freshly registered wallet was provisioned on-chain
+    mock_provision.assert_awaited_once()
+    provision_kwargs = mock_provision.await_args.kwargs
+    assert provision_kwargs["user_id"] == user_id
+    assert provision_kwargs["public_key"].startswith("G")
+    assert provision_kwargs["secret_key"].startswith("S")
+    # Freshly generated key cannot exist on-chain: no existence probe under lock.
+    assert provision_kwargs["account_exists"] is False
     # Verify language selection triggered
     mock_lang.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_new_user_warns_when_provisioning_fails(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """/start must report a failed activation but keep the registered wallet."""
+    from infrastructure.services.free_wallet_provisioning import (
+        WalletProvisioningError,
+    )
+
+    # Real cmd_language runs below: the error must be a separate message, not a
+    # tracked UI message that the language screen immediately overwrites.
+    fake_l10n = MagicMock()
+    fake_l10n.lang_dict = {"en": {"1_lang": "English"}}
+    fake_l10n.get_text.side_effect = lambda user_id, key, params=(): key
+    setup_common_start_mocks.ctx.localization_service = fake_l10n
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    user_id = 123
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value=None)),
+        patch(
+            "routers.common_start.ensure_provisioned",
+            AsyncMock(
+                side_effect=WalletProvisioningError(
+                    "submit_create_account", RuntimeError("tx_bad_seq")
+                )
+            ),
+        ),
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(user_id, "/start")
+        )
+
+    # Registration is committed before provisioning, wallet must not be dropped
+    setup_common_start_mocks.register_uc.execute.assert_called_once()
+    setup_common_start_mocks.captured_session.commit.assert_awaited()
+
+    all_texts = get_all_texts(mock_telegram)
+    assert "wallet_create_error" in all_texts
+    assert "Choose language" in all_texts
+
+    # The warning must survive as its own sent message, not as an edited screen.
+    error_messages = [
+        record
+        for record in mock_telegram
+        if "wallet_create_error" in record["data"].get("text", "")
+    ]
+    assert error_messages, "wallet_create_error was never sent"
+    assert all(record["method"] == "sendMessage" for record in error_messages)
+
+    # Operator is alerted with the failing step
+    admin_messages = [
+        record
+        for record in mock_telegram
+        if record["method"] == "sendMessage"
+        and str(record["data"].get("chat_id")) == str(router_app_context.admin_id)
+    ]
+    assert admin_messages, "admin was not alerted"
+    assert "submit_create_account" in admin_messages[0]["data"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_existing_free_wallet_retries_missing_account(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """Existing free wallet without on-chain account is provisioned on /start."""
+    setup_common_start_mocks.wallet.is_free = True
+    setup_common_start_mocks.wallet.use_pin = 0
+    setup_common_start_mocks.wallet.secret_key = "ENC_SECRET"
+    setup_common_start_mocks.ctx.encryption_service.decrypt = MagicMock(
+        return_value="SECRET"
+    )
+    setup_common_start_mocks.ctx.stellar_service.get_account_details = AsyncMock(
+        return_value=None
+    )
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")),
+        patch("routers.common_start.cmd_show_balance", AsyncMock()),
+        patch("routers.common_start.ensure_provisioned", AsyncMock()) as mock_provision,
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    mock_provision.assert_awaited_once()
+    assert (
+        mock_provision.await_args.kwargs["public_key"]
+        == "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    )
+    assert mock_provision.await_args.kwargs["secret_key"] == "SECRET"
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_existing_free_wallet_retries_missing_trustlines(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """Account exists but trustline creation failed earlier: provision again."""
+    from core.constants import MTL_ASSET
+
+    setup_common_start_mocks.wallet.is_free = True
+    setup_common_start_mocks.wallet.use_pin = 0
+    setup_common_start_mocks.wallet.secret_key = "ENC_SECRET"
+    setup_common_start_mocks.ctx.encryption_service.decrypt = MagicMock(
+        return_value="SECRET"
+    )
+    setup_common_start_mocks.ctx.stellar_service.get_account_details = AsyncMock(
+        return_value={
+            "account_id": "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI",
+            "balances": [
+                {"asset_type": "native", "balance": "5.0"},
+                {
+                    "asset_type": "credit_alphanum4",
+                    "asset_code": MTL_ASSET.code,
+                    "asset_issuer": MTL_ASSET.issuer,
+                    "balance": "0.0",
+                },
+            ],
+        }
+    )
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")),
+        patch("routers.common_start.cmd_show_balance", AsyncMock()),
+        patch("routers.common_start.ensure_provisioned", AsyncMock()) as mock_provision,
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    mock_provision.assert_awaited_once()
+    kwargs = mock_provision.await_args.kwargs
+    assert kwargs["account_exists"] is True
+    passed_codes = [asset.code for asset in kwargs["assets"]]
+    # MTL trustline is already present and must not be resubmitted.
+    assert "MTL" not in passed_codes
+    assert len(passed_codes) == 3
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_retry_skips_provisioning_when_secret_decrypt_fails(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """Undecryptable wallet must never be funded with the master wallet."""
+    setup_common_start_mocks.wallet.is_free = True
+    setup_common_start_mocks.wallet.use_pin = 0
+    setup_common_start_mocks.wallet.secret_key = "ENC_SECRET"
+    setup_common_start_mocks.ctx.encryption_service.decrypt = MagicMock(
+        return_value=None
+    )
+    setup_common_start_mocks.ctx.stellar_service.get_account_details = AsyncMock(
+        return_value=None
+    )
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")),
+        patch("routers.common_start.cmd_show_balance", AsyncMock()) as mock_balance,
+        patch("routers.common_start.ensure_provisioned", AsyncMock()) as mock_provision,
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    mock_provision.assert_not_awaited()
+    mock_balance.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_admin_swallows_telegram_errors(router_app_context):
+    """Broken Telegram delivery must not raise from the alert helper."""
+    from routers.common_start import _notify_admin_provisioning_failed
+    from infrastructure.services.free_wallet_provisioning import (
+        WalletProvisioningError,
+    )
+
+    fake_bot = MagicMock()
+    fake_bot.send_message = AsyncMock(side_effect=RuntimeError("chat not found"))
+    router_app_context.bot = fake_bot
+
+    await _notify_admin_provisioning_failed(
+        123,
+        "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI",
+        WalletProvisioningError("submit_create_account", RuntimeError("tx_bad_seq")),
+        router_app_context,
+    )
+
+    fake_bot.send_message.assert_awaited_once()
+    assert fake_bot.send_message.await_args.kwargs["parse_mode"] is None
+
+
+@pytest.mark.asyncio
+async def test_notify_admin_truncates_huge_error(router_app_context):
+    from routers.common_start import _notify_admin_provisioning_failed
+    from infrastructure.services.free_wallet_provisioning import (
+        WalletProvisioningError,
+    )
+
+    fake_bot = MagicMock()
+    fake_bot.send_message = AsyncMock()
+    router_app_context.bot = fake_bot
+
+    await _notify_admin_provisioning_failed(
+        123,
+        "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI",
+        WalletProvisioningError("submit_create_account", RuntimeError("x" * 20000)),
+        router_app_context,
+    )
+
+    sent_text = fake_bot.send_message.await_args.args[1]
+    assert len(sent_text) < 4096
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_existing_free_wallet_with_trustlines_is_not_reprovisioned(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """Fully provisioned free wallet must not be touched on /start."""
+    from core.constants import EURMTL_ASSET, MTL_ASSET, SATSMTL_ASSET, USDM_ASSET
+
+    setup_common_start_mocks.wallet.is_free = True
+    setup_common_start_mocks.wallet.use_pin = 0
+    setup_common_start_mocks.wallet.secret_key = "ENC_SECRET"
+    balances = [{"asset_type": "native", "balance": "5.0"}]
+    for asset in (MTL_ASSET, EURMTL_ASSET, SATSMTL_ASSET, USDM_ASSET):
+        balances.append(
+            {
+                "asset_type": "credit_alphanum12",
+                "asset_code": asset.code,
+                "asset_issuer": asset.issuer,
+                "balance": "0.0",
+            }
+        )
+    setup_common_start_mocks.ctx.stellar_service.get_account_details = AsyncMock(
+        return_value={"account_id": "G", "balances": balances}
+    )
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")),
+        patch("routers.common_start.cmd_show_balance", AsyncMock()),
+        patch("routers.common_start.ensure_provisioned", AsyncMock()) as mock_provision,
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    mock_provision.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "secret_key, use_pin",
+    [("TON", 0), ("ENC_SECRET", 1), ("ENC_SECRET", 2), ("ENC_SECRET", 10)],
+)
+async def test_cmd_start_skips_provisioning_for_non_free_wallets(
+    mock_telegram,
+    router_app_context,
+    setup_common_start_mocks,
+    secret_key,
+    use_pin,
+):
+    """TON, PIN, password and read-only wallets must never be reprovisioned."""
+    setup_common_start_mocks.wallet.is_free = True
+    setup_common_start_mocks.wallet.use_pin = use_pin
+    setup_common_start_mocks.wallet.secret_key = secret_key
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")),
+        patch("routers.common_start.cmd_show_balance", AsyncMock()),
+        patch("routers.common_start.ensure_provisioned", AsyncMock()) as mock_provision,
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    mock_provision.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_retry_failure_does_not_block_balance_screen(
+    mock_telegram, router_app_context, setup_common_start_mocks
+):
+    """A failed repair attempt must not break the main screen."""
+    from infrastructure.services.free_wallet_provisioning import (
+        WalletProvisioningError,
+    )
+
+    setup_common_start_mocks.wallet.is_free = True
+    setup_common_start_mocks.wallet.use_pin = 0
+    setup_common_start_mocks.wallet.secret_key = "ENC_SECRET"
+    setup_common_start_mocks.ctx.encryption_service.decrypt = MagicMock(
+        return_value="SECRET"
+    )
+    setup_common_start_mocks.ctx.stellar_service.get_account_details = AsyncMock(
+        return_value=None
+    )
+
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(start_router)
+
+    with (
+        patch("routers.common_start.check_user_lang", AsyncMock(return_value="en")),
+        patch("routers.common_start.cmd_show_balance", AsyncMock()) as mock_balance,
+        patch(
+            "routers.common_start.ensure_provisioned",
+            AsyncMock(
+                side_effect=WalletProvisioningError(
+                    "trustline_MTL", RuntimeError("timeout")
+                )
+            ),
+        ),
+    ):
+        await dp.feed_update(
+            router_app_context.bot, create_message_update(123, "/start")
+        )
+
+    mock_balance.assert_awaited_once()
 
 
 @pytest.mark.asyncio

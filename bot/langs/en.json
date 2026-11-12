@@ -176,6 +176,7 @@
   "kb_yes_do": "Yes, perform the operation",
   "limits": "<b>Attention!</b> Here, you can remove the 5000 limit. Please handle your token with care; actions committed to the blockchain are irreversible.",
   "load_error": "Loading error, please choose or create another wallet",
+  "wallet_create_error": "⚠️ Wallet creation failed: the Stellar account was not activated. Please try again with /start.",
   "low_xlm": "You have less than 0.5 free XLM",
   "max_wallets": "You have the maximum number of free wallets",
   "mtl_tools_msg": "Here you tools that can help you",

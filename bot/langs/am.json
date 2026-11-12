@@ -90,6 +90,7 @@
   "kb_edit_price": "ወጪ አርትዕ",
   "kb_delete": "ሰርዝ",
   "load_error": "የመጫን ስህተት፣ እባክዎን ሌላ wallet ይምረጡ ወይም ይፍጠሩ",
+  "wallet_create_error": "⚠️ wallet በ Stellar ኔትወርክ ላይ ማንቃት አልተቻለም። እባክዎ /start ን እንደገና ይሞክሩ።",
   "kb_memo": "Add memo",
   "send_memo": "send memo (max 28 bytes)",
   "kb_mtl_tools": "MTL መሳሪያዎች",

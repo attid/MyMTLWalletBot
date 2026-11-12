@@ -151,6 +151,7 @@
   "kb_yes_do": "Da, izvršite operaciju",
   "limits": "<b>Внимание!</b> Здесь вы можете убрать лимит в 5000. Будьте осторожны со своим токеном; действия, зафиксированные в блокчейне, невозможно отменить.",
   "load_error": "Došlo je do greške prilikom učitavanja stanja. Molimo, odaberite ili kreirajte drugi novčanik.",
+  "wallet_create_error": "⚠️ Nije moguće aktivirati novčanik na Stellar mreži. Pokušajte ponovo sa /start.",
   "low_xlm": "На вашем балансе меньше 0.5 XLM, операция не возможна.",
   "max_wallets": "Imate maksimalni broj besplatnih novčanika",
   "mtl_tools_msg": "Alati, koji vam mogu pomoći.",

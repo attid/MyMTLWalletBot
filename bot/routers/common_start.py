@@ -6,9 +6,15 @@ from aiogram.enums import ChatAction
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.services.app_context import AppContext
+from infrastructure.services.free_wallet_provisioning import (
+    FREE_WALLET_ASSETS,
+    ensure_provisioned,
+    missing_free_wallet_assets,
+)
 from infrastructure.services.localization_service import LocalizationService
 
 # from db.requests import db_add_donate, db_delete_all_by_user, db_add_user_if_not_exists, db_update_username
@@ -26,9 +32,191 @@ from routers.start_msg import cmd_show_balance, get_kb_default, get_start_text
 from infrastructure.utils.telegram_utils import send_message, clear_state
 
 from other.lang_tools import my_gettext, check_user_id, check_user_lang
+from other.locks import new_wallet_lock
 
 router = Router()
 router.message.filter(F.chat.type == "private")
+
+
+TON_WALLET_SECRET_MARKER = "TON"
+
+
+async def _send_untracked_message(
+    user_id: int, text: str, *, app_context: AppContext
+) -> None:
+    """Send a message outside the tracked UI flow.
+
+    `send_message()` edits `last_message_id`, so an error sent that way is wiped
+    by the next screen (e.g. the language picker). This helper never touches the
+    tracked message id.
+    """
+    bot = app_context.bot
+    if bot is None:
+        return
+    try:
+        await bot.send_message(user_id, text, parse_mode=None)
+    except Exception as ex:
+        logger.warning(
+            "wallet_provisioning_user_notify_failed user_id={} error_type={} error={}",
+            user_id,
+            type(ex).__name__,
+            ex,
+        )
+
+
+async def _notify_admin_provisioning_failed(
+    user_id: int, public_key: str, error: Exception, app_context: AppContext
+) -> None:
+    """Alert the operator: a free wallet stayed DB-only."""
+    bot = app_context.bot
+    admin_id = app_context.admin_id
+    if bot is None or not admin_id:
+        return
+    step = getattr(error, "step", "unknown")
+    # Telegram caps messages at 4096 chars; Horizon/SDK errors can be huge.
+    error_text = f"{type(error).__name__}: {error}"[:1000]
+    text = (
+        "wallet provisioning failed\n"
+        f"user_id: {user_id}\n"
+        f"public_key: {public_key}\n"
+        f"step: {step}\n"
+        f"error: {error_text}"
+    )
+    try:
+        # Horizon/SDK error text may contain HTML metacharacters and the bot uses
+        # HTML parse_mode by default.
+        await bot.send_message(admin_id, text, parse_mode=None)
+    except Exception as ex:
+        logger.warning(
+            "wallet_provisioning_admin_alert_failed user_id={} public_key={} error_type={} error={}",
+            user_id,
+            public_key,
+            type(ex).__name__,
+            ex,
+        )
+
+
+async def _provision_registered_wallet(
+    *,
+    user_id: int,
+    public_key: str,
+    secret_key: str,
+    session: AsyncSession,
+    app_context: AppContext,
+) -> bool:
+    """Activate a freshly registered free wallet on-chain.
+
+    Returns False when the wallet stays DB-only; the caller must warn the user.
+    """
+    if app_context.repository_factory is None:
+        return False
+    wallet_repository = app_context.repository_factory.get_wallet_repository(session)
+    try:
+        async with new_wallet_lock:
+            await ensure_provisioned(
+                stellar_service=app_context.stellar_service,
+                encryption_service=app_context.encryption_service,
+                wallet_repository=wallet_repository,
+                notification_service=app_context.notification_service,
+                user_id=user_id,
+                public_key=public_key,
+                secret_key=secret_key,
+                # Keypair was generated right now, it cannot exist on-chain yet.
+                account_exists=False,
+            )
+        return True
+    except Exception as e:
+        logger.exception(
+            "wallet_registration_provisioning_failed user_id={} public_key={} step={} error_type={} error={}",
+            user_id,
+            public_key,
+            getattr(e, "step", "unknown"),
+            type(e).__name__,
+            e,
+        )
+        await _notify_admin_provisioning_failed(user_id, public_key, e, app_context)
+        return False
+
+
+async def _retry_provisioning_if_account_missing(
+    *, user_id: int, session: AsyncSession, app_context: AppContext
+) -> None:
+    """Best-effort repair path for free wallets left without an on-chain account.
+
+    Never blocks the main screen: horizon/decrypt errors are only logged.
+    """
+    if app_context.repository_factory is None:
+        return
+    wallet_repository = app_context.repository_factory.get_wallet_repository(session)
+    try:
+        wallet = await wallet_repository.get_default_wallet(user_id)
+    except Exception as ex:
+        logger.warning(
+            "wallet_provision_retry_skip user_id={} error_type={} error={}",
+            user_id,
+            type(ex).__name__,
+            ex,
+        )
+        return
+    if (
+        wallet is None
+        or not wallet.is_free
+        or wallet.use_pin != 0
+        or not wallet.secret_key
+        or wallet.secret_key == TON_WALLET_SECRET_MARKER
+    ):
+        return
+    try:
+        account_details = await app_context.stellar_service.get_account_details(
+            wallet.public_key
+        )
+        missing_assets = missing_free_wallet_assets(account_details)
+        if not missing_assets:
+            return
+        logger.info(
+            "wallet_provision_retry_start user_id={} public_key={} missing_assets={} account_exists={}",
+            user_id,
+            wallet.public_key,
+            ",".join(missing_assets),
+            account_details is not None,
+        )
+        secret_key = app_context.encryption_service.decrypt(
+            wallet.secret_key, str(user_id)
+        )
+        if not secret_key:
+            logger.warning(
+                "wallet_provision_retry_skip user_id={} public_key={} reason=secret_decrypt_failed",
+                user_id,
+                wallet.public_key,
+            )
+            return
+        async with new_wallet_lock:
+            await ensure_provisioned(
+                stellar_service=app_context.stellar_service,
+                encryption_service=app_context.encryption_service,
+                wallet_repository=wallet_repository,
+                notification_service=app_context.notification_service,
+                user_id=user_id,
+                public_key=wallet.public_key,
+                secret_key=secret_key,
+                # Account state is already known: never probe Horizon again
+                # while holding new_wallet_lock.
+                account_exists=account_details is not None,
+                assets=[
+                    asset
+                    for asset in FREE_WALLET_ASSETS
+                    if asset.code in missing_assets
+                ],
+            )
+    except Exception as e:
+        logger.exception(
+            "wallet_provision_retry_failed user_id={} public_key={} step={} error_type={} error={}",
+            user_id,
+            wallet.public_key,
+            getattr(e, "step", "unknown"),
+            type(e).__name__,
+            e,
+        )
 
 
 class SettingState(StatesGroup):
@@ -99,6 +287,8 @@ async def cmd_start(
         if use_case_factory is None:
             return
         register_use_case = use_case_factory.create_register_user(session)
+        # A user row without language is not necessarily a new user.
+        user_exists = await check_user_id(session, message.from_user.id)
 
         # Generate a new Stellar account
         mnemonic = app_context.stellar_service.generate_mnemonic()
@@ -130,10 +320,43 @@ async def cmd_start(
             wallet_crypto_v2=wallet_crypto_v2,
         )
         await session.commit()
+        logger.info(
+            "wallet_registration_start user_id={} public_key={}",
+            message.from_user.id,
+            public_key,
+        )
+        if user_exists:
+            # Legacy row without language: RegisterUser kept the existing wallet,
+            # so the generated keypair was never stored. Never fund a throwaway
+            # account; the next /start retry provisions the real wallet.
+            logger.info(
+                "wallet_registration_skip_provisioning user_id={} unused_public_key={} reason=existing_user",
+                message.from_user.id,
+                public_key,
+            )
+        elif not await _provision_registered_wallet(
+            user_id=message.from_user.id,
+            public_key=public_key,
+            secret_key=secret_key,
+            session=session,
+            app_context=app_context,
+        ):
+            await _send_untracked_message(
+                message.from_user.id,
+                my_gettext(
+                    message.from_user.id,
+                    "wallet_create_error",
+                    app_context=app_context,
+                ),
+                app_context=app_context,
+            )
 
         # db_add_user_if_not_exists(session, message.from_user.id, message.from_user.username)
         await cmd_language(session, message.from_user.id, l10n, app_context=app_context)
     else:
+        await _retry_provisioning_if_account_missing(
+            user_id=message.from_user.id, session=session, app_context=app_context
+        )
         await bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         await cmd_show_balance(
             session, message.from_user.id, state, app_context=app_context
