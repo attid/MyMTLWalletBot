@@ -12,7 +12,9 @@ from infrastructure.services.free_wallet_provisioning import (
 
 MASTER_PUBLIC_KEY = "GAXLST7ZHHXGQGIIRJYICL4PRDFB4Q7KVL65HX6BN6DELPYOJEHZSPSG"
 USER_PUBLIC_KEY = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
-MASTER_SECRET = "SCQHF2OMGXMLV2P5MW4PWL7C7VDJUXKVQFAFC73VNGQN7R2KEXNTWWUV"
+# Placeholder value: the fake stellar service signs nothing real, so this is not
+# a key. Keep it low-entropy, otherwise the generic-api-key secret scan flags it.
+MASTER_SECRET = "dummy"
 
 
 class FakeStellarService:
