@@ -364,5 +364,6 @@
   "sep24_status_fetch_error": "Could not read the anchor status.\n{}",
   "sep24_status_pay_to_no_amount": "Send {} to <code>{}</code>",
   "sep10_challenge_error": "Could not get the anchor challenge, try again later.",
-  "sep_assets_partial": "Some anchors did not answer in time, run /assets again in a minute."
+  "sep_assets_partial": "Some anchors did not answer in time, run /assets again in a minute.",
+  "sep_assets_progress": "⏳ Checking anchors: {} of {}"
 }

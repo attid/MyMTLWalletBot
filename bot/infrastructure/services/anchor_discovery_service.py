@@ -26,6 +26,9 @@ FetchText = Callable[[str], Awaitable[str]]
 FETCH_ATTEMPTS = 2
 FETCH_RETRY_DELAY_SECONDS = 0.4
 
+# How often the discovery loop wakes up to report progress while waiting.
+PROGRESS_TICK_SECONDS = 0.5
+
 # Transport-level markers of a failure that will not heal on retry.
 _PERMANENT_ERROR_MARKERS = (
     "name or service not known",
@@ -95,7 +98,12 @@ class AnchorDiscoveryService:
         # True when the last `discover_assets` call ran out of its total budget.
         self.last_call_truncated = False
 
-    async def discover_assets(self, assets: list[Asset]) -> list[AnchorAssetSupport]:
+    async def discover_assets(
+        self,
+        assets: list[Asset],
+        *,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> list[AnchorAssetSupport]:
         """Discover SEP support for many assets, one anchor chain per issuer.
 
         Assets are grouped by issuer so that the `horizon -> stellar.toml ->
@@ -140,19 +148,42 @@ class AnchorDiscoveryService:
 
         self.last_call_truncated = False
         tasks = {
-            asyncio.create_task(discover_group(issuer, group)): issuer
+            asyncio.create_task(discover_group(issuer, group)): (issuer, group)
             for issuer, group in groups.items()
         }
-        done, pending = await asyncio.wait(tasks, timeout=self._total_timeout)
-        for task in pending:
-            task.cancel()
+        total_assets = len(unique_assets)
+        completed_assets = 0
+        done: set[asyncio.Task] = set()
+        pending: set[asyncio.Task] = set(tasks)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._total_timeout
+        if on_progress is not None:
+            on_progress(0, total_assets)
+        while pending:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            finished, pending = await asyncio.wait(
+                pending,
+                timeout=min(remaining, PROGRESS_TICK_SECONDS),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not finished:
+                continue
+            done |= finished
+            for task in finished:
+                completed_assets += len(tasks[task][1])
+            if on_progress is not None:
+                on_progress(min(completed_assets, total_assets), total_assets)
         if pending:
             self.last_call_truncated = True
             logger.warning(
                 "SEP discovery hit the total budget "
                 f"({self._total_timeout:g}s), skipped anchors: "
-                + ", ".join(tasks[task] for task in pending)
+                + ", ".join(tasks[task][0] for task in pending)
             )
+            for task in pending:
+                task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
 
         found: dict[tuple[str, str], AnchorAssetSupport] = {}

@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -81,6 +83,67 @@ async def _lang_hint(user_id: int, app_context: AppContext) -> str | None:
     return sep24_lang_hint(language)
 
 
+class _AssetsProgress:
+    """Live "checking anchors" message for `/assets`.
+
+    Discovery is network-bound and can take several seconds, so the initial
+    message is rewritten in place at most once per second (Telegram limit) with
+    the number of already checked assets.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        total: int,
+        *,
+        app_context: AppContext,
+    ) -> None:
+        self._session = session
+        self._user_id = user_id
+        self._total = total
+        self._app_context = app_context
+        self._done = 0
+        self._rendered = -1
+        self._task: asyncio.Task | None = None
+
+    def update(self, done: int, total: int) -> None:
+        self._done = done
+        self._total = total
+
+    async def start(self) -> None:
+        if self._total <= 0:
+            return
+        await self._render()
+        self._task = asyncio.create_task(self._tick())
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            self._task = None
+
+    async def _tick(self) -> None:
+        while True:
+            await asyncio.sleep(1.0)
+            await self._render()
+
+    async def _render(self) -> None:
+        if self._total <= 0 or self._done == self._rendered:
+            return
+        self._rendered = self._done
+        await send_message(
+            self._session,
+            self._user_id,
+            _t(
+                self._user_id,
+                "sep_assets_progress",
+                self._app_context,
+                (self._done, self._total),
+            ),
+            app_context=self._app_context,
+        )
+
+
 @router.message(Command(commands=["assets"]))
 async def cmd_assets(
     message: types.Message,
@@ -103,7 +166,16 @@ async def cmd_assets(
     ]
 
     discovery = _get_anchor_discovery_service(app_context)
-    supported_assets = await discovery.discover_assets(assets)
+    progress = _AssetsProgress(
+        session, message.from_user.id, len(assets), app_context=app_context
+    )
+    await progress.start()
+    try:
+        supported_assets = await discovery.discover_assets(
+            assets, on_progress=progress.update
+        )
+    finally:
+        await progress.stop()
     await state.update_data(
         anchor_assets={
             f"a{idx}": support.asset.to_string()

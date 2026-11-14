@@ -495,3 +495,27 @@ async def test_total_budget_flag_is_reset_on_the_next_call():
 
     assert [support.asset.code for support in supported] == ["A0"]
     assert service.last_call_truncated is False
+
+
+@pytest.mark.asyncio
+async def test_progress_reports_completed_assets_per_anchor():
+    class GroupDiscoveryService(AnchorDiscoveryService):
+        async def discover_anchor_assets(self, issuer, assets):
+            await asyncio.sleep(0)
+            return [make_group_support(asset) for asset in assets]
+
+    service = GroupDiscoveryService(list_concurrency=3)
+    ticks = []
+
+    await service.discover_assets(
+        [
+            Asset("A0", "GISSUER0"),
+            Asset("A1", "GISSUER0"),
+            Asset("B0", "GISSUER1"),
+        ],
+        on_progress=lambda done, total: ticks.append((done, total)),
+    )
+
+    assert ticks[0] == (0, 3)
+    assert ticks[-1] == (3, 3)
+    assert all(total == 3 for _, total in ticks)

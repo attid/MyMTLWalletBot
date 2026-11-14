@@ -48,6 +48,13 @@ def cleanup_router():
         assets_router._parent_router = None
 
 
+def final_assets_message(mock_telegram):
+    """`/assets` now renders progress first and edits it into the final list."""
+    return get_telegram_request(
+        mock_telegram, "editMessageText"
+    ) or get_telegram_request(mock_telegram, "sendMessage")
+
+
 def make_support(code: str = "BTCLN", *, sep24: bool = False) -> AnchorAssetSupport:
     return AnchorAssetSupport(
         asset=Asset(code, ISSUER),
@@ -105,13 +112,14 @@ async def test_assets_command_shows_only_sep_supported_trustlines(
 
     await dp.feed_update(router_app_context.bot, create_message_update(123, "/assets"))
 
-    req = get_telegram_request(mock_telegram, "sendMessage")
+    req = final_assets_message(mock_telegram)
     assert "sep_assets_title" in req["data"]["text"]
     assert "sep_assets_disclaimer" in req["data"]["text"]
     assert "BTCLN" in req["data"]["reply_markup"]
     assert "NOS" not in req["data"]["reply_markup"]
     router_app_context.anchor_discovery_service.discover_assets.assert_awaited_once_with(
-        [Asset("BTCLN", ISSUER), Asset("NOS", "GNOSEPISSUER")]
+        [Asset("BTCLN", ISSUER), Asset("NOS", "GNOSEPISSUER")],
+        on_progress=ANY,
     )
 
 
@@ -156,7 +164,7 @@ async def test_assets_command_clears_last_message_and_sends_new_menu(
     )
 
     assert not any(req["method"] == "deleteMessage" for req in mock_telegram)
-    req = get_telegram_request(mock_telegram, "sendMessage")
+    req = final_assets_message(mock_telegram)
     assert "sep_assets_title" in req["data"]["text"]
     state_data = await dp.storage.get_data(state_key)
     assert state_data["last_message_id"] != 99
@@ -1187,5 +1195,34 @@ async def test_assets_command_warns_when_discovery_hit_the_budget(
 
     await dp.feed_update(router_app_context.bot, create_message_update(123, "/assets"))
 
-    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    text = final_assets_message(mock_telegram)["data"]["text"]
     assert "sep_assets_partial" in text
+
+
+@pytest.mark.asyncio
+async def test_assets_command_shows_discovery_progress(
+    mock_telegram, router_app_context
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    get_balance = MagicMock()
+    get_balance.execute = AsyncMock(
+        return_value=[Balance("BTCLN", ISSUER, "credit_alphanum12", "12000")]
+    )
+    router_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        get_balance
+    )
+    make_localization(router_app_context)
+    discovery = MagicMock()
+    discovery.discover_assets = AsyncMock(return_value=[make_support()])
+    router_app_context.anchor_discovery_service = discovery
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/assets"))
+
+    first = get_telegram_request(mock_telegram, "sendMessage", last=False)[0]
+    assert "sep_assets_progress" in first["data"]["text"]
+    assert "0" in first["data"]["text"] and "1" in first["data"]["text"]
+    final = final_assets_message(mock_telegram)
+    assert "sep_assets_title" in final["data"]["text"]
