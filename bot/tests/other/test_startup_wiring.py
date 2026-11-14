@@ -95,3 +95,35 @@ async def test_set_commands_registers_complete_private_and_admin_menus() -> None
     admin_scope = calls[2].kwargs["scope"]
     assert isinstance(admin_scope, BotCommandScopeChat)
     assert admin_scope.chat_id == config.admins[0]
+
+
+def test_init_sentry_skips_empty_dsn(monkeypatch):
+    from start import init_sentry
+
+    calls = []
+    monkeypatch.setattr("start.sentry_sdk.init", lambda **kwargs: calls.append(kwargs))
+
+    init_sentry("")
+
+    assert calls == []
+
+
+def test_init_sentry_reports_loguru_errors(monkeypatch):
+    import logging
+
+    from sentry_sdk.integrations.loguru import LoguruIntegration
+    from start import init_sentry
+
+    calls = []
+    monkeypatch.setattr("start.sentry_sdk.init", lambda **kwargs: calls.append(kwargs))
+
+    init_sentry("https://key@sentry.example/1")
+
+    assert len(calls) == 1
+    integrations = calls[0]["integrations"]
+    loguru_integration = next(
+        item for item in integrations if isinstance(item, LoguruIntegration)
+    )
+    assert loguru_integration is not None
+    assert calls[0]["dsn"] == "https://key@sentry.example/1"
+    assert logging.ERROR == 40

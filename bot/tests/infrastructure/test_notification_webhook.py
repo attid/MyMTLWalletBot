@@ -1515,3 +1515,73 @@ def test_payment_filter_still_matches_only_its_own_side() -> None:
 
     assert NotificationService._filter_allows(payment, "GKEY", [strict]) is False
     assert NotificationService._filter_allows(payment, "GKEY", []) is True
+
+
+@pytest.mark.asyncio
+async def test_muxed_destination_is_normalized_before_wallet_lookup(
+    notification_service,
+):
+    """Regression: a 69-char muxed address must not reach the VARCHAR(60) column."""
+    from stellar_sdk import MuxedAccount
+
+    wallet = MagicMock(spec=MyMtlWalletBot)
+    wallet.user_id = 12345
+    wallet.public_key = "GCN57S4FDT6VSWM6EOWZKPDEDZRIA7PP7N4WSFRU6RZAD4LK52QYLQDJ"
+    wallet.id = 1
+    muxed = MuxedAccount(wallet.public_key, 3289).account_muxed
+
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = [wallet]
+    session = AsyncMock()
+    session.execute.return_value = result
+    notification_service.db_pool = TrackingDbPool(session)
+
+    captured = {}
+
+    async def capture_operation(wallet_snapshot, op, **kwargs):
+        captured["op"] = op
+
+    notification_service._send_notification_to_user = capture_operation
+
+    await notification_service.process_notification(
+        {
+            "id": "payload-muxed",
+            "operation": {
+                "id": "op-muxed",
+                "type": "payment",
+                "source_account": "GFROM" + "A" * 51,
+                "to": muxed,
+                "amount": "10.0",
+                "asset": {"asset_type": "native"},
+            },
+            "transaction": {"hash": "tx-muxed"},
+        }
+    )
+
+    assert captured["op"].for_account == wallet.public_key
+    assert len(captured["op"].for_account) == 56
+    # The lookup itself must be G-only: no 69-character muxed values.
+    lookup_accounts: list[str] = []
+    for call in session.execute.await_args_list:
+        params = call.args[0].compile().params
+        lookup_accounts.extend(params.get("public_key_1") or [])
+    assert lookup_accounts
+    assert all(
+        isinstance(account, str) and len(account) == 56 and account.startswith("G")
+        for account in lookup_accounts
+    )
+
+
+def test_webhook_failure_is_reported_to_sentry(notification_service, monkeypatch):
+    """The handler returns 500, so Sentry must be told explicitly."""
+    from infrastructure.services import notification_service as module
+
+    captured = []
+    monkeypatch.setattr(
+        module.sentry_sdk, "capture_exception", lambda exc: captured.append(exc)
+    )
+    error = RuntimeError("string right truncation")
+
+    notification_service._report_webhook_error(error)
+
+    assert captured == [error]

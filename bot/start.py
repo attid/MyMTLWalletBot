@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import warnings
 
@@ -17,6 +18,7 @@ from middleware.retry import RetryRequestMiddleware
 from routers.inout import usdt_worker
 from routers.monitoring import register_handlers
 import sentry_sdk
+from sentry_sdk.integrations.loguru import LoguruIntegration
 from contextlib import suppress
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramBadRequest
@@ -308,13 +310,22 @@ async def on_shutdown_dispatcher(dispatcher: Dispatcher, bot: Bot):
         await bot.send_message(chat_id=config.admins[0], text="Bot stopped")
 
 
+def init_sentry(dsn: str) -> None:
+    """Init Sentry; loguru ERROR records and exceptions become events."""
+    if len(dsn) <= 20:
+        return
+    sentry_sdk.init(
+        dsn=dsn,
+        integrations=[
+            LoguruIntegration(level=logging.INFO, event_level=logging.ERROR),
+        ],
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+    )
+
+
 async def main():
-    if len(config.sentry_dsn) > 20:
-        sentry_sdk.init(
-            dsn=config.sentry_dsn,
-            traces_sample_rate=1.0,
-            profiles_sample_rate=1.0,
-        )
+    init_sentry(config.sentry_dsn)
 
     # Creating DB connections pool
     from db.db_pool import db_pool

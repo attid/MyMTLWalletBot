@@ -56,6 +56,32 @@ class NotifierHeaders(str, Enum):
     TIMESTAMP = "X-Timestamp"
 
 
+MUXED_ACCOUNT_LENGTH = 69
+
+
+def _normalized_account(account: object) -> str | None:
+    """Return the plain `G...` account for a possibly muxed `M...` address.
+
+    Wallet rows store `G...` in a `VARCHAR(60)` column, so a 69-character muxed
+    address must never reach the database: Firebird raises "string right
+    truncation" and the whole webhook fails. The muxed id does not change
+    ownership, so the underlying account is the right lookup key.
+    """
+    if not isinstance(account, str):
+        return None
+    value = account.strip()
+    if not value:
+        return None
+    if value.startswith("M") and len(value) == MUXED_ACCOUNT_LENGTH:
+        try:
+            from stellar_sdk import MuxedAccount
+
+            return MuxedAccount.from_account(value).account_id
+        except Exception as exc:  # noqa: BLE001 - keep the raw value on failure
+            logger.warning(f"Could not decode muxed account {value}: {exc}")
+    return value
+
+
 class NotificationService:
     def __init__(
         self,
@@ -468,8 +494,18 @@ class NotificationService:
             return web.Response(text="OK")
 
         except Exception as e:
-            logger.error(f"Error handling webhook: {e}")
+            self._report_webhook_error(e)
             return web.Response(text=f"Error: {e}", status=500)
+
+    def _report_webhook_error(self, exc: Exception) -> None:
+        """Log and report a webhook failure.
+
+        The handler swallows the exception to answer with 500, so Sentry has to
+        be told explicitly; the loguru bridge reports the same stacktrace and
+        Sentry groups both events into one issue.
+        """
+        logger.opt(exception=exc).error(f"Error handling webhook: {exc!r}")
+        sentry_sdk.capture_exception(exc)
 
     async def handle_health(self, _request: web.Request) -> web.Response:
         if self.bot_health_service is None:
@@ -491,7 +527,7 @@ class NotificationService:
         op_info = payload.get("operation", {})
 
         # Исправлено: Однократное корректное определение ID
-        resource_id = (
+        resource_id = _normalized_account(
             payload.get("subscription")
             or op_info.get("account")
             or op_info.get("source_account")
@@ -515,8 +551,9 @@ class NotificationService:
         involved_accounts = {op_data_mapped.for_account, op_data_mapped.from_account}
         # Add trustor for set_trustline_flags operation
         op_info = payload.get("operation", {})
-        if op_info.get("trustor"):
-            involved_accounts.add(op_info.get("trustor"))
+        trustor = _normalized_account(op_info.get("trustor"))
+        if trustor:
+            involved_accounts.add(trustor)
         involved_accounts.discard(None)
 
         if not involved_accounts:
@@ -819,23 +856,29 @@ class NotificationService:
                 id=str(op_data.get("id", "")),
                 operation=op_type,
                 dt=datetime.utcnow(),
-                from_account=op_data.get("source_account")
-                or op_data.get("from")
-                or op_data.get("account"),
+                from_account=_normalized_account(
+                    op_data.get("source_account")
+                    or op_data.get("from")
+                    or op_data.get("account")
+                ),
                 transaction_hash=payload.get("transaction", {}).get("hash"),
                 memo=memo,
             )
 
             # Type specific mapping
             if op_type == "payment":
-                op.for_account = op_data.get("to") or op_data.get("destination")
+                op.for_account = _normalized_account(
+                    op_data.get("to") or op_data.get("destination")
+                )
                 op.payment_amount = float(op_data.get("amount", 0))
                 op.payment_asset = op_data.get("asset", {}).get("asset_code", "XLM")
                 if op_data.get("asset", {}).get("asset_type") in ("native", 0):
                     op.payment_asset = "XLM"
 
             elif op_type == "create_account":
-                op.for_account = op_data.get("destination") or op_data.get("account")
+                op.for_account = _normalized_account(
+                    op_data.get("destination") or op_data.get("account")
+                )
                 op.payment_amount = float(op_data.get("amount", 0))
                 op.payment_asset = "XLM"
 

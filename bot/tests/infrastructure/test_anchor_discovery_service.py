@@ -319,41 +319,38 @@ async def test_discovery_keeps_exact_case_when_it_matches():
 
 
 class FlakyAnchorHttp(FakeAnchorHttp):
-    """The anchor `stellar.toml` fails on the first call, then recovers."""
+    """The anchor `stellar.toml` fails a configurable number of times."""
 
-    def __init__(self):
+    def __init__(self, failures: int = 1):
         super().__init__()
-        self.failed_once = False
+        self.remaining_failures = failures
 
     async def fetch_text(self, url: str):
-        if url.endswith("stellar.toml") and not self.failed_once:
-            self.failed_once = True
+        if url.endswith("stellar.toml") and self.remaining_failures > 0:
+            self.remaining_failures -= 1
             self.calls[url] += 1
             raise TimeoutError("slow anchor")
         return await super().fetch_text(url)
 
 
 @pytest.mark.asyncio
-async def test_transient_failure_is_retried_after_negative_ttl():
-    fake_http = FlakyAnchorHttp()
+async def test_transient_failure_is_retried_within_the_same_call():
+    fake_http = FlakyAnchorHttp(failures=1)
     service = AnchorDiscoveryService(
         fetch_json=fake_http.fetch_json,
         fetch_text=fake_http.fetch_text,
         horizon_url="https://horizon.test",
-        negative_ttl=timedelta(0),
     )
 
-    first = await service.discover_asset(Asset("BTCLN", ISSUER))
-    second = await service.discover_asset(Asset("BTCLN", ISSUER))
+    support = await service.discover_asset(Asset("BTCLN", ISSUER))
 
-    assert first is None
-    assert second is not None
+    assert support is not None
     assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 2
 
 
 @pytest.mark.asyncio
 async def test_failed_lookup_is_cached_for_the_negative_ttl():
-    fake_http = FlakyAnchorHttp()
+    fake_http = FlakyAnchorHttp(failures=2)
     service = AnchorDiscoveryService(
         fetch_json=fake_http.fetch_json,
         fetch_text=fake_http.fetch_text,
@@ -363,4 +360,18 @@ async def test_failed_lookup_is_cached_for_the_negative_ttl():
 
     assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
     assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
-    assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 1
+    assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 2
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_is_retried_after_negative_ttl():
+    fake_http = FlakyAnchorHttp(failures=2)
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+        negative_ttl=timedelta(0),
+    )
+
+    assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
+    assert await service.discover_asset(Asset("BTCLN", ISSUER)) is not None

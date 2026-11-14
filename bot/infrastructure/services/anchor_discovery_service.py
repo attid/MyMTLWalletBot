@@ -20,6 +20,11 @@ from other.web_tools import http_session_manager
 FetchJson = Callable[[str], Awaitable[dict[str, Any]]]
 FetchText = Callable[[str], Awaitable[str]]
 
+# Anchors occasionally drop a keep-alive connection on the first request; one
+# retry turns that into a normal answer instead of a missing asset.
+FETCH_ATTEMPTS = 2
+FETCH_RETRY_DELAY_SECONDS = 0.4
+
 
 class AnchorDiscoveryService:
     """Discovers SEP-6/SEP-24 support for Stellar assets with a short TTL cache."""
@@ -182,6 +187,20 @@ class AnchorDiscoveryService:
         self._cache[cache_key] = (datetime.now(UTC), support)
         return support
 
+    async def _fetch_with_retry(self, fetch, url: str):
+        """Call `fetch(url)` retrying once on a transient transport failure."""
+        last_error: Exception | None = None
+        for attempt in range(FETCH_ATTEMPTS):
+            try:
+                return await fetch(url)
+            except Exception as exc:  # noqa: BLE001 - retried, then re-raised
+                last_error = exc
+                if attempt + 1 < FETCH_ATTEMPTS:
+                    logger.debug(f"SEP fetch retry for {url}: {exc!r}")
+                    await asyncio.sleep(FETCH_RETRY_DELAY_SECONDS)
+        assert last_error is not None
+        raise last_error
+
     def _is_fresh(self, cached_at: datetime, value: Any) -> bool:
         """Cache lifetime: full TTL for a hit, short TTL for a failed lookup.
 
@@ -209,15 +228,15 @@ class AnchorDiscoveryService:
 
     async def _discover_issuer_uncached(self, issuer: str) -> "IssuerSepInfo | None":
         try:
-            issuer_account = await self._fetch_json(
-                f"{self._horizon_url}/accounts/{issuer}"
+            issuer_account = await self._fetch_with_retry(
+                self._fetch_json, f"{self._horizon_url}/accounts/{issuer}"
             )
             home_domain = issuer_account.get("home_domain")
             if not home_domain:
                 return None
 
-            toml_text = await self._fetch_text(
-                f"https://{home_domain}/.well-known/stellar.toml"
+            toml_text = await self._fetch_with_retry(
+                self._fetch_text, f"https://{home_domain}/.well-known/stellar.toml"
             )
             toml_data = tomllib.loads(toml_text)
             sep6_url = toml_data.get("TRANSFER_SERVER")
@@ -233,7 +252,7 @@ class AnchorDiscoveryService:
                 sep24_url=sep24_url.rstrip("/") if sep24_url else None,
             )
         except Exception as exc:
-            logger.warning(f"SEP issuer discovery failed for {issuer}: {exc}")
+            logger.warning(f"SEP issuer discovery failed for {issuer}: {exc!r}")
             return None
 
     async def _load_protocol_info(
@@ -260,9 +279,11 @@ class AnchorDiscoveryService:
         self, transfer_server: str
     ) -> dict[str, Any] | None:
         try:
-            return await self._fetch_json(f"{transfer_server}/info")
+            return await self._fetch_with_retry(
+                self._fetch_json, f"{transfer_server}/info"
+            )
         except Exception as exc:
-            logger.warning(f"SEP info discovery failed for {transfer_server}: {exc}")
+            logger.warning(f"SEP info discovery failed for {transfer_server}: {exc!r}")
             return None
 
     def _protocol_support_from_info(
