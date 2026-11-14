@@ -5,6 +5,10 @@ from environs import Env
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from shared.constants import (  # type: ignore[import-untyped]
+    DEFAULT_NETWORK_PASSPHRASE,
+)
+
 start_path = os.path.dirname(os.path.dirname(__file__))
 dotenv_path = os.path.join(start_path, ".env")
 env = Env()
@@ -43,6 +47,7 @@ class Settings(BaseSettings):
     base_fee: int
     db_url: str
     redis_url: str
+    network_passphrase: str = DEFAULT_NETWORK_PASSPHRASE
     tron_api_key: SecretStr
     tron_master_address: str
     tron_master_key: SecretStr

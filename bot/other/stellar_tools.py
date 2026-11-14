@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cryptocode import encrypt, decrypt  # type: ignore
 from stellar_sdk import ServerAsync
 from stellar_sdk import (
-    Network,
     TransactionBuilder,
     Asset,
     Account,
@@ -98,7 +97,7 @@ usdm_asset = Asset("USDM", "GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSU
 def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
     # Преобразуем XDR обратно в TransactionEnvelope
     transaction_envelope = TransactionEnvelope.from_xdr(
-        xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+        xdr, network_passphrase=config.network_passphrase
     )
 
     # Извлекаем существующую транзакцию из TransactionEnvelope
@@ -114,7 +113,7 @@ def stellar_get_transaction_builder(xdr: str) -> TransactionBuilder:
     # Создаем новый TransactionBuilder с той же исходной информацией
     transaction_builder = TransactionBuilder(
         source_account=source_account,
-        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+        network_passphrase=config.network_passphrase,
         base_fee=existing_transaction.fee,  # Сохраняем исходную базовую комиссию
     )
 
@@ -177,14 +176,13 @@ async def stellar_add_trust(
 ):  # type: ignore[misc]
     if xdr:
         transaction = stellar_get_transaction_builder(xdr)
-        # TransactionBuilder.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     else:
 
         async def _prepare(server: ServerAsync) -> TransactionBuilder:
             source_account = await server.load_account(user_key)
             prepared = TransactionBuilder(
                 source_account=source_account,
-                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                network_passphrase=config.network_passphrase,
                 base_fee=base_fee,
             )
             prepared.set_timeout(60 * 60)
@@ -215,7 +213,7 @@ async def stellar_close_asset(
             source_account = await server.load_account(user_key)
             prepared = TransactionBuilder(
                 source_account=source_account,
-                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                network_passphrase=config.network_passphrase,
                 base_fee=base_fee,
             )
             prepared.set_timeout(60 * 60)
@@ -250,7 +248,7 @@ async def stellar_close_asset(
 
 def stellar_sign(xdr: str, private_key: str):
     transaction = TransactionEnvelope.from_xdr(
-        xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+        xdr, network_passphrase=config.network_passphrase
     )
     transaction.sign(private_key)
     logger.info(f"new xdr sign : {transaction.to_xdr()}")
@@ -454,7 +452,7 @@ async def stellar_check_xdr(
             raise ValueError("fee-bump transactions are not supported")
 
         envelope = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            xdr, network_passphrase=config.network_passphrase
         )
 
         if for_free_account:
@@ -491,7 +489,7 @@ async def stellar_user_sign_message(
 async def async_stellar_send(xdr: str):
     async def _submit(server: ServerAsync):
         transaction = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            xdr, network_passphrase=config.network_passphrase
         )
         return await server.submit_transaction(transaction)
 
@@ -571,7 +569,7 @@ async def stellar_sale(
 
     transaction = TransactionBuilder(
         source_account=source_account,
-        network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+        network_passphrase=config.network_passphrase,
         base_fee=base_fee,
     )
     if (my_float(receive_amount) == 0.0) or (float(send_amount) == 0.0):
@@ -667,7 +665,7 @@ async def stellar_delete_account(
 
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=config.network_passphrase,
             base_fee=base_fee,
         )
         account = await server.accounts().account_id(delete_account.public_key).call()
@@ -1229,7 +1227,7 @@ async def cmd_gen_data_xdr(from_account: str, name: str, value):
         source_account = await server.load_account(from_account)
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=config.network_passphrase,
             base_fee=base_fee,
         )
         transaction.append_manage_data_op(data_name=name, data_value=value)
@@ -1355,7 +1353,7 @@ async def stellar_get_multi_sign_xdr(public_key) -> str:
         source_account = await server.load_account(public_key)
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=config.network_passphrase,
             base_fee=base_fee,
         )
         transaction.set_timeout(60 * 60 * 24)

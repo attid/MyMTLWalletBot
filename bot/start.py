@@ -404,7 +404,11 @@ async def main():
     from core.constants import CHEQUE_PUBLIC_KEY
 
     use_case_factory = UseCaseFactory(
-        repository_factory, stellar_service, encryption_service, CHEQUE_PUBLIC_KEY
+        repository_factory,
+        stellar_service,
+        encryption_service,
+        CHEQUE_PUBLIC_KEY,
+        network_passphrase=config.network_passphrase,
     )
 
     from infrastructure.services.notification_history_service import (

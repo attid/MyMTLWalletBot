@@ -36,3 +36,8 @@ STATUS_EXPIRED = "expired"
 STATUS_ERROR = "error"
 STATUS_COMPLETED = "completed"
 STATUS_RELAY_PENDING = "relay_pending"
+
+# Stellar network passphrase. The default keeps existing deployments on mainnet;
+# a testnet run sets NETWORK_PASSPHRASE=Test SDF Network ; September 2015.
+DEFAULT_NETWORK_PASSPHRASE = "Public Global Stellar Network ; September 2015"
+TESTNET_NETWORK_PASSPHRASE = "Test SDF Network ; September 2015"

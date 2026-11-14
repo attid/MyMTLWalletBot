@@ -284,3 +284,36 @@ class TestStellarCheckXdrFreeAccountSoroban:
             xdr = _read_fixture(name)
             result = await stellar_check_xdr(xdr, for_free_account=False)
             assert result is not None, f"paid account should accept {name}"
+
+
+def test_stellar_sign_uses_configured_passphrase(monkeypatch):
+    from stellar_sdk import Account, Asset as SdkAsset, TransactionBuilder
+    from stellar_sdk import TransactionEnvelope
+    from stellar_sdk.exceptions import BadSignatureError
+
+    from other.config_reader import config
+    from other.stellar_tools import stellar_sign
+    from shared.constants import TESTNET_NETWORK_PASSPHRASE
+
+    monkeypatch.setattr(config, "network_passphrase", TESTNET_NETWORK_PASSPHRASE)
+
+    keypair = Keypair.random()
+    unsigned = (
+        TransactionBuilder(
+            Account(keypair.public_key, 3), TESTNET_NETWORK_PASSPHRASE, 100
+        )
+        .append_payment_op(Keypair.random().public_key, SdkAsset.native(), "1")
+        .build()
+    )
+
+    signed = stellar_sign(unsigned.to_xdr(), keypair.secret)
+    envelope = TransactionEnvelope.from_xdr(signed, TESTNET_NETWORK_PASSPHRASE)
+
+    # Signature must be valid for the testnet hash, not for the mainnet one.
+    keypair.verify(envelope.hash(), envelope.signatures[0].signature)
+
+    mainnet_envelope = TransactionEnvelope.from_xdr(
+        signed, "Public Global Stellar Network ; September 2015"
+    )
+    with pytest.raises(BadSignatureError):
+        keypair.verify(mainnet_envelope.hash(), envelope.signatures[0].signature)

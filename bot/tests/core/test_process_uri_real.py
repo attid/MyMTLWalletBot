@@ -103,3 +103,31 @@ async def test_sep7_rebuild_preserves_absent_challenge_preconditions():
     assert rebuilt.source.account_id == mock_wallet.public_key
     assert rebuilt.sequence == 12346
     assert rebuilt.fee == 10000 * len(rebuilt.operations)
+
+
+@pytest.mark.asyncio
+async def test_sep7_rebuild_uses_configured_network_passphrase():
+    from core.domain.value_objects import Asset
+    from shared.constants import TESTNET_NETWORK_PASSPHRASE
+    from stellar_sdk import Account, Asset as SdkAsset, TransactionBuilder
+
+    source = Account("GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI", 7)
+    tx = (
+        TransactionBuilder(source, TESTNET_NETWORK_PASSPHRASE, 100)
+        .append_payment_op(
+            "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+            SdkAsset.native(),
+            "1",
+        )
+        .build()
+    )
+    uri = f"web+stellar:tx?xdr={quote(tx.to_xdr())}"
+
+    use_case = ProcessStellarUri(
+        AsyncMock(), AsyncMock(), network_passphrase=TESTNET_NETWORK_PASSPHRASE
+    )
+    parsed = use_case._parse_transaction_stellar_uri(uri)
+
+    envelope = parsed["uri_object"].transaction_envelope
+    assert envelope.network_passphrase == TESTNET_NETWORK_PASSPHRASE
+    assert Asset("XLM", None).code == "XLM"

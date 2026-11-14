@@ -3,7 +3,6 @@ from stellar_sdk import (
     ServerAsync,
     TransactionBuilder,
     Asset as SdkAsset,
-    Network,
     Price,
     TransactionEnvelope,
     Keypair,
@@ -11,6 +10,7 @@ from stellar_sdk import (
 from stellar_sdk.exceptions import NotFoundError
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Asset
+from shared.constants import DEFAULT_NETWORK_PASSPHRASE
 from infrastructure.services.horizon_pool import (
     ENDPOINT_ROLE_READ,
     ENDPOINT_ROLE_WRITE,
@@ -32,8 +32,10 @@ class StellarService(IStellarService):
     def __init__(
         self,
         horizon_url: Optional[str] = None,
+        network_passphrase: str = DEFAULT_NETWORK_PASSPHRASE,
     ):
         self._pinned_url = horizon_url.rstrip("/") if horizon_url else None
+        self.network_passphrase = network_passphrase
 
     @property
     def horizon_url(self) -> Optional[str]:
@@ -128,12 +130,12 @@ class StellarService(IStellarService):
 
         source_account = await self._run("load_account", _load)
 
-        from stellar_sdk import TransactionBuilder, Asset, Network
+        from stellar_sdk import TransactionBuilder, Asset
 
         base_fee = 10000  # Configurable?
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=self.network_passphrase,
             base_fee=base_fee,
         )
         transaction.set_timeout(3000)  # 50 min for WebApp signing
@@ -197,10 +199,10 @@ class StellarService(IStellarService):
 
     async def submit_transaction(self, xdr: str) -> Dict[str, Any]:
         async def _call(server: ServerAsync) -> Dict[str, Any]:
-            from stellar_sdk import TransactionEnvelope, Network
+            from stellar_sdk import TransactionEnvelope
 
             transaction = TransactionEnvelope.from_xdr(
-                xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+                xdr, network_passphrase=self.network_passphrase
             )
             return await server.submit_transaction(transaction)
 
@@ -224,12 +226,12 @@ class StellarService(IStellarService):
 
         source_account = await self._run("load_account", _load)
 
-        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset
 
         base_fee = 10000
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=self.network_passphrase,
             base_fee=base_fee,
         )
         transaction.set_timeout(3000)  # 50 min for WebApp signing
@@ -312,11 +314,11 @@ class StellarService(IStellarService):
 
         source_account = await self._run("load_account", _load)
 
-        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset
 
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=self.network_passphrase,
             base_fee=10000,
         )
         transaction.set_timeout(3000)  # 50 min for WebApp signing
@@ -338,17 +340,17 @@ class StellarService(IStellarService):
 
     async def sign_transaction(self, xdr: str, secret: str) -> str:
         transaction = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            xdr, network_passphrase=self.network_passphrase
         )
         kp = Keypair.from_secret(secret)
         transaction.sign(kp)
         return transaction.to_xdr()
 
     async def sign_xdr(self, xdr: str, secret: str) -> str:
-        from stellar_sdk import TransactionEnvelope, Network, Keypair
+        from stellar_sdk import TransactionEnvelope, Keypair
 
         transaction = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            xdr, network_passphrase=self.network_passphrase
         )
         kp = Keypair.from_secret(secret)
         transaction.sign(kp)
@@ -402,7 +404,7 @@ class StellarService(IStellarService):
 
         tx_builder = TransactionBuilder(
             source_account=account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=self.network_passphrase,
             base_fee=100,
         )
         for op in operations:
@@ -428,11 +430,11 @@ class StellarService(IStellarService):
 
         source_account = await self._run("load_account", _load)
 
-        from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
+        from stellar_sdk import TransactionBuilder, Asset as SdkAsset
 
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=self.network_passphrase,
             base_fee=10000,
         )
         transaction.set_timeout(3000)  # 50 min for WebApp signing
@@ -458,7 +460,7 @@ class StellarService(IStellarService):
 
         transaction = TransactionBuilder(
             source_account=source_account,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=self.network_passphrase,
             base_fee=10000,
         )
         transaction.set_timeout(3000)  # 50 min for WebApp signing

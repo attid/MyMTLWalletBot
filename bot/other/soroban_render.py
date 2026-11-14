@@ -14,9 +14,9 @@ from typing import Optional
 
 import aiohttp
 from loguru import logger
+from other.config_reader import config
 from stellar_sdk import (
     Account,
-    Network,
     StrKey,
     TransactionBuilder,
     TransactionEnvelope,
@@ -136,7 +136,7 @@ async def _simulate_name_call(contract_id: str) -> dict:
         TransactionBuilder(
             source_account=src,
             base_fee=200,
-            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            network_passphrase=config.network_passphrase,
         )
         .append_invoke_contract_function_op(
             contract_id=contract_id,
@@ -384,7 +384,7 @@ async def render_soroban_sub_invocations(xdr: str) -> list[str]:
     """
     try:
         envelope = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            xdr, network_passphrase=config.network_passphrase
         )
     except Exception as exc:
         logger.debug(f"render_soroban_sub_invocations: parse failed: {exc}")

@@ -11,7 +11,8 @@ from html import escape
 from typing import Optional
 
 from loguru import logger
-from stellar_sdk import Network, TransactionEnvelope
+from other.config_reader import config
+from stellar_sdk import TransactionEnvelope
 from stellar_sdk.operation.account_merge import AccountMerge
 from stellar_sdk.operation.change_trust import ChangeTrust
 from stellar_sdk.operation.create_account import CreateAccount
@@ -128,7 +129,7 @@ def render_classic_ops(xdr: str) -> list[str]:
     """
     try:
         envelope = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            xdr, network_passphrase=config.network_passphrase
         )
     except Exception as exc:
         logger.debug(f"render_classic_ops: parse failed: {exc}")

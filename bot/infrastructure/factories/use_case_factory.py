@@ -8,6 +8,7 @@ from typing import Any
 
 from core.interfaces.repositories import IRepositoryFactory
 from core.interfaces.services import IStellarService, IEncryptionService
+from shared.constants import DEFAULT_NETWORK_PASSPHRASE
 
 
 class IUseCaseFactory(ABC):
@@ -109,11 +110,13 @@ class UseCaseFactory(IUseCaseFactory):
         stellar_service: IStellarService,
         encryption_service: IEncryptionService,
         cheque_public_key: str,
+        network_passphrase: str = DEFAULT_NETWORK_PASSPHRASE,
     ):
         self.repository_factory = repository_factory
         self.stellar_service = stellar_service
         self.encryption_service = encryption_service
         self.cheque_public_key = cheque_public_key
+        self.network_passphrase = network_passphrase
 
     def create_get_wallet_balance(self, session: Any):
         from core.use_cases.wallet.get_balance import GetWalletBalance
@@ -194,7 +197,11 @@ class UseCaseFactory(IUseCaseFactory):
         from core.use_cases.stellar.process_uri import ProcessStellarUri
 
         repo = self.repository_factory.get_wallet_repository(session)
-        return ProcessStellarUri(repo, self.stellar_service)
+        return ProcessStellarUri(
+            repo,
+            self.stellar_service,
+            network_passphrase=self.network_passphrase,
+        )
 
     def create_add_wallet(self, session: Any):
         from core.use_cases.wallet.add_wallet import AddWallet

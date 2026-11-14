@@ -1,6 +1,10 @@
 import urllib.parse
 from typing import Optional
-from stellar_sdk import Network, TransactionBuilder
+from stellar_sdk import TransactionBuilder
+
+from shared.constants import (  # type: ignore[import-untyped]
+    DEFAULT_NETWORK_PASSPHRASE,
+)
 from stellar_sdk.sep import stellar_uri
 
 from core.interfaces.repositories import IWalletRepository
@@ -25,10 +29,14 @@ class ProcessStellarUriResult:
 
 class ProcessStellarUri:
     def __init__(
-        self, wallet_repo: IWalletRepository, stellar_service: IStellarService
+        self,
+        wallet_repo: IWalletRepository,
+        stellar_service: IStellarService,
+        network_passphrase: str = DEFAULT_NETWORK_PASSPHRASE,
     ):
         self.wallet_repo = wallet_repo
         self.stellar_service = stellar_service
+        self.network_passphrase = network_passphrase
 
     async def execute(self, uri_data: str, user_id: int) -> ProcessStellarUriResult:
         try:
@@ -70,7 +78,7 @@ class ProcessStellarUri:
                 challenge_transaction = uri_object.transaction_envelope.transaction
                 transaction = TransactionBuilder(
                     source_account=source_account,
-                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                    network_passphrase=self.network_passphrase,
                     base_fee=base_fee,
                     v1=challenge_transaction.v1,
                 )
@@ -107,11 +115,10 @@ class ProcessStellarUri:
         except Exception as e:
             return ProcessStellarUriResult(success=False, error_message=str(e))
 
-    def _parse_transaction_stellar_uri(
-        self, uri_data, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
-    ):
+    def _parse_transaction_stellar_uri(self, uri_data, network_passphrase=None):
         uri_object = stellar_uri.TransactionStellarUri.from_uri(
-            uri_data, network_passphrase=network_passphrase
+            uri_data,
+            network_passphrase=network_passphrase or self.network_passphrase,
         )
 
         callback_url = uri_object.callback
