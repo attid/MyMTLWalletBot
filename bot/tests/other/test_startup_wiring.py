@@ -89,8 +89,6 @@ async def test_set_commands_registers_complete_private_and_admin_menus() -> None
         ("crypto", "Encrypt or decrypt"),
         ("restart", "ReStart bot"),
         ("fee", "check fee"),
-        ("horizon", "change horizon"),
-        ("horizon_rw", "change horizon_rw"),
     ]
     admin_scope = calls[2].kwargs["scope"]
     assert isinstance(admin_scope, BotCommandScopeChat)

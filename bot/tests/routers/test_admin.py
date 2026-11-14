@@ -24,7 +24,6 @@ def cleanup_router():
     """Ensure router is detached and admin config is restored after each test."""
     # Store original config values
     original_admins = list(config.admins)
-    original_horizon_url = config.horizon_url
 
     # Set test admins for filtering
     config.admins.clear()
@@ -38,7 +37,6 @@ def cleanup_router():
     # Restore original config
     config.admins.clear()
     config.admins.extend(original_admins)
-    config.horizon_url = original_horizon_url
 
     if admin_router.parent_router:
         admin_router._parent_router = None
@@ -208,35 +206,13 @@ async def test_cmd_exit_restart_flow(
     assert "Chao :[[[" in req["data"]["text"]
 
 
-@pytest.mark.asyncio
-async def test_cmd_horizon_cycle(mock_telegram, router_app_context, setup_admin_mocks):
-    """Test /horizon: cycles through URLs."""
-    from other.config_reader import horizont_urls
+def test_manual_horizon_commands_removed() -> None:
+    """Manual horizon switching was removed: the pool owns endpoint choice."""
+    import other.config_reader as config_reader
 
-    dp = router_app_context.dispatcher
-    dp.include_router(admin_router)
-
-    # Setup test URLs
-    original_urls = list(horizont_urls)
-    horizont_urls.clear()
-    horizont_urls.extend(["url1", "url2"])
-
-    try:
-        config.horizon_url = "url1"
-        update = create_message_update(
-            user_id=123, text="/horizon", username="itolstov"
-        )
-        await dp.feed_update(
-            bot=router_app_context.bot, update=update, app_context=router_app_context
-        )
-
-        assert config.horizon_url == "url2"
-        req = get_telegram_request(mock_telegram, "sendMessage")
-        assert "Horizon url: url2" in req["data"]["text"]
-    finally:
-        # Restore original URLs
-        horizont_urls.clear()
-        horizont_urls.extend(original_urls)
+    assert "horizon_url" not in config_reader.Settings.model_fields
+    assert "horizon_url_rw" not in config_reader.Settings.model_fields
+    assert not hasattr(config_reader, "horizont_urls")
 
 
 @pytest.mark.asyncio

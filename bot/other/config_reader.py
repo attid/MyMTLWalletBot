@@ -2,7 +2,7 @@ import os
 import math
 from typing import Optional
 from environs import Env
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 start_path = os.path.dirname(os.path.dirname(__file__))
@@ -10,10 +10,30 @@ dotenv_path = os.path.join(start_path, ".env")
 env = Env()
 env.read_env(dotenv_path)
 
-horizont_urls = [
-    "https://horizon.stellar.org",
-    "https://horizon.stellar.lobstr.co",
-]
+READ_ONLY_ENDPOINT_SUFFIX = "|ro"
+
+
+def parse_horizon_endpoints(raw: str) -> list[str]:
+    """Split ``HORIZON_URLS`` into endpoints preserving priority order.
+
+    Empty items are dropped and duplicates keep their first position. A trailing
+    ``|ro`` marks a read-only node: it is never used for transaction submission.
+    """
+    endpoints: list[str] = []
+    seen: set[str] = set()
+    for item in raw.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        is_read_only = value.lower().endswith(READ_ONLY_ENDPOINT_SUFFIX)
+        key = (
+            value[: -len(READ_ONLY_ENDPOINT_SUFFIX)].strip() if is_read_only else value
+        ).rstrip("/")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        endpoints.append(value)
+    return endpoints
 
 
 class Settings(BaseSettings):
@@ -30,8 +50,22 @@ class Settings(BaseSettings):
     openai_key: SecretStr
     eurmtl_key: str
     sentry_dsn: str
-    horizon_url: str
-    horizon_url_rw: str
+    # Horizon endpoint pool: comma-separated, priority order, primary first.
+    # A trailing "|ro" marks a read-only node (never used for submission).
+    # There is no hardcoded fallback: a missing value fails startup on purpose.
+    horizon_urls: str
+    horizon_endpoints: list[str] = []
+    # Horizon failover tuning (see infrastructure/services/horizon_pool.py).
+    horizon_failover_budget_seconds: float = 25.0
+    horizon_failover_max_attempts: int = 3
+    horizon_request_timeout_seconds: float = 8.0
+    horizon_post_timeout_seconds: float = 15.0
+    horizon_rate_limit_cooldown_seconds: float = 60.0
+    horizon_server_error_cooldown_seconds: float = 30.0
+    horizon_max_cooldown_seconds: float = 600.0
+    horizon_sticky_seconds: float = 60.0
+    horizon_freeze_switch_threshold: int = 5
+    horizon_freeze_window_seconds: float = 600.0
     grist_token: str
     grist_base_url: str = "https://grist.eurmtl.me/api/docs"
     tonconsole_token: str
@@ -64,6 +98,37 @@ class Settings(BaseSettings):
     notification_chat_cooldown_max_seconds: float = 3600.0
     # One message per transaction: keep the first N fills and the remaining count.
     notification_bundle_max_lines: int = 15
+
+    @model_validator(mode="after")
+    def parse_horizon_url_pool(self):
+        endpoints = parse_horizon_endpoints(self.horizon_urls)
+        if not endpoints:
+            raise ValueError("HORIZON_URLS must list at least one horizon endpoint")
+        self.horizon_endpoints = endpoints
+        return self
+
+    @field_validator(
+        "horizon_failover_budget_seconds",
+        "horizon_request_timeout_seconds",
+        "horizon_post_timeout_seconds",
+        "horizon_rate_limit_cooldown_seconds",
+        "horizon_server_error_cooldown_seconds",
+        "horizon_max_cooldown_seconds",
+        "horizon_sticky_seconds",
+        "horizon_freeze_window_seconds",
+    )
+    @classmethod
+    def validate_horizon_positive_seconds(cls, value: float) -> float:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("horizon timing settings must be finite and positive")
+        return value
+
+    @field_validator("horizon_failover_max_attempts", "horizon_freeze_switch_threshold")
+    @classmethod
+    def validate_horizon_positive_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("horizon pool counters must be positive")
+        return value
 
     @field_validator("notification_delivery_poll_interval_seconds")
     @classmethod
@@ -110,8 +175,6 @@ class Settings(BaseSettings):
     internal_api_host: str = "127.0.0.1"
     internal_api_port: int = 8082
     internal_api_token: Optional[SecretStr] = None
-
-    # horizon_url_id: Optional[int] = 0
 
     model_config = SettingsConfigDict(
         env_file=".env",

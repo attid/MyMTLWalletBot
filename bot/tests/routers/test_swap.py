@@ -1,6 +1,6 @@
 import pytest
 import jsonpickle  # type: ignore
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from routers.swap import (
     FLOW_BACK_CALLBACK,
@@ -13,6 +13,7 @@ from core.domain.value_objects import Asset as DomainAsset, Balance, PaymentResu
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
+    horizon_url_patch,
     create_callback_update,
     create_message_update,
     get_telegram_request,
@@ -148,7 +149,7 @@ async def test_cq_swap_choose_token_from(
     )
 
     # Patch the global config used by legacy stellar_tools
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         update = create_callback_update(user_id=user_id, callback_data=cb_data)
         await dp.feed_update(
             bot=router_app_context.bot, update=update, app_context=router_app_context
@@ -240,7 +241,7 @@ async def test_cmd_swap_sum_execution(
     )
 
     # Patch external check for estimated receive sum
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         update = create_message_update(user_id, "10.0")
         await dp.feed_update(
             bot=router_app_context.bot, update=update, app_context=router_app_context
@@ -343,7 +344,7 @@ async def test_cmd_swap_receive_sum_execution(
     )
 
     # Patch external check for estimated send sum
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         update = create_message_update(user_id, "10.0")
         await dp.feed_update(
             bot=router_app_context.bot, update=update, app_context=router_app_context
@@ -476,7 +477,7 @@ async def test_swap_no_path_rerenders_with_flow_back_and_preserves_retry_data(
     )
     mock_horizon.set_paths([])
 
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         await dp.feed_update(
             bot=router_app_context.bot,
             update=create_message_update(user_id, "10"),
@@ -521,7 +522,7 @@ async def test_swap_strict_receive_build_error_rerenders_with_flow_back(
         [{"destination_amount": "10", "source_amount": "10.5", "path": []}]
     )
 
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         await dp.feed_update(
             bot=router_app_context.bot,
             update=create_message_update(user_id, "10"),
@@ -627,7 +628,7 @@ async def test_flow_back_from_swap_amount_rerenders_destination_and_preserves_so
     )
     mock_horizon.set_paths([])
 
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         await dp.feed_update(
             bot=router_app_context.bot,
             update=create_callback_update(user_id, FLOW_BACK_CALLBACK),
@@ -816,7 +817,7 @@ async def test_cmd_swap_text_command(
     )
 
     # Patch external check for estimated receive sum
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         update = create_message_update(user_id, "/swap 10.0 XLM EURMTL")
         await dp.feed_update(
             bot=router_app_context.bot, update=update, app_context=router_app_context
@@ -887,7 +888,7 @@ async def test_cmd_swap_text_flexible_syntax(
     )
 
     # Test 1: /swap XLM 10 EURMTL
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         update = create_message_update(user_id, "/swap XLM 10 EURMTL")
         await dp.feed_update(
             bot=router_app_context.bot, update=update, app_context=router_app_context
@@ -915,7 +916,7 @@ async def test_cmd_swap_text_flexible_syntax(
     # Test 2: /swap 10 XLM EURMTL 5%
     # We verify state update to ensure parsing worked
 
-    with patch("other.config_reader.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         update = create_message_update(user_id, "/swap 10 XLM EURMTL 5%")
         await dp.feed_update(
             bot=router_app_context.bot, update=update, app_context=router_app_context

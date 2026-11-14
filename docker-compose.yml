@@ -20,10 +20,9 @@ services:
       # === Stellar Blockchain ===
       # Transaction fee in stroops (100 = 0.00001 XLM)
       - BASE_FEE=100
-      # Horizon API URL (public, for reads)
-      - HORIZON_URL=https://horizon.stellar.org/
-      # Horizon API URL (for writes, can be dedicated server)
-      - HORIZON_URL_RW=https://horizon.stellar.org
+      # Horizon API endpoints, comma-separated, priority order (first = primary).
+      # Suffix "|ro" marks a read-only node: it is never used to submit.
+      - HORIZON_URLS=https://horizon.stellar.org,https://horizon.stellar.lobstr.co
 
       # === Tron Blockchain ===
       - TRON_API_KEY=your_tron_api_key

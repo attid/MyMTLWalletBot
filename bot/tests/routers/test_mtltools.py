@@ -10,6 +10,7 @@ from routers.mtltools import (
 from infrastructure.services.signing_facade import PENDING_SIGNATURE_REQUEST_KEY
 from tests.conftest import (
     RouterTestMiddleware,
+    horizon_url_patch,
     create_callback_update,
     create_message_update,
 )
@@ -151,7 +152,7 @@ async def test_mtltools_data_views_handle_missing_stellar_account(
 
     mock_horizon.set_not_found(UNFUNDED_STELLAR_ACCOUNT)
 
-    with patch("other.stellar_tools.config.horizon_url", horizon_server_config["url"]):
+    with horizon_url_patch(horizon_server_config["url"]):
         await dp.feed_update(
             router_app_context.bot, create_callback_update(123, callback_data)
         )

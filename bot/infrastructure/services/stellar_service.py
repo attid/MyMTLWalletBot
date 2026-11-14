@@ -1,6 +1,5 @@
-from typing import Dict, Any, Optional, List
+from typing import Callable, Dict, Any, Optional, List, TypeVar
 from stellar_sdk import (
-    AiohttpClient,
     ServerAsync,
     TransactionBuilder,
     Asset as SdkAsset,
@@ -12,21 +11,61 @@ from stellar_sdk import (
 from stellar_sdk.exceptions import NotFoundError
 from core.interfaces.services import IStellarService
 from core.domain.value_objects import Asset
+from infrastructure.services.horizon_pool import (
+    ENDPOINT_ROLE_READ,
+    ENDPOINT_ROLE_WRITE,
+    horizon_client,
+    with_horizon_failover,
+)
+
+T = TypeVar("T")
 
 
 class StellarService(IStellarService):
-    def __init__(self, horizon_url: str = "https://horizon-testnet.stellar.org"):
-        self.horizon_url = horizon_url
-        # In a real implementation, we would instantiate the Stellar SDK Server here
-        # e.g. self.server = Server(horizon_url)
+    """Stellar SDK wrapper that always uses the current Horizon endpoint.
+
+    ``horizon_url`` pins a single endpoint and is meant for tests only. Without
+    it every call resolves the URL from the failover pool, so a broken node is
+    skipped instead of serving traffic that nobody can rotate.
+    """
+
+    def __init__(
+        self,
+        horizon_url: Optional[str] = None,
+    ):
+        self._pinned_url = horizon_url.rstrip("/") if horizon_url else None
+
+    @property
+    def horizon_url(self) -> Optional[str]:
+        """Explicitly pinned endpoint, if the service was constructed with one."""
+        return self._pinned_url
+
+    def _server(self, url: str) -> ServerAsync:
+        return ServerAsync(horizon_url=url, client=horizon_client())
+
+    async def _run(
+        self,
+        operation: str,
+        call: Callable[[ServerAsync], Any],
+        *,
+        role: str = ENDPOINT_ROLE_READ,
+    ) -> Any:
+        if self._pinned_url is not None:
+            async with self._server(self._pinned_url) as server:
+                return await call(server)
+
+        async def _attempt(url: str) -> Any:
+            async with self._server(url) as server:
+                return await call(server)
+
+        return await with_horizon_failover(role, operation, _attempt)
 
     async def get_account_details(self, public_key: str) -> Optional[Dict[str, Any]]:
+        async def _call(server: ServerAsync) -> Dict[str, Any]:
+            return await server.accounts().account_id(public_key).call()
+
         try:
-            async with ServerAsync(
-                horizon_url=self.horizon_url, client=AiohttpClient()
-            ) as server:
-                account_resp = await server.accounts().account_id(public_key).call()
-                return account_resp
+            return await self._run("account_details", _call)
         except NotFoundError:
             return None
         except Exception as e:
@@ -34,26 +73,24 @@ class StellarService(IStellarService):
             return None
 
     async def get_selling_offers(self, public_key: str) -> List[Dict[str, Any]]:
+        async def _call(server: ServerAsync) -> List[Dict[str, Any]]:
+            # Limit 200 matches existing logic
+            offers_resp = await server.offers().for_seller(public_key).limit(200).call()
+            return offers_resp["_embedded"]["records"]
+
         try:
-            async with ServerAsync(
-                horizon_url=self.horizon_url, client=AiohttpClient()
-            ) as server:
-                # Limit 200 matches existing logic
-                offers_resp = (
-                    await server.offers().for_seller(public_key).limit(200).call()
-                )
-                return offers_resp["_embedded"]["records"]
+            return await self._run("selling_offers", _call)
         except Exception as e:
             print(f"Error fetching offers {public_key}: {e}")
             return []
 
     async def check_account_exists(self, account_id: str) -> bool:
+        async def _call(server: ServerAsync) -> bool:
+            await server.accounts().account_id(account_id).call()
+            return True
+
         try:
-            async with ServerAsync(
-                horizon_url=self.horizon_url, client=AiohttpClient()
-            ) as server:
-                await server.accounts().account_id(account_id).call()
-                return True
+            return await self._run("check_account_exists", _call)
         except NotFoundError:
             return False
         except Exception as e:
@@ -62,14 +99,13 @@ class StellarService(IStellarService):
 
     async def get_assets_by_issuer(self, issuer_id: str) -> List[Dict[str, Any]]:
         """Fetch assets issued by the given account ID."""
+
+        async def _call(server: ServerAsync) -> List[Dict[str, Any]]:
+            assets_resp = await server.assets().for_issuer(issuer_id).limit(200).call()
+            return assets_resp["_embedded"]["records"]
+
         try:
-            async with ServerAsync(
-                horizon_url=self.horizon_url, client=AiohttpClient()
-            ) as server:
-                assets_resp = (
-                    await server.assets().for_issuer(issuer_id).limit(200).call()
-                )
-                return assets_resp["_embedded"]["records"]
+            return await self._run("assets_by_issuer", _call)
         except Exception as e:
             print(f"Error fetching assets for issuer {issuer_id}: {e}")
             return []
@@ -86,11 +122,11 @@ class StellarService(IStellarService):
         cancel_offers: bool = False,
         create_account: bool = False,
     ) -> str:
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
+        async def _load(server: ServerAsync) -> Any:
             # Load source account for sequence number
-            source_account = await server.load_account(source_account_id)
+            return await server.load_account(source_account_id)
+
+        source_account = await self._run("load_account", _load)
 
         from stellar_sdk import TransactionBuilder, Asset, Network
 
@@ -160,16 +196,15 @@ class StellarService(IStellarService):
         return transaction.build().to_xdr()
 
     async def submit_transaction(self, xdr: str) -> Dict[str, Any]:
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
+        async def _call(server: ServerAsync) -> Dict[str, Any]:
             from stellar_sdk import TransactionEnvelope, Network
 
             transaction = TransactionEnvelope.from_xdr(
                 xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
             )
-            response = await server.submit_transaction(transaction)
-            return response
+            return await server.submit_transaction(transaction)
+
+        return await self._run("submit_transaction", _call, role=ENDPOINT_ROLE_WRITE)
 
     async def swap_assets(
         self,
@@ -183,10 +218,11 @@ class StellarService(IStellarService):
         cancel_offers: bool = False,
     ) -> str:
         source_id = source_account_id
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
-            source_account = await server.load_account(source_id)
+
+        async def _load(server: ServerAsync) -> Any:
+            return await server.load_account(source_id)
+
+        source_account = await self._run("load_account", _load)
 
         from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
 
@@ -270,10 +306,11 @@ class StellarService(IStellarService):
         offer_id: int = 0,
     ) -> str:
         source_id = source_account_id
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
-            source_account = await server.load_account(source_id)
+
+        async def _load(server: ServerAsync) -> Any:
+            return await server.load_account(source_id)
+
+        source_account = await self._run("load_account", _load)
 
         from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
 
@@ -358,10 +395,10 @@ class StellarService(IStellarService):
     async def build_transaction(
         self, source_public_key: str, operations: list, memo: Optional[str] = None
     ):
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
-            account = await server.load_account(source_public_key)
+        async def _load(server: ServerAsync) -> Any:
+            return await server.load_account(source_public_key)
+
+        account = await self._run("load_account", _load)
 
         tx_builder = TransactionBuilder(
             source_account=account,
@@ -385,10 +422,11 @@ class StellarService(IStellarService):
         limit: Optional[str] = None,
     ) -> str:
         source_id = source_account_id
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
-            source_account = await server.load_account(source_id)
+
+        async def _load(server: ServerAsync) -> Any:
+            return await server.load_account(source_id)
+
+        source_account = await self._run("load_account", _load)
 
         from stellar_sdk import TransactionBuilder, Asset as SdkAsset, Network
 
@@ -412,10 +450,11 @@ class StellarService(IStellarService):
         self, source_account_id: str, data: Dict[str, Optional[str]]
     ) -> str:
         source_id = source_account_id
-        async with ServerAsync(
-            horizon_url=self.horizon_url, client=AiohttpClient()
-        ) as server:
-            source_account = await server.load_account(source_id)
+
+        async def _load(server: ServerAsync) -> Any:
+            return await server.load_account(source_id)
+
+        source_account = await self._run("load_account", _load)
 
         transaction = TransactionBuilder(
             source_account=source_account,
@@ -441,31 +480,29 @@ class StellarService(IStellarService):
                 return SdkAsset.native()
             return SdkAsset(a.code, a.issuer)
 
+        async def _call(server: ServerAsync) -> List[Asset]:
+            call_result = await server.strict_send_paths(
+                source_asset=to_sdk_asset(source_asset),
+                source_amount=source_amount,
+                destination=[to_sdk_asset(destination_asset)],
+            ).call()
+
+            records = call_result.get("_embedded", {}).get("records", [])
+            if not records:
+                return []
+
+            # Take first path
+            path_record = records[0].get("path", [])
+            result = []
+            for record in path_record:
+                if record["asset_type"] == "native":
+                    result.append(Asset("XLM", None))
+                else:
+                    result.append(Asset(record["asset_code"], record["asset_issuer"]))
+            return result
+
         try:
-            async with ServerAsync(
-                horizon_url=self.horizon_url, client=AiohttpClient()
-            ) as server:
-                call_result = await server.strict_send_paths(
-                    source_asset=to_sdk_asset(source_asset),
-                    source_amount=source_amount,
-                    destination=[to_sdk_asset(destination_asset)],
-                ).call()
-
-                records = call_result.get("_embedded", {}).get("records", [])
-                if not records:
-                    return []
-
-                # Take first path
-                path_record = records[0].get("path", [])
-                result = []
-                for record in path_record:
-                    if record["asset_type"] == "native":
-                        result.append(Asset("XLM", None))
-                    else:
-                        result.append(
-                            Asset(record["asset_code"], record["asset_issuer"])
-                        )
-                return result
+            return await self._run("strict_send_paths", _call)
         except Exception as e:
             # logger not imported, silent fail or print
             print(f"Error extracting path: {e}")

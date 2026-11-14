@@ -13,8 +13,11 @@ from core.models.anchor_asset import (
     SepProtocol,
     SepProtocolSupport,
 )
-from other.config_reader import config
 from other.web_tools import http_session_manager
+from infrastructure.services.horizon_pool import (
+    ENDPOINT_ROLE_READ,
+    get_horizon_pool,
+)
 
 
 FetchJson = Callable[[str], Awaitable[dict[str, Any]]]
@@ -79,7 +82,7 @@ class AnchorDiscoveryService:
     ) -> None:
         self._fetch_json = fetch_json or self._default_fetch_json
         self._fetch_text = fetch_text or self._default_fetch_text
-        self._horizon_url = (horizon_url or config.horizon_url).rstrip("/")
+        self._horizon_url_override = horizon_url.rstrip("/") if horizon_url else None
         self._ttl = ttl
         self._negative_ttl = negative_ttl
         self._request_timeout = request_timeout
@@ -97,6 +100,17 @@ class AnchorDiscoveryService:
         self._protocol_info_locks: dict[str, asyncio.Lock] = {}
         # True when the last `discover_assets` call ran out of its total budget.
         self.last_call_truncated = False
+
+    def _horizon_url(self) -> str:
+        """Current Horizon endpoint.
+
+        Anchor data is cached for a TTL, but the endpoint itself must be the one
+        that is live right now: a pinned or import-time URL would silently keep
+        serving a node the failover pool already abandoned.
+        """
+        if self._horizon_url_override is not None:
+            return self._horizon_url_override
+        return get_horizon_pool(ENDPOINT_ROLE_READ).current_url().rstrip("/")
 
     async def discover_assets(
         self,
@@ -320,7 +334,7 @@ class AnchorDiscoveryService:
     ) -> tuple["IssuerSepInfo | None", bool]:
         try:
             issuer_account = await self._fetch_with_retry(
-                self._fetch_json, f"{self._horizon_url}/accounts/{issuer}"
+                self._fetch_json, f"{self._horizon_url()}/accounts/{issuer}"
             )
             home_domain = issuer_account.get("home_domain")
             if not home_domain:

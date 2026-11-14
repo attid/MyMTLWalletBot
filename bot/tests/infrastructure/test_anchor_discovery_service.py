@@ -10,6 +10,7 @@ from infrastructure.services.anchor_discovery_service import AnchorDiscoveryServ
 
 
 ISSUER = "GDPKQ2TSNJOFSEE7XSUXPWRP27H6GFGLWD7JCHNEYYWQVGFA543EVBVT"
+OTHER_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
 
 
 class FakeAnchorHttp:
@@ -519,3 +520,44 @@ async def test_progress_reports_completed_assets_per_anchor():
     assert ticks[0] == (0, 3)
     assert ticks[-1] == (3, 3)
     assert all(total == 3 for _, total in ticks)
+
+
+class _StubHorizonPool:
+    """Returns the next URL on every lookup, like a pool that switched nodes."""
+
+    def __init__(self, urls: list[str]) -> None:
+        self._urls = urls
+        self.lookups = 0
+
+    def current_url(self) -> str:
+        url = self._urls[min(self.lookups, len(self._urls) - 1)]
+        self.lookups += 1
+        return url
+
+
+@pytest.mark.asyncio
+async def test_horizon_url_is_resolved_for_every_request(monkeypatch):
+    """Anchor data is cached, but the endpoint must be the one live right now."""
+    seen: list[str] = []
+    pool = _StubHorizonPool(["https://h1.test", "https://h2.test"])
+    monkeypatch.setattr(
+        "infrastructure.services.anchor_discovery_service.get_horizon_pool",
+        lambda role: pool,
+    )
+
+    async def fetch_json(url: str):
+        seen.append(url)
+        return {}
+
+    async def fetch_text(url: str):
+        raise AssertionError(f"unexpected text URL: {url}")
+
+    service = AnchorDiscoveryService(fetch_json=fetch_json, fetch_text=fetch_text)
+
+    await service.discover_asset(Asset("AAA", ISSUER))
+    await service.discover_asset(Asset("BBB", OTHER_ISSUER))
+
+    assert seen == [
+        f"https://h1.test/accounts/{ISSUER}",
+        f"https://h2.test/accounts/{OTHER_ISSUER}",
+    ]

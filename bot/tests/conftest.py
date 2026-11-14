@@ -8,6 +8,7 @@ import pytest
 import socket
 import random
 import json
+from contextlib import contextmanager
 from typing import Optional
 from aiohttp import web
 from aiogram import Dispatcher, Bot, types
@@ -1549,16 +1550,47 @@ async def mock_horizon(horizon_server_config):
 
     print(f"[MockHorizon] Started on {horizon_server_config['url']}")
 
+    from infrastructure.services.horizon_pool import reset_horizon_pools
     from other.config_reader import config
 
-    old_horizon_url = config.horizon_url
-    old_horizon_url_rw = config.horizon_url_rw
-    config.horizon_url = horizon_server_config["url"]
-    config.horizon_url_rw = horizon_server_config["url"]
+    old_horizon_endpoints = list(config.horizon_endpoints)
+    config.horizon_endpoints = [horizon_server_config["url"]]
+    reset_horizon_pools()
 
     yield state
 
-    config.horizon_url = old_horizon_url
-    config.horizon_url_rw = old_horizon_url_rw
+    config.horizon_endpoints = old_horizon_endpoints
+    reset_horizon_pools()
     await runner.cleanup()
     print("[MockHorizon] Stopped")
+
+
+@contextmanager
+def horizon_url_patch(url: str):
+    """Point the Horizon pool at ``url`` for the duration of the block.
+
+    Replaces ``patch("other.config_reader.config.horizon_url", url)``: the
+    endpoint is no longer read from config on every call site, it comes from the
+    pool, and the pool is what tests have to steer.
+    """
+    from infrastructure.services.horizon_pool import reset_horizon_pools
+    from other.config_reader import config
+
+    previous = list(config.horizon_endpoints)
+    config.horizon_endpoints = [url]
+    reset_horizon_pools()
+    try:
+        yield
+    finally:
+        config.horizon_endpoints = previous
+        reset_horizon_pools()
+
+
+@pytest.fixture(autouse=True)
+def reset_horizon_pool_between_tests():
+    """Cooldowns and incidents are per-process state: never leak them across tests."""
+    from infrastructure.services.horizon_pool import reset_horizon_pools
+
+    reset_horizon_pools()
+    yield
+    reset_horizon_pools()

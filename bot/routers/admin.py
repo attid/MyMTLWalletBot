@@ -36,7 +36,7 @@ from db.models import (
     MyMtlWalletBotCheque,
     MyMtlWalletBotLog,
 )
-from other.config_reader import config, horizont_urls
+from other.config_reader import config
 
 # from other.global_data import global_data
 from other.stellar_tools import async_stellar_check_fee
@@ -490,34 +490,6 @@ async def cmd_resync(message: types.Message, app_context: AppContext):
             await message.reply("⚠️ Notification service not available")
 
 
-@router.message(Command(commands=["horizon"]))
-async def cmd_horizon(message: types.Message, state: FSMContext, session: AsyncSession):
-    if message.from_user and message.from_user.username == "itolstov":
-        if config.horizon_url in horizont_urls:
-            config.horizon_url = horizont_urls[
-                (horizont_urls.index(config.horizon_url) + 1) % len(horizont_urls)
-            ]
-        else:
-            horizont_urls.append(config.horizon_url)
-            config.horizon_url = horizont_urls[0]
-        await message.reply(f"Horizon url: {config.horizon_url}")
-
-
-@router.message(Command(commands=["horizon_rw"]))
-async def cmd_horizon_rw(
-    message: types.Message, state: FSMContext, session: AsyncSession
-):
-    if message.from_user and message.from_user.username == "itolstov":
-        if config.horizon_url_rw in horizont_urls:
-            config.horizon_url_rw = horizont_urls[
-                (horizont_urls.index(config.horizon_url_rw) + 1) % len(horizont_urls)
-            ]
-        else:
-            horizont_urls.append(config.horizon_url_rw)
-            config.horizon_url_rw = horizont_urls[0]
-        await message.reply(f"Horizon url: {config.horizon_url_rw}")
-
-
 async def cmd_send_file(bot: Bot, message: types.Message, filename):
     if os.path.isfile(filename):
         await bot.send_document(message.chat.id, types.FSInputFile(filename))
@@ -889,7 +861,6 @@ async def cmd_help(message: types.Message):
         "/stats — общая статистика\n"
         "/fee — комиссия сети\n"
         "/log | /err | /clear — логи/очистка\n"
-        "/horizon | /horizon_rw — переключить horizon\n"
         "/user_wallets @user_or_id — кошельки пользователя\n"
         "/reset_user @user_or_id — сброс пользователя (кошельки soft-delete)\n"
         "/address_info address — найти владельца адреса\n"

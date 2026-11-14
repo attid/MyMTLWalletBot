@@ -77,6 +77,22 @@ queue and at-least-once delivery trade-off. See
 `adr/0002-worker-owned-notification-flow-completion.md` for hold-generation
 keys, update-entry fencing, bounded worker tasks, and heartbeat ownership.
 
+## Horizon Failover
+
+Every Stellar call resolves the Horizon endpoint from
+`infrastructure/services/horizon_pool.py` at call time: a per-process pool with
+cooldowns, sticky routing, flap freeze and a per-call retry budget. Components
+must never store the URL (a guard test enforces this). Failover triggers only on
+transport errors/timeouts, HTTP 5xx and HTTP 429; business errors from Horizon
+pass through unchanged. Endpoints come exclusively from the required
+`HORIZON_URLS` config value (`|ro` marks read-only nodes, which are skipped for
+submission). The manual `/horizon` commands were removed on purpose: switching
+the endpoint is configuration plus restart, and the admin learns about automatic
+switches from alerts and `event=horizon_failover` logs.
+
+See `adr/0004-horizon-failover.md` for the decision and
+`docs/runbooks/horizon-failover.md` for the operator flow.
+
 ## Decision Record Policy
 
 Any architecture-level change should be documented via a new ADR file under

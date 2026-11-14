@@ -190,14 +190,6 @@ async def set_commands(bot: Bot):
             command="fee",
             description="check fee",
         ),
-        BotCommand(
-            command="horizon",
-            description="change horizon",
-        ),
-        BotCommand(
-            command="horizon_rw",
-            description="change horizon_rw",
-        ),
     ]
 
     await bot.set_my_commands(commands=commands_clear, scope=BotCommandScopeDefault())
@@ -398,7 +390,11 @@ async def main():
     await localization_service.load_languages(f"{config.start_path}/langs/")
 
     repository_factory = SqlAlchemyRepositoryFactory()
-    stellar_service = StellarService(horizon_url=config.horizon_url)
+    from infrastructure.services.horizon_alerts import HorizonAdminAlerter
+    from infrastructure.services.horizon_pool import setup_horizon_pools
+
+    setup_horizon_pools(HorizonAdminAlerter(bot, config.admins[0]).notify)
+    stellar_service = StellarService()
     encryption_service = EncryptionService()
     stellar_sealedbox_service = StellarSealedBoxService()
     ton_service = TonService()
