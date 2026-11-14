@@ -41,10 +41,10 @@ pytestmark = [pytest.mark.external, pytest.mark.testnet]
 @pytest.fixture(autouse=True)
 def detach_routers():
     """Routers are module-level singletons; a dispatcher cannot adopt them twice."""
-    from routers import add_wallet, send, sign
+    from routers import add_wallet, receive, send, sign, swap, trade
 
     yield
-    for module in (add_wallet, send, sign):
+    for module in (add_wallet, receive, send, sign, swap, trade):
         router = module.router
         if router.parent_router:
             router._parent_router = None
