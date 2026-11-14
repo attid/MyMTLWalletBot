@@ -211,7 +211,10 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
     if app_context.notification_service:
         await app_context.notification_service.start_server()
 
-    if config.test_mode:
+    if config.disable_workers:
+        logger.info("Background workers disabled by config (disable_workers)")
+        task_list = []
+    elif config.test_mode:
         task_list = [
             # asyncio.create_task(cheque_worker(app_context)),
             # asyncio.create_task(log_worker(app_context)),
@@ -233,7 +236,7 @@ async def on_startup(bot: Bot, dispatcher: Dispatcher):
                 )
             )
 
-    if app_context.notification_delivery_worker:
+    if app_context.notification_delivery_worker and not config.disable_workers:
         task_list.append(
             asyncio.create_task(
                 app_context.notification_delivery_worker.run(),
@@ -482,7 +485,10 @@ async def main():
     dp["app_context"] = app_context
 
     setup_async_utils(bot, config.admins[0])
-    scheduler_jobs(scheduler, db_pool, dp, app_context)
+    if config.disable_scheduler:
+        logger.info("Scheduler disabled by config (disable_scheduler)")
+    else:
+        scheduler_jobs(scheduler, db_pool, dp, app_context)
 
     await bot_add_routers(bot, dp, db_pool, app_context, localization_service)
 

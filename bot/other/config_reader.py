@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     ton_token: str
     wallet_cost: float
     test_mode: bool = True
+    # E2E harness switches: default keeps production behaviour (workers running).
+    disable_workers: bool = False
+    disable_scheduler: bool = False
     admins: list = []
 
     # Master Key Encryption Password (defaults to "0" for backward compatibility)
