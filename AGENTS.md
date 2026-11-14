@@ -76,6 +76,20 @@ an index. Detailed rules live in `docs/`.
    still sits in `active/`. Do not include a "push" item in plans — pushing is
    the owner's exclusive action and stays outside plan scope.
 
+## Push And Image Rollout
+- Pushing is the owner's action; do it only on an explicit request ("пуш").
+  Push once, then verify the result.
+- After a push, the owner waits for the Docker image, not for the commit. Wait
+  for the `CI` workflow's `publish-images` job and report when the image is
+  published (or that the run failed, with the job/step and the reason).
+- The rollout watcher: `gh run list --json databaseId,headSha,status`, then
+  `gh run view <id> --json status,conclusion,jobs` until `completed`; the image
+  tag is `ghcr.io/attid/mmwb:latest` (plus `mmwb-webapp:latest`). Verify that
+  `headSha` matches the pushed commit.
+- If CI is still running, keep polling instead of answering "pushed, done".
+- Never suggest or describe a local `docker build` / `docker compose build` for
+  a rollout: the shipped artifact is the CI-published image.
+
 ## Pre-Commit Guardrail
 - Enable local hook path once per clone:
   `git config core.hooksPath .githooks`
