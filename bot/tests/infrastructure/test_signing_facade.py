@@ -161,3 +161,117 @@ async def test_request_pending_signature_loads_request_and_prompts_user():
     assert result.status is SignatureStatus.PENDING_USER
     prompt_signature.assert_awaited_once()
     state.update_data.assert_awaited()
+
+
+def _free_wallet_context(*, check_result="CHECKED_XDR", policy_error=None):
+    app_context = MagicMock()
+    service = AsyncMock()
+    service.is_free_wallet = AsyncMock(return_value=True)
+    if policy_error is not None:
+        service.check_xdr = AsyncMock(side_effect=policy_error)
+    else:
+        service.check_xdr = AsyncMock(return_value=check_result)
+    app_context.stellar_service = service
+    wallet = MagicMock()
+    wallet.public_key = "GFREEWALLET"
+    app_context.repository_factory.get_wallet_repository.return_value.get_default_wallet = AsyncMock(
+        return_value=wallet
+    )
+    return app_context, service
+
+
+@pytest.mark.asyncio
+async def test_free_wallet_policy_rejection_blocks_the_prompt(monkeypatch):
+    from other.stellar_tools import FreeWalletPolicyError
+    from infrastructure.utils import telegram_utils
+
+    sent = []
+    monkeypatch.setattr(
+        telegram_utils,
+        "send_message",
+        AsyncMock(side_effect=lambda *args, **kwargs: sent.append(args)),
+    )
+    monkeypatch.setattr(telegram_utils, "clear_state", AsyncMock())
+    monkeypatch.setattr(telegram_utils, "my_gettext", lambda *a, **kw: "rejected")
+    monkeypatch.setattr(
+        telegram_utils,
+        "get_kb_return",
+        lambda *a, **kw: None,
+    )
+
+    app_context, service = _free_wallet_context(
+        policy_error=FreeWalletPolicyError("payment", "cannot spend native XLM")
+    )
+    state = MagicMock()
+    state.update_data = AsyncMock()
+    prompt = AsyncMock()
+    facade = SigningFacade(prompt_signature=prompt)
+
+    result = await facade.request_signature(
+        session=object(),
+        state=state,
+        request=SignatureRequest(
+            user_id=1,
+            wallet_address="GFREEWALLET",
+            xdr="PAYMENT_XDR",
+            mode=SignatureMode.SIGN_AND_SUBMIT,
+        ),
+        app_context=app_context,
+    )
+
+    assert result.status is SignatureStatus.REJECTED
+    prompt.assert_not_awaited()
+    state.update_data.assert_not_awaited()
+    assert sent, "the user must be told why nothing was signed"
+    service.check_xdr.assert_awaited_once_with(
+        "PAYMENT_XDR", for_free_account=True, free_wallet_public_key="GFREEWALLET"
+    )
+
+
+@pytest.mark.asyncio
+async def test_free_wallet_checked_xdr_is_used_for_signing():
+    app_context, service = _free_wallet_context(check_result="CHECKED_XDR")
+    state = MagicMock()
+    state.update_data = AsyncMock()
+    state.set_state = AsyncMock()
+    prompt = AsyncMock()
+    facade = SigningFacade(prompt_signature=prompt)
+
+    await facade.request_signature(
+        session=object(),
+        state=state,
+        request=SignatureRequest(
+            user_id=1,
+            wallet_address="GFREEWALLET",
+            xdr="ORIGINAL_XDR",
+        ),
+        app_context=app_context,
+    )
+
+    assert state.update_data.await_args.kwargs["xdr"] == "CHECKED_XDR"
+    service.check_xdr.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_non_free_wallet_skips_the_policy_check():
+    app_context = MagicMock()
+    service = AsyncMock()
+    service.is_free_wallet = AsyncMock(return_value=False)
+    service.check_xdr = AsyncMock()
+    app_context.stellar_service = service
+    state = MagicMock()
+    state.update_data = AsyncMock()
+    state.set_state = AsyncMock()
+    facade = SigningFacade(prompt_signature=AsyncMock())
+
+    await facade.request_signature(
+        session=object(),
+        state=state,
+        request=SignatureRequest(
+            user_id=1, wallet_address="GPAIDWALLET", xdr="PAYMENT_XDR"
+        ),
+        app_context=app_context,
+    )
+
+    service.check_xdr.assert_not_awaited()
+    assert state.update_data.await_args.kwargs["xdr"] == "PAYMENT_XDR"

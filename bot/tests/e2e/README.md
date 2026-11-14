@@ -45,9 +45,8 @@ HORIZON_URLS=https://horizon.stellar.org \
 
 ## Найденные E2E дефекты
 
-- **Свободный кошелёк может отправить XLM через мастер отправки** (`/send` →
-  подтверждение → PIN). Политика free-wallet применяется только в
-  `cmd_check_xdr` (вставка XDR / URI / sign_tools), а `SigningFacade`
-  подписывает XDR без проверки. Тест
-  `test_free_wallet_cannot_send_native_xlm` помечен `xfail(strict=True)` и
-  станет зелёным, когда проверку добавят в фасад.
+- **Свободный кошелёк мог отправить XLM через мастер отправки** (`/send` →
+  подтверждение → PIN): политика free-wallet применялась только в
+  `cmd_check_xdr`, а `SigningFacade` подписывал XDR без проверки. Срез
+  `signing-facade-free-wallet-guard` перенёс проверку в фасад — теперь
+  `test_free_wallet_cannot_send_native_xlm` зелёный.

@@ -71,10 +71,6 @@ async def test_imported_wallet_sends_xlm_on_testnet(
     assert round(after - before, 7) == pytest.approx(2.0, abs=1e-6)
 
 
-@pytest.mark.xfail(
-    reason="free-wallet policy is enforced only in cmd_check_xdr, not in SigningFacade",
-    strict=True,
-)
 @pytest.mark.asyncio
 async def test_free_wallet_cannot_send_native_xlm(
     mock_telegram,
@@ -107,7 +103,8 @@ async def test_free_wallet_cannot_send_native_xlm(
 
     texts = [
         request["data"]["text"]
-        for request in get_telegram_request(mock_telegram, "sendMessage", last=False)
-        or []
+        for method in ("sendMessage", "editMessageText")
+        for request in get_telegram_request(mock_telegram, method, last=False) or []
+        if "text" in request["data"]
     ]
     assert any("free-wallet policy" in text for text in texts), texts[-3:]

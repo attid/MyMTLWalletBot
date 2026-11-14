@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any
 
 from aiogram.fsm.context import FSMContext
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.services.app_context import AppContext
@@ -40,6 +41,8 @@ class SignatureStatus(str, Enum):
     """Immediate status returned after initiating a signature request."""
 
     PENDING_USER = "pending_user"
+    # Rejected before the user was asked to sign (free-wallet policy, bad XDR).
+    REJECTED = "rejected"
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,15 @@ PromptSignature = Callable[
 ]
 
 
+def _replace_xdr(request: SignatureRequest, xdr: str) -> SignatureRequest:
+    """Copy a request with a (possibly rewritten) XDR."""
+    if xdr == request.xdr:
+        return request
+    data = request.to_state_data()
+    data["xdr"] = xdr
+    return SignatureRequest.from_state_data(data)
+
+
 class SigningFacade:
     """Starts legacy signing flow through an explicit request contract."""
 
@@ -130,6 +142,19 @@ class SigningFacade:
         app_context: AppContext,
     ) -> SignatureResult:
         """Store the legacy FSM signing contract and prompt the user."""
+        checked_xdr = await self._apply_free_wallet_policy(
+            session=session,
+            request=request,
+            state=state,
+            app_context=app_context,
+        )
+        if checked_xdr is None:
+            return SignatureResult(
+                status=SignatureStatus.REJECTED,
+                correlation_id=request.correlation_id,
+            )
+        request = _replace_xdr(request, checked_xdr)
+
         await state.update_data(
             xdr=request.xdr,
             operation=request.operation,
@@ -183,6 +208,81 @@ class SigningFacade:
             request=request,
             app_context=app_context,
         )
+
+    async def _apply_free_wallet_policy(
+        self,
+        *,
+        session: AsyncSession,
+        request: SignatureRequest,
+        state: FSMContext,
+        app_context: AppContext,
+    ) -> str | None:
+        """Return the XDR to sign, or None when the free-wallet policy rejects it.
+
+        Every signature started through this facade (send, swap, trade, cheque,
+        SEP-10 sign-only, WebApp publishing) must pass the policy from
+        ADR-0003; it used to run only in `cmd_check_xdr`.
+        """
+        from other.stellar_tools import FreeWalletPolicyError
+        from infrastructure.utils.telegram_utils import (
+            clear_state,
+            get_kb_return,
+            my_gettext,
+            send_message,
+        )
+
+        service = app_context.stellar_service
+        try:
+            is_free = await service.is_free_wallet(session, request.user_id)
+        except Exception as exc:  # noqa: BLE001 - a lookup failure must not hide a payment
+            logger.warning(
+                f"signing_facade: free wallet lookup failed for "
+                f"{request.user_id}: {exc}"
+            )
+            is_free = False
+
+        if not is_free:
+            return request.xdr
+
+        free_wallet_public_key = request.wallet_address or None
+        if not free_wallet_public_key:
+            try:
+                repo = app_context.repository_factory.get_wallet_repository(session)
+                wallet = await repo.get_default_wallet(request.user_id)
+                free_wallet_public_key = wallet.public_key if wallet else None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    f"signing_facade: default wallet lookup failed for "
+                    f"{request.user_id}: {exc}"
+                )
+
+        try:
+            checked = await service.check_xdr(
+                request.xdr,
+                for_free_account=True,
+                free_wallet_public_key=free_wallet_public_key,
+            )
+        except FreeWalletPolicyError as exc:
+            logger.info(
+                f"signing_facade: free-wallet policy rejected signature for "
+                f"{request.user_id}: {exc}"
+            )
+            await clear_state(state)
+            await send_message(
+                session,
+                request.user_id,
+                my_gettext(
+                    request.user_id, "bad_xdr_free_wallet", app_context=app_context
+                ),
+                reply_markup=get_kb_return(request.user_id, app_context=app_context),
+                app_context=app_context,
+            )
+            return None
+
+        # `check_xdr` returns None for payloads it cannot parse (e.g. an XDR of
+        # another network); keep the original in that case so the downstream
+        # flow reports it as before.
+        return checked or request.xdr
 
     def _legacy_state_for_mode(self, mode: SignatureMode) -> Any:
         from routers.sign import PinState
