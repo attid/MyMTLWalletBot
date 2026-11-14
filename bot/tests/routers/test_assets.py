@@ -1162,3 +1162,30 @@ async def test_missing_trustline_is_false_for_native_xlm(router_app_context):
         await _missing_trustline(router_app_context, "GPUBLIC", Asset("BTCLN", ISSUER))
         is True
     )
+
+
+@pytest.mark.asyncio
+async def test_assets_command_warns_when_discovery_hit_the_budget(
+    mock_telegram, router_app_context
+):
+    dp = router_app_context.dispatcher
+    dp.message.middleware(RouterTestMiddleware(router_app_context))
+    dp.include_router(assets_router)
+
+    get_balance = MagicMock()
+    get_balance.execute = AsyncMock(
+        return_value=[Balance("BTCLN", ISSUER, "credit_alphanum12", "12000")]
+    )
+    router_app_context.use_case_factory.create_get_wallet_balance.return_value = (
+        get_balance
+    )
+    make_localization(router_app_context)
+    discovery = MagicMock()
+    discovery.discover_assets = AsyncMock(return_value=[make_support()])
+    discovery.last_call_truncated = True
+    router_app_context.anchor_discovery_service = discovery
+
+    await dp.feed_update(router_app_context.bot, create_message_update(123, "/assets"))
+
+    text = get_telegram_request(mock_telegram, "sendMessage")["data"]["text"]
+    assert "sep_assets_partial" in text

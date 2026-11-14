@@ -120,15 +120,16 @@ async def cmd_assets(
         )
         return
 
+    blocks = [
+        _t(message.from_user.id, "sep_assets_disclaimer", app_context),
+        _t(message.from_user.id, "sep_assets_title", app_context),
+    ]
+    if getattr(discovery, "last_call_truncated", False):
+        blocks.append(_t(message.from_user.id, "sep_assets_partial", app_context))
     await send_message(
         session,
         message,
-        "\n\n".join(
-            (
-                _t(message.from_user.id, "sep_assets_disclaimer", app_context),
-                _t(message.from_user.id, "sep_assets_title", app_context),
-            )
-        ),
+        "\n\n".join(blocks),
         reply_markup=assets_list_keyboard(
             supported_assets,
             message.from_user.id,

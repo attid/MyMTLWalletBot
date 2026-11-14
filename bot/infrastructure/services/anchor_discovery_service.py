@@ -21,9 +21,41 @@ FetchJson = Callable[[str], Awaitable[dict[str, Any]]]
 FetchText = Callable[[str], Awaitable[str]]
 
 # Anchors occasionally drop a keep-alive connection on the first request; one
-# retry turns that into a normal answer instead of a missing asset.
+# retry turns that into a normal answer instead of a missing asset. Permanent
+# failures (4xx, unknown host) are never retried.
 FETCH_ATTEMPTS = 2
 FETCH_RETRY_DELAY_SECONDS = 0.4
+
+# Transport-level markers of a failure that will not heal on retry.
+_PERMANENT_ERROR_MARKERS = (
+    "name or service not known",
+    "nodename nor servname",
+    "no address associated",
+    "temporary failure in name resolution",
+    "certificate verify failed",
+)
+
+
+class SepFetchError(Exception):
+    """An anchor/horizon response with an HTTP status."""
+
+    def __init__(self, url: str, status: int) -> None:
+        self.url = url
+        self.status = status
+        super().__init__(f"Unexpected response from {url}: {status}")
+
+
+def is_retryable_failure(exc: BaseException) -> bool:
+    """Only transport errors and 5xx are worth a second request."""
+    status = getattr(exc, "status", None)
+    if isinstance(status, int):
+        return status >= 500
+    text = str(exc).lower()
+    return not any(marker in text for marker in _PERMANENT_ERROR_MARKERS)
+
+
+def is_permanent_failure(exc: BaseException) -> bool:
+    return not is_retryable_failure(exc)
 
 
 class AnchorDiscoveryService:
@@ -38,7 +70,8 @@ class AnchorDiscoveryService:
         ttl: timedelta = timedelta(hours=1),
         negative_ttl: timedelta = timedelta(seconds=60),
         request_timeout: float = 15.0,
-        summary_timeout: float = 18.0,
+        summary_timeout: float = 10.0,
+        total_timeout: float = 10.0,
         list_concurrency: int = 3,
     ) -> None:
         self._fetch_json = fetch_json or self._default_fetch_json
@@ -48,16 +81,19 @@ class AnchorDiscoveryService:
         self._negative_ttl = negative_ttl
         self._request_timeout = request_timeout
         self._summary_timeout = summary_timeout
+        self._total_timeout = total_timeout
         self._list_concurrency = max(1, list_concurrency)
         self._cache: dict[
-            tuple[str, str], tuple[datetime, AnchorAssetSupport | None]
+            tuple[str, str], tuple[datetime, AnchorAssetSupport | None, bool]
         ] = {}
-        self._issuer_cache: dict[str, tuple[datetime, IssuerSepInfo | None]] = {}
+        self._issuer_cache: dict[str, tuple[datetime, IssuerSepInfo | None, bool]] = {}
         self._issuer_locks: dict[str, asyncio.Lock] = {}
         self._protocol_info_cache: dict[
-            str, tuple[datetime, dict[str, Any] | None]
+            str, tuple[datetime, dict[str, Any] | None, bool]
         ] = {}
         self._protocol_info_locks: dict[str, asyncio.Lock] = {}
+        # True when the last `discover_assets` call ran out of its total budget.
+        self.last_call_truncated = False
 
     async def discover_assets(self, assets: list[Asset]) -> list[AnchorAssetSupport]:
         """Discover SEP support for many assets, one anchor chain per issuer.
@@ -102,16 +138,28 @@ class AnchorDiscoveryService:
                     )
                     return []
 
-        batches = await asyncio.gather(
-            *(discover_group(issuer, group) for issuer, group in groups.items()),
-            return_exceptions=True,
-        )
+        self.last_call_truncated = False
+        tasks = {
+            asyncio.create_task(discover_group(issuer, group)): issuer
+            for issuer, group in groups.items()
+        }
+        done, pending = await asyncio.wait(tasks, timeout=self._total_timeout)
+        for task in pending:
+            task.cancel()
+        if pending:
+            self.last_call_truncated = True
+            logger.warning(
+                "SEP discovery hit the total budget "
+                f"({self._total_timeout:g}s), skipped anchors: "
+                + ", ".join(tasks[task] for task in pending)
+            )
+            await asyncio.gather(*pending, return_exceptions=True)
 
         found: dict[tuple[str, str], AnchorAssetSupport] = {}
-        for batch in batches:
-            if isinstance(batch, Exception):
-                logger.warning(f"SEP anchor discovery failed: {batch}")
+        for task in done:
+            if task.cancelled():
                 continue
+            batch = task.result()
             for support in batch:
                 if support.supported_protocols:
                     found[(support.asset.code, support.asset.issuer or "")] = support
@@ -179,12 +227,13 @@ class AnchorDiscoveryService:
 
         cache_key = (asset.code, asset.issuer)
         cached = self._cache.get(cache_key)
-        if cached and self._is_fresh(*cached):
+        if cached and self._is_fresh(cached):
             return cached[1]
 
         supports = await self.discover_anchor_assets(asset.issuer, [asset])
         support = supports[0] if supports else None
-        self._cache[cache_key] = (datetime.now(UTC), support)
+        permanent = support is None and self._last_failure_permanent()
+        self._cache[cache_key] = (datetime.now(UTC), support, permanent)
         return support
 
     async def _fetch_with_retry(self, fetch, url: str):
@@ -195,45 +244,58 @@ class AnchorDiscoveryService:
                 return await fetch(url)
             except Exception as exc:  # noqa: BLE001 - retried, then re-raised
                 last_error = exc
+                if not is_retryable_failure(exc):
+                    raise
                 if attempt + 1 < FETCH_ATTEMPTS:
                     logger.debug(f"SEP fetch retry for {url}: {exc!r}")
                     await asyncio.sleep(FETCH_RETRY_DELAY_SECONDS)
         assert last_error is not None
         raise last_error
 
-    def _is_fresh(self, cached_at: datetime, value: Any) -> bool:
-        """Cache lifetime: full TTL for a hit, short TTL for a failed lookup.
+    def _is_fresh(self, entry: tuple[datetime, Any, bool]) -> bool:
+        """Cache lifetime: full TTL for a hit, short TTL for a transient failure.
 
-        A transient anchor failure must not hide an asset for an hour, otherwise
-        a single slow `/info` response drops the asset from `/assets` until the
-        process restarts.
+        A permanent failure (unknown issuer, 404 toml) is final and is cached for
+        the full TTL; a transient one (timeout, dropped connection) is retried
+        after `negative_ttl` so a single slow response does not hide the asset.
         """
-        ttl = self._ttl if value is not None else self._negative_ttl
+        cached_at, value, permanent = entry
+        if value is not None:
+            return datetime.now(UTC) - cached_at <= self._ttl
+        ttl = self._ttl if permanent else self._negative_ttl
         return datetime.now(UTC) - cached_at <= ttl
+
+    def _last_failure_permanent(self) -> bool:
+        entries = [entry for entry in self._issuer_cache.values() if entry[1] is None]
+        return bool(entries) and all(entry[2] for entry in entries)
 
     async def _discover_issuer(self, issuer: str) -> "IssuerSepInfo | None":
         cached = self._issuer_cache.get(issuer)
-        if cached and self._is_fresh(*cached):
+        if cached and self._is_fresh(cached):
             return cached[1]
 
         lock = self._issuer_locks.setdefault(issuer, asyncio.Lock())
         async with lock:
             cached = self._issuer_cache.get(issuer)
-            if cached and self._is_fresh(*cached):
+            if cached and self._is_fresh(cached):
                 return cached[1]
 
-            info = await self._discover_issuer_uncached(issuer)
-            self._issuer_cache[issuer] = (datetime.now(UTC), info)
+            info, permanent = await self._discover_issuer_uncached(issuer)
+            self._issuer_cache[issuer] = (datetime.now(UTC), info, permanent)
             return info
 
-    async def _discover_issuer_uncached(self, issuer: str) -> "IssuerSepInfo | None":
+    async def _discover_issuer_uncached(
+        self, issuer: str
+    ) -> tuple["IssuerSepInfo | None", bool]:
         try:
             issuer_account = await self._fetch_with_retry(
                 self._fetch_json, f"{self._horizon_url}/accounts/{issuer}"
             )
             home_domain = issuer_account.get("home_domain")
             if not home_domain:
-                return None
+                # The issuer account exists but publishes no home domain; that
+                # will not change, so cache it like a final answer.
+                return None, True
 
             toml_text = await self._fetch_with_retry(
                 self._fetch_text, f"https://{home_domain}/.well-known/stellar.toml"
@@ -244,16 +306,19 @@ class AnchorDiscoveryService:
             web_auth_endpoint = toml_data.get("WEB_AUTH_ENDPOINT")
             signing_key = toml_data.get("SIGNING_KEY")
 
-            return IssuerSepInfo(
-                home_domain=home_domain,
-                web_auth_endpoint=web_auth_endpoint,
-                signing_key=signing_key if isinstance(signing_key, str) else None,
-                sep6_url=sep6_url.rstrip("/") if sep6_url else None,
-                sep24_url=sep24_url.rstrip("/") if sep24_url else None,
+            return (
+                IssuerSepInfo(
+                    home_domain=home_domain,
+                    web_auth_endpoint=web_auth_endpoint,
+                    signing_key=signing_key if isinstance(signing_key, str) else None,
+                    sep6_url=sep6_url.rstrip("/") if sep6_url else None,
+                    sep24_url=sep24_url.rstrip("/") if sep24_url else None,
+                ),
+                False,
             )
         except Exception as exc:
             logger.warning(f"SEP issuer discovery failed for {issuer}: {exc!r}")
-            return None
+            return None, is_permanent_failure(exc)
 
     async def _load_protocol_info(
         self, transfer_server: str | None
@@ -262,29 +327,34 @@ class AnchorDiscoveryService:
             return None
         transfer_server = transfer_server.rstrip("/")
         cached = self._protocol_info_cache.get(transfer_server)
-        if cached and self._is_fresh(*cached):
+        if cached and self._is_fresh(cached):
             return cached[1]
 
         lock = self._protocol_info_locks.setdefault(transfer_server, asyncio.Lock())
         async with lock:
             cached = self._protocol_info_cache.get(transfer_server)
-            if cached and self._is_fresh(*cached):
+            if cached and self._is_fresh(cached):
                 return cached[1]
 
-            info = await self._load_protocol_info_uncached(transfer_server)
-            self._protocol_info_cache[transfer_server] = (datetime.now(UTC), info)
+            info, permanent = await self._load_protocol_info_uncached(transfer_server)
+            self._protocol_info_cache[transfer_server] = (
+                datetime.now(UTC),
+                info,
+                permanent,
+            )
             return info
 
     async def _load_protocol_info_uncached(
         self, transfer_server: str
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any] | None, bool]:
         try:
-            return await self._fetch_with_retry(
+            info = await self._fetch_with_retry(
                 self._fetch_json, f"{transfer_server}/info"
             )
+            return info, False
         except Exception as exc:
             logger.warning(f"SEP info discovery failed for {transfer_server}: {exc!r}")
-            return None
+            return None, is_permanent_failure(exc)
 
     def _protocol_support_from_info(
         self,
@@ -364,7 +434,7 @@ class AnchorDiscoveryService:
             timeout=self._request_timeout,
         )
         if response.status >= 400 or not isinstance(response.data, dict):
-            raise ValueError(f"Unexpected JSON response from {url}: {response.status}")
+            raise SepFetchError(url, response.status)
         return response.data
 
     async def _default_fetch_text(self, url: str) -> str:
@@ -373,7 +443,7 @@ class AnchorDiscoveryService:
             timeout=self._request_timeout,
         )
         if response.status >= 400 or not isinstance(response.data, str):
-            raise ValueError(f"Unexpected text response from {url}: {response.status}")
+            raise SepFetchError(url, response.status)
         return response.data
 
 

@@ -1585,3 +1585,41 @@ def test_webhook_failure_is_reported_to_sentry(notification_service, monkeypatch
     notification_service._report_webhook_error(error)
 
     assert captured == [error]
+
+
+@pytest.mark.asyncio
+async def test_liquidity_pool_trades_do_not_crash_the_webhook(notification_service):
+    """Regression: AMM trades carry no `order_book` seller (UnboundLocalError)."""
+    session = AsyncMock()
+    session.execute.return_value = MagicMock(
+        scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+    )
+    notification_service.db_pool = TrackingDbPool(session)
+
+    bundles = []
+
+    async def capture_bundles(**kwargs):
+        bundles.append(kwargs)
+
+    notification_service._send_trade_bundles = capture_bundles
+
+    payload = {
+        "id": "payload-amm",
+        "operation": {
+            "id": "op-amm",
+            "type": "path_payment_strict_send",
+            "source_account": "GFROM" + "A" * 51,
+            "trades": [
+                {"type": "liquidity_pool", "liquidity_pool_id": "pool-1"},
+                {"type": "liquidity_pool", "liquidity_pool_id": "pool-2"},
+            ],
+        },
+        "transaction": {"hash": "tx-amm"},
+    }
+
+    await notification_service.process_notification(payload)
+
+    # Empty bundle: the helper is called but with nothing to deliver.
+    assert len(bundles) == 1
+    assert bundles[0]["bundled"] == {}
+    assert bundles[0]["maker_wallets"] == []

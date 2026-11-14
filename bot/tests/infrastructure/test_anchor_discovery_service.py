@@ -375,3 +375,123 @@ async def test_transient_failure_is_retried_after_negative_ttl():
 
     assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
     assert await service.discover_asset(Asset("BTCLN", ISSUER)) is not None
+
+
+class StatusAnchorHttp(FakeAnchorHttp):
+    """First toml/info request fails with the given exception."""
+
+    def __init__(self, exc: Exception):
+        super().__init__()
+        self.exc = exc
+        self.remaining = 1
+
+    async def fetch_text(self, url: str):
+        if url.endswith("stellar.toml") and self.remaining:
+            self.remaining -= 1
+            self.calls[url] += 1
+            raise self.exc
+        return await super().fetch_text(url)
+
+
+@pytest.mark.asyncio
+async def test_permanent_failure_is_not_retried():
+    from infrastructure.services.anchor_discovery_service import SepFetchError
+
+    fake_http = StatusAnchorHttp(SepFetchError("https://x/toml", 404))
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+    )
+
+    assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
+    assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_host_is_not_retried():
+    fake_http = StatusAnchorHttp(
+        Exception(
+            "Ошибка при выполнении запроса: Cannot connect to host x:443 ssl:default [Name or service not known]"
+        )
+    )
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+    )
+
+    assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
+    assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 1
+
+
+@pytest.mark.asyncio
+async def test_server_error_is_retried():
+    from infrastructure.services.anchor_discovery_service import SepFetchError
+
+    fake_http = StatusAnchorHttp(SepFetchError("https://x/toml", 503))
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+    )
+
+    support = await service.discover_asset(Asset("BTCLN", ISSUER))
+
+    assert support is not None
+    assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 2
+
+
+@pytest.mark.asyncio
+async def test_permanent_failure_is_cached_for_the_full_ttl():
+    from infrastructure.services.anchor_discovery_service import SepFetchError
+
+    fake_http = StatusAnchorHttp(SepFetchError("https://x/toml", 404))
+    service = AnchorDiscoveryService(
+        fetch_json=fake_http.fetch_json,
+        fetch_text=fake_http.fetch_text,
+        horizon_url="https://horizon.test",
+        negative_ttl=timedelta(0),
+    )
+
+    assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
+    assert await service.discover_asset(Asset("BTCLN", ISSUER)) is None
+    assert fake_http.calls["https://kbtrading.org/.well-known/stellar.toml"] == 1
+
+
+@pytest.mark.asyncio
+async def test_total_budget_marks_the_result_as_truncated():
+    class SlowDiscoveryService(AnchorDiscoveryService):
+        async def discover_anchor_assets(self, issuer, assets):
+            await asyncio.sleep(0.2)
+            return [make_group_support(asset) for asset in assets]
+
+    service = SlowDiscoveryService(total_timeout=0.01, summary_timeout=5.0)
+
+    supported = await service.discover_assets([Asset("A0", "GISSUER0")])
+
+    assert supported == []
+    assert service.last_call_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_total_budget_flag_is_reset_on_the_next_call():
+    class SlowDiscoveryService(AnchorDiscoveryService):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.slow = True
+
+        async def discover_anchor_assets(self, issuer, assets):
+            if self.slow:
+                await asyncio.sleep(0.2)
+            return [make_group_support(asset) for asset in assets]
+
+    service = SlowDiscoveryService(total_timeout=0.01, summary_timeout=5.0)
+    assert await service.discover_assets([Asset("A0", "GISSUER0")]) == []
+    assert service.last_call_truncated is True
+
+    service.slow = False
+    supported = await service.discover_assets([Asset("A0", "GISSUER0")])
+
+    assert [support.asset.code for support in supported] == ["A0"]
+    assert service.last_call_truncated is False

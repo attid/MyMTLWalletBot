@@ -363,5 +363,6 @@
   "sep24_status_failed": "операция не удалась",
   "sep24_status_fetch_error": "Не удалось прочитать статус у анкора.\n{}",
   "sep24_status_pay_to_no_amount": "Отправьте {} на <code>{}</code>",
-  "sep10_challenge_error": "Не удалось получить challenge у анкора, попробуйте позже."
+  "sep10_challenge_error": "Не удалось получить challenge у анкора, попробуйте позже.",
+  "sep_assets_partial": "Часть анкоров не ответила вовремя, повторите /assets через минуту."
 }

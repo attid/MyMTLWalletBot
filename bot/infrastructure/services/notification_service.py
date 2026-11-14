@@ -597,6 +597,15 @@ class NotificationService:
         # 4. Process internal trades (for Match Orders / Makers)
         trades = payload.get("operation", {}).get("trades", [])
         if trades:
+            # Accumulators must exist even when no fill has a maker: AMM
+            # (liquidity pool) trades carry no `order_book` seller and used to
+            # crash the webhook with UnboundLocalError.
+            maker_wallets: list[NotificationWallet] = []
+            maker_filters_by_user: dict[int, list] = {}
+            maker_map: dict[str, NotificationWallet] = {}
+            bundled: dict[int, list[NotificationOperation]] = {}
+            tx_hash = payload.get("transaction", {}).get("hash")
+            op_info = payload.get("operation", {})
             # Collect makers (sellers)
             makers = set()
             for trade in trades:
@@ -626,7 +635,6 @@ class NotificationService:
                     # Prepare common data
                     tx_hash = payload.get("transaction", {}).get("hash")
                     op_info = payload.get("operation", {})  # Helper to create trade op
-            bundled: dict[int, list[NotificationOperation]] = {}
             for i, trade in enumerate(trades):
                 if trade.get("type") == "order_book":
                     seller = trade.get("seller_id")
