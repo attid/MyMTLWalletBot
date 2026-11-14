@@ -26,6 +26,7 @@ from infrastructure.services import free_wallet_provisioning as provisioning
 from infrastructure.services.app_context import AppContext
 from infrastructure.services.encryption_service import EncryptionService
 from infrastructure.services.localization_service import LocalizationService
+from infrastructure.services.horizon_pool import reset_horizon_pools
 from infrastructure.services.stellar_service import StellarService
 from other.config_reader import config
 from shared.constants import TESTNET_NETWORK_PASSPHRASE
@@ -35,6 +36,18 @@ TESTNET_HORIZON = os.getenv("E2E_HORIZON_URL", "https://horizon-testnet.stellar.
 FRIENDBOT_URL = os.getenv("E2E_FRIENDBOT_URL", "https://friendbot.stellar.org")
 
 pytestmark = [pytest.mark.external, pytest.mark.testnet]
+
+
+@pytest.fixture(autouse=True)
+def detach_routers():
+    """Routers are module-level singletons; a dispatcher cannot adopt them twice."""
+    from routers import add_wallet, send, sign
+
+    yield
+    for module in (add_wallet, send, sign):
+        router = module.router
+        if router.parent_router:
+            router._parent_router = None
 
 
 class SqlitePool:
@@ -156,6 +169,14 @@ async def e2e_app_context(
     monkeypatch,
 ):
     monkeypatch.setattr(provisioning, "FREE_WALLET_ASSETS", (issuer_asset,))
+    # Legacy helpers (`stellar_check_account`, `async_stellar_send`, ...) ignore
+    # the injected service and use the process-wide horizon pool: point it at
+    # the testnet and drop any state built from the mainnet config.
+    monkeypatch.setattr(config, "network_passphrase", TESTNET_NETWORK_PASSPHRASE)
+    monkeypatch.setattr(config, "horizon_endpoints", [TESTNET_HORIZON])
+    monkeypatch.setattr(config, "horizon_url", TESTNET_HORIZON)
+    monkeypatch.setattr(config, "horizon_url_rw", TESTNET_HORIZON)
+    reset_horizon_pools()
 
     localization_service = LocalizationService(sqlite_pool)
     await localization_service.load_languages(f"{config.start_path}/langs/")
@@ -184,4 +205,51 @@ async def e2e_app_context(
         dispatcher=dispatcher,
     )
     dispatcher["app_context"] = context
-    yield context
+    try:
+        yield context
+    finally:
+        reset_horizon_pools()
+
+
+@pytest.fixture
+async def seed_wallet(sqlite_pool):
+    """Insert a wallet row for `user_id` (secret encrypted with the user PIN)."""
+    encryption = EncryptionService()
+
+    async def _seed(
+        user_id: int,
+        keypair: Keypair,
+        *,
+        pin: str = "4321",
+        is_free: bool = False,
+    ) -> Wallet:
+        async with sqlite_pool.get_session() as session:
+            repo = SqlAlchemyRepositoryFactory().get_wallet_repository(session)
+            wallet = await repo.create(
+                Wallet(
+                    id=0,
+                    user_id=user_id,
+                    public_key=keypair.public_key,
+                    is_default=True,
+                    is_free=is_free,
+                    use_pin=1,
+                    secret_key=encryption.encrypt(keypair.secret, pin),
+                )
+            )
+            await session.commit()
+        return wallet
+
+    return _seed
+
+
+@pytest.fixture
+async def native_balance(stellar_service):
+    async def _balance(public_key: str) -> float:
+        details = await stellar_service.get_account_details(public_key)
+        assert details is not None, f"account {public_key} not found"
+        for entry in details.get("balances", []):
+            if entry.get("asset_type") == "native":
+                return float(entry["balance"])
+        raise AssertionError("native balance not found")
+
+    return _balance

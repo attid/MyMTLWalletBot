@@ -42,3 +42,12 @@ HORIZON_URLS=https://horizon.stellar.org \
 - ордер (`manage_sell_offer`) и проверка оффера в Horizon;
 - swap (path payment) — нужен второй актив и оффер/пул;
 - приём средств (адрес/QR) — только рендер, без сети.
+
+## Найденные E2E дефекты
+
+- **Свободный кошелёк может отправить XLM через мастер отправки** (`/send` →
+  подтверждение → PIN). Политика free-wallet применяется только в
+  `cmd_check_xdr` (вставка XDR / URI / sign_tools), а `SigningFacade`
+  подписывает XDR без проверки. Тест
+  `test_free_wallet_cannot_send_native_xlm` помечен `xfail(strict=True)` и
+  станет зелёным, когда проверку добавят в фасад.
