@@ -31,14 +31,16 @@ class AnchorDiscoveryService:
         fetch_text: FetchText | None = None,
         horizon_url: str | None = None,
         ttl: timedelta = timedelta(hours=1),
-        request_timeout: float = 2.0,
-        summary_timeout: float = 3.0,
+        negative_ttl: timedelta = timedelta(seconds=60),
+        request_timeout: float = 15.0,
+        summary_timeout: float = 18.0,
         list_concurrency: int = 3,
     ) -> None:
         self._fetch_json = fetch_json or self._default_fetch_json
         self._fetch_text = fetch_text or self._default_fetch_text
         self._horizon_url = (horizon_url or config.horizon_url).rstrip("/")
         self._ttl = ttl
+        self._negative_ttl = negative_ttl
         self._request_timeout = request_timeout
         self._summary_timeout = summary_timeout
         self._list_concurrency = max(1, list_concurrency)
@@ -53,7 +55,15 @@ class AnchorDiscoveryService:
         self._protocol_info_locks: dict[str, asyncio.Lock] = {}
 
     async def discover_assets(self, assets: list[Asset]) -> list[AnchorAssetSupport]:
-        unique_assets = []
+        """Discover SEP support for many assets, one anchor chain per issuer.
+
+        Assets are grouped by issuer so that the `horizon -> stellar.toml ->
+        sep6/sep24 info` chain runs once per anchor instead of once per asset.
+        Without the grouping every asset of the same issuer queued behind the
+        same URL lock and the per-asset budget expired, silently dropping
+        otherwise supported assets (observed live with USDM).
+        """
+        unique_assets: list[Asset] = []
         seen: set[tuple[str, str]] = set()
         for asset in assets:
             if asset.issuer is None:
@@ -64,42 +74,76 @@ class AnchorDiscoveryService:
             seen.add(cache_key)
             unique_assets.append(asset)
 
+        groups: dict[str, list[Asset]] = {}
+        for asset in unique_assets:
+            assert asset.issuer is not None
+            groups.setdefault(asset.issuer, []).append(asset)
+
         semaphore = asyncio.Semaphore(self._list_concurrency)
 
-        async def discover_limited(asset: Asset) -> AnchorAssetSupport | None:
+        async def discover_group(
+            issuer: str, group: list[Asset]
+        ) -> list[AnchorAssetSupport]:
             async with semaphore:
                 try:
                     return await asyncio.wait_for(
-                        self.discover_asset_summary(asset),
+                        self.discover_anchor_assets(issuer, group),
                         timeout=self._summary_timeout,
                     )
                 except TimeoutError:
-                    logger.debug(
-                        f"SEP summary discovery timed out for {asset.to_string()}"
+                    logger.warning(
+                        "SEP anchor discovery timed out for "
+                        f"{issuer} ({', '.join(asset.code for asset in group)})"
                     )
-                    return None
+                    return []
 
-        results = await asyncio.gather(
-            *(discover_limited(asset) for asset in unique_assets)
+        batches = await asyncio.gather(
+            *(discover_group(issuer, group) for issuer, group in groups.items()),
+            return_exceptions=True,
         )
+
+        found: dict[tuple[str, str], AnchorAssetSupport] = {}
+        for batch in batches:
+            if isinstance(batch, Exception):
+                logger.warning(f"SEP anchor discovery failed: {batch}")
+                continue
+            for support in batch:
+                if support.supported_protocols:
+                    found[(support.asset.code, support.asset.issuer or "")] = support
+
         return [
-            support
-            for support in results
-            if support is not None and support.supported_protocols
+            found[key]
+            for asset in unique_assets
+            if (key := (asset.code, asset.issuer or "")) in found
         ]
 
-    async def discover_asset_summary(self, asset: Asset) -> AnchorAssetSupport | None:
-        if asset.issuer is None:
-            return None
-        issuer_info = await self._discover_issuer(asset.issuer)
+    async def discover_anchor_assets(
+        self, issuer: str, assets: list[Asset]
+    ) -> list[AnchorAssetSupport]:
+        """Resolve one anchor and build support entries for its assets."""
+        issuer_info = await self._discover_issuer(issuer)
         if issuer_info is None:
-            return None
+            return []
 
         sep6_info, sep24_info = await asyncio.gather(
             self._load_protocol_info(issuer_info.sep6_url),
             self._load_protocol_info(issuer_info.sep24_url),
         )
 
+        supports: list[AnchorAssetSupport] = []
+        for asset in assets:
+            support = self._build_support(asset, issuer_info, sep6_info, sep24_info)
+            if support is not None:
+                supports.append(support)
+        return supports
+
+    def _build_support(
+        self,
+        asset: Asset,
+        issuer_info: "IssuerSepInfo",
+        sep6_info: dict[str, Any] | None,
+        sep24_info: dict[str, Any] | None,
+    ) -> AnchorAssetSupport | None:
         sep6 = self._protocol_support_from_info(
             SepProtocol.SEP6,
             issuer_info.sep6_url,
@@ -130,65 +174,34 @@ class AnchorDiscoveryService:
 
         cache_key = (asset.code, asset.issuer)
         cached = self._cache.get(cache_key)
-        if cached:
-            cached_at, support = cached
-            if datetime.now(UTC) - cached_at <= self._ttl:
-                return support
+        if cached and self._is_fresh(*cached):
+            return cached[1]
 
-        support = await self._discover_asset_uncached(asset)
+        supports = await self.discover_anchor_assets(asset.issuer, [asset])
+        support = supports[0] if supports else None
         self._cache[cache_key] = (datetime.now(UTC), support)
         return support
 
-    async def _discover_asset_uncached(self, asset: Asset) -> AnchorAssetSupport | None:
-        assert asset.issuer is not None
-        issuer_info = await self._discover_issuer(asset.issuer)
-        if issuer_info is None:
-            return None
+    def _is_fresh(self, cached_at: datetime, value: Any) -> bool:
+        """Cache lifetime: full TTL for a hit, short TTL for a failed lookup.
 
-        sep6_info, sep24_info = await asyncio.gather(
-            self._load_protocol_info(issuer_info.sep6_url),
-            self._load_protocol_info(issuer_info.sep24_url),
-        )
-
-        sep6 = self._protocol_support_from_info(
-            SepProtocol.SEP6,
-            issuer_info.sep6_url,
-            sep6_info,
-            asset.code,
-        )
-        sep24 = self._protocol_support_from_info(
-            SepProtocol.SEP24,
-            issuer_info.sep24_url,
-            sep24_info,
-            asset.code,
-        )
-
-        support = AnchorAssetSupport(
-            asset=asset,
-            anchor_domain=issuer_info.home_domain,
-            web_auth_endpoint=issuer_info.web_auth_endpoint,
-            signing_key=issuer_info.signing_key,
-            sep6=sep6,
-            sep24=sep24,
-        )
-        if not support.supported_protocols:
-            return None
-        return support
+        A transient anchor failure must not hide an asset for an hour, otherwise
+        a single slow `/info` response drops the asset from `/assets` until the
+        process restarts.
+        """
+        ttl = self._ttl if value is not None else self._negative_ttl
+        return datetime.now(UTC) - cached_at <= ttl
 
     async def _discover_issuer(self, issuer: str) -> "IssuerSepInfo | None":
         cached = self._issuer_cache.get(issuer)
-        if cached:
-            cached_at, info = cached
-            if datetime.now(UTC) - cached_at <= self._ttl:
-                return info
+        if cached and self._is_fresh(*cached):
+            return cached[1]
 
         lock = self._issuer_locks.setdefault(issuer, asyncio.Lock())
         async with lock:
             cached = self._issuer_cache.get(issuer)
-            if cached:
-                cached_at, info = cached
-                if datetime.now(UTC) - cached_at <= self._ttl:
-                    return info
+            if cached and self._is_fresh(*cached):
+                return cached[1]
 
             info = await self._discover_issuer_uncached(issuer)
             self._issuer_cache[issuer] = (datetime.now(UTC), info)
@@ -220,7 +233,7 @@ class AnchorDiscoveryService:
                 sep24_url=sep24_url.rstrip("/") if sep24_url else None,
             )
         except Exception as exc:
-            logger.debug(f"SEP issuer discovery failed for {issuer}: {exc}")
+            logger.warning(f"SEP issuer discovery failed for {issuer}: {exc}")
             return None
 
     async def _load_protocol_info(
@@ -230,18 +243,14 @@ class AnchorDiscoveryService:
             return None
         transfer_server = transfer_server.rstrip("/")
         cached = self._protocol_info_cache.get(transfer_server)
-        if cached:
-            cached_at, info = cached
-            if datetime.now(UTC) - cached_at <= self._ttl:
-                return info
+        if cached and self._is_fresh(*cached):
+            return cached[1]
 
         lock = self._protocol_info_locks.setdefault(transfer_server, asyncio.Lock())
         async with lock:
             cached = self._protocol_info_cache.get(transfer_server)
-            if cached:
-                cached_at, info = cached
-                if datetime.now(UTC) - cached_at <= self._ttl:
-                    return info
+            if cached and self._is_fresh(*cached):
+                return cached[1]
 
             info = await self._load_protocol_info_uncached(transfer_server)
             self._protocol_info_cache[transfer_server] = (datetime.now(UTC), info)
@@ -253,7 +262,7 @@ class AnchorDiscoveryService:
         try:
             return await self._fetch_json(f"{transfer_server}/info")
         except Exception as exc:
-            logger.debug(f"SEP info discovery failed for {transfer_server}: {exc}")
+            logger.warning(f"SEP info discovery failed for {transfer_server}: {exc}")
             return None
 
     def _protocol_support_from_info(
