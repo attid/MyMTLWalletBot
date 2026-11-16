@@ -218,6 +218,10 @@ async def test_usdt_in_flow(mock_telegram, dp, mock_session, mock_app_context):
             "All works done" in str(m["data"]) or "text" in str(m["data"]) for m in sent
         )
 
+        # DB must be credited with the income delta (100 - 50 = 50), not the full
+        # chain balance, otherwise usdt_amount drifts above the chain balance.
+        mock_user_repo.update_usdt_balance.assert_awaited_once_with(user_id, 50)
+
         # Verify arguments to ensure no password is passed
         mock_pay_uc.execute.assert_called_once_with(
             user_id=0,

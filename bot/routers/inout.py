@@ -294,7 +294,10 @@ async def cmd_usdt_check(
         # Need user address
         # user_repo instantiated previously in this function
         user_repo = app_context.repository_factory.get_user_repository(session)
-        await user_repo.update_usdt_balance(get_user_id(callback), full_usdt_balance)
+        # update_usdt_balance is additive: credit only the income delta, otherwise
+        # the DB balance drifts above the on-chain balance and later deposits are
+        # rejected by the min_usdt_sum gate above.
+        await user_repo.update_usdt_balance(get_user_id(callback), income_usdt_balance)
         await session.commit()  # Добавляем commit для сохранения изменений в БД
         url = f'<a href="https://tronscan.org/#/address/{user_tron_key}">{user_tron_key}</a>'
         admin_id = app_context.admin_id
