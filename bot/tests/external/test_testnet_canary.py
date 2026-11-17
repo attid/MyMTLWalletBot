@@ -22,17 +22,35 @@ async def _fund_with_friendbot(
         )
 
 
-async def _get_account(
-    session: aiohttp.ClientSession, horizon_url: str, account_id: str
+async def _wait_for_account(
+    session: aiohttp.ClientSession,
+    horizon_url: str,
+    account_id: str,
+    timeout_seconds: int = 30,
 ) -> dict:
+    """Wait until Horizon sees the account.
+
+    Friendbot answers `200` as soon as the funding transaction is submitted,
+    but the account only shows up in Horizon after a ledger closes. A single
+    `GET` therefore races (~5s window) and flakes the nightly run, so `404`
+    means "not visible yet" and is retried.
+    """
     account_url = f"{horizon_url.rstrip('/')}/accounts/{account_id}"
-    async with session.get(account_url, timeout=15) as response:
-        body = await response.text()
-        assert response.status == 200, (
-            "Failed to fetch account from testnet horizon: "
-            f"status={response.status}, body={body}"
-        )
-        return await response.json()
+    last_status = 0
+    last_body = ""
+    for _ in range(timeout_seconds):
+        async with session.get(account_url, timeout=15) as response:
+            last_body = await response.text()
+            last_status = response.status
+            if response.status == 200:
+                return await response.json()
+            if response.status != 404:
+                break
+        await asyncio.sleep(1)
+    raise AssertionError(
+        "Failed to fetch account from testnet horizon: "
+        f"status={last_status}, body={last_body}"
+    )
 
 
 def _native_balance(account_data: dict) -> Decimal:
@@ -49,7 +67,9 @@ async def _submit_native_payment(
     destination_account_id: str,
     amount: str,
 ) -> None:
-    source_data = await _get_account(session, horizon_url, source_keypair.public_key)
+    source_data = await _wait_for_account(
+        session, horizon_url, source_keypair.public_key
+    )
     source_account = Account(
         account=source_keypair.public_key,
         sequence=int(source_data["sequence"]),
@@ -91,7 +111,7 @@ async def _wait_for_native_balance_increase(
     timeout_seconds: int = 40,
 ) -> dict:
     for _ in range(timeout_seconds):
-        account_data = await _get_account(session, horizon_url, account_id)
+        account_data = await _wait_for_account(session, horizon_url, account_id)
         if _native_balance(account_data) >= minimum_balance:
             return account_data
         await asyncio.sleep(1)
@@ -114,8 +134,8 @@ async def test_friendbot_bootstrap_account_is_reachable() -> None:
         await _fund_with_friendbot(session, friendbot_url, sender.public_key)
         await _fund_with_friendbot(session, friendbot_url, receiver.public_key)
 
-        sender_data = await _get_account(session, horizon_url, sender.public_key)
-        receiver_data_before = await _get_account(
+        sender_data = await _wait_for_account(session, horizon_url, sender.public_key)
+        receiver_data_before = await _wait_for_account(
             session, horizon_url, receiver.public_key
         )
 
